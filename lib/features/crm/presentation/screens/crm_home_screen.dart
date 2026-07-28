@@ -112,7 +112,7 @@ class CrmHomeScreen extends ConsumerWidget {
       KpiCard(
         icon: PhosphorIconsFill.hourglassMedium, iconColor: AppColors.blueBright, iconBg: AppColors.tintBlue,
         value: '42', unit: 'days', label: 'My Quote to cash', sub: 'Quote-to-payment window',
-        accent: AppColors.blueBright, trend: '3 days', trendUp: true,
+        accent: AppColors.blueBright, trend: '3 days', trendUp: true, arrowUp: false,
         spark: const [51, 49, 48, 46, 45, 44, 42], onTap: () => context.go(Routes.payments),
       ),
       KpiCard(

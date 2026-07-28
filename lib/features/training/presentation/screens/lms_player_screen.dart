@@ -63,7 +63,9 @@ class _LmsPlayerScreenState extends ConsumerState<LmsPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final query = GoRouterState.of(context).uri.queryParameters;
-    final courseId = query['id'] ?? '';
+    // Fall back to the learner's first in-progress course when the player is
+    // opened without a lesson context (e.g. a direct deep link).
+    final courseId = (query['id']?.isNotEmpty ?? false) ? query['id']! : 'LC-01';
     _idx ??= int.tryParse(query['m'] ?? '0') ?? 0;
 
     final course = ref.watch(lmsCourseByIdProvider(courseId));
