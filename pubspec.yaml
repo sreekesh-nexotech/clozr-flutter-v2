@@ -6,8 +6,14 @@ version: 1.0.0+1
 # NOTE: Technical_stack.md pins Flutter 3.24.5 / Dart 3.5.4. The generated
 # scaffold declared `sdk: ^3.11.0`; that constraint is lowered here to match
 # the documented, authoritative toolchain.
+#
+# The `flutter` constraint below DECLARES the pinned toolchain but does not
+# enforce it: pub ignores the root package's `flutter` constraint (only the
+# Dart `sdk` constraint is checked). Enforcement comes from `.fvmrc` — run
+# commands via `fvm flutter …` to actually use 3.24.5.
 environment:
   sdk: '>=3.5.0 <4.0.0'
+  flutter: '3.24.5'
 
 dependencies:
   flutter:
