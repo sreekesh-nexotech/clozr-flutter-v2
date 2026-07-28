@@ -29,6 +29,18 @@ String opsFmtTime(TimeOfDay t) {
   return '$h:${t.minute.toString().padLeft(2, '0')} $ap';
 }
 
+/// Parse a display time like "9:00 AM" into a [TimeOfDay].
+TimeOfDay? opsParseTime(String s) {
+  final m = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$', caseSensitive: false).firstMatch(s.trim());
+  if (m == null) return null;
+  var h = int.parse(m.group(1)!);
+  final min = int.parse(m.group(2)!);
+  final pm = m.group(3)!.toUpperCase() == 'PM';
+  if (h == 12) h = 0;
+  if (pm) h += 12;
+  return TimeOfDay(hour: h, minute: min);
+}
+
 /// A status option for the picker sheet (key, {label,color}).
 typedef StatusOption = ({String key, StatusMeta meta});
 
