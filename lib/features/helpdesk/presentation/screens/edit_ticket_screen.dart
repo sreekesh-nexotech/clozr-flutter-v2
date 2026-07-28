@@ -194,9 +194,11 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
 
   Widget _header() {
     return Container(
-      color: AppColors.white,
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 14.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Row(
         children: [
           GestureDetector(
@@ -257,9 +259,11 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
 
   Widget _footer() {
     return Container(
-      color: AppColors.white,
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(top: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Row(
         children: [
           GestureDetector(

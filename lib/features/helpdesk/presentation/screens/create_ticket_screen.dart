@@ -225,9 +225,11 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
   Widget _formHeader(BuildContext context, String title, VoidCallback onClose) {
     return Container(
-      color: AppColors.bgApp,
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+        color: AppColors.bgApp,
+        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Row(
         children: [
           GestureDetector(
