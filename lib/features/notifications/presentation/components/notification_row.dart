@@ -79,35 +79,54 @@ class NotificationRow extends StatelessWidget {
                       style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)
                           .copyWith(height: 1.45)),
                   SizedBox(height: 8.h),
+                  // The meta line is "Urgent · Category · time … Open X →".
+                  // The left cluster is Expanded rather than followed by a
+                  // Spacer: a Spacer only distributes slack, so once the
+                  // natural widths exceeded the row (Urgent + a long category
+                  // + a long target label) it overflowed. Expanded hands the
+                  // cluster exactly the space left by the trailing action —
+                  // identical layout when everything fits — and the category
+                  // ellipsizes instead of overflowing when it does not.
                   Row(
                     children: [
-                      if (notif.urgent) ...[
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
-                          decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(7.r)),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(PhosphorIconsFill.warning, size: 10.sp, color: AppColors.error),
-                              SizedBox(width: 4.w),
-                              Text('Urgent',
-                                  style: AppText.custom(size: 10.5, weight: FontWeight.w800, color: AppColors.error)),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            if (notif.urgent) ...[
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
+                                decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(7.r)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(PhosphorIconsFill.warning, size: 10.sp, color: AppColors.error),
+                                    SizedBox(width: 4.w),
+                                    Text('Urgent',
+                                        style: AppText.custom(size: 10.5, weight: FontWeight.w800, color: AppColors.error)),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(width: 8.w),
                             ],
-                          ),
+                            Flexible(
+                              child: Text(notif.categoryLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                            ),
+                            SizedBox(width: 6.w),
+                            Text('·', style: AppText.custom(size: 11, weight: FontWeight.w500, color: const Color(0xFFC2C6CD))),
+                            SizedBox(width: 6.w),
+                            Text(notif.time,
+                                style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                          ],
                         ),
+                      ),
+                      if (notif.hasTarget) ...[
                         SizedBox(width: 8.w),
-                      ],
-                      Text(notif.categoryLabel,
-                          style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                      SizedBox(width: 6.w),
-                      Text('·', style: AppText.custom(size: 11, weight: FontWeight.w500, color: const Color(0xFFC2C6CD))),
-                      SizedBox(width: 6.w),
-                      Text(notif.time,
-                          style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                      const Spacer(),
-                      if (notif.hasTarget)
                         Text('$_targetLabel →',
                             style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                      ],
                     ],
                   ),
                 ],

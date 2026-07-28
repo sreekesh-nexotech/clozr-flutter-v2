@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -71,7 +72,11 @@ class ReportsScreen extends ConsumerWidget {
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.pop(),
+            // The drawer reaches Reports with `context.go`, which clears the
+            // stack — a bare pop() would be a no-op and strand the user.
+            onTap: () => context.canPop()
+                ? context.pop()
+                : context.go(Routes.home),
             child: Container(
               width: 38.w,
               height: 38.w,
@@ -173,17 +178,23 @@ class ReportsScreen extends ConsumerWidget {
                       children: [
                         Text('${counts[k]}', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textSecondary)),
                         SizedBox(height: 6.h),
-                        FractionallySizedBox(
-                          widthFactor: 0.78,
-                          child: Container(
-                            height: (18 + (counts[k]! / fmax) * 88).h,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [_chartTeal, _chartNavy],
+                        Expanded(
+                          child: FractionallySizedBox(
+                            alignment: Alignment.bottomCenter,
+                            widthFactor: 0.78,
+                            heightFactor: _barFactor(counts[k]!, fmax),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [_chartTeal, _chartNavy],
+                                ),
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(8.r),
+                                  bottom: Radius.circular(3.r),
+                                ),
                               ),
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(8.r), bottom: Radius.circular(3.r)),
                             ),
                           ),
                         ),
@@ -281,6 +292,24 @@ class ReportsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  /// Minimum bar height in the design, so an empty stage is still visible.
+  static const double _barFloor = 18;
+
+  /// Additional height the tallest stage adds on top of [_barFloor].
+  static const double _barRange = 88;
+
+  /// Bar height as a fraction of the space left after the count and the label.
+  ///
+  /// The design specified absolute heights (`18 + ratio * 88`), but a
+  /// full-height bar plus its count and a wrapped label does not fit the card's
+  /// 130px chart block — it overflowed. Expressing the same 18:88 relationship
+  /// as a fraction keeps every bar's proportion to the others identical while
+  /// letting the set scale to whatever room is actually available, so the card
+  /// keeps its designed height and this cannot overflow again on a longer label
+  /// or a larger system font.
+  double _barFactor(int count, int fmax) =>
+      (_barFloor + (count / fmax) * _barRange) / (_barFloor + _barRange);
 
   String _funnelLabel(String key) => key == 'quote' ? 'Quote' : StatusMeta$.lead[key]!.label;
 }
