@@ -21,6 +21,7 @@ class KpiCard extends StatelessWidget {
     this.unit,
     this.trend,
     this.trendUp = true,
+    this.arrowUp,
     this.spark,
     this.progress,
     this.onTap,
@@ -35,7 +36,14 @@ class KpiCard extends StatelessWidget {
   final Color accent;
   final String? unit;
   final String? trend;
+
+  /// Controls the trend pill *colour*: true → green (good), false → red (bad).
   final bool trendUp;
+
+  /// Controls the trend pill *arrow glyph* independently of colour. Some
+  /// metrics rise while worsening (e.g. response time), so the design draws an
+  /// up-arrow in a red pill. Defaults to [trendUp] when omitted.
+  final bool? arrowUp;
   final List<double>? spark;
   final double? progress; // 0..1 → renders a progress bar instead of a sparkline
   final VoidCallback? onTap;
@@ -110,7 +118,8 @@ class KpiCard extends StatelessWidget {
   }
 
   Widget _trendPill() {
-    final up = trendUp;
+    final up = trendUp; // colour semantics (good/bad)
+    final arrow = arrowUp ?? trendUp; // glyph direction, decoupled from colour
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
       decoration: BoxDecoration(
@@ -120,7 +129,7 @@ class KpiCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(up ? PhosphorIconsBold.arrowUp : PhosphorIconsBold.arrowDown,
+          Icon(arrow ? PhosphorIconsBold.arrowUp : PhosphorIconsBold.arrowDown,
               size: 11.sp, color: up ? AppColors.success : AppColors.error),
           SizedBox(width: 3.w),
           Text(trend!,
