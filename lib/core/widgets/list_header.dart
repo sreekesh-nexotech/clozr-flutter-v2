@@ -8,13 +8,20 @@ import '../../app/theme/app_colors.dart';
 /// [children].
 class ListHeader extends StatelessWidget {
   const ListHeader({super.key, required this.children});
+
+  /// Horizontal gutter applied to every child.
+  ///
+  /// [HeaderHairline] bleeds past exactly this much on each side, so the two
+  /// must stay in step — keep them reading from this one constant.
+  static const double gutter = 18;
+
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.white,
-      padding: EdgeInsets.fromLTRB(18.w, 56.h, 18.w, 0),
+      padding: EdgeInsets.fromLTRB(gutter.w, 56.h, gutter.w, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -31,10 +38,21 @@ class HeaderHairline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // The prototype draws this rule full-bleed with `margin: 0 -18px`. Flutter
+    // asserts on negative Container margins, so the line is grown past its slot
+    // with an OverflowBox instead: same pixels, supported API.
+    return SizedBox(
       height: 1,
-      margin: EdgeInsets.symmetric(horizontal: -18.w),
-      color: AppColors.borderCardSoft,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth + ListHeader.gutter.w * 2;
+          return OverflowBox(
+            minWidth: width,
+            maxWidth: width,
+            child: Container(height: 1, color: AppColors.borderCardSoft),
+          );
+        },
+      ),
     );
   }
 }

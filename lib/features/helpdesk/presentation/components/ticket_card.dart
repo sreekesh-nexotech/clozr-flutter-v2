@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -100,19 +101,15 @@ class TicketCard extends StatelessWidget {
   Widget _avatars(List<String> ids, int more) {
     return Row(
       children: [
-        for (int i = 0; i < ids.length; i++)
-          Container(
-            width: 24.w,
-            height: 24.w,
-            alignment: Alignment.center,
-            margin: EdgeInsets.only(left: i == 0 ? 0 : -7.w),
-            decoration: BoxDecoration(
-              color: MockUsers.of(ids[i]).color,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.white, width: 2),
-            ),
-            child: Text(MockUsers.of(ids[i]).initials,
-                style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+        if (ids.isNotEmpty)
+          AvatarStack(
+            items: [
+              for (final id in ids)
+                (MockUsers.of(id).initials, MockUsers.of(id).color),
+            ],
+            size: 24,
+            overlap: 7,
+            fontSize: 9,
           ),
         if (more > 0) ...[
           SizedBox(width: 4.w),

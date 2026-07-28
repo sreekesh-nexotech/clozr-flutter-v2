@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
@@ -241,19 +242,15 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (int i = 0; i < shown.length; i++)
-          Container(
-            width: size.w,
-            height: size.w,
-            alignment: Alignment.center,
-            margin: EdgeInsets.only(left: i == 0 ? 0 : -7.w),
-            decoration: BoxDecoration(
-              color: MockUsers.of(shown[i]).color,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.white, width: 2),
-            ),
-            child: Text(MockUsers.of(shown[i]).initials,
-                style: AppText.custom(size: size * 0.36, weight: FontWeight.w700, color: AppColors.white)),
+        if (shown.isNotEmpty)
+          AvatarStack(
+            items: [
+              for (final id in shown)
+                (MockUsers.of(id).initials, MockUsers.of(id).color),
+            ],
+            size: size,
+            overlap: 7,
+            fontSize: size * 0.36,
           ),
         if (more > 0) ...[
           SizedBox(width: 5.w),

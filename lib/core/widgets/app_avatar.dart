@@ -57,12 +57,16 @@ class AvatarStack extends StatelessWidget {
     required this.items,
     this.size = 30,
     this.overlap = 8,
+    this.fontSize,
   });
 
   /// (initials, colour) pairs.
   final List<(String, Color)> items;
   final double size;
   final double overlap;
+
+  /// Initials size. Falls back to [InitialsAvatar]'s own scale when null.
+  final double? fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +81,7 @@ class AvatarStack extends StatelessWidget {
                 initials: items[i].$1,
                 size: size,
                 background: items[i].$2,
+                fontSize: fontSize,
                 border: Border.all(color: AppColors.white, width: 2),
               ),
             ),
