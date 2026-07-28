@@ -1,0 +1,43 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Clozr",
+  "@appTitle": {
+    "description": "Application name, shown in the task switcher."
+  },
+
+  "actionRetry": "Retry",
+  "@actionRetry": {
+    "description": "Button on an error state that re-runs the failed request."
+  },
+
+  "actionCancel": "Cancel",
+  "@actionCancel": {
+    "description": "Dismisses a sheet or form without saving."
+  },
+
+  "actionSave": "Save",
+  "@actionSave": {
+    "description": "Commits a form."
+  },
+
+  "errorGeneric": "Something went wrong. Please try again.",
+  "@errorGeneric": {
+    "description": "Fallback message for an unclassified failure."
+  },
+
+  "errorNoConnection": "No internet connection.",
+  "@errorNoConnection": {
+    "description": "Shown when a request fails with no connectivity."
+  },
+
+  "errorSessionExpired": "Your session has expired. Please sign in.",
+  "@errorSessionExpired": {
+    "description": "Shown when the session is rejected and refresh failed."
+  },
+
+  "emptyNoResults": "No results",
+  "@emptyNoResults": {
+    "description": "Empty state title when a search or filter matches nothing."
+  }
+}
