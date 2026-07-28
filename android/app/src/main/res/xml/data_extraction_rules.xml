@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup / transfer rules for Android 12 (API 31) and above.
+
+  `android:allowBackup="false"` stops cloud backup, but it does NOT stop
+  device-to-device transfer on API 31+ — that is governed solely by the
+  <device-transfer> block below. Both paths are denied here so session tokens
+  and cached CRM data never leave the device.
+  See docs-flutter/QA.md (security audit, items 5 and 14).
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

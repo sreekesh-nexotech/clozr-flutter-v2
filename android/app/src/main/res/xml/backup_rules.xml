@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 11 (API 30) and below.
+
+  `android:allowBackup="false"` in AndroidManifest.xml already disables Auto
+  Backup entirely on these API levels, so nothing here is exercised today.
+  These rules exist as an explicit, reviewable deny-list: if Auto Backup is
+  ever turned on, session tokens and cached CRM records must NOT leave the
+  device. See docs-flutter/QA.md (security audit, items 5 and 14).
+-->
+<full-backup-content>
+    <!-- flutter_secure_storage keeps session tokens in EncryptedSharedPreferences. -->
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    <exclude domain="sharedpref" path="FlutterSharedPreferences.xml" />
+
+    <!-- Hive boxes (customer, lead and ticket data) live in app files/. -->
+    <exclude domain="file" path="hive" />
+    <exclude domain="database" path="." />
+</full-backup-content>
