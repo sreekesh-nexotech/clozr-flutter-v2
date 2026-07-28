@@ -125,7 +125,8 @@ class DashKpiCard extends StatelessWidget {
   }
 }
 
-/// The 2×2 KPI grid shared by all four panels.
+/// The 2×2 KPI grid shared by all four panels. Cards are laid out in rows of
+/// two with equal heights (matching the prototype's CSS-grid stretch).
 class DashKpiGrid extends StatelessWidget {
   const DashKpiGrid({super.key, required this.kpis, required this.onTapKpi});
   final List<DashKpi> kpis;
@@ -133,19 +134,32 @@ class DashKpiGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final gap = 12.w;
-        final w = (c.maxWidth - gap) / 2;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final k in kpis)
-              SizedBox(width: w, child: DashKpiCard(kpi: k, onTap: () => onTapKpi(k))),
-          ],
-        );
-      },
+    return DashTwoColGrid(
+      children: [for (final k in kpis) DashKpiCard(kpi: k, onTap: () => onTapKpi(k))],
     );
+  }
+}
+
+/// A two-column grid of equal-height cards (12px gutters), used for the KPI and
+/// CRM "Attention Needed" grids.
+class DashTwoColGrid extends StatelessWidget {
+  const DashTwoColGrid({super.key, required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (int i = 0; i < children.length; i += 2) {
+      if (i > 0) rows.add(SizedBox(height: 12.h));
+      rows.add(Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: children[i]),
+          SizedBox(width: 12.w),
+          Expanded(child: (i + 1) < children.length ? children[i + 1] : const SizedBox()),
+        ],
+      ));
+    }
+    return Column(mainAxisSize: MainAxisSize.min, children: rows);
   }
 }

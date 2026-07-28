@@ -45,7 +45,7 @@ class DashDonut extends StatelessWidget {
                   height: 132.w,
                   child: PieChart(PieChartData(
                     sectionsSpace: 0,
-                    centerSpaceRadius: 42.r,
+                    centerSpaceRadius: 40.r,
                     startDegreeOffset: -90,
                     sections: [
                       PieChartSectionData(value: 1, color: DashColors.track, radius: 24.r, showTitle: false),
@@ -56,8 +56,8 @@ class DashDonut extends StatelessWidget {
                   width: 132.w,
                   height: 132.w,
                   child: PieChart(PieChartData(
-                    sectionsSpace: total == 0 ? 0 : 1.4,
-                    centerSpaceRadius: 42.r,
+                    sectionsSpace: 0,
+                    centerSpaceRadius: 40.r,
                     startDegreeOffset: -90,
                     sections: [
                       for (final p in visible)

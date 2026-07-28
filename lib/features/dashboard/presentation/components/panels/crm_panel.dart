@@ -106,18 +106,9 @@ class CrmPanel extends ConsumerWidget {
   }
 
   Widget _attentionGrid(BuildContext context, List<DashAttentionCard> cards) {
-    return LayoutBuilder(builder: (context, c) {
-      final gap = 12.w;
-      final w = (c.maxWidth - gap) / 2;
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: [
-          for (final a in cards)
-            SizedBox(width: w, child: AttentionCard(card: a, onTap: () => context.go(a.route))),
-        ],
-      );
-    });
+    return DashTwoColGrid(
+      children: [for (final a in cards) AttentionCard(card: a, onTap: () => context.go(a.route))],
+    );
   }
 
   Widget _sources(BuildContext context, DashboardData data, int mode, WidgetRef ref) {
