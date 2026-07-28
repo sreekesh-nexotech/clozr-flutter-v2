@@ -12,6 +12,7 @@ class DashColors {
   static const funnelTop = Color(0xFF4E7CC7); // lead-funnel gradient top stop
   static const textMid = Color(0xFF6C6C6C); // segmented inactive / pct labels
   static const chipStroke = Color(0xFFE6E7EA); // scope-chip inset border
+  static const badgeGrey = Color(0xFFEEF1F4); // "₹ Value" badge background
 
   // Aliases onto the shared palette for readability.
   static const navy = AppColors.navy; // #00113B

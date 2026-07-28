@@ -41,9 +41,6 @@ TimeOfDay? opsParseTime(String s) {
   return TimeOfDay(hour: h, minute: min);
 }
 
-/// A status option for the picker sheet (key, {label,color}).
-typedef StatusOption = ({String key, StatusMeta meta});
-
 /// Presents the Clozr status picker sheet (Project status / Task status). Rows
 /// show a colour dot, the label and a check on the current status. Returns the
 /// chosen key (or null if dismissed).
