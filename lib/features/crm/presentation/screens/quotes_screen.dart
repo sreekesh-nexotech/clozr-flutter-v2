@@ -1,0 +1,139 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../../app/router/routes.dart';
+import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/list_header.dart';
+import '../../../../core/widgets/search_field.dart';
+import '../../../../core/widgets/tab_chip.dart';
+import '../../../../data/mock/status_meta.dart';
+import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/quotes_providers.dart';
+import '../components/quote_card.dart';
+import '../components/saved_chip_row.dart';
+
+/// Quotes list — status-tab list of quote cards over the standard list header.
+class QuotesScreen extends ConsumerStatefulWidget {
+  const QuotesScreen({super.key});
+
+  @override
+  ConsumerState<QuotesScreen> createState() => _QuotesScreenState();
+}
+
+class _QuotesScreenState extends ConsumerState<QuotesScreen> {
+  final _searchCtrl = TextEditingController();
+
+  static const _savedViews = [
+    SavedView('qbt', 'Big tickets'),
+    SavedView('qes', 'Expiring soon'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.text = ref.read(quoteSearchProvider);
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = ref.watch(quotesProvider).valueOrNull ?? const [];
+    final visible = ref.watch(visibleQuotesProvider);
+    final tab = ref.watch(quoteTabProvider);
+    final searchOpen = ref.watch(quoteSearchOpenProvider);
+    final query = ref.watch(quoteSearchProvider);
+    final saved = ref.watch(quoteSavedProvider);
+
+    const tabKeys = ['all', 'draft', 'sent', 'accepted', 'rejected', 'expired'];
+
+    return Column(
+      children: [
+        ListHeader(
+          children: [
+            const AppHeaderBar(),
+            SizedBox(height: 14.h),
+            const HeaderHairline(),
+            SizedBox(height: 14.h),
+            ScreenTitleRow(
+              title: 'Quotes',
+              hasSearchQuery: query.isNotEmpty,
+              onSearch: () => ref.read(quoteSearchOpenProvider.notifier).state = !searchOpen,
+              onFilter: () => ref.read(toastProvider.notifier).show('Filters — full CRM filter engine'),
+            ),
+            if (searchOpen) ...[
+              SizedBox(height: 12.h),
+              SearchField(
+                controller: _searchCtrl,
+                hint: 'Search quotes…',
+                onChanged: (v) => ref.read(quoteSearchProvider.notifier).state = v,
+                onClose: () {
+                  _searchCtrl.clear();
+                  ref.read(quoteSearchProvider.notifier).state = '';
+                  ref.read(quoteSearchOpenProvider.notifier).state = false;
+                },
+              ),
+            ],
+            SizedBox(height: 10.h),
+            SizedBox(
+              height: 40.h,
+              child: TabChipRow(
+                children: [
+                  for (final k in tabKeys)
+                    TabChip(
+                      label: '${k == 'all' ? 'All' : StatusMeta$.quote[k]!.label} (${quoteTabCount(all, k)})',
+                      active: tab == k,
+                      onTap: () => ref.read(quoteTabProvider.notifier).state = k,
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(height: 12.h),
+            SavedChipRow(
+              views: _savedViews,
+              active: saved,
+              onToggle: (key) {
+                final next = {...saved};
+                next.contains(key) ? next.remove(key) : next.add(key);
+                ref.read(quoteSavedProvider.notifier).state = next;
+              },
+              onClear: () => ref.read(quoteSavedProvider.notifier).state = {},
+            ),
+            SizedBox(height: 14.h),
+          ],
+        ),
+        Expanded(
+          child: visible.isEmpty
+              ? ListView(
+                  children: const [
+                    EmptyState(
+                      icon: PhosphorIconsRegular.fileText,
+                      title: 'No quotes found',
+                      body: 'Try a different status or clear filters.',
+                    ),
+                  ],
+                )
+              : ListView.separated(
+                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                  itemCount: visible.length,
+                  separatorBuilder: (_, __) => SizedBox(height: 10.h),
+                  itemBuilder: (context, i) {
+                    final quote = visible[i];
+                    return QuoteCard(
+                      quote: quote,
+                      onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}

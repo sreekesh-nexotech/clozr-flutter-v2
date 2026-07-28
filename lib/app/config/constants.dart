@@ -1,0 +1,25 @@
+/// Global, non-style constants. API base URLs, timeouts and pagination
+/// defaults live here when the infrastructure layer lands. For the
+/// presentation build these are the values the UI reads.
+class AppConstants {
+  AppConstants._();
+
+  /// The signed-in user in the prototype (Manoj Varma). All "my" filters and
+  /// the header workspace label key off this.
+  static const String currentUserId = 'me';
+  static const String workspaceName = 'Kairali Interior Works';
+  static const String brandName = 'Clozr';
+
+  /// Header date shown on the CRM home ("Thu, 9 Jul" in the prototype).
+  static const String headerDate = 'Thu, 9 Jul';
+
+  /// Simulated status-bar clock, matching the design canvas.
+  static const String statusBarClock = '9:41';
+
+  /// Toast auto-dismiss duration.
+  static const Duration toastDuration = Duration(milliseconds: 2200);
+
+  /// Simulated network latency for mock data sources so skeleton/loading
+  /// states are visible. Set to [Duration.zero] to disable.
+  static const Duration mockLatency = Duration(milliseconds: 350);
+}
