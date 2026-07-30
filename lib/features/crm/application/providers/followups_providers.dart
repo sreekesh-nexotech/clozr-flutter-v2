@@ -3,6 +3,7 @@ import '../../domain/entities/followup.dart';
 import '../../domain/repositories/followups_repository.dart';
 import '../../infrastructure/data_sources/local/followups_mock_ds.dart';
 import '../../infrastructure/repositories/followups_repository_impl.dart';
+import '../filters/followups_filter_spec.dart';
 
 /// DI seam: override in `bootstrap` to inject a real API-backed repo.
 final followupsRepositoryProvider = Provider<FollowupsRepository>(
@@ -26,6 +27,17 @@ final followupByIdProvider = Provider.family<Followup?, String>((ref, id) {
 
 // ── List UI state ──
 
+/// Follow-ups added locally this session (from the Add follow-up sheet).
+/// Prepended to the repo-backed list so new records appear immediately.
+final followupDraftsProvider = StateProvider<List<Followup>>((ref) => const []);
+
+/// The full follow-up set: session-added drafts first, then the repo list.
+final followupsAllProvider = Provider<List<Followup>>((ref) {
+  final repo = ref.watch(followupsProvider).valueOrNull ?? const [];
+  final drafts = ref.watch(followupDraftsProvider);
+  return [...drafts, ...repo];
+});
+
 /// Active status tab on the Follow-ups list.
 final followupTabProvider = StateProvider<String>((ref) => 'all');
 
@@ -37,14 +49,17 @@ final followupSearchOpenProvider = StateProvider<bool>((ref) => false);
 
 const _fuOrder = {'overdue': 0, 'due': 1, 'done': 2};
 
-/// Follow-ups filtered by the active tab + search, sorted overdue→due→done.
+/// Follow-ups filtered by the active tab + search + drawer filters, sorted
+/// overdue→due→done.
 final visibleFollowupsProvider = Provider<List<Followup>>((ref) {
-  final all = ref.watch(followupsProvider).valueOrNull ?? const [];
+  final all = ref.watch(followupsAllProvider);
   final tab = ref.watch(followupTabProvider);
   final q = ref.watch(followupSearchProvider).trim().toLowerCase();
+  final filters = ref.watch(followupFiltersProvider);
 
   Iterable<Followup> out = all;
   if (tab != 'all') out = out.where((f) => f.status == tab);
+  if (!filters.isEmpty) out = out.where((f) => followupMatchesFilters(f, filters));
   if (q.isNotEmpty) {
     out = out.where((f) =>
         f.company.toLowerCase().contains(q) ||

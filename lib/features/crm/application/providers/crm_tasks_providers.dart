@@ -3,6 +3,7 @@ import '../../domain/entities/crm_task.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../../infrastructure/data_sources/local/crm_tasks_mock_ds.dart';
 import '../../infrastructure/repositories/crm_tasks_repository_impl.dart';
+import '../filters/tasks_filter_spec.dart';
 
 /// DI seam: override in `bootstrap` to inject a real API-backed repo.
 final crmTasksRepositoryProvider = Provider<CrmTasksRepository>(
@@ -26,6 +27,17 @@ final crmTaskByIdProvider = Provider.family<CrmTask?, String>((ref, id) {
 
 // ── List UI state ──
 
+/// Tasks added locally this session (from the Add task sheet). Prepended to the
+/// repo-backed list so new records appear immediately.
+final crmTaskDraftsProvider = StateProvider<List<CrmTask>>((ref) => const []);
+
+/// The full task set: session-added drafts first, then the repo-backed list.
+final crmTasksAllProvider = Provider<List<CrmTask>>((ref) {
+  final repo = ref.watch(crmTasksProvider).valueOrNull ?? const [];
+  final drafts = ref.watch(crmTaskDraftsProvider);
+  return [...drafts, ...repo];
+});
+
 /// Active tab on the Tasks list (all / mine / overdue / status keys).
 final crmTaskTabProvider = StateProvider<String>((ref) => 'all');
 
@@ -35,11 +47,12 @@ final crmTaskSearchProvider = StateProvider<String>((ref) => '');
 /// Whether the search field is expanded.
 final crmTaskSearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Tasks filtered by the active tab + search query.
+/// Tasks filtered by the active tab + search query + drawer filters.
 final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
-  final all = ref.watch(crmTasksProvider).valueOrNull ?? const [];
+  final all = ref.watch(crmTasksAllProvider);
   final tab = ref.watch(crmTaskTabProvider);
   final q = ref.watch(crmTaskSearchProvider).trim().toLowerCase();
+  final filters = ref.watch(crmTaskFiltersProvider);
 
   Iterable<CrmTask> out = all;
   if (tab == 'mine') {
@@ -49,6 +62,7 @@ final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
   } else if (tab != 'all') {
     out = out.where((t) => t.status == tab);
   }
+  if (!filters.isEmpty) out = out.where((t) => crmTaskMatchesFilters(t, filters));
   if (q.isNotEmpty) {
     out = out.where((t) =>
         t.title.toLowerCase().contains(q) || t.id.toLowerCase().contains(q));

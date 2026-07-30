@@ -6,6 +6,7 @@ import '../../domain/entities/product.dart';
 import '../../domain/repositories/products_repository.dart';
 import '../../infrastructure/data_sources/local/products_mock_ds.dart';
 import '../../infrastructure/repositories/products_repository_impl.dart';
+import '../filters/products_filter_spec.dart';
 
 /// DI seam: override in `bootstrap` to inject a real API-backed repo.
 final productsRepositoryProvider = Provider<ProductsRepository>(
@@ -17,10 +18,21 @@ final productsProvider = FutureProvider<List<Product>>(
   (ref) => ref.watch(productsRepositoryProvider).getProducts(),
 );
 
+/// Catalog items added in-session via the "Add product" sheet (#14). Prepended
+/// to the seed catalog; replaced by the API on integration.
+final manualProductsProvider = StateProvider<List<Product>>((ref) => const []);
+
+/// All catalog items = session additions + seed catalog. The single source the
+/// list and drawer read from.
+final allProductsProvider = Provider<List<Product>>((ref) {
+  final seed = ref.watch(productsProvider).valueOrNull ?? const [];
+  final manual = ref.watch(manualProductsProvider);
+  return [...manual, ...seed];
+});
+
 /// Look up a single product by id (detail screen).
 final productByIdProvider = Provider.family<Product?, String>((ref, id) {
-  final products = ref.watch(productsProvider).valueOrNull;
-  if (products == null) return null;
+  final products = ref.watch(allProductsProvider);
   for (final p in products) {
     if (p.id == id) return p;
   }
@@ -88,22 +100,18 @@ final prodCatProvider = StateProvider<String>((ref) => 'all');
 final prodSearchProvider = StateProvider<String>((ref) => '');
 final prodSearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Active saved-view chip keys (Top earners / Active only).
-final prodSavedProvider = StateProvider<Set<String>>((ref) => {});
-
-/// Products filtered by mode + category + saved views + search.
+/// Products filtered by mode + category + drawer filters + search.
 final visibleProductsProvider = Provider<List<Product>>((ref) {
-  final products = ref.watch(productsProvider).valueOrNull ?? const [];
+  final products = ref.watch(allProductsProvider);
   final mode = ref.watch(prodModeProvider);
   final cat = ref.watch(prodCatProvider);
-  final saved = ref.watch(prodSavedProvider);
+  final filters = ref.watch(productFiltersProvider);
   final q = ref.watch(prodSearchProvider).trim().toLowerCase();
 
   Iterable<Product> out =
       products.where((p) => (mode == 'packages') == p.isPackage);
   if (cat != 'all') out = out.where((p) => p.cat == cat);
-  if (saved.contains('ptop')) out = out.where((p) => p.revNum >= 10000000);
-  if (saved.contains('pact')) out = out.where((p) => p.active);
+  if (!filters.isEmpty) out = out.where((p) => productMatchesFilters(p, filters));
   if (q.isNotEmpty) {
     out = out.where((p) => ('${p.name} ${p.id} ${p.hsn}').toLowerCase().contains(q));
   }

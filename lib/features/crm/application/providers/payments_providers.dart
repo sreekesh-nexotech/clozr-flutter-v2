@@ -114,20 +114,16 @@ final payTabProvider = StateProvider<String>((ref) => 'all');
 final paySearchProvider = StateProvider<String>((ref) => '');
 final paySearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Active saved-view chip keys (Collections risk / High value).
-final paySavedProvider = StateProvider<Set<String>>((ref) => {});
-
-/// Payments filtered by tab + saved views + search.
+/// Payments filtered by tab + drawer filters + search.
 final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
-  final payments = ref.watch(paymentsProvider).valueOrNull ?? const [];
+  final payments = ref.watch(allPaymentsProvider);
   final tab = ref.watch(payTabProvider);
-  final saved = ref.watch(paySavedProvider);
+  final filters = ref.watch(paymentFiltersProvider);
   final q = ref.watch(paySearchProvider).trim().toLowerCase();
 
   Iterable<Payment> out = payments;
   if (tab != 'all') out = out.where((x) => x.status == tab);
-  if (saved.contains('pod')) out = out.where((x) => x.status == 'overdue' || x.status == 'due');
-  if (saved.contains('phv')) out = out.where((x) => x.amountNum >= 4000000);
+  if (!filters.isEmpty) out = out.where((x) => paymentMatchesFilters(x, filters));
   if (q.isNotEmpty) {
     out = out.where((x) =>
         ('${x.id} ${paymentTitle(x)} ${x.invId ?? ''}').toLowerCase().contains(q));
