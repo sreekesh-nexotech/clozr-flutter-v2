@@ -6,22 +6,29 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/payments_filter_spec.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../components/invoice_card.dart';
 import '../components/mode_toggle.dart';
 import '../components/payment_card.dart';
+import '../components/record_payment_sheet.dart';
 import '../components/saved_chip_row.dart';
 
 /// Payments + Invoices — a mode toggle over two status-tab lists (payment rows
-/// or invoice rows) sharing one header and search field.
+/// or invoice rows) sharing one header and search field. The Payments mode is
+/// wired to the spec-driven filter engine (drawer → matcher → badge → saved
+/// views), mirroring the Leads reference.
 class PaymentsScreen extends ConsumerStatefulWidget {
   const PaymentsScreen({super.key});
 
@@ -31,11 +38,6 @@ class PaymentsScreen extends ConsumerStatefulWidget {
 
 class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   final _searchCtrl = TextEditingController();
-
-  static const _savedViews = [
-    SavedView('pod', 'Collections risk'),
-    SavedView('phv', 'High value'),
-  ];
 
   @override
   void initState() {
@@ -51,16 +53,22 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Contextual add: the bottom-nav `+` opens the Record payment sheet.
+    registerAdd(
+      ref,
+      AddAction(label: 'Record payment', run: (ctx) => showRecordPaymentSheet(ctx)),
+    );
+
     final mode = ref.watch(payModeProvider);
     final isPayments = mode == 'payments';
     final searchOpen = ref.watch(paySearchOpenProvider);
     final query = ref.watch(paySearchProvider);
 
-    final allPayments = ref.watch(paymentsProvider).valueOrNull ?? const [];
+    final allPayments = ref.watch(allPaymentsProvider);
     final allInvoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
     final payTab = ref.watch(payTabProvider);
     final invTab = ref.watch(invTabProvider);
-    final saved = ref.watch(paySavedProvider);
+    final filterCount = ref.watch(paymentFiltersProvider).activeCount;
 
     const payTabKeys = ['all', 'paid', 'due', 'overdue', 'scheduled'];
     const invTabKeys = ['all', 'unpaid', 'partial', 'completed'];
@@ -76,8 +84,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
             ScreenTitleRow(
               title: 'Payments',
               hasSearchQuery: query.isNotEmpty,
+              filterCount: isPayments ? filterCount : 0,
               onSearch: () => ref.read(paySearchOpenProvider.notifier).state = !searchOpen,
-              onFilter: () => ref.read(toastProvider.notifier).show('Filters — full CRM filter engine'),
+              onFilter: isPayments ? _openFilters : null,
             ),
             SizedBox(height: 14.h),
             ModeToggle(
@@ -126,16 +135,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
             ),
             if (isPayments) ...[
               SizedBox(height: 12.h),
-              SavedChipRow(
-                views: _savedViews,
-                active: saved,
-                onToggle: (key) {
-                  final next = {...saved};
-                  next.contains(key) ? next.remove(key) : next.add(key);
-                  ref.read(paySavedProvider.notifier).state = next;
-                },
-                onClear: () => ref.read(paySavedProvider.notifier).state = {},
-              ),
+              _savedViewRow(filterCount),
             ],
             SizedBox(height: 14.h),
           ],
@@ -145,15 +145,76 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     );
   }
 
+  // ── Filter drawer (Payments mode) ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(paymentsFilterSpecProvider);
+    final current = ref.read(paymentFiltersProvider);
+    final base = ref.read(allPaymentsProvider);
+    final activeView = ref.read(paymentSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((p) => paymentMatchesFilters(p, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(paymentSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(paymentFiltersProvider.notifier).state = result;
+    final views = ref.read(paymentSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(paymentSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  Widget _savedViewRow(int filterCount) {
+    final saved = ref.watch(paymentSavedViewsProvider);
+    return SavedChipRow(
+      views: [for (final v in saved.views) SavedView(v.id, v.name)],
+      active: {if (saved.activeId != null) saved.activeId!},
+      showClearAlways: filterCount > 0,
+      onToggle: _toggleView,
+      onClear: _clearFilters,
+    );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(paymentSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(paymentSavedViewsProvider.notifier).deactivate();
+      ref.read(paymentFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(paymentSavedViewsProvider.notifier).apply(id);
+    ref.read(paymentFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(paymentSavedViewsProvider.notifier).clearActive();
+    ref.read(paymentFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
+  }
+
   Widget _paymentsList(BuildContext context, WidgetRef ref) {
     final visible = ref.watch(visiblePaymentsProvider);
     if (visible.isEmpty) {
       return ListView(
-        children: const [
+        children: [
           EmptyState(
             icon: PhosphorIconsRegular.wallet,
             title: 'No payments found',
-            body: 'Try a different status or clear filters.',
+            body: 'Try a different status, clear filters, or record a payment.',
+            ctaLabel: 'Record payment',
+            ctaIcon: PhosphorIconsBold.plus,
+            onCta: () => showRecordPaymentSheet(context),
           ),
         ],
       );

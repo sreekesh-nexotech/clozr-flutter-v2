@@ -4,17 +4,24 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/tasks_filter_spec.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../components/task_card.dart';
+import '../components/saved_chip_row.dart' as chips;
+import '../sheets/add_task_sheet.dart';
 
-/// Tasks list — checkbox cards with status pills, filtered by tab + search.
+/// Tasks list — checkbox cards with status pills, wired to the spec-driven
+/// filter engine and the contextual Add task sheet.
 class TasksScreen extends ConsumerStatefulWidget {
   const TasksScreen({super.key});
 
@@ -49,11 +56,18 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final all = ref.watch(crmTasksProvider).valueOrNull ?? const [];
+    // Contextual add: the bottom-nav `+` opens the Add task sheet here.
+    registerAdd(
+      ref,
+      AddAction(label: 'Add task', run: (ctx) => showAddTaskSheet(ctx, ref)),
+    );
+
+    final all = ref.watch(crmTasksAllProvider);
     final visible = ref.watch(visibleCrmTasksProvider);
     final tab = ref.watch(crmTaskTabProvider);
     final searchOpen = ref.watch(crmTaskSearchOpenProvider);
     final query = ref.watch(crmTaskSearchProvider);
+    final filterCount = ref.watch(crmTaskFiltersProvider).activeCount;
     final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
 
     String? relatedLineFor(String? leadId) {
@@ -75,8 +89,9 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
             ScreenTitleRow(
               title: 'Tasks',
               hasSearchQuery: query.isNotEmpty,
+              filterCount: filterCount,
               onSearch: () => ref.read(crmTaskSearchOpenProvider.notifier).state = !searchOpen,
-              onFilter: () => ref.read(toastProvider.notifier).show('Filters — full CRM filter engine'),
+              onFilter: _openFilters,
             ),
             if (searchOpen) ...[
               SizedBox(height: 10.h),
@@ -105,17 +120,22 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 ],
               ),
             ),
+            SizedBox(height: 12.h),
+            _savedViewRow(filterCount),
             SizedBox(height: 14.h),
           ],
         ),
         Expanded(
           child: visible.isEmpty
               ? ListView(
-                  children: const [
+                  children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.funnel,
                       title: 'No tasks found',
-                      body: 'Try a different status, clear filters or search to see more tasks.',
+                      body: 'Try a different status, clear filters, or add a new task.',
+                      ctaLabel: 'Add task',
+                      ctaIcon: PhosphorIconsBold.plus,
+                      onCta: () => showAddTaskSheet(context, ref),
                     ),
                   ],
                 )
@@ -137,5 +157,67 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         ),
       ],
     );
+  }
+
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(crmTasksFilterSpecProvider);
+    final current = ref.read(crmTaskFiltersProvider);
+    final base = ref.read(crmTasksAllProvider);
+    final activeView = ref.read(crmTaskSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((t) => crmTaskMatchesFilters(t, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(crmTaskSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(crmTaskFiltersProvider.notifier).state = result;
+    final views = ref.read(crmTaskSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(crmTaskSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: saved bookmark chips + Clear ──
+  Widget _savedViewRow(int filterCount) {
+    final saved = ref.watch(crmTaskSavedViewsProvider);
+    return SizedBox(
+      height: 34.h,
+      child: chips.SavedChipRow(
+        views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+        active: {if (saved.activeId != null) saved.activeId!},
+        showClearAlways: filterCount > 0,
+        onToggle: _toggleView,
+        onClear: _clearFilters,
+      ),
+    );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(crmTaskSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(crmTaskSavedViewsProvider.notifier).deactivate();
+      ref.read(crmTaskFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(crmTaskSavedViewsProvider.notifier).apply(id);
+    ref.read(crmTaskFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(crmTaskSavedViewsProvider.notifier).clearActive();
+    ref.read(crmTaskFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

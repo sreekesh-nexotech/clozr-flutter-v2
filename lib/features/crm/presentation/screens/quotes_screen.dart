@@ -4,18 +4,24 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/quotes_filter_spec.dart';
 import '../../application/providers/quotes_providers.dart';
 import '../components/quote_card.dart';
 import '../components/saved_chip_row.dart';
 
-/// Quotes list — status-tab list of quote cards over the standard list header.
+/// Quotes list — status-tab list of quote cards over the standard list header,
+/// wired to the spec-driven filter engine (drawer → matcher → badge → saved
+/// views), mirroring the Leads reference.
 class QuotesScreen extends ConsumerStatefulWidget {
   const QuotesScreen({super.key});
 
@@ -25,11 +31,6 @@ class QuotesScreen extends ConsumerStatefulWidget {
 
 class _QuotesScreenState extends ConsumerState<QuotesScreen> {
   final _searchCtrl = TextEditingController();
-
-  static const _savedViews = [
-    SavedView('qbt', 'Big tickets'),
-    SavedView('qes', 'Expiring soon'),
-  ];
 
   @override
   void initState() {
@@ -45,12 +46,18 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Contextual add: the bottom-nav `+` opens the Add quote form on this screen.
+    registerAdd(
+      ref,
+      AddAction(label: 'Add quote', run: (ctx) => ctx.push(Routes.addQuote)),
+    );
+
     final all = ref.watch(quotesProvider).valueOrNull ?? const [];
     final visible = ref.watch(visibleQuotesProvider);
     final tab = ref.watch(quoteTabProvider);
     final searchOpen = ref.watch(quoteSearchOpenProvider);
     final query = ref.watch(quoteSearchProvider);
-    final saved = ref.watch(quoteSavedProvider);
+    final filterCount = ref.watch(quoteFiltersProvider).activeCount;
 
     const tabKeys = ['all', 'draft', 'sent', 'accepted', 'rejected', 'expired'];
 
@@ -65,8 +72,9 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
             ScreenTitleRow(
               title: 'Quotes',
               hasSearchQuery: query.isNotEmpty,
+              filterCount: filterCount,
               onSearch: () => ref.read(quoteSearchOpenProvider.notifier).state = !searchOpen,
-              onFilter: () => ref.read(toastProvider.notifier).show('Filters — full CRM filter engine'),
+              onFilter: _openFilters,
             ),
             if (searchOpen) ...[
               SizedBox(height: 12.h),
@@ -96,27 +104,21 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
               ),
             ),
             SizedBox(height: 12.h),
-            SavedChipRow(
-              views: _savedViews,
-              active: saved,
-              onToggle: (key) {
-                final next = {...saved};
-                next.contains(key) ? next.remove(key) : next.add(key);
-                ref.read(quoteSavedProvider.notifier).state = next;
-              },
-              onClear: () => ref.read(quoteSavedProvider.notifier).state = {},
-            ),
+            _savedViewRow(filterCount),
             SizedBox(height: 14.h),
           ],
         ),
         Expanded(
           child: visible.isEmpty
               ? ListView(
-                  children: const [
+                  children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.fileText,
                       title: 'No quotes found',
-                      body: 'Try a different status or clear filters.',
+                      body: 'Try a different status, clear filters, or create a new quote.',
+                      ctaLabel: 'Add quote',
+                      ctaIcon: PhosphorIconsBold.plus,
+                      onCta: () => context.push(Routes.addQuote),
                     ),
                   ],
                 )
@@ -135,5 +137,64 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
         ),
       ],
     );
+  }
+
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(quotesFilterSpecProvider);
+    final current = ref.read(quoteFiltersProvider);
+    final base = ref.read(quotesProvider).valueOrNull ?? const [];
+    final activeView = ref.read(quoteSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((q) => quoteMatchesFilters(q, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(quoteSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(quoteFiltersProvider.notifier).state = result;
+    final views = ref.read(quoteSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(quoteSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: saved bookmark chips + Clear ──
+  Widget _savedViewRow(int filterCount) {
+    final saved = ref.watch(quoteSavedViewsProvider);
+    return SavedChipRow(
+      views: [for (final v in saved.views) SavedView(v.id, v.name)],
+      active: {if (saved.activeId != null) saved.activeId!},
+      showClearAlways: filterCount > 0,
+      onToggle: _toggleView,
+      onClear: _clearFilters,
+    );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(quoteSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(quoteSavedViewsProvider.notifier).deactivate();
+      ref.read(quoteFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(quoteSavedViewsProvider.notifier).apply(id);
+    ref.read(quoteFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(quoteSavedViewsProvider.notifier).clearActive();
+    ref.read(quoteFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }
