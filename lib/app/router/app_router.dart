@@ -33,6 +33,7 @@ import '../../features/operations/presentation/screens/create_project_screen.dar
 import '../../features/operations/presentation/screens/edit_project_screen.dart';
 import '../../features/operations/presentation/screens/ops_tasks_screen.dart';
 import '../../features/operations/presentation/screens/ops_task_detail_screen.dart';
+import '../../features/operations/presentation/screens/subtask_detail_screen.dart';
 import '../../features/operations/presentation/screens/create_task_screen.dart';
 import '../../features/operations/presentation/screens/edit_task_screen.dart';
 // Helpdesk
@@ -116,6 +117,7 @@ final GoRouter appRouter = GoRouter(
         _push(Routes.editProject, const EditProjectScreen()),
         _r(Routes.opsTasks, const OpsTasksScreen()),
         _push(Routes.opsTaskDetail, const OpsTaskDetailScreen()),
+        _push(Routes.opsSubtask, const SubtaskDetailScreen()),
         _push(Routes.createTask, const CreateTaskScreen()),
         _push(Routes.editTask, const EditTaskScreen()),
         // Helpdesk

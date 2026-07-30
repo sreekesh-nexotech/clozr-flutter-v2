@@ -46,6 +46,7 @@ class Routes {
   static const editProject = '/ops/projects/edit';
   static const opsTasks = '/ops/tasks';
   static const opsTaskDetail = '/ops/tasks/detail';
+  static const opsSubtask = '/ops/tasks/subtask';
   static const createTask = '/ops/tasks/create';
   static const editTask = '/ops/tasks/edit';
 
@@ -107,6 +108,7 @@ class Routes {
     editProject: RouteMeta(NavContext.ops, false),
     opsTasks: RouteMeta(NavContext.ops, true),
     opsTaskDetail: RouteMeta(NavContext.ops, false),
+    opsSubtask: RouteMeta(NavContext.ops, false),
     createTask: RouteMeta(NavContext.ops, false),
     editTask: RouteMeta(NavContext.ops, false),
     helpHome: RouteMeta(NavContext.help, true),
