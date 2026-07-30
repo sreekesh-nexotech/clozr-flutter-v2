@@ -31,21 +31,22 @@ class HeaderHairline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bleedWidth = constraints.maxWidth + 36.w;
-        return OverflowBox(
-          minWidth: bleedWidth,
-          maxWidth: bleedWidth,
-          minHeight: 1,
-          maxHeight: 1,
-          alignment: Alignment.center,
-          child: Container(
-            height: 1,
-            color: AppColors.borderCardSoft,
-          ),
-        );
-      },
+    return SizedBox(
+      height: 1,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bleedWidth = constraints.maxWidth + 36.w;
+          return OverflowBox(
+            minWidth: bleedWidth,
+            maxWidth: bleedWidth,
+            alignment: Alignment.center,
+            child: Container(
+              height: 1,
+              color: AppColors.borderCardSoft,
+            ),
+          );
+        },
+      ),
     );
   }
 }
