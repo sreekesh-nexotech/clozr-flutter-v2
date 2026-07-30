@@ -37,6 +37,8 @@ class HeaderHairline extends StatelessWidget {
         return OverflowBox(
           minWidth: bleedWidth,
           maxWidth: bleedWidth,
+          minHeight: 1,
+          maxHeight: 1,
           alignment: Alignment.center,
           child: Container(
             height: 1,
