@@ -202,7 +202,7 @@ class LmsMyCoursesScreen extends ConsumerWidget {
         ),
       ),
       SizedBox(
-        height: 162.h,
+        height: 178.h,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
