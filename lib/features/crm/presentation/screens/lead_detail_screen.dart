@@ -103,6 +103,33 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     final relCust = customers.where((c) => c.leadId == lead.id).toList();
     final converted = relCust.isNotEmpty;
 
+    // Notes thread (#13) — seeded from the lead's mock notes; via-tagged so the
+    // Call/Email pills survive. Stays editable even when the lead is locked.
+    final notesSeed = CrmNotesSeed(lead.id, () => [
+          NoteEntry(
+            id: '${lead.id}-n0',
+            author: 'You',
+            time: '2h ago',
+            via: 'Call',
+            body: 'Spoke with ${lead.name.split(' ').first}. Wants a site visit this week for ${lead.project}. Following up with a quote.',
+          ),
+          NoteEntry(
+            id: '${lead.id}-n1',
+            author: 'Anjana Menon',
+            time: '1d ago',
+            via: 'Email',
+            avatarColor: AppColors.blueBright,
+            body: 'Shared capability deck & reference projects for ${lead.project}. Client responded positively.',
+          ),
+          NoteEntry(
+            id: '${lead.id}-n2',
+            author: 'You',
+            time: '3d ago',
+            body: '${lead.industry} enquiry from ${lead.source} — ${lead.company ?? lead.name}. Value around ${lead.value}.',
+          ),
+        ]);
+    final notes = ref.watch(crmNotesProvider(notesSeed));
+
     return Container(
       color: AppColors.bgDetail,
       child: Column(
@@ -113,7 +140,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
-              onTap: () => ref.read(toastProvider.notifier).show('Lead actions'),
+              onTap: () => _openLeadMenu(lead, converted),
             ),
           ),
           Expanded(
@@ -132,14 +159,13 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 SizedBox(height: 14.h),
                 _activityCard(lead),
                 SizedBox(height: 14.h),
-                DetailNotesCard(
-                  count: 3,
-                  notes: [
-                    NoteEntry(author: 'You', time: '2h ago', body: 'Spoke with ${lead.name.split(' ').first}. Wants a site visit this week for ${lead.project}. Following up with a quote.'),
-                    NoteEntry(author: 'Anjana Menon', time: '1d ago', body: 'Shared capability deck & reference projects for ${lead.project}. Client responded positively.'),
-                    NoteEntry(author: 'You', time: '3d ago', body: '${lead.industry} enquiry from ${lead.source} — ${lead.company ?? lead.name}. Value around ${lead.value}.'),
-                  ],
-                  onSend: () => ref.read(toastProvider.notifier).show('Note added'),
+                NotesThread(
+                  key: _notesKey,
+                  notes: notes,
+                  onAddNote: (body, atts) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, const NoteAuthor()),
+                  onAddReply: (noteId, body) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, const NoteAuthor()),
                 ),
                 SizedBox(height: 14.h),
                 _activityLogCard(lead),
@@ -818,7 +844,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           SizedBox(width: 10.w),
           _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
           SizedBox(width: 10.w),
-          _squareAction(PhosphorIconsBold.notePencil, AppColors.white, () => ref.read(toastProvider.notifier).show('Add a note'), border: const Color(0xFFB9C2D8), borderWidth: 1.5),
+          _squareAction(PhosphorIconsBold.notePencil, AppColors.white, _focusNotes, border: const Color(0xFFB9C2D8), borderWidth: 1.5),
         ],
       ),
     );

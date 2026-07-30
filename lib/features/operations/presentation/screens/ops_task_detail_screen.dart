@@ -382,7 +382,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 Text('$done/${subs.length} done', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
             ],
           ),
-          for (int i = 0; i < subs.length; i++) _subtaskRow(subs[i], locked),
+          for (int i = 0; i < subs.length; i++) _subtaskRow(taskId, i, subs[i], locked),
           if (!locked) ...[
             SizedBox(height: 12.h),
             Row(
@@ -402,7 +402,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                       style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody),
                       cursorColor: AppColors.blueBright,
                       textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _addSubtask(subs),
+                      onSubmitted: (_) => _addSubtask(taskId),
                       decoration: InputDecoration(
                         isDense: true,
                         border: InputBorder.none,
@@ -414,7 +414,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 ),
                 SizedBox(width: 9.w),
                 GestureDetector(
-                  onTap: () => _addSubtask(subs),
+                  onTap: () => _addSubtask(taskId),
                   child: Container(
                     width: 40.w,
                     height: 40.h,
