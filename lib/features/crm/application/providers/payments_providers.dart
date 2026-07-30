@@ -19,10 +19,44 @@ final paymentsProvider = FutureProvider<List<Payment>>(
   (ref) => ref.watch(paymentsRepositoryProvider).getPayments(),
 );
 
+/// Payments recorded in-session via the "Record payment" sheet (#14). Prepended
+/// to the seed list; replaced by the API on integration.
+final manualPaymentsProvider = StateProvider<List<Payment>>((ref) => const []);
+
+/// Ids of seed installments marked paid in-session (the "settle" flow). Applied
+/// as a status override on top of the seed data.
+final paidOverrideProvider = StateProvider<Set<String>>((ref) => const {});
+
+/// All payments = session additions + seed data, with in-session "settle"
+/// overrides applied. The single source the list and drawer read from.
+final allPaymentsProvider = Provider<List<Payment>>((ref) {
+  final seed = ref.watch(paymentsProvider).valueOrNull ?? const [];
+  final manual = ref.watch(manualPaymentsProvider);
+  final paid = ref.watch(paidOverrideProvider);
+  final resolved = [
+    for (final p in seed)
+      if (paid.contains(p.id) && p.status != 'paid')
+        Payment(
+          id: p.id,
+          custId: p.custId,
+          invId: p.invId,
+          label: p.label,
+          amount: p.amount,
+          amountNum: p.amountNum,
+          method: p.method,
+          status: 'paid',
+          date: p.date,
+          owner: p.owner,
+        )
+      else
+        p,
+  ];
+  return [...manual, ...resolved];
+});
+
 /// Look up a single payment by id (detail screen).
 final paymentByIdProvider = Provider.family<Payment?, String>((ref, id) {
-  final payments = ref.watch(paymentsProvider).valueOrNull;
-  if (payments == null) return null;
+  final payments = ref.watch(allPaymentsProvider);
   for (final p in payments) {
     if (p.id == id) return p;
   }

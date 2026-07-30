@@ -3,6 +3,7 @@ import '../../domain/entities/customer.dart';
 import '../../domain/repositories/customers_repository.dart';
 import '../../infrastructure/data_sources/local/customers_mock_ds.dart';
 import '../../infrastructure/repositories/customers_repository_impl.dart';
+import '../filters/customers_filter_spec.dart';
 
 /// DI seam: override in `bootstrap` to inject a real API-backed repo.
 final customersRepositoryProvider = Provider<CustomersRepository>(
