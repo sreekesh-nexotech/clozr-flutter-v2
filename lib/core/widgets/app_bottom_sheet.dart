@@ -13,6 +13,10 @@ Future<T?> showClozrSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: isScrollControlled,
+    // Present on the root navigator so the sheet (and its scrim) sits ABOVE the
+    // shell's bottom nav — otherwise the nav overlaps the sticky footer / Apply
+    // CTA on nav-bearing screens like the dashboards and list filters (#6).
+    useRootNavigator: true,
     backgroundColor: Colors.transparent,
     barrierColor: AppColors.scrim,
     builder: (ctx) => ClozrSheetContainer(child: builder(ctx)),
