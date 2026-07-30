@@ -26,7 +26,10 @@ class OpsSubtasksNotifier extends StateNotifier<List<Subtask>> {
 /// Subtasks for a task, keyed by task id. Seeded from the task entity.
 final opsSubtasksProvider =
     StateNotifierProvider.family<OpsSubtasksNotifier, List<Subtask>, String>((ref, taskId) {
-  final task = ref.read(opsTaskByIdProvider(taskId));
+  // watch (not read): the tasks source is async, so on cold navigation the task
+  // is null on the first frame. Watching re-seeds the notifier once the task
+  // resolves instead of sticking with an empty seed.
+  final task = ref.watch(opsTaskByIdProvider(taskId));
   final seed = <Subtask>[
     for (final s in task?.subtasks ?? const <Subtask>[])
       Subtask(title: s.title, done: s.done, who: s.who, due: s.due),
