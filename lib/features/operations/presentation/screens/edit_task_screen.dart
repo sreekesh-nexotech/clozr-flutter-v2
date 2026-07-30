@@ -44,21 +44,12 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
   String _weight = '1';
   String _dept = 'Projects';
   bool _milestone = false;
-  String _colorName = 'Blue';
   double _progress = 0;
   bool _hasSubs = false;
 
   static const _ttypes = ['Task', 'Approval', 'Site visit', 'Meeting'];
   static const _depts = ['Projects', 'Design', 'MEP', 'Workshop', 'Snagging', 'Accounts'];
   static const _weights = ['1', '2', '3', '4', '5'];
-  static const _colors = <(String, Color)>[
-    ('Blue', AppColors.blueBright),
-    ('Green', AppColors.success),
-    ('Amber', AppColors.warning),
-    ('Purple', AppColors.pending),
-    ('Red', AppColors.error),
-    ('Gray', AppColors.textMuted),
-  ];
 
   @override
   void dispose() {
@@ -109,7 +100,6 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
       _weight = '${task.weight}';
       _dept = task.dept;
       _milestone = task.milestone;
-      _colorName = task.color.name;
       _hasSubs = task.subtasks.isNotEmpty;
       _progress = (task.computedProgress(task.subtasks)).toDouble();
     }
@@ -255,13 +245,6 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
         ),
         SizedBox(height: 14.h),
         _milestoneToggle(),
-        SizedBox(height: 14.h),
-        _label('Color tag'),
-        SizedBox(height: 7.h),
-        Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final (name, color) in _colors)
-            OpsFormChip(label: name, selected: _colorName == name, tone: color, onTap: () => setState(() { _colorName = name; _dirtied(); })),
-        ]),
         const OpsSectionLabel('Progress'),
         if (!_hasSubs) _progressSlider() else _calculatedProgress(),
       ],

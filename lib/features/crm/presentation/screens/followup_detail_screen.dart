@@ -6,11 +6,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/models/note.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
@@ -28,11 +32,41 @@ const _fuKindIcons = <String, IconData>{
   'Payment': PhosphorIconsRegular.currencyInr,
 };
 
-class FollowupDetailScreen extends ConsumerWidget {
+class FollowupDetailScreen extends ConsumerStatefulWidget {
   const FollowupDetailScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FollowupDetailScreen> createState() => _FollowupDetailScreenState();
+}
+
+class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
+  final _notesKey = GlobalKey<NotesThreadState>();
+
+  /// Scrolls the notes card into view and focuses the composer (#13).
+  void _focusNotes() {
+    final ctx = _notesKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+    }
+    _notesKey.currentState?.focusComposer();
+  }
+
+  void _openFollowupMenu(Followup fu) {
+    final toast = ref.read(toastProvider.notifier);
+    showActionMenu(
+      context,
+      actions: [
+        MenuAction(icon: PhosphorIconsRegular.pencilSimple, label: 'Edit follow-up', onTap: () => toast.show('Edit follow-up')),
+        MenuAction(icon: PhosphorIconsRegular.calendarPlus, label: 'Reschedule', onTap: () => toast.show('Reschedule follow-up')),
+        MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
+        MenuAction(icon: PhosphorIconsRegular.trash, label: 'Delete follow-up', destructive: true, onTap: () => toast.show('Follow-up deleted')),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     final fu = ref.watch(followupByIdProvider(id));
 
@@ -78,6 +112,11 @@ class FollowupDetailScreen extends ConsumerWidget {
       }
     }
 
+    // Notes thread (#13) — follow-ups start with an empty thread; the shared
+    // composer stays usable regardless of the follow-up's status.
+    final notesSeed = CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[]);
+    final notes = ref.watch(crmNotesProvider(notesSeed));
+
     return Container(
       color: AppColors.bgDetail,
       child: Column(
@@ -88,7 +127,7 @@ class FollowupDetailScreen extends ConsumerWidget {
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
-              onTap: () => ref.read(toastProvider.notifier).show('Follow-up actions'),
+              onTap: () => _openFollowupMenu(fu),
             ),
           ),
           Expanded(
@@ -103,7 +142,14 @@ class FollowupDetailScreen extends ConsumerWidget {
                 SizedBox(height: 14.h),
                 _filesCard(ref),
                 SizedBox(height: 14.h),
-                _notesCard(ref),
+                NotesThread(
+                  key: _notesKey,
+                  notes: notes,
+                  onAddNote: (body, atts) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, const NoteAuthor()),
+                  onAddReply: (noteId, body) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, const NoteAuthor()),
+                ),
                 SizedBox(height: 14.h),
                 _activityCard(meta, owner),
               ],
@@ -276,53 +322,6 @@ class FollowupDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _notesCard(WidgetRef ref) {
-    return ClozrCard(
-      radius: 18,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(PhosphorIconsRegular.note, size: 16.sp, color: AppColors.textLabelAlt),
-              SizedBox(width: 7.w),
-              Text('Notes', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-            ],
-          ),
-          SizedBox(height: 12.h),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 42.h,
-                  padding: EdgeInsets.symmetric(horizontal: 13.w),
-                  alignment: Alignment.centerLeft,
-                  decoration: BoxDecoration(
-                    color: AppColors.bgScreen,
-                    borderRadius: BorderRadius.circular(11.r),
-                    border: Border.all(color: const Color(0xFFE6E7EA)),
-                  ),
-                  child: Text('Add a note…', style: AppText.body(color: AppColors.textPlaceholder)),
-                ),
-              ),
-              SizedBox(width: 9.w),
-              GestureDetector(
-                onTap: () => ref.read(toastProvider.notifier).show('Note added'),
-                child: Container(
-                  width: 42.w,
-                  height: 42.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
-                  child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 16.sp, color: AppColors.white),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _activityCard(StatusMeta meta, dynamic owner) {
     final items = <ActivityItem>[
       ActivityItem(icon: PhosphorIconsRegular.arrowsClockwise, tone: AppColors.blueBright, bg: AppColors.tintBlue, title: 'Status set to ${meta.label}', sub: '${owner.name} · 2 hours ago'),
@@ -358,7 +357,7 @@ class FollowupDetailScreen extends ConsumerWidget {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => ref.read(toastProvider.notifier).show('Add a note'),
+            onTap: _focusNotes,
             child: Container(
               width: 48.w,
               height: 48.w,

@@ -6,12 +6,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/ops_notes_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
 import '../../domain/entities/ops_task.dart';
@@ -32,6 +35,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   String _tab = 'details';
   String? _status;
   final Set<String> _closedGroups = {};
+  final _notesKey = GlobalKey<NotesThreadState>();
 
   @override
   Widget build(BuildContext context) {
@@ -72,8 +76,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                 if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
                 SizedBox(height: 14.h),
                 _tabsCard(project, meta, projTasks, locked),
-                SizedBox(height: 14.h),
-                const OpsNotesCard(initialNotes: []),
+                NotesThread(
+                  key: _notesKey,
+                  notes: ref.watch(opsNotesProvider(project.id)),
+                  onAddNote: (body, atts) => ref.read(opsNotesProvider(project.id).notifier).addNote(body, atts),
+                  onAddReply: (noteId, body) => ref.read(opsNotesProvider(project.id).notifier).addReply(noteId, body),
+                ),
                 SizedBox(height: 14.h),
                 OpsAuditLog(entries: _audit(project, meta, mgr.name)),
               ],
@@ -96,7 +104,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         onBack: () => context.pop(),
         trailing: DetailIconAction(
           icon: PhosphorIconsBold.dotsThreeVertical,
-          onTap: () => ref.read(toastProvider.notifier).show('Project actions'),
+          onTap: _openMenu,
         ),
       ),
     );
@@ -452,6 +460,44 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       AuditEntry(icon: PhosphorIconsRegular.arrowsClockwise, tone: AppColors.blueBright, bg: AppColors.blueSubtle, title: 'Status changed to ${meta.label}', sub: '$mgrName · 28 Jun 2026'),
       AuditEntry(icon: PhosphorIconsRegular.plusCircle, tone: AppColors.pending, bg: AppColors.tintPurple, title: 'Project created', sub: '$mgrName · ${p.start}'),
     ];
+  }
+
+  Future<void> _openMenu() async {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final project = ref.read(projectByIdProvider(id));
+    if (project == null) return;
+    final status = _status ?? project.status;
+    final locked = status == 'completed' || status == 'cancelled';
+
+    await showActionMenu(
+      context,
+      title: project.name,
+      actions: [
+        MenuAction(
+          icon: PhosphorIconsRegular.pencilSimple,
+          label: 'Edit project',
+          enabled: !locked,
+          sublabel: locked ? 'Locked while $status' : null,
+          onTap: () => context.push('${Routes.editProject}?id=${project.id}'),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.arrowsClockwise,
+          label: 'Change status',
+          onTap: _openStatusSheet,
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.notePencil,
+          label: 'Add note',
+          onTap: () => _notesKey.currentState?.focusComposer(),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.archive,
+          label: 'Archive project',
+          destructive: true,
+          onTap: () => ref.read(toastProvider.notifier).show('Archive project — coming soon'),
+        ),
+      ],
+    );
   }
 
   Future<void> _openStatusSheet() async {

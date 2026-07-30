@@ -8,7 +8,7 @@ import 'ops_tasks_providers.dart';
 /// append. Seeded once from the record's mock notes and kept in memory for the
 /// session (a real API-backed store slots in behind the same interface).
 class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
-  OpsNotesNotifier(List<NoteEntry> seed) : super(seed);
+  OpsNotesNotifier(super.seed);
 
   static const _me = NoteAuthor();
 

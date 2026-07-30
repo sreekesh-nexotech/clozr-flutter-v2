@@ -431,50 +431,56 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     );
   }
 
-  Widget _subtaskRow(Subtask s, bool locked) {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 11.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: locked ? null : () => setState(() => s.done = !s.done),
-            child: Container(
-              width: 22.w,
-              height: 22.w,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: s.done ? AppColors.navy : AppColors.white,
-                borderRadius: BorderRadius.circular(7.r),
-                border: s.done ? null : Border.all(color: const Color(0xFFC9CCD2), width: 1.5),
+  Widget _subtaskRow(String taskId, int index, Subtask s, bool locked) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => context.push('${Routes.opsSubtask}?taskId=$taskId&i=$index'),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 11.h),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: locked ? null : () => ref.read(opsSubtasksProvider(taskId).notifier).toggle(index),
+              child: Container(
+                width: 22.w,
+                height: 22.w,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: s.done ? AppColors.navy : AppColors.white,
+                  borderRadius: BorderRadius.circular(7.r),
+                  border: s.done ? null : Border.all(color: const Color(0xFFC9CCD2), width: 1.5),
+                ),
+                child: Icon(PhosphorIconsBold.check, size: 13.sp, color: s.done ? AppColors.white : Colors.transparent),
               ),
-              child: Icon(PhosphorIconsBold.check, size: 13.sp, color: s.done ? AppColors.white : Colors.transparent),
             ),
-          ),
-          SizedBox(width: 11.w),
-          Expanded(
-            child: Text(s.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.custom(
-                    size: 13.5,
-                    weight: FontWeight.w600,
-                    color: s.done ? AppColors.textPlaceholder : AppColors.textBody,
-                    decoration: s.done ? TextDecoration.lineThrough : null)),
-          ),
-          if (s.due.isNotEmpty) ...[
+            SizedBox(width: 11.w),
+            Expanded(
+              child: Text(s.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w600,
+                      color: s.done ? AppColors.textPlaceholder : AppColors.textBody,
+                      decoration: s.done ? TextDecoration.lineThrough : null)),
+            ),
+            if (s.due.isNotEmpty) ...[
+              SizedBox(width: 8.w),
+              Text(s.due, style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+            ],
             SizedBox(width: 8.w),
-            Text(s.due, style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+            Container(
+              width: 24.w,
+              height: 24.w,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+              child: Text(MockUsers.of(s.who).initials, style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
+            ),
+            SizedBox(width: 6.w),
+            Icon(PhosphorIconsRegular.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
           ],
-          SizedBox(width: 8.w),
-          Container(
-            width: 24.w,
-            height: 24.w,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-            child: Text(MockUsers.of(s.who).initials, style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -615,13 +621,11 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     return entries;
   }
 
-  void _addSubtask(List<Subtask> subs) {
+  void _addSubtask(String taskId) {
     final text = _subCtrl.text.trim();
     if (text.isEmpty) return;
-    setState(() {
-      subs.add(Subtask(title: text, done: false, who: 'me', due: ''));
-      _subCtrl.clear();
-    });
+    ref.read(opsSubtasksProvider(taskId).notifier).add(text);
+    _subCtrl.clear();
   }
 
   Future<void> _openMenu() async {

@@ -6,7 +6,7 @@ import 'ops_tasks_providers.dart';
 /// standalone subtask page both read and write this, so a done toggle on either
 /// surface stays in sync. Seeded once from the task's mock subtasks.
 class OpsSubtasksNotifier extends StateNotifier<List<Subtask>> {
-  OpsSubtasksNotifier(List<Subtask> seed) : super(seed);
+  OpsSubtasksNotifier(super.seed);
 
   void toggle(int index) {
     if (index < 0 || index >= state.length) return;

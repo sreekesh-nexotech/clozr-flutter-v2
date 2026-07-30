@@ -1,13 +1,13 @@
-import 'package:flutter/widgets.dart';
-
 /// Spec-driven filter engine — feature-agnostic model layer.
 ///
 /// A module describes its drawer once as a [FilterSpec] (sections → fields),
-/// the generic [showFilterSheet] renders it, and the module's list uses the
-/// pure [FilterMatch] helpers to evaluate the applied [FilterValues] against
-/// each row. Ported 1:1 from the web prototype's unified filter (`_fspec` /
+/// the generic filter sheet renders it, and the module's list uses the pure
+/// [FilterMatch] helpers to evaluate the applied [FilterValues] against each
+/// row. Ported 1:1 from the web prototype's unified filter (`_fspec` /
 /// `fMatch`), so semantics match the audit exactly.
 library;
+
+import 'package:flutter/widgets.dart';
 
 /// The seven control patterns from the audit (§1). Every drawer filter in the
 /// app is one of these.

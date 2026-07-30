@@ -6,11 +6,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/models/note.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
@@ -66,8 +70,35 @@ class CustomerDetailScreen extends ConsumerStatefulWidget {
 class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   int _tab = 0;
   bool _infoMore = false;
+  final _notesKey = GlobalKey<NotesThreadState>();
 
   static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Payments', 'Leads', 'Files'];
+
+  /// Scrolls the notes card into view and focuses the composer (#13).
+  void _focusNotes() {
+    final ctx = _notesKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+    }
+    _notesKey.currentState?.focusComposer();
+  }
+
+  void _openCustomerMenu(Customer cust) {
+    final toast = ref.read(toastProvider.notifier);
+    final first = cust.name.split(' ').first;
+    showActionMenu(
+      context,
+      actions: [
+        MenuAction(icon: PhosphorIconsFill.phone, label: 'Call customer', onTap: () => toast.show('Calling $first…')),
+        MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => toast.show('Opening WhatsApp…')),
+        MenuAction(icon: PhosphorIconsRegular.filePlus, label: 'Create quote', onTap: () => context.push(Routes.addQuote)),
+        MenuAction(icon: PhosphorIconsRegular.wallet, label: 'Record payment', onTap: () => toast.show('Recording payment…')),
+        MenuAction(icon: PhosphorIconsFill.trendUp, label: 'Create upsell lead', onTap: () => toast.show('Creating upsell opportunity…')),
+        MenuAction(icon: PhosphorIconsRegular.archive, label: 'Archive customer', destructive: true, onTap: () => toast.show('Archive — coming soon')),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +119,32 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
     final meta = StatusMeta$.customer[cust.status] ?? StatusMeta$.customer['active']!;
 
+    // Notes thread (#13) — seeded from the customer's mock notes, via-tagged.
+    final notesSeed = CrmNotesSeed(cust.id, () => [
+          NoteEntry(
+            id: '${cust.id}-n0',
+            author: 'You',
+            time: '2h ago',
+            via: 'Call',
+            body: 'Spoke with ${cust.name.split(' ').first}. Ongoing work on track; discussing an upsell.',
+          ),
+          NoteEntry(
+            id: '${cust.id}-n1',
+            author: 'Anjana Menon',
+            time: '1d ago',
+            via: 'Email',
+            avatarColor: AppColors.blueBright,
+            body: 'Shared the revised BOQ. Client happy with progress on ${cust.project}.',
+          ),
+          NoteEntry(
+            id: '${cust.id}-n2',
+            author: 'You',
+            time: '3d ago',
+            body: '${cust.industry} account since ${cust.since}. Value ${cust.value}.',
+          ),
+        ]);
+    final notes = ref.watch(crmNotesProvider(notesSeed));
+
     return Container(
       color: AppColors.bgDetail,
       child: Column(
@@ -98,7 +155,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
-              onTap: () => ref.read(toastProvider.notifier).show('Customer actions'),
+              onTap: () => _openCustomerMenu(cust),
             ),
           ),
           Expanded(
@@ -113,14 +170,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 SizedBox(height: 14.h),
                 _activityCard(cust),
                 SizedBox(height: 14.h),
-                DetailNotesCard(
-                  count: 3,
-                  notes: [
-                    NoteEntry(author: 'You', time: '2h ago', body: 'Spoke with ${cust.name.split(' ').first}. Ongoing work on track; discussing an upsell.'),
-                    NoteEntry(author: 'Anjana Menon', time: '1d ago', body: 'Shared the revised BOQ. Client happy with progress on ${cust.project}.'),
-                    NoteEntry(author: 'You', time: '3d ago', body: '${cust.industry} account since ${cust.since}. Value ${cust.value}.'),
-                  ],
-                  onSend: () => ref.read(toastProvider.notifier).show('Note added'),
+                NotesThread(
+                  key: _notesKey,
+                  notes: notes,
+                  onAddNote: (body, atts) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, const NoteAuthor()),
+                  onAddReply: (noteId, body) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, const NoteAuthor()),
                 ),
                 SizedBox(height: 14.h),
                 _activityLogCard(cust),
@@ -809,7 +865,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           SizedBox(width: 10.w),
           _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
           SizedBox(width: 10.w),
-          _squareAction(PhosphorIconsBold.notePencil, AppColors.white, () => ref.read(toastProvider.notifier).show('Add a note'), border: const Color(0xFFB9C2D8), borderWidth: 1.5),
+          _squareAction(PhosphorIconsBold.notePencil, AppColors.white, _focusNotes, border: const Color(0xFFB9C2D8), borderWidth: 1.5),
         ],
       ),
     );

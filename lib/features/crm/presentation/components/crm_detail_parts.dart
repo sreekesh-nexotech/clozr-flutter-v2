@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/widgets/app_card.dart';
 
 /// One entry on a detail-screen activity timeline.
 class ActivityItem {
@@ -196,128 +194,5 @@ class DetailTabEmpty extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-/// The Notes card: header, a read-only "add a note" row (send → toast) and a
-/// static list of author notes. Shared by lead & customer detail.
-class DetailNotesCard extends StatelessWidget {
-  const DetailNotesCard({super.key, required this.count, required this.notes, required this.onSend});
-  final int count;
-  final List<NoteEntry> notes;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClozrCard(
-      radius: 18,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text('Notes', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-              SizedBox(width: 8.w),
-              Text('$count ${count == 1 ? 'note' : 'notes'}', style: AppText.captionStrong(color: AppColors.textPlaceholder)),
-            ],
-          ),
-          SizedBox(height: 13.h),
-          Row(
-            children: [
-              Container(
-                width: 34.w,
-                height: 34.w,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                child: Text('MV', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.white)),
-              ),
-              SizedBox(width: 10.w),
-              Expanded(
-                child: Container(
-                  height: 46.h,
-                  padding: EdgeInsets.symmetric(horizontal: 14.w),
-                  alignment: Alignment.centerLeft,
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: const Color(0xFFE6E7EA)),
-                  ),
-                  child: Text('Add a note…', style: AppText.body(color: AppColors.textPlaceholder)),
-                ),
-              ),
-              SizedBox(width: 10.w),
-              GestureDetector(
-                onTap: onSend,
-                child: Container(
-                  width: 46.w,
-                  height: 46.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-                  child: Icon(PhosphorIconsFill.paperPlaneRight, size: 18.sp, color: AppColors.white),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 6.h),
-          for (int i = 0; i < notes.length; i++)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 13.h),
-              decoration: BoxDecoration(
-                border: i == notes.length - 1 ? null : const Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 30.w,
-                    height: 30.w,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: notes[i].isYou ? AppColors.navy : const Color(0xFFEEF1F4),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(notes[i].initials,
-                        style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: notes[i].isYou ? AppColors.white : AppColors.navy)),
-                  ),
-                  SizedBox(width: 11.w),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(notes[i].author, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                            SizedBox(width: 8.w),
-                            Text(notes[i].time, style: AppText.micro()),
-                          ],
-                        ),
-                        SizedBox(height: 4.h),
-                        Text(notes[i].body,
-                            style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textSecondary).copyWith(height: 1.55)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A single note in a [DetailNotesCard].
-class NoteEntry {
-  final String author;
-  final String time;
-  final String body;
-  const NoteEntry({required this.author, required this.time, required this.body});
-
-  bool get isYou => author == 'You';
-  String get initials {
-    final parts = author.trim().split(RegExp(r'\s+'));
-    return parts.take(2).map((w) => w.isEmpty ? '' : w[0].toUpperCase()).join();
   }
 }
