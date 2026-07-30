@@ -83,9 +83,11 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       ('Closed today', '$closedToday', AppColors.textPrimary),
     ];
     return Container(
-      color: AppColors.white,
       padding: EdgeInsets.fromLTRB(18.w, 56.h, 18.w, 12.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
