@@ -31,12 +31,19 @@ class HeaderHairline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: -18.w),
-      child: Container(
-        height: 1,
-        color: AppColors.borderCardSoft,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bleedWidth = constraints.maxWidth + 36.w;
+        return OverflowBox(
+          minWidth: bleedWidth,
+          maxWidth: bleedWidth,
+          alignment: Alignment.center,
+          child: Container(
+            height: 1,
+            color: AppColors.borderCardSoft,
+          ),
+        );
+      },
     );
   }
 }
