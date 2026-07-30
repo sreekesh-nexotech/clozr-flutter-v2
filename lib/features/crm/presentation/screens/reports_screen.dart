@@ -162,7 +162,7 @@ class ReportsScreen extends ConsumerWidget {
           Text('Pipeline stages · all leads', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
           SizedBox(height: 16.h),
           SizedBox(
-            height: 130.h,
+            height: 150.h,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
