@@ -14,7 +14,6 @@ import '../../domain/lms_logic.dart';
 import '../components/lms_course_card.dart';
 import '../components/lms_footer.dart';
 import '../components/lms_header.dart';
-import '../lms_nav.dart';
 
 /// Training Overview — stat tiles, top courses, recent activity and the
 /// new-course CTA.
@@ -56,7 +55,7 @@ class LmsOverviewScreen extends ConsumerWidget {
       child: Column(
         children: [
           LmsHeader(
-            onBack: () => lmsBack(context),
+            onBack: () => context.canPop() ? context.pop() : context.go(Routes.dashboard),
             leading: Container(
               width: 38.w,
               height: 38.w,
