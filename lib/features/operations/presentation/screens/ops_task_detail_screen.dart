@@ -6,13 +6,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/ops_notes_providers.dart';
+import '../../application/providers/ops_subtasks_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
 import '../../domain/entities/ops_task.dart';
@@ -30,9 +34,9 @@ class OpsTaskDetailScreen extends ConsumerStatefulWidget {
 
 class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   String? _status;
-  List<Subtask>? _subtasks;
   List<String>? _waitingOn;
   final _subCtrl = TextEditingController();
+  final _notesKey = GlobalKey<NotesThreadState>();
 
   @override
   void dispose() {
@@ -59,8 +63,9 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       );
     }
 
-    // Local mutable working copies (initialised from the entity once).
-    final subtasks = _subtasks ??= [for (final s in task.subtasks) Subtask(title: s.title, done: s.done, who: s.who, due: s.due)];
+    // Subtasks come from the shared provider so toggles stay in sync with the
+    // standalone subtask page (#12). Dependencies remain a local working copy.
+    final subtasks = ref.watch(opsSubtasksProvider(id));
     final waitingOn = _waitingOn ??= List.of(task.waitingOn);
     final status = _status ?? task.status;
 
@@ -85,13 +90,17 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 SizedBox(height: 14.h),
                 _detailsCard(task, meta, progress, locked),
                 SizedBox(height: 14.h),
-                _subtasksCard(subtasks, locked),
+                _subtasksCard(task.id, subtasks, locked),
                 if (!locked || _hasDeps(task, waitingOn, allTasks)) ...[
                   SizedBox(height: 14.h),
                   _depsCard(task, waitingOn, allTasks, locked),
                 ],
-                SizedBox(height: 14.h),
-                OpsNotesCard(initialNotes: task.notes),
+                NotesThread(
+                  key: _notesKey,
+                  notes: ref.watch(opsNotesProvider(task.id)),
+                  onAddNote: (body, atts) => ref.read(opsNotesProvider(task.id).notifier).addNote(body, atts),
+                  onAddReply: (noteId, body) => ref.read(opsNotesProvider(task.id).notifier).addReply(noteId, body),
+                ),
                 SizedBox(height: 14.h),
                 OpsAuditLog(entries: _audit(task, waitingOn)),
               ],
@@ -114,7 +123,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         onBack: () => context.pop(),
         trailing: DetailIconAction(
           icon: PhosphorIconsBold.dotsThreeVertical,
-          onTap: () => ref.read(toastProvider.notifier).show('Task actions'),
+          onTap: _openMenu,
         ),
       ),
     );
@@ -329,18 +338,6 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 ],
               ),
             ),
-          Padding(
-            padding: EdgeInsets.only(top: 10.h, bottom: 2.h),
-            child: Row(
-              children: [
-                Text('Color tag', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
-                const Spacer(),
-                Container(width: 12.w, height: 12.w, decoration: BoxDecoration(color: t.color.hex, borderRadius: BorderRadius.circular(4.r))),
-                SizedBox(width: 7.w),
-                Text(t.color.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: valueColor)),
-              ],
-            ),
-          ),
           if (!locked)
             GestureDetector(
               onTap: () => context.push('${Routes.editTask}?id=${t.id}'),
@@ -368,7 +365,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     );
   }
 
-  Widget _subtasksCard(List<Subtask> subs, bool locked) {
+  Widget _subtasksCard(String taskId, List<Subtask> subs, bool locked) {
     final done = subs.where((s) => s.done).length;
     return ClozrCard(
       radius: 18,
@@ -625,6 +622,58 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       subs.add(Subtask(title: text, done: false, who: 'me', due: ''));
       _subCtrl.clear();
     });
+  }
+
+  Future<void> _openMenu() async {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final task = ref.read(opsTaskByIdProvider(id));
+    if (task == null) return;
+    final status = _status ?? task.status;
+    final locked = status == 'completed' || status == 'cancelled';
+    final all = ref.read(opsTasksListProvider);
+    final wait = _waitingOn ?? task.waitingOn;
+    final hasUnresolvedDep = wait.any((wid) {
+      final wt = all.where((x) => x.id == wid).firstOrNull;
+      return wt != null && wt.status != 'completed' && wt.status != 'cancelled';
+    });
+    final blockedDel = hasUnresolvedDep || ref.read(opsSubtasksProvider(id)).any((s) => !s.done);
+
+    await showActionMenu(
+      context,
+      title: task.subject,
+      actions: [
+        MenuAction(
+          icon: PhosphorIconsRegular.pencilSimple,
+          label: 'Edit task',
+          enabled: !locked,
+          sublabel: locked ? 'Locked while $status' : null,
+          onTap: () => context.push('${Routes.editTask}?id=${task.id}'),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.arrowsClockwise,
+          label: 'Change status',
+          onTap: _openStatusSheet,
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.notePencil,
+          label: 'Add note',
+          onTap: () => _notesKey.currentState?.focusComposer(),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.copy,
+          label: 'Duplicate task',
+          onTap: () => ref.read(toastProvider.notifier).show('Duplicate task — coming soon'),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete task',
+          destructive: true,
+          enabled: !blockedDel,
+          sublabel: blockedDel ? 'Resolve subtasks & dependencies first' : null,
+          onTap: () => ref.read(toastProvider.notifier).show('Delete task — coming soon'),
+        ),
+      ],
+    );
   }
 
   Future<void> _openStatusSheet() async {

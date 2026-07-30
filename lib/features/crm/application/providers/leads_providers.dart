@@ -3,6 +3,7 @@ import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../../infrastructure/data_sources/local/leads_mock_ds.dart';
 import '../../infrastructure/repositories/leads_repository_impl.dart';
+import '../filters/leads_filter_spec.dart';
 
 /// DI seam: override this in `bootstrap` to inject a real API-backed repo.
 final leadsRepositoryProvider = Provider<LeadsRepository>(
@@ -46,14 +47,16 @@ final leadBaseProvider = Provider<List<Lead>>((ref) {
   return all ? leads : leads.where((l) => l.isMine).toList();
 });
 
-/// Leads filtered by the active tab + search query.
+/// Leads filtered by the active tab + search query + drawer filters.
 final visibleLeadsProvider = Provider<List<Lead>>((ref) {
   final base = ref.watch(leadBaseProvider);
   final tab = ref.watch(leadTabProvider);
   final q = ref.watch(leadSearchProvider).trim().toLowerCase();
+  final filters = ref.watch(leadFiltersProvider);
 
   Iterable<Lead> out = base;
   if (tab != 'all') out = out.where((l) => l.status == tab);
+  if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
   if (q.isNotEmpty) {
     out = out.where((l) =>
         l.name.toLowerCase().contains(q) ||

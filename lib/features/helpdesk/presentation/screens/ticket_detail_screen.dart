@@ -6,22 +6,19 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/ticket_notes_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
 import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../util/ticket_sla.dart';
-
-class _LocalNote {
-  final String body;
-  final bool internal;
-  const _LocalNote(this.body, this.internal);
-}
 
 /// Ticket detail — summary + status/assignee, SLA banner (paused when Pending),
 /// details, linked tasks, an Internal-note / Reply composer and the audit log.
@@ -35,15 +32,6 @@ class TicketDetailScreen extends ConsumerStatefulWidget {
 class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   String? _status; // local status override
   List<String>? _assignees; // local assignee override
-  int _noteMode = 0; // 0 = internal, 1 = reply
-  final _noteCtrl = TextEditingController();
-  final List<_LocalNote> _notes = [];
-
-  @override
-  void dispose() {
-    _noteCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +45,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
         color: AppColors.bgScreen,
         child: Column(
           children: [
-            _header(subject: 'Not found', fromBoard: fromBoard),
+            _header(subject: 'Not found', fromBoard: fromBoard, ticket: null),
             const Expanded(child: Center(child: Text('Ticket not found'))),
           ],
         ),
@@ -71,7 +59,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          _header(subject: t.subject, fromBoard: fromBoard),
+          _header(subject: t.subject, fromBoard: fromBoard, ticket: t),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
@@ -83,8 +71,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                 _detailsCard(t),
                 SizedBox(height: 14.h),
                 _linkedTasksCard(t),
-                SizedBox(height: 14.h),
-                _notesCard(),
+                _notesCard(t),
                 SizedBox(height: 14.h),
                 _auditCard(t),
               ],
@@ -96,7 +83,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   }
 
   // ── Header ──
-  Widget _header({required String subject, required bool fromBoard}) {
+  Widget _header({required String subject, required bool fromBoard, required Ticket? ticket}) {
     return Container(
       color: AppColors.white,
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
@@ -134,7 +121,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           ),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => ref.read(toastProvider.notifier).show('Ticket actions'),
+            onTap: ticket == null ? null : () => _openTicketMenu(ticket),
             child: SizedBox(
               width: 34.w,
               height: 34.w,
@@ -537,158 +524,24 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   }
 
   // ── Notes ──
-  Widget _notesCard() {
-    return ClozrCard(
-      radius: 18,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(PhosphorIconsRegular.note, size: 16.sp, color: AppColors.textLabelAlt),
-              SizedBox(width: 7.w),
-              Text('Notes', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-            ],
-          ),
-          SizedBox(height: 12.h),
-          Container(
-            padding: EdgeInsets.all(4.r),
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-            child: Row(
-              children: [
-                _noteSeg('Internal note', PhosphorIconsRegular.lockSimple, 0),
-                SizedBox(width: 6.w),
-                _noteSeg('Reply', PhosphorIconsRegular.chatTeardropText, 1),
-              ],
-            ),
-          ),
-          SizedBox(height: 10.h),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 42.h,
-                  padding: EdgeInsets.symmetric(horizontal: 13.w),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppColors.bgScreen,
-                    borderRadius: BorderRadius.circular(11.r),
-                    border: Border.all(color: AppColors.borderCard),
-                  ),
-                  child: TextField(
-                    controller: _noteCtrl,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody),
-                    cursorColor: AppColors.blueBright,
-                    onSubmitted: (_) => _addNote(),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      hintText: 'Add a note…',
-                      hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(width: 9.w),
-              GestureDetector(
-                onTap: _addNote,
-                child: Container(
-                  width: 42.w,
-                  height: 42.h,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
-                  child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 16.sp, color: AppColors.white),
-                ),
-              ),
-            ],
-          ),
-          for (final n in _notes) _noteRow(n),
-        ],
-      ),
+  //
+  // Migrated to the shared [NotesThread] (#13). The thread's main composer posts
+  // an internal note (prepends a NoteEntry); each note's inline reply affordance
+  // posts a reply (appends a NoteReply). Both stay usable on Closed tickets.
+  Widget _notesCard(Ticket t) {
+    final notes = ref.watch(ticketNotesProvider(t.id));
+    final ctrl = ref.read(ticketNotesProvider(t.id).notifier);
+    return NotesThread(
+      notes: notes,
+      onAddNote: (body, atts) {
+        ctrl.addNote(body, atts);
+        ref.read(toastProvider.notifier).show('Internal note added');
+      },
+      onAddReply: (noteId, body) {
+        ctrl.addReply(noteId, body);
+        ref.read(toastProvider.notifier).show('Reply sent');
+      },
     );
-  }
-
-  Widget _noteSeg(String label, IconData icon, int mode) {
-    final active = _noteMode == mode;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _noteMode = mode),
-        child: Container(
-          height: 32.h,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: active ? AppColors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(8.r),
-            boxShadow: active
-                ? [BoxShadow(color: const Color(0xFF101828).withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 1))]
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 13.sp, color: active ? AppColors.navy : AppColors.textMuted),
-              SizedBox(width: 6.w),
-              Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: active ? AppColors.navy : AppColors.textMuted)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _noteRow(_LocalNote n) {
-    return Padding(
-      padding: EdgeInsets.only(top: 13.h),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 28.w,
-            height: 28.w,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-            child: Text('MV', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
-          ),
-          SizedBox(width: 10.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text('You', style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                    SizedBox(width: 7.w),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                      decoration: BoxDecoration(
-                        color: n.internal ? AppColors.bgChipGrey : AppColors.blueSubtle,
-                        borderRadius: BorderRadius.circular(6.r),
-                      ),
-                      child: Text(n.internal ? 'Internal' : 'Reply',
-                          style: AppText.custom(size: 10, weight: FontWeight.w700, color: n.internal ? AppColors.textMuted2 : AppColors.blueBright)),
-                    ),
-                    SizedBox(width: 7.w),
-                    Text('Just now', style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                  ],
-                ),
-                SizedBox(height: 3.h),
-                Text(n.body, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textLabelAlt).copyWith(height: 1.5)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _addNote() {
-    final body = _noteCtrl.text.trim();
-    if (body.isEmpty) return;
-    setState(() {
-      _notes.insert(0, _LocalNote(body, _noteMode == 0));
-      _noteCtrl.clear();
-    });
-    ref.read(toastProvider.notifier).show(_noteMode == 0 ? 'Internal note added' : 'Reply added');
   }
 
   // ── Audit log ──
@@ -773,6 +626,53 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     out.add(_Audit(PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.tintBlue, 'Status changed — New → Open', 'Manoj Varma · ${t.created}'));
     out.add(_Audit(PhosphorIconsRegular.plusCircle, AppColors.navy, AppColors.tintNavy, 'Ticket created', '${t.channel} · ${t.created}'));
     return out;
+  }
+
+  // ── 3-dot overflow menu (#7) ──
+  void _openTicketMenu(Ticket t) {
+    final locked = t.isLocked;
+    showActionMenu(
+      context,
+      title: 'Ticket actions',
+      actions: [
+        MenuAction(
+          icon: PhosphorIconsRegular.pencilSimple,
+          label: 'Edit ticket',
+          enabled: !locked,
+          sublabel: locked ? 'Closed — reopen to edit' : null,
+          onTap: () => context.push('${Routes.editTicket}?id=${t.id}'),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.arrowsClockwise,
+          label: 'Change status',
+          onTap: () => _openStatusSheet(t),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.listChecks,
+          label: 'Create task from ticket',
+          enabled: !locked,
+          sublabel: locked ? 'Closed — reopen to create tasks' : null,
+          onTap: () => ref.read(toastProvider.notifier).show('Create task from ticket'),
+        ),
+        if (locked)
+          MenuAction(
+            icon: PhosphorIconsRegular.archive,
+            label: 'Archive ticket',
+            destructive: true,
+            onTap: () => ref.read(toastProvider.notifier).show('Archive — coming soon'),
+          )
+        else
+          MenuAction(
+            icon: PhosphorIconsRegular.xCircle,
+            label: 'Close ticket',
+            destructive: true,
+            onTap: () {
+              setState(() => _status = 'closed');
+              ref.read(toastProvider.notifier).show('Ticket → Closed');
+            },
+          ),
+      ],
+    );
   }
 
   // ── Status sheet ──

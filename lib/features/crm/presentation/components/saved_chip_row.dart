@@ -21,12 +21,18 @@ class SavedChipRow extends StatelessWidget {
     required this.active,
     required this.onToggle,
     required this.onClear,
+    this.showClearAlways = false,
   });
 
   final List<SavedView> views;
   final Set<String> active;
   final ValueChanged<String> onToggle;
   final VoidCallback onClear;
+
+  /// When true the "Clear filters" chip is shown even if no saved view is
+  /// active (e.g. manual drawer filters are applied). Defaults to false so
+  /// existing callers keep the active-only behaviour.
+  final bool showClearAlways;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +47,7 @@ class SavedChipRow extends StatelessWidget {
               if (i > 0) SizedBox(width: 8.w),
               _chip(views[i]),
             ],
-            if (active.isNotEmpty) ...[
+            if (active.isNotEmpty || showClearAlways) ...[
               SizedBox(width: 8.w),
               _clearChip(),
             ],

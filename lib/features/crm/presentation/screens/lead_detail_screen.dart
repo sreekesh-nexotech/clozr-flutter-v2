@@ -6,11 +6,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/models/note.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
@@ -34,8 +38,48 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   int _tab = 0;
   bool _infoMore = false;
   bool _scoreInfo = false;
+  final _notesKey = GlobalKey<NotesThreadState>();
 
   static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Quotes', 'Files'];
+
+  /// Scrolls the notes card into view and focuses the composer — wired to the
+  /// sticky-bar note-pencil affordance (#13).
+  void _focusNotes() {
+    final ctx = _notesKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+    }
+    _notesKey.currentState?.focusComposer();
+  }
+
+  void _openLeadMenu(Lead lead, bool converted) {
+    final toast = ref.read(toastProvider.notifier);
+    final first = lead.name.split(' ').first;
+    showActionMenu(
+      context,
+      actions: [
+        MenuAction(icon: PhosphorIconsFill.phone, label: 'Call lead', onTap: () => toast.show('Calling $first…')),
+        MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => toast.show('Opening WhatsApp…')),
+        MenuAction(icon: PhosphorIconsRegular.envelopeSimple, label: 'Send email', onTap: () => toast.show('Composing email…')),
+        MenuAction(
+          icon: PhosphorIconsRegular.handshake,
+          label: 'Convert to customer',
+          enabled: !converted,
+          sublabel: converted ? 'Already converted' : null,
+          onTap: () => toast.show('Converting to customer…'),
+        ),
+        MenuAction(icon: PhosphorIconsRegular.userSwitch, label: 'Reassign owner', onTap: () => toast.show('Reassign owner')),
+        MenuAction(
+          icon: PhosphorIconsRegular.pencilSimple,
+          label: 'Edit lead',
+          enabled: !converted,
+          sublabel: converted ? 'Locked — lead converted' : null,
+          onTap: () => context.push('${Routes.addLead}?id=${lead.id}'),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
