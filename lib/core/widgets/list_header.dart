@@ -31,10 +31,12 @@ class HeaderHairline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      margin: EdgeInsets.symmetric(horizontal: -18.w),
-      color: AppColors.borderCardSoft,
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: -18.w),
+      child: Container(
+        height: 1,
+        color: AppColors.borderCardSoft,
+      ),
     );
   }
 }
