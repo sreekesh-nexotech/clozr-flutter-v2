@@ -1,0 +1,349 @@
+clozr.
+List View Filter Audit
+Complete specification of every List View filter across CRM and Products — field types,
+operators, values, multi-select and search support, and defaults — for achieving mobile
+feature parity.
+Source · Web prototype v2.4 	7 modules · 42 drawer filters 	July 2026
+Purpose: complete specification of every List View filter in the Clozr web app, for 1:1 replication in the mobile app. Source of truth: Clozr web prototype v2.4 — values
+extracted directly from the app’s filter configuration, not summarized from memory. Modules covered: Leads · Tasks · Follow-ups · Quotes · Customers · Payments ·
+Products.
+1. Filter control types (global reference)
+Seven control patterns cover every filter in the app. Build these once on mobile, then configure per module.
+Control type 	Behavior 	Operators 	Multi-
+select
+Search
+Checkbox group 	Flat list of predefined values, 1–2 columns. 	Is any of (OR within the group) 	Yes 	No
+Checkbox group + is /
+is not
+Checkbox list with an is / is not segmented toggle above it. 	Is any of · Is not any of 	Yes 	No
+Search & Select
+(searchMulti)
+Searchable, scrollable checkbox list for large datasets (users,
+companies, products). Bounded height, scrolls internally.
+Is any of · Is not any of 	Yes 	Yes
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	1/10
+
+-- 1 of 10 --
+
+Control type 	Behavior 	Operators 	Multi-
+select
+Search
+Radio group 	Single choice, always has a default. 	Is 	No 	No
+Date filter 	Quick-range chips + From/To calendar pickers (month grid, prev/next).
+Chips and custom range are mutually exclusive; Clear resets.
+Is within range (quick) · Is on or after (From only) ·
+Is on or before (To only) · Is between (From+To)
+No (one
+range)
+No
+Number range 	Min / Max numeric inputs. Either bound may be left empty. 	≥ Min · ≤ Max · Between 	No 	No
+Status chips (list
+header)
+Segmented quick-filter tabs above the table, with live counts. Not in the
+drawer.
+Is (single) 	No 	No
+Combination logic
+Across different filters: AND.
+Within one multi-select filter: OR ( is ) or NOT-OR ( is not ).
+Empty filter = inactive (no constraint applied).
+Quick-range date chips — canonical set
+Today · Tomorrow · Yesterday · Next 7 days · Next 30 days · Next 60 days · Next 90 days · Last 7 days · Last 30 days · Last 60 days · Last 90 days ·
+This month · Overdue
+(Each module exposes only the subset listed in its table below — do not add extras.) Overdue = everything strictly before today (no start
+bound). Ranges are inclusive of both ends.
+Drawer behavior (all modules)
+Right-side slide-over, header "Filter by:", scrollable body, sticky footer.
+Footer: Reset All (left) · Save view / Update view · Apply (primary, shows result count).
+Filter icon on the list shows a badge with the active-filter count.
+Saved views: name and save the current filter combination; saved views appear as bookmark chips above the table (apply / remove / clear).
+Filters are draft-then-apply — edits take effect only on Apply.
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	2/10
+
+-- 2 of 10 --
+
+2. Leads
+Drawer title: "Filter by:" · Sections: Lead Information · Ownership & Assignment · Activity & Engagement · Lead Score
+2.1 Status chips (above the table)
+Filter 	Type 	Values 	Multi 	Default
+Lead status 	Status chips (single-select, with counts) 	All · New · Qualified · Quote · Negotiation · Won · Lost · Archived 	No 	All
+2.2 Filter drawer
+# Filter Name 	Field Type 	Operators 	Available Values 	Multi Search Default
+1 Source 	Checkbox group +
+is/is not
+Is any of · Is not any of 	From Settings → Lead Sources: Referral · Website · Walk-in · Instagram ·
+WhatsApp · Exhibition · Architect · Customer
+(upsell) · Other
+(admin-
+configurable)
+Yes No 	None ·
+mode is
+2 Product /
+Service
+Checkbox group (2-
+col) + is/is not
+Is any of · Is not any of 	Derived from catalog products in use 	Yes No 	None ·
+mode is
+3 Stage 	Checkbox group +
+is/is not
+Is any of · Is not any of 	New · Qualified · Quote sent · Negotiation · Won · Lost
+(+ custom stages) 	Yes No 	None ·
+mode is
+4 Aging in
+stage
+Radio 	Is 	Any · Stale 14+ days · Stale 30+ days 	No 	No 	Any
+5 Lead Owner Radio 	Is 	All · Me · Unassigned 	No 	No 	All
+6 Select Users Search & Select +
+is/is not
+Is any of · Is not any of 	All workspace users (placeholder "Search user..") 	Yes Yes 	None ·
+mode is
+7 Team 	Checkbox group +
+is/is not
+Is any of · Is not any of 	All teams 	Yes No 	None ·
+mode is
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	3/10
+
+-- 3 of 10 --
+
+# Filter Name 	Field Type 	Operators 	Available Values 	Multi Search Default
+8 Created 	Date (quick chips +
+From/To calendar)
+Is within · Is on or after · Is
+on or before · Is between
+Today · Yesterday · Last 7 days · Last 30 days · Last 60 days · Last 90 days ·
+This month
+No 	No 	None
+9 Deal value (₹
+lakhs)
+Number range 	≥ Min · ≤ Max · Between 	Free numeric, unit ₹ lakhs (×100,000) 	No 	No 	Empty
+10 Lead Score 	Radio 	Is 	All · Hot (75+) · Warm (45–74) · Cold (<45) 	No 	No 	All
+Note: Lead Score visibility follows the workspace "lead scoring" setting — hide this filter when scoring is disabled.
+3. Tasks
+Drawer title: "Filter tasks by:" · Sections: Assignee · Task type · Priority · Due date
+3.1 Status chips (above the table)
+Filter 	Type 	Values 	Multi 	Default
+Task status 	Status chips (single-select, with counts) 	All · My tasks · Overdue · To do · In Progress · Blocked · Done 	No 	All
+3.2 Filter drawer
+# Filter
+Name
+Field Type 	Operators 	Available Values 	Multi Search Default
+1 Assignee Search & Select + is/is not Is any of · Is not any of 	All workspace users (placeholder "Search user…"; shows "No
+matches" when empty)
+Yes Yes 	None · mode
+is
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	4/10
+
+-- 4 of 10 --
+
+# Filter
+Name
+Field Type 	Operators 	Available Values 	Multi Search Default
+2 Task type Checkbox group (2-col, with
+icons)
+Is any of 	Call · Email · Meeting · WhatsApp · Site visit · Follow-up ·
+Payment
+(admin-configurable)
+Yes No 	None
+3 Priority 	Checkbox group (inline,
+with icons)
+Is any of 	High · Medium · Low 	Yes No 	None
+4 Due date Date (quick chips + From/To
+calendar)
+Is within · Is on or after · Is on or
+before · Is between
+Overdue · Today · Tomorrow · Next 7 days · Next 30 days · Next
+60 days · Next 90 days
+No 	No 	None
+4. Follow-ups
+Drawer: generic filter drawer, title "Follow-ups".
+# Filter Name Field Type 	Operators 	Available Values 	Multi Search Default
+1 Type 	Checkbox group (2-col) 	Is any of 	Call · Email · Meeting · WhatsApp · Site visit · Payment 	Yes No 	None
+2 Status 	Checkbox group (2-col) 	Is any of 	Upcoming · Overdue · Done 	Yes No 	None
+3 Assigned
+to
+Search & Select + is/is not Is any of · Is not any of 	All follow-up owners (placeholder "Search user…") 	Yes Yes 	None · mode
+is
+4 Company Search & Select + is/is not Is any of · Is not any of 	All companies (leads + customers) — placeholder "Search
+company…"
+Yes Yes 	None · mode
+is
+5 Due date 	Date (quick chips + From/To
+calendar)
+Is within · Is on or after · Is on or
+before · Is between
+Overdue · Today · Tomorrow · Next 7 days · Next 30 days ·
+Next 60 days · Next 90 days
+No 	No 	None
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	5/10
+
+-- 5 of 10 --
+
+5. Quotes
+Drawer: generic filter drawer, title "Quotes".
+# Filter Name Field Type 	Operators 	Available Values 	Multi Search Default
+1 Status 	Checkbox group (2-col) 	Is any of 	Draft · Sent · Accepted · Rejected · Expired 	Yes No 	None
+2 Owner 	Search & Select + is/is not Is any of · Is not any of 	All quote owners (placeholder "Search owner…") 	Yes Yes 	None · mode
+is
+3 Company Search & Select + is/is not Is any of · Is not any of 	All companies — placeholder "Search company…" 	Yes Yes 	None · mode
+is
+4 Quote
+value
+Number range 	≥ Min · ≤ Max · Between 	Free numeric, unit ₹ lakhs (×100,000). Computed on the
+quote total.
+No 	No 	Empty
+5 Created 	Date (quick chips + From/To
+calendar)
+Is within · Is on or after · Is on or
+before · Is between
+Today · Yesterday · Last 7 days · Last 30 days · Last 60 days ·
+Last 90 days · This month
+No 	No 	None
+6 Valid until Date (quick chips + From/To
+calendar)
+Is within · Is on or after · Is on or
+before · Is between
+Today · Tomorrow · Next 7 days · Next 30 days · Next 60 days ·
+Next 90 days
+No 	No 	None
+Note: Status matching uses the effective status — a quote past its validity date evaluates as Expired even if stored as Sent .
+6. Customers
+Drawer: generic filter drawer, title "Customers".
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	6/10
+
+-- 6 of 10 --
+
+# Filter Name 	Field Type 	Operators 	Available Values 	Multi Search Default
+1 Customer
+status
+Checkbox group (2-col) Is any of 	Active · Completed · Lost · Upsell In Progress
+(admin-
+configurable — read from Settings →
+Customer Status)
+Yes No 	None
+2 Account
+manager
+Search & Select + is/is
+not
+Is any of · Is not any of 	All account owners (placeholder "Search owner…") 	Yes Yes 	None · mode
+is
+3 Company 	Search & Select + is/is
+not
+Is any of · Is not any of 	All companies — placeholder "Search company…" 	Yes Yes 	None · mode
+is
+4 Source 	Checkbox group (2-col) Is any of 	Distinct customer sources (sorted) — mirrors Lead Sources 	Yes No 	None
+5 Product /
+Service
+Search & Select + is/is
+not
+Is any of · Is not any of 	Distinct products on customer accounts (placeholder "Search
+product…")
+Yes Yes 	None · mode
+is
+6 Lifetime value Number range 	≥ Min · ≤ Max · Between 	Free numeric, unit ₹ lakhs (×100,000) 	No 	No 	Empty
+7 Customer
+since
+Date (quick chips +
+From/To calendar)
+Is within · Is on or after · Is on or
+before · Is between
+Today · Last 7 days · Last 30 days · Last 60 days · Last 90 days ·
+This month
+No 	No 	None
+7. Payments
+Drawer: generic filter drawer, title "Payments".
+# Filter Name 	Field Type 	Operators 	Available Values 	Multi Search Default
+1 Method 	Checkbox group (2-col) 	Is any of 	Bank transfer · UPI · Card · Cash · Cheque 	Yes No 	None
+2 Status 	Checkbox group (2-col) 	Is any of 	Paid · Due · Overdue · Scheduled 	Yes No 	None
+3 Recorded by 	Search & Select + is/is
+not
+Is any of · Is not any of 	All users who recorded payments (placeholder "Search
+user…")
+Yes Yes 	None · mode
+is
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	7/10
+
+-- 7 of 10 --
+
+# Filter Name 	Field Type 	Operators 	Available Values 	Multi Search Default
+4 Customer /
+Company
+Search & Select + is/is
+not
+Is any of · Is not any of 	All companies — placeholder "Search customer…" 	Yes Yes 	None · mode
+is
+5 Amount 	Number range 	≥ Min · ≤ Max · Between 	Free numeric, unit ₹ lakhs (×100,000) 	No 	No 	Empty
+6 Payment date 	Date (quick chips +
+From/To calendar)
+Is within · Is on or after · Is on or
+before · Is between
+Overdue · Today · Tomorrow · Last 7 days · Last 30 days · Next
+7 days · Next 30 days · Next 90 days
+No 	No 	None
+8. Products
+Drawer: generic filter drawer, title "Products".
+# Filter
+Name
+Field Type 	Operators 	Available Values 	Multi Search Default
+1 Category Checkbox group
+(2-col)
+Is any of 	Fit-out · Furniture · Design Services · Joinery · MEP & Services · AMC/Maintenance
+(admin-
+configurable — Settings →
+Product types)
+Yes No 	None
+2 Status 	Checkbox group
+(2-col)
+Is any of 	Active · Inactive 	Yes No 	None
+3 Billing
+unit
+Checkbox group
+(2-col)
+Is any of 	Distinct billing units in the catalog (e.g. per sq.ft · per unit · per project · per month) 	Yes No 	None
+4 Unit price Number range 	≥ Min · ≤ Max ·
+Between
+Free numeric, unit ₹ (×1 —
+absolute rupees, not lakhs) 	No 	No 	Empty
+Note: Products has no date filter and no owner filter — do not add them.
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	8/10
+
+-- 8 of 10 --
+
+9. Coverage summary
+Module 	Status chips 	Checkbox 	Checkbox + is/is not 	Search & Select 	Radio 	Date 	Number range 	Total drawer filters
+Leads 	Yes (8) 	— 	4 	1 	3 	1 	1 	10
+Tasks 	Yes (7) 	2 	— 	1 	— 	1 	— 	4
+Follow-ups 	— 	2 	— 	2 	— 	1 	— 	5
+Quotes 	— 	1 	— 	2 	— 	2 	1 	6
+Customers 	— 	2 	— 	3 	— 	1 	1 	7
+Payments 	— 	2 	— 	2 	— 	1 	1 	6
+Products 	— 	3 	— 	— 	— 	— 	1 	4
+Totals: 42 drawer filters across 7 modules · 11 Search & Select controls · 7 date filters · 5 number ranges.
+10. Mobile implementation checklist
+Build the 7 control types in §1 as reusable components before wiring modules.
+Search & Select is mandatory wherever listed (users, companies, products) — never a plain checkbox list; these fields can exceed 1,000 entries.
+Implement the is / is not toggle on every control marked with it — 11 fields depend on it.
+Date filters must offer both quick chips and a From/To calendar; expose only each module’s listed chips.
+Respect unit scaling: ₹ lakhs (×100,000) everywhere except Products → Unit price (×1).
+Pull admin-configurable option lists (lead sources, stages, customer statuses, task types, product categories) from settings — do not hard-code.
+Preserve draft-then-apply semantics, the active-filter count badge, Reset All, and Saved views.
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	9/10
+
+-- 9 of 10 --
+
+Quotes status must evaluate effective status (auto-expiry by validity date).
+Status chips are a separate, single-select control above the list — not part of the drawer.
+Verify defaults: radios default to their first option (All / Any); every other filter defaults to empty.
+Generated from Clozr web prototype v2.4 · Companion file: FILTER_AUDIT.html (print-ready).
+7/27/26, 8:47 AM 	Clozr — List View Filter Audit
+https://claude.ai/design/p/c8dc8a9b-1db8-4a98-bee2-d168cc96646b?file=docs%2FFILTER_AUDIT.html 	10/10
+
+-- 10 of 10 --
+

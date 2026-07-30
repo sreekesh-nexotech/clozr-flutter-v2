@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
+import '../application/providers/contextual_add_provider.dart';
 
 /// A single tab spec.
 class _NavItem {
@@ -20,7 +22,7 @@ class _NavItem {
 
 /// The frosted-glass bottom navigation. Its item set switches by [NavContext]
 /// (CRM / Operations / Helpdesk / Dashboard) exactly like the prototype.
-class ClozrBottomNav extends StatelessWidget {
+class ClozrBottomNav extends ConsumerWidget {
   const ClozrBottomNav({super.key, required this.location});
 
   final String location;
@@ -61,15 +63,15 @@ class ClozrBottomNav extends StatelessWidget {
 
   bool get _hasAdd => _ctx != NavContext.dash;
 
-  String get _addPath {
-    switch (_ctx) {
-      case NavContext.ops:
-        return Routes.createTask;
-      case NavContext.help:
-        return Routes.createTicket;
-      default:
-        return Routes.addLead;
-    }
+  /// Location-aware fallback route for the `+` when the current screen has not
+  /// registered a contextual add action (#10/#14).
+  String get _fallbackAddPath {
+    final path = location.split('?').first;
+    if (path.startsWith('/ops/projects')) return Routes.createProject;
+    if (path.startsWith('/ops')) return Routes.createTask;
+    if (path.startsWith('/help')) return Routes.createTicket;
+    if (path.startsWith('/quotes')) return Routes.addQuote;
+    return Routes.addLead;
   }
 
   bool _isActive(_NavItem it) {
@@ -99,42 +101,59 @@ class ClozrBottomNav extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Two-layer frosted stack (#1): an 88px strip that heavily blurs whatever
+    // scrolls beneath it — strongest across its full height from the top edge
+    // down — with a floating rounded pill that adds its own stronger blur so it
+    // reads as a distinct frosted-glass card rather than a flat bar.
     return SizedBox(
       height: 88.h,
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Container(
-            color: const Color(0xFFF9FAFB).withOpacity(0.72),
-            padding: EdgeInsets.only(top: 8.h),
-            alignment: Alignment.topCenter,
-            child: Container(
-              height: 64.h,
-              margin: EdgeInsets.symmetric(horizontal: 14.w),
-              padding: EdgeInsets.symmetric(horizontal: 14.w),
-              decoration: BoxDecoration(
-                color: AppColors.white.withOpacity(0.66),
-                borderRadius: BorderRadius.circular(14.r),
-                border: Border.all(color: const Color(0xFFD2D4DA).withOpacity(0.5), width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF101828).withOpacity(0.08),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  for (final it in _items) _tab(context, it),
-                  if (_hasAdd) _addButton(context),
-                ],
+      child: Stack(
+        children: [
+          // Outer blur strip.
+          Positioned.fill(
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                child: Container(color: const Color(0xFFF9FAFB).withOpacity(0.72)),
               ),
             ),
           ),
-        ),
+          // Floating frosted pill.
+          Padding(
+            padding: EdgeInsets.only(top: 8.h, left: 14.w, right: 14.w),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14.r),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 52, sigmaY: 52),
+                child: Container(
+                  height: 64.h,
+                  padding: EdgeInsets.symmetric(horizontal: 14.w),
+                  decoration: BoxDecoration(
+                    color: AppColors.white.withOpacity(0.66),
+                    borderRadius: BorderRadius.circular(14.r),
+                    border: Border.all(
+                        color: const Color(0xFFD2D4DA).withOpacity(0.5), width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF101828).withOpacity(0.08),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      for (final it in _items) _tab(context, it),
+                      if (_hasAdd) _addButton(context, ref),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -183,11 +202,18 @@ class ClozrBottomNav extends StatelessWidget {
     );
   }
 
-  Widget _addButton(BuildContext context) {
+  Widget _addButton(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () {
         HapticFeedback.mediumImpact();
-        context.push(_addPath);
+        // Prefer the current screen's registered add action (#14); otherwise
+        // fall back to a location-aware route.
+        final action = ref.read(contextualAddProvider);
+        if (action != null) {
+          action.run(context);
+        } else {
+          context.push(_fallbackAddPath);
+        }
       },
       child: Container(
         width: 46.w,
