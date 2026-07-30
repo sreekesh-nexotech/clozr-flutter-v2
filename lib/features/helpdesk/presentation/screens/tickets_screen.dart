@@ -6,12 +6,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/tickets_filter_spec.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../components/ticket_card.dart';
 
@@ -43,13 +48,20 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Contextual add: the bottom-nav `+` opens the Create ticket form here.
+    registerAdd(
+      ref,
+      AddAction(label: 'New ticket', run: (ctx) => ctx.push(Routes.createTicket)),
+    );
+
     final all = ref.watch(ticketsProvider).valueOrNull ?? const [];
-    final visible = ref.watch(visibleTicketsProvider);
+    final visible = ref.watch(filteredTicketsProvider);
     final tab = ref.watch(ticketTabProvider);
     final searchOpen = ref.watch(ticketSearchOpenProvider);
     final query = ref.watch(ticketSearchProvider);
     final mine = ref.watch(ticketMineProvider);
     final breach = ref.watch(ticketBreachingProvider);
+    final filterCount = ref.watch(ticketFiltersProvider).activeCount;
 
     return Column(
       children: [
@@ -62,8 +74,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             ScreenTitleRow(
               title: 'Tickets',
               hasSearchQuery: query.isNotEmpty,
+              filterCount: filterCount,
               onSearch: () => ref.read(ticketSearchOpenProvider.notifier).state = !searchOpen,
-              onFilter: () => ref.read(toastProvider.notifier).show('Filters — full helpdesk filter engine'),
+              onFilter: _openFilters,
             ),
             if (searchOpen) ...[
               SizedBox(height: 10.h),
@@ -93,7 +106,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               ),
             ),
             SizedBox(height: 12.h),
-            _chipRow(mine, breach),
+            _savedViewRow(mine, breach, filterCount),
             SizedBox(height: 14.h),
           ],
         ),
@@ -119,34 +132,94 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
 
   String _label(String key) => key == 'all' ? 'All' : StatusMeta$.ticket[key]!.label;
 
-  Widget _chipRow(bool mine, bool breach) {
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(ticketsFilterSpecProvider);
+    final current = ref.read(ticketFiltersProvider);
+    final base = ref.read(ticketBaseProvider);
+    final activeView = ref.read(ticketSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((t) => ticketMatchesFilters(t, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(ticketSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(ticketFiltersProvider.notifier).state = result;
+    // A manual Apply deactivates the active saved view unless the draft still
+    // matches it exactly (prototype `deactivateViews` parity).
+    final views = ref.read(ticketSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(ticketSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: My Tickets / Breaching quick chips (default views) +
+  // saved bookmark chips + Clear. ──
+  Widget _savedViewRow(bool mine, bool breach, int filterCount) {
+    final saved = ref.watch(ticketSavedViewsProvider);
     return SizedBox(
       height: 34.h,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        child: Row(
-          children: [
-            _chip(
-              label: 'My Tickets',
-              icon: PhosphorIconsFill.userCircle,
-              active: mine,
-              filled: true,
-              onTap: () => ref.read(ticketMineProvider.notifier).state = !mine,
+      child: Row(
+        children: [
+          _chip(
+            label: 'My Tickets',
+            icon: PhosphorIconsFill.userCircle,
+            active: mine,
+            filled: true,
+            onTap: () => ref.read(ticketMineProvider.notifier).state = !mine,
+          ),
+          SizedBox(width: 8.w),
+          _chip(
+            label: 'Breaching soon',
+            icon: PhosphorIconsFill.timer,
+            active: breach,
+            filled: false,
+            iconColorOff: AppColors.warningDeep,
+            onTap: () => ref.read(ticketBreachingProvider.notifier).state = !breach,
+          ),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: chips.SavedChipRow(
+              views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+              active: {if (saved.activeId != null) saved.activeId!},
+              showClearAlways: filterCount > 0,
+              onToggle: _toggleView,
+              onClear: _clearFilters,
             ),
-            SizedBox(width: 8.w),
-            _chip(
-              label: 'Breaching soon',
-              icon: PhosphorIconsFill.timer,
-              active: breach,
-              filled: false,
-              iconColorOff: AppColors.warningDeep,
-              onTap: () => ref.read(ticketBreachingProvider.notifier).state = !breach,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(ticketSavedViewsProvider);
+    if (saved.activeId == id) {
+      // Tapping the active view deactivates it and clears the applied filters.
+      ref.read(ticketSavedViewsProvider.notifier).deactivate();
+      ref.read(ticketFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(ticketSavedViewsProvider.notifier).apply(id);
+    // Applying a view loads its values as the current (editable) filter state.
+    ref.read(ticketFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(ticketSavedViewsProvider.notifier).clearActive();
+    ref.read(ticketFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 
   Widget _chip({
