@@ -7,6 +7,7 @@ import '../../domain/repositories/payments_repository.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../../infrastructure/data_sources/local/payments_mock_ds.dart';
 import '../../infrastructure/repositories/payments_repository_impl.dart';
+import '../filters/payments_filter_spec.dart';
 
 /// DI seam: override in `bootstrap` to inject a real API-backed repo.
 final paymentsRepositoryProvider = Provider<PaymentsRepository>(

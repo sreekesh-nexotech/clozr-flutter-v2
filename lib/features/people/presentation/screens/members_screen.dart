@@ -5,18 +5,26 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
+import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/members_filter_spec.dart';
 import '../../application/providers/people_providers.dart';
 import '../components/member_card.dart';
 import '../components/people_title_actions.dart';
+import '../sheets/invite_member_sheet.dart';
 
 /// Members — everyone with access to the workspace. Header (brand + title +
-/// search + role-filter tabs) over a scrolling list of member cards.
+/// search + filter + role-filter tabs) over a scrolling list of member cards.
+/// Wired to the spec-driven filter engine (drawer → applied provider → matcher
+/// → badge → saved views), following the Leads reference.
 class MembersScreen extends ConsumerStatefulWidget {
   const MembersScreen({super.key});
 
@@ -41,11 +49,18 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Contextual add: the bottom-nav `+` opens the Invite member sheet here.
+    registerAdd(
+      ref,
+      AddAction(label: 'Invite member', run: (ctx) => showInviteMemberSheet(ctx)),
+    );
+
     final all = ref.watch(membersProvider).valueOrNull ?? const [];
-    final visible = ref.watch(visibleMembersProvider);
+    final visible = ref.watch(filteredMembersProvider);
     final role = ref.watch(memberRoleProvider);
     final searchOpen = ref.watch(memberSearchOpenProvider);
     final query = ref.watch(memberSearchProvider);
+    final filterCount = ref.watch(memberFiltersProvider).activeCount;
 
     final tabKeys = <String>['all', ...memberRoleOrder];
 
@@ -67,11 +82,10 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 ),
                 PeopleIconAction(
                   icon: PhosphorIconsRegular.slidersHorizontal,
-                  onTap: () => ref.read(toastProvider.notifier).show('Filters — role & status'),
+                  badge: filterCount > 0 ? '$filterCount' : null,
+                  onTap: _openFilters,
                 ),
-                PeopleCreateButton(
-                  onTap: () => ref.read(toastProvider.notifier).show('Invite member — coming soon'),
-                ),
+                PeopleCreateButton(onTap: () => showInviteMemberSheet(context)),
               ],
             ),
             SizedBox(height: 6.h),
@@ -106,6 +120,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 ],
               ),
             ),
+            SizedBox(height: 12.h),
+            _savedViewRow(filterCount),
             SizedBox(height: 14.h),
           ],
         ),
@@ -116,7 +132,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                     EmptyState(
                       icon: PhosphorIconsRegular.users,
                       title: 'No members found',
-                      body: 'Try a different role, clear the search, or invite a new member.',
+                      body: 'Try a different role, clear filters, or invite a new member.',
                     ),
                   ],
                 )
@@ -135,5 +151,64 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
         ),
       ],
     );
+  }
+
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(membersFilterSpecProvider);
+    final current = ref.read(memberFiltersProvider);
+    final base = ref.read(visibleMembersProvider);
+    final activeView = ref.read(memberSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((m) => memberMatchesFilters(m, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(memberSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(memberFiltersProvider.notifier).state = result;
+    final views = ref.read(memberSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(memberSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: saved bookmark chips + Clear ──
+  Widget _savedViewRow(int filterCount) {
+    final saved = ref.watch(memberSavedViewsProvider);
+    return chips.SavedChipRow(
+      views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+      active: {if (saved.activeId != null) saved.activeId!},
+      showClearAlways: filterCount > 0,
+      onToggle: _toggleView,
+      onClear: _clearFilters,
+    );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(memberSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(memberSavedViewsProvider.notifier).deactivate();
+      ref.read(memberFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(memberSavedViewsProvider.notifier).apply(id);
+    ref.read(memberFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(memberSavedViewsProvider.notifier).clearActive();
+    ref.read(memberFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

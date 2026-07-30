@@ -4,21 +4,26 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
-import '../../../../app/theme/app_colors.dart';
-import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/projects_filter_spec.dart';
 import '../../application/providers/projects_providers.dart';
 import '../components/ops_widgets.dart';
 import '../components/project_card.dart';
 
-/// Projects list — status tabs + a "My Projects" saved-view chip over a
-/// scrolling list of project cards.
+/// Projects list — status tabs + a "My Projects" saved-view chip + saved-view
+/// bookmark row over a scrolling list of project cards. Wired to the spec-driven
+/// filter engine (drawer → applied provider → matcher → badge → saved views),
+/// following the Leads reference.
 class ProjectsScreen extends ConsumerStatefulWidget {
   const ProjectsScreen({super.key});
 
@@ -43,12 +48,24 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Contextual add: the bottom-nav `+` opens the create-project form here (#14).
+    registerAdd(
+      ref,
+      AddAction(label: 'New project', run: (ctx) => ctx.push(Routes.createProject)),
+    );
+
     final base = ref.watch(projBaseProvider);
-    final visible = ref.watch(visibleProjectsProvider);
     final tab = ref.watch(projTabProvider);
     final mine = ref.watch(myProjectsProvider);
     final searchOpen = ref.watch(projSearchOpenProvider);
     final query = ref.watch(projSearchProvider);
+    final filters = ref.watch(projectFiltersProvider);
+    final filterCount = filters.activeCount;
+
+    final tabVisible = ref.watch(visibleProjectsProvider);
+    final visible = filters.isEmpty
+        ? tabVisible
+        : tabVisible.where((p) => projectMatchesFilters(p, filters)).toList();
 
     final tabDefs = <(String, String)>[
       ('all', 'All'),
@@ -63,29 +80,12 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
             SizedBox(height: 14.h),
             const HeaderHairline(),
             SizedBox(height: 14.h),
-            Row(
-              children: [
-                Expanded(child: Text('Projects', style: AppText.screenTitle())),
-                _iconAction(
-                  icon: PhosphorIconsRegular.magnifyingGlass,
-                  dot: query.isNotEmpty,
-                  onTap: () => ref.read(projSearchOpenProvider.notifier).state = !searchOpen,
-                ),
-                _iconAction(
-                  icon: PhosphorIconsRegular.slidersHorizontal,
-                  onTap: () => ref.read(toastProvider.notifier).show('Filters — full project filter engine'),
-                ),
-                SizedBox(width: 4.w),
-                GestureDetector(
-                  onTap: () => context.push(Routes.createProject),
-                  child: Container(
-                    width: 38.w,
-                    height: 38.w,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
-                    child: Icon(PhosphorIconsBold.plus, size: 18.sp, color: AppColors.white),
-                  ),
-                ),
-              ],
+            ScreenTitleRow(
+              title: 'Projects',
+              hasSearchQuery: query.isNotEmpty,
+              filterCount: filterCount,
+              onSearch: () => ref.read(projSearchOpenProvider.notifier).state = !searchOpen,
+              onFilter: _openFilters,
             ),
             if (searchOpen) ...[
               SizedBox(height: 12.h),
@@ -115,15 +115,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               ),
             ),
             SizedBox(height: 12.h),
-            Row(
-              children: [
-                OpsSavedChip(
-                  label: 'My Projects',
-                  active: mine,
-                  onTap: () => ref.read(myProjectsProvider.notifier).state = !mine,
-                ),
-              ],
-            ),
+            _savedViewRow(mine, filterCount),
             SizedBox(height: 14.h),
           ],
         ),
@@ -134,7 +126,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                     EmptyState(
                       icon: PhosphorIconsRegular.briefcase,
                       title: 'No projects found',
-                      body: 'Try a different status, or turn off "My Projects" to see the whole portfolio.',
+                      body: 'Try a different status, clear filters, or turn off "My Projects" to see the whole portfolio.',
                     ),
                   ],
                 )
@@ -155,35 +147,77 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     );
   }
 
-  Widget _iconAction({required IconData icon, required VoidCallback onTap, bool dot = false}) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: 38.w,
-        height: 38.w,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Icon(icon, size: 20.sp, color: AppColors.textSecondary),
-            if (dot)
-              Positioned(
-                top: 7.h,
-                right: 7.w,
-                child: Container(
-                  width: 7.w,
-                  height: 7.w,
-                  decoration: BoxDecoration(
-                    color: AppColors.blueBright,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.white, width: 2),
-                  ),
-                ),
-              ),
-          ],
-        ),
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(projectsFilterSpecProvider);
+    final current = ref.read(projectFiltersProvider);
+    final base = ref.read(projBaseProvider);
+    final activeView = ref.read(projectSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((p) => projectMatchesFilters(p, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(projectSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(projectFiltersProvider.notifier).state = result;
+    final views = ref.read(projectSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(projectSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: My Projects toggle + saved bookmark chips + Clear ──
+  Widget _savedViewRow(bool mine, int filterCount) {
+    final saved = ref.watch(projectSavedViewsProvider);
+    return SizedBox(
+      height: 34.h,
+      child: Row(
+        children: [
+          OpsSavedChip(
+            label: 'My Projects',
+            active: mine,
+            onTap: () => ref.read(myProjectsProvider.notifier).state = !mine,
+          ),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: chips.SavedChipRow(
+              views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+              active: {if (saved.activeId != null) saved.activeId!},
+              showClearAlways: filterCount > 0,
+              onToggle: _toggleView,
+              onClear: _clearFilters,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(projectSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(projectSavedViewsProvider.notifier).deactivate();
+      ref.read(projectFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(projectSavedViewsProvider.notifier).apply(id);
+    ref.read(projectFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(projectSavedViewsProvider.notifier).clearActive();
+    ref.read(projectFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

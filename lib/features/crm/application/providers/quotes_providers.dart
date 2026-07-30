@@ -4,6 +4,7 @@ import '../../domain/repositories/quotes_repository.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../../infrastructure/data_sources/local/quotes_mock_ds.dart';
 import '../../infrastructure/repositories/quotes_repository_impl.dart';
+import '../filters/quotes_filter_spec.dart';
 
 /// DI seam: override in `bootstrap` to inject a real API-backed repo.
 final quotesRepositoryProvider = Provider<QuotesRepository>(
@@ -34,20 +35,16 @@ final quoteTabProvider = StateProvider<String>((ref) => 'all');
 final quoteSearchProvider = StateProvider<String>((ref) => '');
 final quoteSearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Active saved-view chip keys (Big tickets / Expiring soon).
-final quoteSavedProvider = StateProvider<Set<String>>((ref) => {});
-
-/// Quotes filtered by tab + saved views + search.
+/// Quotes filtered by tab + drawer filters + search.
 final visibleQuotesProvider = Provider<List<Quote>>((ref) {
   final quotes = ref.watch(quotesProvider).valueOrNull ?? const [];
   final tab = ref.watch(quoteTabProvider);
-  final saved = ref.watch(quoteSavedProvider);
+  final filters = ref.watch(quoteFiltersProvider);
   final q = ref.watch(quoteSearchProvider).trim().toLowerCase();
 
   Iterable<Quote> out = quotes;
   if (tab != 'all') out = out.where((x) => x.status == tab);
-  if (saved.contains('qbt')) out = out.where((x) => x.amountNum >= 5000000);
-  if (saved.contains('qes')) out = out.where((x) => x.status == 'sent');
+  if (!filters.isEmpty) out = out.where((x) => quoteMatchesFilters(x, filters));
   if (q.isNotEmpty) {
     out = out.where((x) => ('${x.id} ${quoteWho(x)}').toLowerCase().contains(q));
   }

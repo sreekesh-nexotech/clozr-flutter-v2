@@ -4,18 +4,26 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
+import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/teams_filter_spec.dart';
 import '../../application/providers/people_providers.dart';
 import '../components/info_banner.dart';
 import '../components/people_title_actions.dart';
 import '../components/team_card.dart';
+import '../sheets/create_team_sheet.dart';
 
 /// Teams — groups of members organised by region or function. Header (brand +
-/// title + search + create) over a scrolling list led by an info banner.
+/// title + search + filter + create) over a scrolling list led by an info
+/// banner. Wired to the spec-driven filter engine, following the Leads
+/// reference.
 class TeamsScreen extends ConsumerStatefulWidget {
   const TeamsScreen({super.key});
 
@@ -40,10 +48,17 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = ref.watch(visibleTeamsProvider);
+    // Contextual add: the bottom-nav `+` opens the Create team sheet here.
+    registerAdd(
+      ref,
+      AddAction(label: 'Create team', run: (ctx) => showCreateTeamSheet(ctx)),
+    );
+
+    final visible = ref.watch(filteredTeamsProvider);
     final byId = ref.watch(membersByIdProvider);
     final searchOpen = ref.watch(teamSearchOpenProvider);
     final query = ref.watch(teamSearchProvider);
+    final filterCount = ref.watch(teamFiltersProvider).activeCount;
 
     void toast(String m) => ref.read(toastProvider.notifier).show(m);
 
@@ -65,9 +80,10 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                 ),
                 PeopleIconAction(
                   icon: PhosphorIconsRegular.slidersHorizontal,
-                  onTap: () => toast('Filters — team lead & size'),
+                  badge: filterCount > 0 ? '$filterCount' : null,
+                  onTap: _openFilters,
                 ),
-                PeopleCreateButton(onTap: () => toast('New team — coming soon')),
+                PeopleCreateButton(onTap: () => showCreateTeamSheet(context)),
               ],
             ),
             SizedBox(height: 6.h),
@@ -86,6 +102,8 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
               ),
               SizedBox(height: 14.h),
             ],
+            _savedViewRow(filterCount),
+            SizedBox(height: 14.h),
           ],
         ),
         Expanded(
@@ -121,5 +139,64 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
         ),
       ],
     );
+  }
+
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(teamsFilterSpecProvider);
+    final current = ref.read(teamFiltersProvider);
+    final base = ref.read(visibleTeamsProvider);
+    final activeView = ref.read(teamSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((t) => teamMatchesFilters(t, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(teamSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(teamFiltersProvider.notifier).state = result;
+    final views = ref.read(teamSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(teamSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: saved bookmark chips + Clear ──
+  Widget _savedViewRow(int filterCount) {
+    final saved = ref.watch(teamSavedViewsProvider);
+    return chips.SavedChipRow(
+      views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+      active: {if (saved.activeId != null) saved.activeId!},
+      showClearAlways: filterCount > 0,
+      onToggle: _toggleView,
+      onClear: _clearFilters,
+    );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(teamSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(teamSavedViewsProvider.notifier).deactivate();
+      ref.read(teamFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(teamSavedViewsProvider.notifier).apply(id);
+    ref.read(teamFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(teamSavedViewsProvider.notifier).clearActive();
+    ref.read(teamFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

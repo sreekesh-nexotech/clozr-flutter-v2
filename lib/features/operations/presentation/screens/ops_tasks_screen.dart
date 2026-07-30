@@ -4,20 +4,27 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/ops_tasks_filter_spec.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
 import '../components/ops_task_card.dart';
 import '../components/ops_widgets.dart';
 
-/// Ops Tasks list — status tabs + a "My Tasks" saved-view chip over a scrolling
-/// list of task cards.
+/// Ops Tasks list — status tabs + a "My Tasks" saved-view chip + saved-view
+/// bookmark row over a scrolling list of task cards. Wired to the spec-driven
+/// filter engine (drawer → applied provider → matcher → badge → saved views),
+/// following the Leads reference.
 class OpsTasksScreen extends ConsumerStatefulWidget {
   const OpsTasksScreen({super.key});
 
@@ -42,14 +49,26 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Contextual add: the bottom-nav `+` opens the create-task form here (#10).
+    registerAdd(
+      ref,
+      AddAction(label: 'New task', run: (ctx) => ctx.push(Routes.createTask)),
+    );
+
     final base = ref.watch(otBaseProvider);
-    final visible = ref.watch(visibleOpsTasksProvider);
     final all = ref.watch(opsTasksListProvider);
     final projects = ref.watch(projectsListProvider);
     final tab = ref.watch(otTabProvider);
     final mine = ref.watch(myTasksFProvider);
     final searchOpen = ref.watch(otSearchOpenProvider);
     final query = ref.watch(otSearchProvider);
+    final filters = ref.watch(opsTaskFiltersProvider);
+    final filterCount = filters.activeCount;
+
+    final tabVisible = ref.watch(visibleOpsTasksProvider);
+    final visible = filters.isEmpty
+        ? tabVisible
+        : tabVisible.where((t) => opsTaskMatchesFilters(t, filters)).toList();
 
     final tabDefs = <(String, String)>[
       ('all', 'All'),
@@ -70,8 +89,9 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
             ScreenTitleRow(
               title: 'Tasks',
               hasSearchQuery: query.isNotEmpty,
+              filterCount: filterCount,
               onSearch: () => ref.read(otSearchOpenProvider.notifier).state = !searchOpen,
-              onFilter: () => ref.read(toastProvider.notifier).show('Filters — full task filter engine'),
+              onFilter: _openFilters,
             ),
             if (searchOpen) ...[
               SizedBox(height: 10.h),
@@ -101,15 +121,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
               ),
             ),
             SizedBox(height: 12.h),
-            Row(
-              children: [
-                OpsSavedChip(
-                  label: 'My Tasks',
-                  active: mine,
-                  onTap: () => ref.read(myTasksFProvider.notifier).state = !mine,
-                ),
-              ],
-            ),
+            _savedViewRow(mine, filterCount),
             SizedBox(height: 14.h),
           ],
         ),
@@ -120,7 +132,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
                     EmptyState(
                       icon: PhosphorIconsRegular.listChecks,
                       title: 'No tasks found',
-                      body: 'Try a different status, or turn off "My Tasks" to see the whole team\'s work.',
+                      body: 'Try a different status, clear filters, or turn off "My Tasks" to see the whole team\'s work.',
                     ),
                   ],
                 )
@@ -141,5 +153,79 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
         ),
       ],
     );
+  }
+
+  // ── Filter drawer ──
+  Future<void> _openFilters() async {
+    final spec = ref.read(opsTasksFilterSpecProvider);
+    final current = ref.read(opsTaskFiltersProvider);
+    final base = ref.read(otBaseProvider);
+    final activeView = ref.read(opsTaskSavedViewsProvider).active;
+
+    final result = await showFilterSheet(
+      context: context,
+      spec: spec,
+      initial: current,
+      previewCount: (draft) => base.where((t) => opsTaskMatchesFilters(t, draft)).length,
+      activeViewName: activeView?.name,
+      onSaveView: (name, draft) {
+        ref.read(opsTaskSavedViewsProvider.notifier).upsert(name, draft);
+        ref.read(toastProvider.notifier).show('View "$name" saved');
+      },
+    );
+    if (result == null) return;
+
+    ref.read(opsTaskFiltersProvider.notifier).state = result;
+    final views = ref.read(opsTaskSavedViewsProvider);
+    if (views.active != null && views.active!.values != result) {
+      ref.read(opsTaskSavedViewsProvider.notifier).deactivate();
+    }
+    ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  // ── Saved-view row: My Tasks toggle + saved bookmark chips + Clear ──
+  Widget _savedViewRow(bool mine, int filterCount) {
+    final saved = ref.watch(opsTaskSavedViewsProvider);
+    return SizedBox(
+      height: 34.h,
+      child: Row(
+        children: [
+          OpsSavedChip(
+            label: 'My Tasks',
+            active: mine,
+            onTap: () => ref.read(myTasksFProvider.notifier).state = !mine,
+          ),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: chips.SavedChipRow(
+              views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+              active: {if (saved.activeId != null) saved.activeId!},
+              showClearAlways: filterCount > 0,
+              onToggle: _toggleView,
+              onClear: _clearFilters,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleView(String id) {
+    final saved = ref.read(opsTaskSavedViewsProvider);
+    if (saved.activeId == id) {
+      ref.read(opsTaskSavedViewsProvider.notifier).deactivate();
+      ref.read(opsTaskFiltersProvider.notifier).state = FilterValues();
+      return;
+    }
+    final view = saved.views.firstWhere((v) => v.id == id);
+    ref.read(opsTaskSavedViewsProvider.notifier).apply(id);
+    ref.read(opsTaskFiltersProvider.notifier).state = view.values.copy();
+    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  void _clearFilters() {
+    ref.read(opsTaskSavedViewsProvider.notifier).clearActive();
+    ref.read(opsTaskFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

@@ -4,11 +4,13 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/list_header.dart';
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/people_providers.dart';
 import '../components/info_banner.dart';
 import '../components/people_title_actions.dart';
 import '../components/role_card.dart';
+import '../sheets/add_role_sheet.dart';
 
 /// Roles & permissions — the predefined (locked) roles, each with a fixed
 /// capability matrix and one visibility scope. Header (brand + title + add) over
@@ -18,6 +20,12 @@ class RolesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Contextual add: the bottom-nav `+` opens the Add role sheet here.
+    registerAdd(
+      ref,
+      AddAction(label: 'Add role', run: (ctx) => showAddRoleSheet(ctx)),
+    );
+
     final roles = ref.watch(rolesProvider).valueOrNull ?? const [];
     final members = ref.watch(membersProvider).valueOrNull ?? const [];
 
@@ -34,7 +42,7 @@ class RolesScreen extends ConsumerWidget {
             Row(
               children: [
                 Expanded(child: Text('Roles & permissions', style: AppText.screenTitle())),
-                PeopleCreateButton(label: 'Add role', onTap: () => toast('Add role — coming soon')),
+                PeopleCreateButton(label: 'Add role', onTap: () => showAddRoleSheet(context)),
               ],
             ),
             SizedBox(height: 6.h),
