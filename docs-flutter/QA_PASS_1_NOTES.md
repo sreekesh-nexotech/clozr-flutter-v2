@@ -20,6 +20,13 @@ Resolutions for the 14 QA/QC findings on the presentation layer. All work is on
 | 13 | Notes section parity | Shared `NotesThread` (reply threads + photo/file attachments, simulated) adopted across all modules; migrated off the old per-module note models. | screenshot |
 | 14 | Contextual add | Bottom-nav `+` runs the current screen's registered `AddAction` (`contextual_add_provider.dart`); each list opens the matching add form/sheet, with a location-aware route fallback. | code |
 
+## Round 2 (device-frame / safe-area)
+
+| # | Finding | Resolution | Verified |
+|---|---------|------------|----------|
+| 15 | App drew the mockup's device chrome (fake time / signal / wi-fi / battery status bar + home indicator) | Removed the simulated `DeviceStatusBar` and home-indicator from the shell; the real OS now owns them. Headers stay edge-to-edge under the real status bar. | screenshot (simulated inset) |
+| 16 | Bottom nav collided with the OS gesture/navigation bar on small phones | Shell wraps every screen in a bottom `SafeArea` (lifts sticky CTAs & list ends); the nav's frosted strip extends through the gesture area while the pill floats above `MediaQuery.viewPadding.bottom`. Fully responsive — 0 on hardware-key devices, ~24–48px on gesture-nav phones, correct on XS→XL. | screenshot (simulated inset) |
+
 ## Notes / follow-ups
 - Attachments (#13) are simulated (mock chips) — swap `NotesThread._addMockAttachment` for a real `image_picker`/`file_picker` + upload at API time.
 - `SavedChipRow` currently lives under `features/crm/…` and is imported cross-feature by Helpdesk/Ops/People. It works and analyzes clean; a tidy-up would relocate it to `core/widgets`.

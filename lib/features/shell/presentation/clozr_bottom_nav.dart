@@ -106,11 +106,17 @@ class ClozrBottomNav extends ConsumerWidget {
     // scrolls beneath it — strongest across its full height from the top edge
     // down — with a floating rounded pill that adds its own stronger blur so it
     // reads as a distinct frosted-glass card rather than a flat bar.
+    //
+    // The strip extends the full real bottom inset so the blur reaches the very
+    // edge, while the pill is lifted clear of the OS gesture/navigation bar —
+    // responsive to any device from XS to XL (safeBottom is 0 on hardware-key
+    // devices, ~24–48px on gesture-nav phones).
+    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
     return SizedBox(
-      height: 88.h,
+      height: 88.h + safeBottom,
       child: Stack(
         children: [
-          // Outer blur strip.
+          // Outer blur strip (covers the gesture area too).
           Positioned.fill(
             child: ClipRect(
               child: BackdropFilter(
@@ -119,9 +125,9 @@ class ClozrBottomNav extends ConsumerWidget {
               ),
             ),
           ),
-          // Floating frosted pill.
+          // Floating frosted pill — sits above the gesture inset.
           Padding(
-            padding: EdgeInsets.only(top: 8.h, left: 14.w, right: 14.w),
+            padding: EdgeInsets.only(top: 8.h, left: 14.w, right: 14.w, bottom: safeBottom),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14.r),
               child: BackdropFilter(

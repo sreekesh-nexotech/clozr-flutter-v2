@@ -9,7 +9,6 @@ import '../../../app/theme/app_text_styles.dart';
 import '../application/providers/shell_providers.dart';
 import 'app_drawer.dart';
 import 'clozr_bottom_nav.dart';
-import 'device_status_bar.dart';
 
 /// The persistent device frame that wraps every routed screen: the routed
 /// child, the simulated status bar, the conditional bottom nav, the drawer,
@@ -31,10 +30,17 @@ class ClozrShell extends ConsumerWidget {
       backgroundColor: AppColors.bgScreen,
       body: Stack(
         children: [
-          // Routed screen fills the frame.
-          Positioned.fill(child: child),
+          // Routed screen. Headers stay edge-to-edge under the real status bar
+          // (their own top padding clears it); the bottom SafeArea keeps every
+          // screen's bottom-anchored content (sticky CTAs, list ends) above the
+          // OS gesture/navigation bar on all device sizes. The simulated iOS
+          // status bar and home-indicator from the design canvas are gone — the
+          // real OS draws those.
+          Positioned.fill(
+            child: SafeArea(top: false, bottom: true, child: child),
+          ),
 
-          // Bottom nav (conditional).
+          // Bottom nav (conditional) — lifts itself above the gesture inset.
           if (meta.showNav)
             Positioned(
               left: 0,
@@ -43,33 +49,11 @@ class ClozrShell extends ConsumerWidget {
               child: ClozrBottomNav(location: location),
             ),
 
-          // Status bar overlay (always on top).
-          Positioned(top: 0, left: 0, right: 0, child: const DeviceStatusBar()),
-
           // Drawer.
           if (drawerOpen) Positioned.fill(child: AppDrawer(location: location)),
 
           // Toast.
           if (toast != null) _Toast(message: toast),
-
-          // Home indicator.
-          Positioned(
-            bottom: 8.h,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Center(
-                child: Container(
-                  width: 134.w,
-                  height: 5.h,
-                  decoration: BoxDecoration(
-                    color: AppColors.black.withOpacity(0.28),
-                    borderRadius: BorderRadius.circular(3.r),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -83,7 +67,7 @@ class _Toast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 106.h,
+      bottom: 106.h + MediaQuery.viewPaddingOf(context).bottom,
       left: 0,
       right: 0,
       child: IgnorePointer(
