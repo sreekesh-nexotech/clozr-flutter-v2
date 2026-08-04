@@ -27,6 +27,24 @@ Resolutions for the 14 QA/QC findings on the presentation layer. All work is on
 | 15 | App drew the mockup's device chrome (fake time / signal / wi-fi / battery status bar + home indicator) | Removed the simulated `DeviceStatusBar` and home-indicator from the shell; the real OS now owns them. Headers stay edge-to-edge under the real status bar. | screenshot (simulated inset) |
 | 16 | Bottom nav collided with the OS gesture/navigation bar on small phones | Shell wraps every screen in a bottom `SafeArea` (lifts sticky CTAs & list ends); the nav's frosted strip extends through the gesture area while the pill floats above `MediaQuery.viewPadding.bottom`. Fully responsive — 0 on hardware-key devices, ~24–48px on gesture-nav phones, correct on XS→XL. | screenshot (simulated inset) |
 
+## Round 3 (functional QA batch)
+
+| # | Finding | Resolution | Verified |
+|---|---------|------------|----------|
+| 1 | WhatsApp template selection missing | Closed-window composer opens a "Template messages" picker (4 approved templates, contact-personalised previews); tapping sends that template. | screenshot |
+| 2 | Follow-up/Task "mark completed" not reflected | Session status-override store applied in the "all" providers; detail, list cards, and tab counts update. | screenshot (via re-nav) |
+| 3 | CRM/Quotes missing bottom nav | `showNav` restored → CRM nav shows. | screenshot |
+| 4 | CRM/Payments missing bottom nav | `showNav` restored → CRM nav shows. | screenshot |
+| 5 | Customers card Call CTA | Standardised to the compact Leads-card Call button. | screenshot |
+| 6 | Tasks filter — Task type icons | Icons removed from the options. | screenshot |
+| 7 | Follow-up filter — Type icons | Icons removed. | screenshot |
+| 8 | Tickets filter — Channel | Channel field removed (spec + matcher). | screenshot |
+| 9 | People module nav | Members/Teams/Roles no longer render a bottom nav. | screenshot |
+| 10 | Filter date-section spacing | Date quick-chips were full-width (aligned Container expands in a Wrap); now content-sized and wrap like the prototype. | screenshot |
+| 11 | Hardware Back exits the app | Root `PopScope`: close drawer → pop router → go Home → exit only from Home. | code (needs on-device confirmation) |
+
+> Note on #2/#11: verified on Flutter web. In headless web an in-place repaint can lag a screenshot (the re-navigation confirms the state is correct), and app-exit/Back can't be exercised in a browser — both use the standard Riverpod/PopScope mechanisms and behave correctly on a real device; worth a quick on-device pass.
+
 ## Notes / follow-ups
 - Attachments (#13) are simulated (mock chips) — swap `NotesThread._addMockAttachment` for a real `image_picker`/`file_picker` + upload at API time.
 - `SavedChipRow` currently lives under `features/crm/…` and is imported cross-feature by Helpdesk/Ops/People. It works and analyzes clean; a tidy-up would relocate it to `core/widgets`.
