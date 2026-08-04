@@ -39,10 +39,22 @@ dependencies:
   intl: ^0.19.0
   equatable: ^2.0.5
 
+  # Networking (per Technical_stack.md)
+  dio: ^5.7.0
+  pretty_dio_logger: ^1.4.0
+
+  # Local storage / caching (per Technical_stack.md)
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Session tokens (per Technical_stack.md — never in Hive, per security rules)
+  flutter_secure_storage: ^9.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  mocktail: ^1.0.4
 
 flutter:
   uses-material-design: true

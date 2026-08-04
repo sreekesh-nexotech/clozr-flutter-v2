@@ -16,6 +16,9 @@ class RouteMeta {
 class Routes {
   Routes._();
 
+  // Auth (outside the shell — no status bar / bottom nav chrome)
+  static const login = '/login';
+
   // CRM
   static const home = '/home';
   static const leads = '/leads';

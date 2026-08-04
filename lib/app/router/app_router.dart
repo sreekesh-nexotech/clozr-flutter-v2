@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/session_gate.dart';
+import '../../core/config/api_config.dart';
+import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/shell/presentation/clozr_shell.dart';
 import 'routes.dart';
 
@@ -83,7 +86,21 @@ GoRoute _push(String path, Widget child) => GoRoute(
 final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
   initialLocation: Routes.home,
+  // Auth gate — active only when a backend is configured. Mock mode keeps the
+  // original boot-straight-into-the-shell behavior.
+  refreshListenable: SessionGate.instance,
+  redirect: (context, state) {
+    if (!ApiConfig.apiEnabled) return null;
+    final loggedIn = SessionGate.instance.status == SessionStatus.authenticated;
+    final atLogin = state.matchedLocation == Routes.login;
+    if (!loggedIn) return atLogin ? null : Routes.login;
+    return atLogin ? Routes.home : null;
+  },
   routes: [
+    GoRoute(
+      path: Routes.login,
+      builder: (context, state) => const LoginScreen(),
+    ),
     ShellRoute(
       navigatorKey: shellNavigatorKey,
       builder: (context, state, child) => ClozrShell(child: child),
