@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
@@ -12,6 +14,7 @@ import '../../../../core/widgets/primary_button.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/leads_providers.dart';
 
 /// Add lead — a grouped form (Contact / Deal / Qualification / Schedule /
 /// Pipeline). Static submit validates name + phone, then toasts and pops.
@@ -56,14 +59,33 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   bool get _phoneOk => _phone.text.trim().length >= 6;
   bool get _projectOk => _project.text.trim().isNotEmpty;
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() => _showErrors = true);
     if (!_nameOk || !_phoneOk || !_projectOk) {
       ref.read(toastProvider.notifier).show('Please complete the required fields');
       return;
     }
-    ref.read(toastProvider.notifier).show('Lead added');
-    context.pop();
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Lead added');
+      context.pop();
+      return;
+    }
+    try {
+      await ref.read(leadsRepositoryProvider).createLead({
+        'lead_name': _name.text.trim(),
+        'organization_name': _company.text.trim(),
+        'email': _email.text.trim(),
+        'phone': _phone.text.trim(),
+        'purpose': _project.text.trim(),
+      });
+      if (!mounted) return;
+      ref.invalidate(leadsProvider);
+      ref.read(toastProvider.notifier).show('Lead added');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+    }
   }
 
   void _pickOwner() {

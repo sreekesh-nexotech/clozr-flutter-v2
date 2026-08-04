@@ -4,10 +4,13 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/people_providers.dart';
 
 /// Visibility scopes a custom role can carry (prototype `roleScopeChips`).
 const _scopeChips = <String>[
@@ -56,14 +59,34 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() => _showErrors = true);
     if (!_nameOk) {
       ref.read(toastProvider.notifier).show('Enter a role name');
       return;
     }
+    final name = _name.text.trim();
+    if (!ApiConfig.apiEnabled) {
+      Navigator.of(context).pop();
+      ref.read(toastProvider.notifier).show('Role "$name" created');
+      return;
+    }
+
+    final desc = _desc.text.trim();
+    try {
+      await ref.read(peopleRepositoryProvider).createRole(
+            name: name,
+            description: desc.isEmpty ? null : desc,
+          );
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(rolesProvider);
     Navigator.of(context).pop();
-    ref.read(toastProvider.notifier).show('Role "${_name.text.trim()}" created');
+    ref.read(toastProvider.notifier).show('Role "$name" created');
   }
 
   @override

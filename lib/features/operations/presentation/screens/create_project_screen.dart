@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
@@ -53,6 +55,35 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
 
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
 
+  /// API mode: create remotely, refresh the list, toast + pop as before.
+  /// Mock mode: exactly the previous local toast-and-pop behavior.
+  Future<void> _submit() async {
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Project created');
+      context.pop();
+      return;
+    }
+    try {
+      await ref.read(projectsRepositoryProvider).createProject({
+        'project_name': _name.text.trim(),
+        'priority': _pri,
+        'description': _desc.text.trim(),
+        if (_end != null) 'expected_end_date': _apiDate(_end!),
+      });
+      if (!mounted) return;
+      ref.invalidate(projectsProvider);
+      ref.read(toastProvider.notifier).show('Project created');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+    }
+  }
+
+  /// API date format (`2026-08-30`).
+  static String _apiDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
     final projects = ref.watch(projectsListProvider);
@@ -65,10 +96,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       ctaLabel: 'Create Project',
       ctaEnabled: _name.text.trim().isNotEmpty,
       onClose: () => context.pop(),
-      onSubmit: () {
-        ref.read(toastProvider.notifier).show('Project created');
-        context.pop();
-      },
+      onSubmit: _submit,
       children: [
         AppTextField(label: 'Project name', required: true, controller: _name, hint: 'e.g. Showroom fit-out', onChanged: (_) => setState(() {})),
         SizedBox(height: 14.h),

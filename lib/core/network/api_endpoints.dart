@@ -121,7 +121,14 @@ class ApiEndpoints {
 
   // ── WhatsApp messages ──
   static const whatsappConversations = '/whatsapp/conversations/';
+  static String whatsappConversation(Object conversationId) =>
+      '/whatsapp/conversations/$conversationId/';
   static String whatsappMessages(Object conversationId) =>
       '/whatsapp/conversations/$conversationId/messages/';
+  static String whatsappConversationRead(Object conversationId) =>
+      '/whatsapp/conversations/$conversationId/read/';
+  static const whatsappSendText = '/whatsapp/send/text/';
+  static const whatsappSendTemplate = '/whatsapp/send/template/';
+  static const whatsappTemplates = '/whatsapp/templates/';
   static const whatsappBadge = '/whatsapp/badge/';
 }

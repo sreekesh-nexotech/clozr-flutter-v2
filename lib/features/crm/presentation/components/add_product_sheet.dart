@@ -5,6 +5,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/products_providers.dart';
@@ -93,12 +95,32 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     );
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_name.text.trim().isEmpty) {
       ref.read(toastProvider.notifier).show('Enter the product / service name');
       return;
     }
     final price = int.tryParse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    if (ApiConfig.apiEnabled) {
+      try {
+        await ref.read(productsRepositoryProvider).createProduct({
+          'product_name': _name.text.trim(),
+          'price': price,
+          'hsn_code': _hsn.text.trim(),
+          'description': _desc.text.trim(),
+          'is_active': _active,
+        });
+        if (!mounted) return;
+        ref.invalidate(productsProvider);
+        Navigator.of(context).pop();
+        ref.read(toastProvider.notifier)
+            .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
+      } on AppError catch (e) {
+        if (!mounted) return;
+        ref.read(toastProvider.notifier).show(e.message);
+      }
+      return;
+    }
     final id = (_sku.text.trim().isEmpty
             ? '${widget.isPackage ? 'PKG-' : 'NEW-'}${100 + _seq}'
             : _sku.text.trim())

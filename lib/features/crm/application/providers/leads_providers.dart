@@ -1,14 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../../infrastructure/data_sources/local/leads_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
+import '../../infrastructure/repositories/leads_api_repository.dart';
 import '../../infrastructure/repositories/leads_repository_impl.dart';
 import '../filters/leads_filter_spec.dart';
 
-/// DI seam: override this in `bootstrap` to inject a real API-backed repo.
-final leadsRepositoryProvider = Provider<LeadsRepository>(
-  (ref) => const LeadsRepositoryImpl(LeadsMockDataSource()),
-);
+/// DI seam: mock-backed by default; API-backed when a base URL is configured.
+final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const LeadsRepositoryImpl(LeadsMockDataSource());
+  }
+  return LeadsApiRepository(
+    LeadsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all leads.
 final leadsProvider = FutureProvider<List<Lead>>(

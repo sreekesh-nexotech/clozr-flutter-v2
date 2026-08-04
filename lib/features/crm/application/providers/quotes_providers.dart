@@ -1,15 +1,24 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/quote.dart';
 import '../../domain/repositories/quotes_repository.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../../infrastructure/data_sources/local/quotes_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/quotes_remote_ds.dart';
+import '../../infrastructure/repositories/quotes_api_repository.dart';
 import '../../infrastructure/repositories/quotes_repository_impl.dart';
 import '../filters/quotes_filter_spec.dart';
 
-/// DI seam: override in `bootstrap` to inject a real API-backed repo.
-final quotesRepositoryProvider = Provider<QuotesRepository>(
-  (ref) => const QuotesRepositoryImpl(QuotesMockDataSource()),
-);
+/// DI seam: mock-backed without a base URL, API-backed otherwise.
+final quotesRepositoryProvider = Provider<QuotesRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const QuotesRepositoryImpl(QuotesMockDataSource());
+  }
+  return QuotesApiRepository(
+    QuotesRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all quotes.
 final quotesProvider = FutureProvider<List<Quote>>(

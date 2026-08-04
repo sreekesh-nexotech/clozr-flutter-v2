@@ -4,6 +4,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/primary_button.dart';
@@ -68,14 +70,46 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
   bool get _nameOk => _name.text.trim().isNotEmpty;
   bool get _emailOk => _email.text.trim().isNotEmpty;
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() => _showErrors = true);
     if (!_nameOk || !_emailOk) {
       ref.read(toastProvider.notifier).show('Name and email are required');
       return;
     }
+    final email = _email.text.trim();
+    if (!ApiConfig.apiEnabled) {
+      Navigator.of(context).pop();
+      ref.read(toastProvider.notifier).show('Invite sent to $email');
+      return;
+    }
+
+    // Resolve the picked role name against the loaded org roles (best-effort;
+    // the invite is valid without a role).
+    String? roleId;
+    final roles = ref.read(rolesProvider).valueOrNull ?? const [];
+    for (final r in roles) {
+      if (r.name.toLowerCase() == _role.toLowerCase()) {
+        roleId = r.id;
+        break;
+      }
+    }
+    final phone = _phone.text.trim();
+    try {
+      await ref.read(peopleRepositoryProvider).inviteMember(
+            email: email,
+            name: _name.text.trim(),
+            phone: phone.isEmpty ? null : phone,
+            roleId: roleId,
+          );
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(membersProvider);
     Navigator.of(context).pop();
-    ref.read(toastProvider.notifier).show('Invite sent to ${_email.text.trim()}');
+    ref.read(toastProvider.notifier).show('Invite sent to $email');
   }
 
   @override

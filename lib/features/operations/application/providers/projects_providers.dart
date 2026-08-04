@@ -1,7 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/project.dart';
 import '../../domain/repositories/projects_repository.dart';
 import '../../infrastructure/data_sources/local/projects_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/projects_remote_ds.dart';
+import '../../infrastructure/repositories/projects_api_repository.dart';
 import '../../infrastructure/repositories/projects_repository_impl.dart';
 
 /// The prototype's "today" for Operations overdue calculations (09 Jul 2026).
@@ -15,10 +19,15 @@ bool isProjectOverdue(Project p) {
   return end != null && end.isBefore(kOpsToday);
 }
 
-/// DI seam: override in `bootstrap` to inject a real API-backed repo.
-final projectsRepositoryProvider = Provider<ProjectsRepository>(
-  (ref) => const ProjectsRepositoryImpl(ProjectsMockDataSource()),
-);
+/// DI seam: mock-backed with no API base URL, remote-backed otherwise.
+final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const ProjectsRepositoryImpl(ProjectsMockDataSource());
+  }
+  return ProjectsApiRepository(
+    ProjectsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all projects.
 final projectsProvider = FutureProvider<List<Project>>(

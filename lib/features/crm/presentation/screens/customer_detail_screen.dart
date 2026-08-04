@@ -142,7 +142,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             time: '3d ago',
             body: '${cust.industry} account since ${cust.since}. Value ${cust.value}.',
           ),
-        ]);
+        ], apiModel: 'customer');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     return Container(

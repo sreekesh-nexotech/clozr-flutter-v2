@@ -2,16 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/repositories/products_repository.dart';
 import '../../infrastructure/data_sources/local/products_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/products_remote_ds.dart';
+import '../../infrastructure/repositories/products_api_repository.dart';
 import '../../infrastructure/repositories/products_repository_impl.dart';
 import '../filters/products_filter_spec.dart';
 
-/// DI seam: override in `bootstrap` to inject a real API-backed repo.
-final productsRepositoryProvider = Provider<ProductsRepository>(
-  (ref) => const ProductsRepositoryImpl(ProductsMockDataSource()),
-);
+/// DI seam: mock-backed without a base URL, API-backed otherwise.
+final productsRepositoryProvider = Provider<ProductsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const ProductsRepositoryImpl(ProductsMockDataSource());
+  }
+  return ProductsApiRepository(
+    ProductsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all catalog products/packages.
 final productsProvider = FutureProvider<List<Product>>(

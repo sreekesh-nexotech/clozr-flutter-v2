@@ -5,9 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/tickets_providers.dart';
 import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../components/ticket_form_fields.dart';
 
@@ -140,13 +143,37 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               ],
             ),
           ),
-          _cta('Create Ticket', PhosphorIconsBold.plus, _valid, () {
-            ref.read(toastProvider.notifier).show('Ticket created');
-            context.pop();
-          }),
+          _cta('Create Ticket', PhosphorIconsBold.plus, _valid, _submit),
         ],
       ),
     );
+  }
+
+  /// Mock mode keeps the original toast-and-pop; API mode persists the ticket
+  /// and refreshes the list before popping.
+  Future<void> _submit() async {
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Ticket created');
+      context.pop();
+      return;
+    }
+    try {
+      await ref.read(ticketsRepositoryProvider).createTicket({
+        'subject': _subjectCtrl.text.trim(),
+        'description': _descCtrl.text.trim(),
+        'priority': _pri,
+        'channel': _channel,
+        'category': _cat,
+        if (_custId != null) 'customer_id': _custId,
+      });
+      ref.invalidate(ticketsProvider);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('Ticket created');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+    }
   }
 
   Future<void> _pickCustomer() async {

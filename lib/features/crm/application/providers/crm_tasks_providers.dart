@@ -1,14 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/crm_task.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../../infrastructure/data_sources/local/crm_tasks_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/crm_tasks_remote_ds.dart';
+import '../../infrastructure/repositories/crm_tasks_api_repository.dart';
 import '../../infrastructure/repositories/crm_tasks_repository_impl.dart';
 import '../filters/tasks_filter_spec.dart';
 
-/// DI seam: override in `bootstrap` to inject a real API-backed repo.
-final crmTasksRepositoryProvider = Provider<CrmTasksRepository>(
-  (ref) => const CrmTasksRepositoryImpl(CrmTasksMockDataSource()),
-);
+/// DI seam: API-backed when a base URL is configured, mock seed otherwise.
+final crmTasksRepositoryProvider = Provider<CrmTasksRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const CrmTasksRepositoryImpl(CrmTasksMockDataSource());
+  }
+  return CrmTasksApiRepository(
+    CrmTasksRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all CRM tasks.
 final crmTasksProvider = FutureProvider<List<CrmTask>>(

@@ -5,6 +5,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/invoices_providers.dart';
@@ -126,7 +128,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     );
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final inv = _invoice;
     if (inv == null) {
       ref.read(toastProvider.notifier).show('Pick an invoice');
@@ -141,6 +143,34 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       }
       final override = {...ref.read(paidOverrideProvider), next.id};
       ref.read(paidOverrideProvider.notifier).state = override;
+      if (ApiConfig.apiEnabled) {
+        try {
+          await ref.read(paymentsRepositoryProvider).markRecordPaid(
+                next.id,
+                amount: next.amountNum > 0 ? next.amountNum.toDouble() : null,
+                method: const {
+                      'Bank transfer': 'bank_transfer',
+                      'UPI': 'upi',
+                      'Card': 'card',
+                      'Cash': 'cash',
+                      'Cheque': 'cheque',
+                    }[_method] ??
+                    'upi',
+              );
+          if (!mounted) return;
+          ref.invalidate(paymentsProvider);
+          ref.invalidate(invoicesProvider);
+        } on AppError catch (e) {
+          if (!mounted) return;
+          // Roll the optimistic override back — the record is still unpaid.
+          ref.read(paidOverrideProvider.notifier).state = {
+            ...ref.read(paidOverrideProvider)
+          }..remove(next.id);
+          ref.read(toastProvider.notifier).show(e.message);
+          return;
+        }
+      }
+      if (!mounted) return;
       Navigator.of(context).pop();
       ref.read(toastProvider.notifier).show('Payment recorded');
       return;

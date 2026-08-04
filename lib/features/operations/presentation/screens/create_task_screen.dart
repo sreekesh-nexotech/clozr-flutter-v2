@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
@@ -48,6 +50,36 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
   bool get _valid => _subject.text.trim().isNotEmpty && _projId != null;
 
+  /// API mode: create remotely, refresh the list, toast + pop as before.
+  /// Mock mode: exactly the previous local toast-and-pop behavior.
+  ///
+  /// `_projId` comes from the project dropdown: in API mode that list is the
+  /// live projects whose ids are `project_id` UUIDs, so it is safe to send as
+  /// the task's `project` FK (in mock mode it would be a `PRJ-24xx` seed id,
+  /// but this branch never runs there).
+  Future<void> _submit() async {
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Task created');
+      context.pop();
+      return;
+    }
+    try {
+      await ref.read(opsTasksRepositoryProvider).createOpsTask({
+        'subject': _subject.text.trim(),
+        if (_projId != null) 'project': _projId,
+        'priority': _pri,
+        'description': _desc.text.trim(),
+      });
+      if (!mounted) return;
+      ref.invalidate(opsTasksProvider);
+      ref.read(toastProvider.notifier).show('Task created');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final projects = ref.watch(projectsListProvider);
@@ -65,10 +97,7 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
       ctaLabel: 'Create Task',
       ctaEnabled: _valid,
       onClose: () => context.pop(),
-      onSubmit: () {
-        ref.read(toastProvider.notifier).show('Task created');
-        context.pop();
-      },
+      onSubmit: _submit,
       children: [
         AppTextField(label: 'Subject', required: true, controller: _subject, hint: 'What needs doing?', onChanged: (_) => setState(() {})),
         SizedBox(height: 14.h),

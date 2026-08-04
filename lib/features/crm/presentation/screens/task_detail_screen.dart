@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -6,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -61,6 +64,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   void _setStatus(String id, String status) {
     final overrides = ref.read(crmTaskStatusOverrideProvider);
     ref.read(crmTaskStatusOverrideProvider.notifier).state = {...overrides, id: status};
+    if (ApiConfig.apiEnabled) {
+      unawaited(ref
+          .read(crmTasksRepositoryProvider)
+          .setTaskStatusByKey(id, status)
+          .catchError((_) {}));
+    }
   }
 
   void _openTaskMenu(CrmTask task, bool done) {
@@ -107,7 +116,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
     // Notes thread (#13) — tasks start with an empty thread; the shared
     // composer stays usable regardless of the task's status.
-    final notesSeed = CrmNotesSeed('TASK-${task.id}', () => <NoteEntry>[]);
+    final notesSeed = CrmNotesSeed('TASK-${task.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     return Container(

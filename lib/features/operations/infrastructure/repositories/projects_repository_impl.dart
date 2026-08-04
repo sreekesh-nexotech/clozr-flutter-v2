@@ -15,4 +15,12 @@ class ProjectsRepositoryImpl implements ProjectsRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchProjects();
   }
+
+  /// Mock writes are harmless no-ops: mock-mode screens keep their local
+  /// toast-and-pop behavior and never read the result.
+  @override
+  Future<Project?> createProject(Map<String, dynamic> fields) async => null;
+
+  @override
+  Future<void> updateProject(String id, Map<String, dynamic> fields) async {}
 }

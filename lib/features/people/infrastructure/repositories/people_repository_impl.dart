@@ -29,4 +29,39 @@ class PeopleRepositoryImpl implements PeopleRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchRoles();
   }
+
+  // ── Writes: harmless local echoes so mock mode keeps working ──
+
+  @override
+  Future<void> inviteMember({
+    required String email,
+    required String name,
+    String? phone,
+    String? roleId,
+  }) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    // Mock mode: toast-only — the seed roster is immutable.
+  }
+
+  @override
+  Future<Team?> createTeam({
+    required String name,
+    String? description,
+    String? leadUserId,
+  }) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return Team(
+      id: 'team-${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      zone: description ?? '',
+      lead: leadUserId ?? '',
+      members: const [],
+    );
+  }
+
+  @override
+  Future<void> createRole({required String name, String? description}) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    // Mock mode: toast-only — the seed role list is immutable.
+  }
 }

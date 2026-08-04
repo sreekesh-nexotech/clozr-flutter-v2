@@ -1,14 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/repositories/followups_repository.dart';
 import '../../infrastructure/data_sources/local/followups_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/followups_remote_ds.dart';
+import '../../infrastructure/repositories/followups_api_repository.dart';
 import '../../infrastructure/repositories/followups_repository_impl.dart';
 import '../filters/followups_filter_spec.dart';
 
-/// DI seam: override in `bootstrap` to inject a real API-backed repo.
-final followupsRepositoryProvider = Provider<FollowupsRepository>(
-  (ref) => const FollowupsRepositoryImpl(FollowupsMockDataSource()),
-);
+/// DI seam: API-backed when a base URL is configured, mock seed otherwise.
+final followupsRepositoryProvider = Provider<FollowupsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const FollowupsRepositoryImpl(FollowupsMockDataSource());
+  }
+  return FollowupsApiRepository(
+    FollowupsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all follow-ups.
 final followupsProvider = FutureProvider<List<Followup>>(

@@ -127,7 +127,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             time: '3d ago',
             body: '${lead.industry} enquiry from ${lead.source} — ${lead.company ?? lead.name}. Value around ${lead.value}.',
           ),
-        ]);
+        ], apiModel: 'lead');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     return Container(

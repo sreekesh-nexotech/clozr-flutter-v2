@@ -1,14 +1,24 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/ticket.dart';
 import '../../domain/repositories/tickets_repository.dart';
 import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/tickets_remote_ds.dart';
+import '../../infrastructure/repositories/tickets_api_repository.dart';
 import '../../infrastructure/repositories/tickets_repository_impl.dart';
 import '../../presentation/util/ticket_sla.dart';
 
-/// DI seam: override this in `bootstrap` to inject a real API-backed repo.
-final ticketsRepositoryProvider = Provider<TicketsRepository>(
-  (ref) => const TicketsRepositoryImpl(TicketsMockDataSource()),
-);
+/// DI seam: API-backed when `--dart-define=API_BASE_URL` is set, mock-backed
+/// otherwise (the app behaves exactly as the presentation build did).
+final ticketsRepositoryProvider = Provider<TicketsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const TicketsRepositoryImpl(TicketsMockDataSource());
+  }
+  return TicketsApiRepository(
+    TicketsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all tickets.
 final ticketsProvider = FutureProvider<List<Ticket>>(

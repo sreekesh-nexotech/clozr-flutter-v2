@@ -1,12 +1,28 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/app_notification.dart';
+import '../../domain/repositories/notifications_repository.dart';
 import '../../infrastructure/data_sources/local/notifications_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/notifications_remote_ds.dart';
+import '../../infrastructure/repositories/notifications_api_repository.dart';
+import '../../infrastructure/repositories/notifications_repository_impl.dart';
 
 const _pageSize = 8;
 const _pageStep = 6;
 
 enum NotifFilter { all, unread }
+
+/// DI seam: mock seed without a base URL, REST otherwise.
+final notificationsRepositoryProvider = Provider<NotificationsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const NotificationsRepositoryImpl(NotificationsMockDataSource());
+  }
+  return NotificationsApiRepository(
+    NotificationsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Immutable notifications UI state.
 class NotificationsState {
@@ -54,20 +70,25 @@ class NotificationsState {
   int dayCount(String day) => filtered.where((n) => n.day == day).length;
 }
 
+/// Mutations update local state optimistically, then fire the matching
+/// repository call unawaited (the mock repository no-ops them).
 class NotificationsController extends StateNotifier<NotificationsState> {
-  NotificationsController(this._ds) : super(NotificationsState(all: const [], loading: true)) {
+  NotificationsController(this._repo)
+      : super(const NotificationsState(all: [], loading: true)) {
     _load();
   }
 
-  final NotificationsMockDataSource _ds;
-  Timer? _timer;
+  final NotificationsRepository _repo;
 
   Future<void> _load() async {
     state = state.copyWith(loading: true);
-    _timer?.cancel();
-    _timer = Timer(const Duration(milliseconds: 500), () {
-      state = state.copyWith(all: _ds.fetch(), loading: false);
-    });
+    try {
+      final rows = await _repo.getNotifications();
+      if (mounted) state = state.copyWith(all: rows, loading: false);
+    } on Object {
+      // Keep whatever is on screen; just stop the shimmer.
+      if (mounted) state = state.copyWith(loading: false);
+    }
   }
 
   void refresh() {
@@ -77,30 +98,43 @@ class NotificationsController extends StateNotifier<NotificationsState> {
 
   void setFilter(NotifFilter f) => state = state.copyWith(filter: f, shown: _pageSize);
 
-  void markAllRead() =>
-      state = state.copyWith(all: [for (final n in state.all) n.copyWith(unread: false)]);
+  void markAllRead() {
+    state = state.copyWith(all: [for (final n in state.all) n.copyWith(unread: false)]);
+    unawaited(_repo.markAllRead());
+  }
 
-  void toggleRead(String id) => state = state.copyWith(
-        all: [for (final n in state.all) n.id == id ? n.copyWith(unread: !n.unread) : n],
-      );
+  void toggleRead(String id) {
+    AppNotification? target;
+    for (final n in state.all) {
+      if (n.id == id) {
+        target = n;
+        break;
+      }
+    }
+    if (target == null) return;
+    final becomesRead = target.unread;
+    state = state.copyWith(
+      all: [for (final n in state.all) n.id == id ? n.copyWith(unread: !n.unread) : n],
+    );
+    unawaited(_repo.markRead(id, becomesRead));
+  }
 
-  void markRead(String id) => state = state.copyWith(
-        all: [for (final n in state.all) n.id == id ? n.copyWith(unread: false) : n],
-      );
+  void markRead(String id) {
+    state = state.copyWith(
+      all: [for (final n in state.all) n.id == id ? n.copyWith(unread: false) : n],
+    );
+    unawaited(_repo.markRead(id, true));
+  }
 
-  void delete(String id) =>
-      state = state.copyWith(all: state.all.where((n) => n.id != id).toList());
+  void delete(String id) {
+    state = state.copyWith(all: state.all.where((n) => n.id != id).toList());
+    unawaited(_repo.delete(id));
+  }
 
   void loadMore() => state = state.copyWith(shown: state.shown + _pageStep);
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
 }
 
 final notificationsProvider =
     StateNotifierProvider<NotificationsController, NotificationsState>(
-  (ref) => NotificationsController(const NotificationsMockDataSource()),
+  (ref) => NotificationsController(ref.watch(notificationsRepositoryProvider)),
 );

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -46,13 +48,31 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() => _showErrors = true);
     if (!_nameOk) {
       widget.ref.read(toastProvider.notifier).show('Enter a customer name');
       return;
     }
     final name = _name.text.trim();
+    if (ApiConfig.apiEnabled) {
+      try {
+        await widget.ref.read(customersRepositoryProvider).createCustomer({
+          'name': name,
+          'organization_name': _company.text.trim(),
+          'email': _email.text.trim(),
+          'phone': _phone.text.trim(),
+        });
+        if (!mounted) return;
+        widget.ref.invalidate(customersProvider);
+        widget.ref.read(toastProvider.notifier).show('Customer added');
+        Navigator.of(context).pop();
+      } on AppError catch (e) {
+        if (!mounted) return;
+        widget.ref.read(toastProvider.notifier).show(e.message);
+      }
+      return;
+    }
     final rawValue = _value.text.trim();
     final valueNum = int.tryParse(rawValue.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     final cust = Customer(

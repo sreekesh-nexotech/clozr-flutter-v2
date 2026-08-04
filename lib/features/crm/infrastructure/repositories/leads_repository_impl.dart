@@ -1,4 +1,5 @@
 import '../../../../app/config/constants.dart';
+import '../../../../data/api/user_directory.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../data_sources/local/leads_mock_ds.dart';
@@ -15,5 +16,37 @@ class LeadsRepositoryImpl implements LeadsRepository {
     // Simulated latency so skeleton/loading states are exercised.
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchLeads();
+  }
+
+  /// Local echo — mock mode has no backend, so the "created" lead is built
+  /// from the submitted fields (never persisted; mock behavior unchanged).
+  @override
+  Future<Lead?> createLead(Map<String, dynamic> fields) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    final name = (fields['lead_name'] ?? '').toString();
+    return Lead(
+      id: 'L${DateTime.now().millisecondsSinceEpoch.remainder(100000)}',
+      name: name,
+      initials: UserDirectory.initialsOf(name),
+      company: (fields['organization_name'] ?? '').toString(),
+      project: (fields['purpose'] ?? '').toString(),
+      value: '—',
+      valueNum: 0,
+      status: 'new',
+      statusDays: 0,
+      score: 0,
+      source: '',
+      owner: 'me',
+      team: const ['me'],
+      phone: (fields['phone'] ?? '').toString(),
+      email: (fields['email'] ?? '').toString(),
+      website: '',
+      industry: '',
+      location: '',
+      createdOn: '',
+      time: 'Just now',
+      lastFu: '',
+      notif: 0,
+    );
   }
 }

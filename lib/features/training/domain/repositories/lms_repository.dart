@@ -4,10 +4,21 @@ import '../entities/lms_activity.dart';
 
 /// Abstract contract for LMS data. The presentation layer depends only on this;
 /// whether data comes from a mock source or a REST API is an infrastructure
-/// detail. Reads are synchronous because progress is held in a live notifier
-/// seeded from these — the LMS surfaces have no loading/skeleton states.
+/// detail. Reads are async (mock mode resolves immediately); the LMS surfaces
+/// still render synchronously from load-then-notify providers, so there are no
+/// loading/skeleton states.
 abstract class LmsRepository {
-  List<Course> getCourses();
-  List<LearnerRecord> getRecords();
-  List<LmsActivity> getActivity();
+  Future<List<Course>> getCourses();
+  Future<List<LearnerRecord>> getRecords();
+  Future<List<LmsActivity>> getActivity();
+
+  /// Persists the signed-in user's progress on one module (best-effort,
+  /// fire-and-forget — the UI has already applied the optimistic update).
+  /// [index] is the module's position within the course; [value] is 0–100.
+  Future<void> setModuleProgress({
+    required String courseId,
+    required String moduleId,
+    required int index,
+    required int value,
+  });
 }

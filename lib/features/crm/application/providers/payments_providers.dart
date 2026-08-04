@@ -2,17 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/payment.dart';
 import '../../domain/repositories/payments_repository.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../../infrastructure/data_sources/local/payments_mock_ds.dart';
+import '../../infrastructure/data_sources/remote/payments_remote_ds.dart';
+import '../../infrastructure/repositories/payments_api_repository.dart';
 import '../../infrastructure/repositories/payments_repository_impl.dart';
 import '../filters/payments_filter_spec.dart';
 
-/// DI seam: override in `bootstrap` to inject a real API-backed repo.
-final paymentsRepositoryProvider = Provider<PaymentsRepository>(
-  (ref) => const PaymentsRepositoryImpl(PaymentsMockDataSource()),
-);
+/// DI seam: mock-backed without a base URL, API-backed otherwise.
+final paymentsRepositoryProvider = Provider<PaymentsRepository>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const PaymentsRepositoryImpl(PaymentsMockDataSource());
+  }
+  return PaymentsApiRepository(
+    PaymentsRemoteDataSource(ref.watch(apiServiceProvider)),
+  );
+});
 
 /// Async source of all payments.
 final paymentsProvider = FutureProvider<List<Payment>>(

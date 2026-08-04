@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -6,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -57,6 +60,12 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   void _setStatus(WidgetRef ref, String id, String status) {
     final overrides = ref.read(followupStatusOverrideProvider);
     ref.read(followupStatusOverrideProvider.notifier).state = {...overrides, id: status};
+    if (ApiConfig.apiEnabled) {
+      unawaited(ref
+          .read(followupsRepositoryProvider)
+          .setFollowupDone(id, status == 'done')
+          .catchError((_) {}));
+    }
   }
 
   void _openFollowupMenu(Followup fu) {
@@ -121,7 +130,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
     // Notes thread (#13) — follow-ups start with an empty thread; the shared
     // composer stays usable regardless of the follow-up's status.
-    final notesSeed = CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[]);
+    final notesSeed = CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     return Container(

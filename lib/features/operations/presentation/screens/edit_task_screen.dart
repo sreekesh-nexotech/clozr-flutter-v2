@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
@@ -65,6 +67,34 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
 
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
 
+  /// API mode: PATCH the edited fields, refresh the list, toast + pop as
+  /// before. Mock mode: exactly the previous local toast-and-pop behavior.
+  ///
+  /// Only `subject`/`priority`/`description` are sent — resending `project`
+  /// unchanged would trigger the backend's cross-field date validation on a
+  /// metadata-only edit (operations-task.md "PATCH is genuinely partial").
+  Future<void> _save() async {
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Changes saved');
+      context.pop();
+      return;
+    }
+    try {
+      await ref.read(opsTasksRepositoryProvider).updateOpsTask(_id, {
+        'subject': _subject.text.trim(),
+        'priority': _pri,
+        'description': _desc.text.trim(),
+      });
+      if (!mounted) return;
+      ref.invalidate(opsTasksProvider);
+      ref.read(toastProvider.notifier).show('Changes saved');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
@@ -114,10 +144,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
       title: 'Edit task',
       subtitle: '$_id · changes apply on save',
       onClose: () => handleEditClose(context, dirty: _dirty),
-      onSave: () {
-        ref.read(toastProvider.notifier).show('Changes saved');
-        context.pop();
-      },
+      onSave: _save,
       children: [
         const OpsSectionLabel('Basics', first: true),
         AppTextField(label: 'Subject', required: true, controller: _subject, hint: 'What needs to happen?', onChanged: (_) => setState(_dirtied)),

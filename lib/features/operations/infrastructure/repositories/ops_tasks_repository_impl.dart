@@ -15,4 +15,12 @@ class OpsTasksRepositoryImpl implements OpsTasksRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchOpsTasks();
   }
+
+  /// Mock writes are harmless no-ops: mock-mode screens keep their local
+  /// toast-and-pop behavior and never read the result.
+  @override
+  Future<OpsTask?> createOpsTask(Map<String, dynamic> fields) async => null;
+
+  @override
+  Future<void> updateOpsTask(String id, Map<String, dynamic> fields) async {}
 }

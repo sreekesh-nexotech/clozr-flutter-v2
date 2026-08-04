@@ -15,4 +15,14 @@ class PaymentsRepositoryImpl implements PaymentsRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchPayments();
   }
+
+  @override
+  Future<void> markRecordPaid(
+    String recordId, {
+    double? amount,
+    String method = 'upi',
+  }) async {
+    // Mock mode: no backend — the sheet's local paid override is the state.
+    await Future<void>.delayed(AppConstants.mockLatency);
+  }
 }

@@ -5,4 +5,9 @@ import '../entities/lead.dart';
 /// infrastructure detail.
 abstract class LeadsRepository {
   Future<List<Lead>> getLeads();
+
+  /// Creates a lead from API-shaped form fields (`lead_name`,
+  /// `organization_name`, `email`, `phone`, `purpose`). Returns the created
+  /// lead, or null when the backend response shape is unexpected.
+  Future<Lead?> createLead(Map<String, dynamic> fields);
 }

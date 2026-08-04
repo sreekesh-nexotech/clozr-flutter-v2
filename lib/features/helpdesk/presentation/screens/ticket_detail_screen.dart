@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -5,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
@@ -669,9 +672,23 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             onTap: () {
               setState(() => _status = 'closed');
               ref.read(toastProvider.notifier).show('Ticket → Closed');
+              _pushStatus(t.id, 'closed');
             },
           ),
       ],
+    );
+  }
+
+  /// Fire-and-forget status write. The local copyWith already updated the UI;
+  /// the backend catches up in the background (errors are swallowed — the next
+  /// list refresh reconciles).
+  void _pushStatus(String id, String uiStatusKey) {
+    if (!ApiConfig.apiEnabled) return;
+    unawaited(
+      ref
+          .read(ticketsRepositoryProvider)
+          .setTicketStatusByKey(id, uiStatusKey)
+          .catchError((Object _) {}),
     );
   }
 
@@ -702,6 +719,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
         setState(() => _status = key);
         Navigator.of(ctx).pop();
         ref.read(toastProvider.notifier).show('Status → ${meta.label}');
+        _pushStatus(t.id, key);
       },
       child: Container(
         margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),

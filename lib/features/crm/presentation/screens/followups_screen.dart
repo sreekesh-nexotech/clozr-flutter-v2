@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
@@ -142,6 +145,12 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                           ...overrides,
                           f.id: done ? 'due' : 'done',
                         };
+                        if (ApiConfig.apiEnabled) {
+                          unawaited(ref
+                              .read(followupsRepositoryProvider)
+                              .setFollowupDone(f.id, !done)
+                              .catchError((_) {}));
+                        }
                         ref.read(toastProvider.notifier).show(
                             done ? 'Follow-up reopened' : 'Follow-up marked done');
                       },

@@ -4,6 +4,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -50,10 +52,27 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
 
   bool get _contactOk => _contact.text.trim().isNotEmpty;
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() => _showErrors = true);
     if (!_contactOk) {
       widget.ref.read(toastProvider.notifier).show('Enter a contact name');
+      return;
+    }
+    if (ApiConfig.apiEnabled) {
+      try {
+        await widget.ref.read(followupsRepositoryProvider).createFollowup({
+          'title': _contact.text.trim(),
+          'task_type': _kind,
+          'due_date': _date.text.trim(),
+          'description': _note.text.trim(),
+        });
+      } on AppError catch (e) {
+        widget.ref.read(toastProvider.notifier).show(e.message);
+        return;
+      }
+      widget.ref.invalidate(followupsProvider);
+      widget.ref.read(toastProvider.notifier).show('Follow-up scheduled');
+      if (mounted) Navigator.of(context).pop();
       return;
     }
     final contact = _contact.text.trim();
