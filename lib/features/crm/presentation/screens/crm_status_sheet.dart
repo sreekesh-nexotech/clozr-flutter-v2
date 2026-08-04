@@ -9,8 +9,10 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 
 /// Opens the shared "update status" bottom sheet: a list of status options
-/// (colour dot + label + a tick on the current one). Selecting a status toasts
-/// the change and closes — the presentation layer does not mutate seed data.
+/// (colour dot + label + a tick on the current one). Selecting a status closes
+/// the sheet and, if [onSelect] is provided, hands the chosen key to the caller
+/// (which persists the change + toasts). When [onSelect] is null it falls back
+/// to a plain "Status set to …" toast, leaving seed data untouched.
 void showCrmStatusSheet({
   required BuildContext context,
   required WidgetRef ref,
@@ -18,6 +20,7 @@ void showCrmStatusSheet({
   required List<String> options,
   required Map<String, StatusMeta> meta,
   required String current,
+  void Function(String key)? onSelect,
 }) {
   showClozrSheet<void>(
     context: context,
@@ -35,7 +38,11 @@ void showCrmStatusSheet({
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     Navigator.of(ctx).pop();
-                    ref.read(toastProvider.notifier).show('Status set to ${meta[k]!.label}');
+                    if (onSelect != null) {
+                      onSelect(k);
+                    } else {
+                      ref.read(toastProvider.notifier).show('Status set to ${meta[k]!.label}');
+                    }
                   },
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),

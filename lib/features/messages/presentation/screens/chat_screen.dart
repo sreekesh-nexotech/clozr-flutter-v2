@@ -6,8 +6,10 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../domain/entities/conversation.dart';
+import '../../domain/entities/whatsapp_template.dart';
 import '../../application/providers/messages_providers.dart';
 import '../components/chat_avatar.dart';
 import '../components/message_bubble.dart';
@@ -58,13 +60,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
   }
 
-  void _sendTemplate() {
-    ref.read(conversationsProvider.notifier).sendTemplate(
-          _id,
-          'Hello! Following up on our conversation — let me know a good time to connect. — Kairali Interiors',
-        );
-    ref.read(toastProvider.notifier).show('Template message sent');
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+  /// Open the "Template messages" picker sheet (closed 24-hour window). Tapping a
+  /// row sends THAT template — the body resolved with the contact's first name —
+  /// flagged as a template, then closes the sheet and toasts.
+  void _openTemplateSheet(Conversation chat) {
+    final firstName = chat.name.split(' ').first;
+    final templates = ref.read(whatsappTemplatesProvider);
+    showClozrSheet<void>(
+      context: context,
+      builder: (ctx) => _TemplatePickerSheet(
+        templates: templates,
+        firstName: firstName,
+        onPick: (t) {
+          Navigator.of(ctx).pop();
+          ref.read(conversationsProvider.notifier).sendTemplate(_id, t.resolve(firstName));
+          ref.read(toastProvider.notifier).show('Template message sent');
+          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+        },
+      ),
+    );
   }
 
   @override
@@ -255,7 +269,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         color: AppColors.white,
         border: Border(top: BorderSide(color: AppColors.borderCardSoft, width: 1)),
       ),
-      child: chat.windowOpen ? _openComposer(chat) : _closedComposer(),
+      child: chat.windowOpen ? _openComposer(chat) : _closedComposer(chat),
     );
   }
 
@@ -335,7 +349,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _closedComposer() {
+  Widget _closedComposer(Conversation chat) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -351,7 +365,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         SizedBox(height: 10.h),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: _sendTemplate,
+          onTap: () => _openTemplateSheet(chat),
           child: Container(
             height: 46.h,
             alignment: Alignment.center,
@@ -558,6 +572,139 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 textAlign: TextAlign.center,
                 style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.5)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The "Template messages" picker sheet (design ≈ line 6757). Lists the approved
+/// WhatsApp templates: name (bold) with an APPROVED badge and a preview of the
+/// body with the contact's first name substituted, hairline-divided between
+/// rows. Tapping a row fires [onPick] with that template.
+class _TemplatePickerSheet extends StatelessWidget {
+  const _TemplatePickerSheet({
+    required this.templates,
+    required this.firstName,
+    required this.onPick,
+  });
+
+  final List<WhatsappTemplate> templates;
+  final String firstName;
+  final ValueChanged<WhatsappTemplate> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SheetHeader(title: 'Template messages'),
+        Container(
+          margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 4.h),
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+          decoration: BoxDecoration(
+            color: MessagesColors.infoBannerBg,
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: 1.h),
+                child: Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.blueBright),
+              ),
+              SizedBox(width: 8.w),
+              Expanded(
+                child: Text('Only approved templates can be sent outside the 24-hour window.',
+                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textLabelAlt)
+                        .copyWith(height: 1.5)),
+              ),
+            ],
+          ),
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 26.h),
+            child: Column(
+              children: [
+                for (int i = 0; i < templates.length; i++)
+                  _row(templates[i], last: i == templates.length - 1),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(WhatsappTemplate t, {required bool last}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onPick(t),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 2.w),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: last ? Colors.transparent : AppColors.bgChipGrey, width: 1),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38.w,
+              height: 38.w,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsRegular.whatsappLogo, size: 19.sp, color: AppColors.success),
+            ),
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(t.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      ),
+                      SizedBox(width: 8.w),
+                      _approvedBadge(),
+                    ],
+                  ),
+                  SizedBox(height: 4.h),
+                  Text(t.resolve(firstName),
+                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)
+                          .copyWith(height: 1.5)),
+                ],
+              ),
+            ),
+            SizedBox(width: 10.w),
+            Padding(
+              padding: EdgeInsets.only(top: 10.h),
+              child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 18.sp, color: AppColors.navy),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _approvedBadge() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
+      decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(6.r)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIconsFill.sealCheck, size: 10.sp, color: AppColors.success),
+          SizedBox(width: 4.w),
+          Text('APPROVED',
+              style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.success, letterSpacing: 0.4)),
         ],
       ),
     );

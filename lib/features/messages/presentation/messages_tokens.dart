@@ -12,4 +12,5 @@ class MessagesColors {
   static const todayChip = Color(0xFFECEDEF); // "Today" date separator chip
   static const sendDisabled = Color(0xFFC7CBD3); // send FAB when draft empty
   static const windowSub = Color(0xFF4A7C5B); // open-window sublabel green
+  static const infoBannerBg = Color(0xFFF6F8FB); // template-picker info banner tint
 }

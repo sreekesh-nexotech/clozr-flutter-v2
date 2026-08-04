@@ -52,6 +52,13 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     _notesKey.currentState?.focusComposer();
   }
 
+  /// Records a status change for an existing follow-up so the detail + list
+  /// reflect it immediately (see `followupStatusOverrideProvider`).
+  void _setStatus(WidgetRef ref, String id, String status) {
+    final overrides = ref.read(followupStatusOverrideProvider);
+    ref.read(followupStatusOverrideProvider.notifier).state = {...overrides, id: status};
+  }
+
   void _openFollowupMenu(Followup fu) {
     final toast = ref.read(toastProvider.notifier);
     showActionMenu(
@@ -155,7 +162,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               ],
             ),
           ),
-          _bottomBar(ref, done),
+          _bottomBar(ref, fu, done),
         ],
       ),
     );
@@ -203,6 +210,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               options: const ['overdue', 'due', 'done'],
               meta: StatusMeta$.followup,
               current: fu.status,
+              onSelect: (k) {
+                _setStatus(ref, fu.id, k);
+                ref.read(toastProvider.notifier).show('Status set to ${StatusMeta$.followup[k]!.label}');
+              },
             ),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
@@ -347,7 +358,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     );
   }
 
-  Widget _bottomBar(WidgetRef ref, bool done) {
+  Widget _bottomBar(WidgetRef ref, Followup fu, bool done) {
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
       decoration: const BoxDecoration(
@@ -369,7 +380,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           SizedBox(width: 10.w),
           Expanded(
             child: GestureDetector(
-              onTap: () => ref.read(toastProvider.notifier).show(done ? 'Follow-up reopened' : 'Follow-up marked done'),
+              onTap: () {
+                _setStatus(ref, fu.id, done ? 'due' : 'done');
+                ref.read(toastProvider.notifier).show(done ? 'Follow-up reopened' : 'Follow-up marked done');
+              },
               child: Container(
                 height: 48.h,
                 alignment: Alignment.center,

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/conversation.dart';
+import '../../domain/entities/whatsapp_template.dart';
 import '../../domain/repositories/messages_repository.dart';
 import '../../infrastructure/data_sources/local/messages_mock_ds.dart';
 import '../../infrastructure/repositories/messages_repository_impl.dart';
@@ -67,3 +68,7 @@ final visibleConversationsProvider = Provider<List<Conversation>>((ref) {
 
 /// Active tab on the chat screen: 'chats' | 'medias' | 'links'.
 final chatTabProvider = StateProvider<String>((ref) => 'chats');
+
+/// Approved WhatsApp templates offered by the closed-window picker. Reads the
+/// const seed today; override this provider to source them from a backend.
+final whatsappTemplatesProvider = Provider<List<WhatsappTemplate>>((ref) => kWhatsappTemplates);

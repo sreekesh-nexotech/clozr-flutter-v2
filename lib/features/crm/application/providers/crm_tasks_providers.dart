@@ -15,10 +15,10 @@ final crmTasksProvider = FutureProvider<List<CrmTask>>(
   (ref) => ref.watch(crmTasksRepositoryProvider).getTasks(),
 );
 
-/// Look up a single task by id (used by the detail screen).
+/// Look up a single task by id (used by the detail screen). Reads the merged
+/// "all" set so session drafts and status overrides are reflected.
 final crmTaskByIdProvider = Provider.family<CrmTask?, String>((ref, id) {
-  final list = ref.watch(crmTasksProvider).valueOrNull;
-  if (list == null) return null;
+  final list = ref.watch(crmTasksAllProvider);
   for (final t in list) {
     if (t.id == id) return t;
   }
@@ -31,12 +31,41 @@ final crmTaskByIdProvider = Provider.family<CrmTask?, String>((ref, id) {
 /// repo-backed list so new records appear immediately.
 final crmTaskDraftsProvider = StateProvider<List<CrmTask>>((ref) => const []);
 
-/// The full task set: session-added drafts first, then the repo-backed list.
+/// Session-local status overrides for existing tasks, keyed by id → status.
+/// Existing records come from a read-only [crmTasksProvider], so a status
+/// change (e.g. → done) has nowhere else to persist; it is layered on here and
+/// picked up by both the list and the detail via [crmTasksAllProvider].
+final crmTaskStatusOverrideProvider =
+    StateProvider<Map<String, String>>((ref) => const {});
+
+/// The full task set: session-added drafts first, then the repo-backed list,
+/// with any session status overrides applied.
 final crmTasksAllProvider = Provider<List<CrmTask>>((ref) {
   final repo = ref.watch(crmTasksProvider).valueOrNull ?? const [];
   final drafts = ref.watch(crmTaskDraftsProvider);
-  return [...drafts, ...repo];
+  final overrides = ref.watch(crmTaskStatusOverrideProvider);
+  final merged = [...drafts, ...repo];
+  if (overrides.isEmpty) return merged;
+  return [
+    for (final t in merged)
+      (overrides[t.id] != null && overrides[t.id] != t.status)
+          ? _crmTaskWithStatus(t, overrides[t.id]!)
+          : t,
+  ];
 });
+
+/// Rebuilds a [CrmTask] with a new status (the entity has no `copyWith`).
+CrmTask _crmTaskWithStatus(CrmTask t, String status) => CrmTask(
+      id: t.id,
+      title: t.title,
+      type: t.type,
+      leadId: t.leadId,
+      status: status,
+      priority: t.priority,
+      assignee: t.assignee,
+      due: t.due,
+      dueNote: t.dueNote,
+    );
 
 /// Active tab on the Tasks list (all / mine / overdue / status keys).
 final crmTaskTabProvider = StateProvider<String>((ref) => 'all');

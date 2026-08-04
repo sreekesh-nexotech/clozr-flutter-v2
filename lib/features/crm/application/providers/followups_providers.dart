@@ -15,10 +15,10 @@ final followupsProvider = FutureProvider<List<Followup>>(
   (ref) => ref.watch(followupsRepositoryProvider).getFollowups(),
 );
 
-/// Look up a single follow-up by id (used by the detail screen).
+/// Look up a single follow-up by id (used by the detail screen). Reads the
+/// merged "all" set so session drafts and status overrides are reflected.
 final followupByIdProvider = Provider.family<Followup?, String>((ref, id) {
-  final list = ref.watch(followupsProvider).valueOrNull;
-  if (list == null) return null;
+  final list = ref.watch(followupsAllProvider);
   for (final f in list) {
     if (f.id == id) return f;
   }
@@ -31,12 +31,43 @@ final followupByIdProvider = Provider.family<Followup?, String>((ref, id) {
 /// Prepended to the repo-backed list so new records appear immediately.
 final followupDraftsProvider = StateProvider<List<Followup>>((ref) => const []);
 
-/// The full follow-up set: session-added drafts first, then the repo list.
+/// Session-local status overrides for existing follow-ups, keyed by id → status.
+/// Existing records come from a read-only [followupsProvider], so a status
+/// change (e.g. → done) has nowhere else to persist; it is layered on here and
+/// picked up by both the list and the detail via [followupsAllProvider].
+final followupStatusOverrideProvider =
+    StateProvider<Map<String, String>>((ref) => const {});
+
+/// The full follow-up set: session-added drafts first, then the repo list, with
+/// any session status overrides applied.
 final followupsAllProvider = Provider<List<Followup>>((ref) {
   final repo = ref.watch(followupsProvider).valueOrNull ?? const [];
   final drafts = ref.watch(followupDraftsProvider);
-  return [...drafts, ...repo];
+  final overrides = ref.watch(followupStatusOverrideProvider);
+  final merged = [...drafts, ...repo];
+  if (overrides.isEmpty) return merged;
+  return [
+    for (final f in merged)
+      (overrides[f.id] != null && overrides[f.id] != f.status)
+          ? _followupWithStatus(f, overrides[f.id]!)
+          : f,
+  ];
 });
+
+/// Rebuilds a [Followup] with a new status (the entity has no `copyWith`).
+Followup _followupWithStatus(Followup f, String status) => Followup(
+      id: f.id,
+      kind: f.kind,
+      contact: f.contact,
+      custId: f.custId,
+      leadId: f.leadId,
+      company: f.company,
+      due: f.due,
+      time: f.time,
+      status: status,
+      owner: f.owner,
+      agenda: f.agenda,
+    );
 
 /// Active status tab on the Follow-ups list.
 final followupTabProvider = StateProvider<String>((ref) => 'all');

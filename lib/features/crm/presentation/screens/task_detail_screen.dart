@@ -56,6 +56,13 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     _notesKey.currentState?.focusComposer();
   }
 
+  /// Records a status change for an existing task so the detail + list reflect
+  /// it immediately (see `crmTaskStatusOverrideProvider`).
+  void _setStatus(String id, String status) {
+    final overrides = ref.read(crmTaskStatusOverrideProvider);
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...overrides, id: status};
+  }
+
   void _openTaskMenu(CrmTask task, bool done) {
     final toast = ref.read(toastProvider.notifier);
     showActionMenu(
@@ -231,6 +238,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       options: const ['todo', 'inprogress', 'blocked', 'done'],
       meta: StatusMeta$.task,
       current: task.status,
+      onSelect: (k) {
+        _setStatus(task.id, k);
+        ref.read(toastProvider.notifier).show('Status set to ${StatusMeta$.task[k]!.label}');
+      },
     );
   }
 
@@ -397,7 +408,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           SizedBox(width: 10.w),
           Expanded(
             child: GestureDetector(
-              onTap: () => ref.read(toastProvider.notifier).show(done ? 'Task reopened' : 'Task marked complete'),
+              onTap: () {
+                _setStatus(task.id, done ? 'todo' : 'done');
+                ref.read(toastProvider.notifier).show(done ? 'Task reopened' : 'Task marked complete');
+              },
               child: Container(
                 height: 48.h,
                 alignment: Alignment.center,

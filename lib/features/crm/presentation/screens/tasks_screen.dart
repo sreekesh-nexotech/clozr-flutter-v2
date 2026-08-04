@@ -149,8 +149,16 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                       task: t,
                       relatedLine: relatedLineFor(t.leadId),
                       onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
-                      onToggle: () => ref.read(toastProvider.notifier).show(
-                          t.status == 'done' ? 'Task reopened' : 'Task marked complete'),
+                      onToggle: () {
+                        final done = t.status == 'done';
+                        final overrides = ref.read(crmTaskStatusOverrideProvider);
+                        ref.read(crmTaskStatusOverrideProvider.notifier).state = {
+                          ...overrides,
+                          t.id: done ? 'todo' : 'done',
+                        };
+                        ref.read(toastProvider.notifier).show(
+                            done ? 'Task reopened' : 'Task marked complete');
+                      },
                     );
                   },
                 ),

@@ -135,8 +135,16 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                     return FollowupCard(
                       followup: f,
                       onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
-                      onToggle: () => ref.read(toastProvider.notifier).show(
-                          f.status == 'done' ? 'Follow-up reopened' : 'Follow-up marked done'),
+                      onToggle: () {
+                        final done = f.status == 'done';
+                        final overrides = ref.read(followupStatusOverrideProvider);
+                        ref.read(followupStatusOverrideProvider.notifier).state = {
+                          ...overrides,
+                          f.id: done ? 'due' : 'done',
+                        };
+                        ref.read(toastProvider.notifier).show(
+                            done ? 'Follow-up reopened' : 'Follow-up marked done');
+                      },
                     );
                   },
                 ),
