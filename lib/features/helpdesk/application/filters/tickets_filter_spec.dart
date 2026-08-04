@@ -56,7 +56,6 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets) {
     FilterOption(id: 'Low', label: 'Low'),
   ];
   final cats = _uniqueOptions(tickets.map((t) => t.cat));
-  final channels = _uniqueOptions(tickets.map((t) => t.channel));
   final products = _uniqueOptions(tickets.map((t) => t.product));
   final customers = _uniqueOptions(tickets.map(ticketCustomerDisplay));
   final assignees = [
@@ -86,12 +85,6 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets) {
             control: FilterControl.checkboxGroup,
             twoCol: true,
             options: cats),
-        FilterField(
-            id: 'channels',
-            label: 'Channel',
-            control: FilterControl.checkboxGroup,
-            twoCol: true,
-            options: channels),
       ]),
       FilterSection(title: 'Customer & assignment', fields: [
         FilterField(
@@ -158,7 +151,6 @@ bool ticketMatchesFilters(Ticket t, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('statuses'), [t.status])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('pri'), [t.pri])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('cats'), [t.cat])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('channels'), [t.channel])) return false;
 
   if (!FilterMatch.matchAnyOf(v.choice('companies'), [ticketCustomerDisplay(t)])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), t.assignees)) return false;

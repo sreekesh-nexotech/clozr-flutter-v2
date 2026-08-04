@@ -1,6 +1,4 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -16,15 +14,6 @@ import 'tasks_filter_spec.dart' show parseCrmDate;
 /// Leads reference. Sections: Type & status · People & company · Due date.
 
 const List<String> _fuTypes = ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site visit', 'Payment'];
-
-const Map<String, IconData> _fuTypeIcons = {
-  'Call': PhosphorIconsRegular.phone,
-  'Email': PhosphorIconsRegular.envelopeSimple,
-  'Meeting': PhosphorIconsRegular.usersThree,
-  'WhatsApp': PhosphorIconsRegular.whatsappLogo,
-  'Site visit': PhosphorIconsRegular.mapPin,
-  'Payment': PhosphorIconsRegular.currencyInr,
-};
 
 /// All companies across leads + customers + follow-ups (the audit's company
 /// universe), sorted and de-duplicated.
@@ -58,7 +47,7 @@ FilterSpec buildFollowupsFilterSpec({
       .map((c) => FilterOption(id: c, label: c))
       .toList();
   final types = [
-    for (final t in _fuTypes) FilterOption(id: t, label: t, icon: _fuTypeIcons[t]),
+    for (final t in _fuTypes) FilterOption(id: t, label: t),
   ];
 
   return FilterSpec(

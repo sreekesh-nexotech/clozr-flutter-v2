@@ -100,15 +100,16 @@ class CustomerCard extends StatelessWidget {
               SizedBox(width: 9.w),
               Text(more > 0 ? '+$more more' : 'Team',
                   style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
-              SizedBox(width: 12.w),
-              Expanded(
-                child: GestureDetector(
-                  onTap: onCall,
-                  child: Container(
-                    height: 48.h,
-                    decoration: BoxDecoration(color: AppColors.blueCta, borderRadius: BorderRadius.circular(12.r)),
-                    child: Icon(PhosphorIconsFill.phone, size: 19.sp, color: AppColors.navy),
-                  ),
+              const Spacer(),
+              // Compact fixed-size Call button — matches the Leads card (#5).
+              GestureDetector(
+                onTap: onCall,
+                child: Container(
+                  width: 52.w,
+                  height: 48.h,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.blueCta, borderRadius: BorderRadius.circular(12.r)),
+                  child: Icon(PhosphorIconsFill.phone, size: 19.sp, color: AppColors.navy),
                 ),
               ),
             ],

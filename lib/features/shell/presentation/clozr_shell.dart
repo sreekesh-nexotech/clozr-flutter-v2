@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -26,10 +27,33 @@ class ClozrShell extends ConsumerWidget {
     final drawerOpen = ref.watch(drawerOpenProvider);
     final toast = ref.watch(toastProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.bgScreen,
-      body: Stack(
-        children: [
+    // Handle the OS/hardware Back button (#11). Without this, screens reached
+    // via context.go (bottom nav / drawer) flatten the stack, so Back exits the
+    // app straight to the phone home screen. Instead: close an open drawer, then
+    // pop the router if it can, then fall back to Home, and only exit from Home.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (ref.read(drawerOpenProvider)) {
+          ref.read(drawerOpenProvider.notifier).state = false;
+          return;
+        }
+        final router = GoRouter.of(context);
+        if (router.canPop()) {
+          router.pop();
+          return;
+        }
+        if (location.split('?').first != Routes.home) {
+          context.go(Routes.home);
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.bgScreen,
+        body: Stack(
+          children: [
           // Routed screen. Headers stay edge-to-edge under the real status bar
           // (their own top padding clears it); the bottom SafeArea keeps every
           // screen's bottom-anchored content (sticky CTAs, list ends) above the
@@ -54,7 +78,8 @@ class ClozrShell extends ConsumerWidget {
 
           // Toast.
           if (toast != null) _Toast(message: toast),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,4 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -22,16 +20,6 @@ const List<String> _taskTypes = [
   'Follow-up',
   'Payment',
 ];
-
-const Map<String, IconData> _taskTypeIcons = {
-  'Call': PhosphorIconsRegular.phone,
-  'Email': PhosphorIconsRegular.envelopeSimple,
-  'Meeting': PhosphorIconsRegular.usersThree,
-  'WhatsApp': PhosphorIconsRegular.whatsappLogo,
-  'Site visit': PhosphorIconsRegular.mapPin,
-  'Follow-up': PhosphorIconsRegular.arrowUUpRight,
-  'Payment': PhosphorIconsRegular.currencyInr,
-};
 
 const _months = {
   'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
@@ -61,7 +49,7 @@ FilterSpec buildTasksFilterSpec() {
     for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
   ];
   final types = [
-    for (final t in _taskTypes) FilterOption(id: t, label: t, icon: _taskTypeIcons[t]),
+    for (final t in _taskTypes) FilterOption(id: t, label: t),
   ];
   final priorities = [
     FilterOption(id: 'High', label: 'High', dot: StatusMeta$.priorityTone['High']!.fg),
