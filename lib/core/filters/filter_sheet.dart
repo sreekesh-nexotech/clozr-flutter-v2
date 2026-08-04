@@ -724,10 +724,12 @@ class _FilterSheetState extends State<_FilterSheet> {
   Widget _dateChip(String label, bool on, VoidCallback onTap) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
+        // No fixed height + no `alignment:` — inside a Wrap an aligned Container
+        // expands to the full available width (Align fills bounded constraints),
+        // which stacked the chips full-width. Sizing to the padded label instead
+        // lets them wrap compactly like the prototype's date chips (#10).
         child: Container(
-          height: 34.h,
-          padding: EdgeInsets.symmetric(horizontal: 12.w),
-          alignment: Alignment.center,
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
           decoration: BoxDecoration(
             color: on ? AppColors.navy : AppColors.white,
             borderRadius: BorderRadius.circular(9.r),
