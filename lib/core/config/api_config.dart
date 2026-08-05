@@ -14,7 +14,14 @@ class ApiConfig {
   ApiConfig._();
 
   /// Backend origin, e.g. `https://crm.example.com`. No trailing slash.
-  static const String baseUrl = String.fromEnvironment('API_BASE_URL');
+  ///
+  /// Defaults to the dev backend so a plain `flutter run` talks to a real API;
+  /// `--dart-define=API_BASE_URL=…` still overrides it per build (pass an empty
+  /// value, or `--dart-define=USE_MOCK_DATA=true`, to get mock mode back).
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://dev.clozr.tech',
+  );
 
   /// All REST routes mount under this prefix on the backend.
   static const String apiPrefix = '/api/v1';
