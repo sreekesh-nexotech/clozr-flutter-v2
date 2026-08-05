@@ -103,7 +103,8 @@ final GoRouter appRouter = GoRouter(
     final loggedIn = status == SessionStatus.authenticated;
     final atAuthRoute = loc == Routes.login || loc == Routes.splash;
     if (!loggedIn) return loc == Routes.login ? null : Routes.login;
-    return atAuthRoute ? Routes.home : null;
+    // A signed-in user lands on the Dashboard, not the CRM home.
+    return atAuthRoute ? Routes.dashboard : null;
   },
   routes: [
     GoRoute(
