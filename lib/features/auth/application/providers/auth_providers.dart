@@ -212,6 +212,17 @@ class SessionController extends StateNotifier<SessionState> {
         'id': user.id,
         'email': user.email,
         'full_name': user.fullName,
+        // Cached too, so a warm start shows the real workspace name in the
+        // header instead of blanking until the background /me lands.
+        'organizations': [
+          for (final o in user.organizations)
+            {
+              'id': o.id,
+              'name': o.name,
+              'subdomain': o.subdomain,
+              'is_primary': o.isPrimary,
+            },
+        ],
       }),
     );
   }

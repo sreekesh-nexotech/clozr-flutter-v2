@@ -30,7 +30,8 @@ class ClozrShell extends ConsumerWidget {
     // Handle the OS/hardware Back button (#11). Without this, screens reached
     // via context.go (bottom nav / drawer) flatten the stack, so Back exits the
     // app straight to the phone home screen. Instead: close an open drawer, then
-    // pop the router if it can, then fall back to Home, and only exit from Home.
+    // pop the router if it can, then fall back to the Dashboard (the app's
+    // landing screen), and only exit from the Dashboard.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -44,8 +45,8 @@ class ClozrShell extends ConsumerWidget {
           router.pop();
           return;
         }
-        if (location.split('?').first != Routes.home) {
-          context.go(Routes.home);
+        if (location.split('?').first != Routes.dashboard) {
+          context.go(Routes.dashboard);
           return;
         }
         SystemNavigator.pop();

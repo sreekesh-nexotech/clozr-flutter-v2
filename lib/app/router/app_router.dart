@@ -86,7 +86,7 @@ GoRoute _push(String path, Widget child) => GoRoute(
 
 final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
-  initialLocation: Routes.home,
+  initialLocation: Routes.dashboard,
   // Auth gate — active only when a backend is configured. Mock mode keeps the
   // original boot-straight-into-the-shell behavior.
   refreshListenable: SessionGate.instance,

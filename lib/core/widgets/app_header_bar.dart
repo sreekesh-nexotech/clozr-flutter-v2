@@ -7,23 +7,46 @@ import '../../app/config/constants.dart';
 import '../../app/router/routes.dart';
 import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_text_styles.dart';
+import '../../features/auth/application/providers/auth_providers.dart';
+import '../../features/messages/application/providers/messages_providers.dart';
+import '../../features/notifications/application/providers/notifications_providers.dart';
 import '../../features/shell/application/providers/shell_providers.dart';
 
 /// The brand header row shared by every list/home screen: tappable logo block
 /// (opens the drawer), workspace name, messages icon (unread badge) and
 /// notifications bell (unread dot).
+///
+/// The workspace label and both unread indicators come from live state — the
+/// signed-in user's primary organization, the conversation list and the
+/// notification list. Without a session (mock mode) the label falls back to the
+/// seed workspace name so the prototype build is unchanged.
 class AppHeaderBar extends ConsumerWidget {
   const AppHeaderBar({
     super.key,
-    this.chatUnread = 2,
-    this.hasUnread = true,
+    this.chatUnread,
+    this.hasUnread,
   });
 
-  final int chatUnread;
-  final bool hasUnread;
+  /// Explicit overrides. Null at every call site today, which is what makes the
+  /// badges read live state instead of a fixed value.
+  final int? chatUnread;
+  final bool? hasUnread;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final org = ref.watch(sessionControllerProvider).user?.primaryOrg;
+    final workspace = (org != null && org.name.isNotEmpty)
+        ? org.name
+        : AppConstants.workspaceName;
+
+    final unreadChats = chatUnread ??
+        ref
+            .watch(conversationsProvider)
+            .conversations
+            .fold<int>(0, (sum, c) => sum + c.unread);
+    final unreadNotifs =
+        hasUnread ?? (ref.watch(notificationsProvider).unreadCount > 0);
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -53,7 +76,7 @@ class AppHeaderBar extends ConsumerWidget {
                     ),
                   ),
                   SizedBox(height: 1.h),
-                  Text(AppConstants.workspaceName, style: AppText.caption()),
+                  Text(workspace, style: AppText.caption()),
                 ],
               ),
             ],
@@ -64,13 +87,13 @@ class AppHeaderBar extends ConsumerWidget {
             _iconButton(
               icon: PhosphorIconsRegular.chatsCircle,
               onTap: () => context.push(Routes.messages),
-              badge: chatUnread > 0 ? '$chatUnread' : null,
+              badge: unreadChats > 0 ? '$unreadChats' : null,
             ),
             SizedBox(width: 10.w),
             _iconButton(
               icon: PhosphorIconsRegular.bell,
               onTap: () => context.push(Routes.notifications),
-              dot: hasUnread,
+              dot: unreadNotifs,
             ),
           ],
         ),
