@@ -24,7 +24,7 @@ class PeopleRemoteDataSource {
 
   /// The UI's providers expect a full in-memory list — follow `next` up to a
   /// sane cap instead of paging forever.
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   // ── Reads (raw rows; the repository caches these) ──
 

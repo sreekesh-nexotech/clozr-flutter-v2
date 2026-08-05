@@ -17,6 +17,7 @@ class Routes {
   Routes._();
 
   // Auth (outside the shell — no status bar / bottom nav chrome)
+  static const splash = '/splash';
   static const login = '/login';
 
   // CRM

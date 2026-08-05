@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../app/theme/app_colors.dart';
+import '../../core/config/api_config.dart';
 
 /// A workspace member ("rep"). Shared across CRM, Operations, Helpdesk and LMS
 /// because the prototype seeds one roster (`REPS`) used everywhere.
@@ -48,7 +49,24 @@ class MockUsers {
 
   static final Map<String, AppUser> byId = {for (final r in reps) r.id: r};
 
-  static AppUser of(String id) => byId[id] ?? reps.first;
+  /// Resolves a user id to a display user. In API mode an id that hasn't been
+  /// registered (roster 403, or an embedded object with no name) must NOT fall
+  /// back to the signed-in user — that silently misattributes ownership. It
+  /// returns a neutral "Unknown" placeholder instead. In mock mode the roster
+  /// is complete, so the first rep remains a harmless fallback.
+  static AppUser of(String id) {
+    final found = byId[id];
+    if (found != null) return found;
+    return ApiConfig.apiEnabled ? _unknown(id) : reps.first;
+  }
+
+  static AppUser _unknown(String id) => AppUser(
+        id: id,
+        name: 'Unknown',
+        initials: id.isNotEmpty ? id.substring(0, 1).toUpperCase() : '?',
+        color: AppColors.textPlaceholder,
+        role: '',
+      );
 
   /// Distinct per-member avatar colours used on the People screens (from the
   /// `members` seed).

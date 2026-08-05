@@ -22,7 +22,7 @@ class CrmTasksRemoteDataSource {
   /// Raw list rows (followed up to 3 pages). The repository caches these.
   Future<List<Map<String, dynamic>>> fetchTaskRows() async {
     final rows = <Map<String, dynamic>>[];
-    for (var page = 1; page <= 3; page++) {
+    for (var page = 1; page <= 50; page++) {
       final body = await _api.get(ApiEndpoints.crmTasks, query: {
         'is_followup': 'false',
         'page_size': 100,

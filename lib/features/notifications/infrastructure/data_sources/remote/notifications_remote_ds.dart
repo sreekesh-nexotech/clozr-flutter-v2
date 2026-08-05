@@ -203,7 +203,7 @@ class NotificationsRemoteDataSource {
   final ApiService _api;
 
   static const int _pageSize = ApiConfig.defaultPageSize;
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   Future<List<Map<String, dynamic>>> fetchNotificationRows() async {
     final rows = <Map<String, dynamic>>[];

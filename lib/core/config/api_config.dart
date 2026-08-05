@@ -25,6 +25,16 @@ class ApiConfig {
   /// Whether the remote data sources should be wired in.
   static bool get apiEnabled => baseUrl.isNotEmpty && !forceMocks;
 
+  /// True when the configured base URL uses TLS, or points at a local dev host
+  /// (loopback / Android emulator) where cleartext is acceptable in debug.
+  static bool get isBaseUrlSecure {
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null) return false;
+    if (uri.scheme == 'https') return true;
+    const localHosts = {'localhost', '127.0.0.1', '10.0.2.2', '::1'};
+    return uri.scheme == 'http' && localHosts.contains(uri.host);
+  }
+
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 30);
   static const Duration sendTimeout = Duration(seconds: 30);

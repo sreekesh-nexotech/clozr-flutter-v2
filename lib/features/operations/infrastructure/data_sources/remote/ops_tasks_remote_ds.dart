@@ -22,7 +22,7 @@ class OpsTasksRemoteDataSource {
   final ApiService _api;
 
   static const int _pageSize = 100;
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   /// Neutral colour tag for API rows — same `OpsColorTag(name, hex)` shape the
   /// mock seed uses, with an empty name and the grey token.

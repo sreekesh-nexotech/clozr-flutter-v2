@@ -43,7 +43,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    String? Function(AppError error)? mapError,
+  }) async {
+    if (_busy) return; // guard the Enter path against a double submit
     setState(() {
       _busy = true;
       _error = null;
@@ -51,7 +55,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await action();
     } on AppError catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _error = mapError?.call(e) ?? e.message);
     } on Object {
       if (mounted) setState(() => _error = 'Something went wrong. Please try again.');
     } finally {
@@ -59,42 +63,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _submitCredentials() => _run(() async {
-        final email = _email.text.trim();
-        final password = _password.text;
-        if (email.isEmpty || password.isEmpty) {
-          throw const AppError(
-            type: AppErrorType.validation,
-            message: 'Enter your email and password.',
-          );
-        }
-        final result = await ref
-            .read(sessionControllerProvider.notifier)
-            .login(email, password);
-        if (!mounted) return;
-        switch (result) {
-          case LoginSuccess():
-            break; // Router redirects via the session gate.
-          case LoginTwoFactorRequired(:final challengeToken):
-            setState(() {
-              _challengeToken = challengeToken;
-              _code.clear();
-              _step = _LoginStep.challenge;
-            });
-          case LoginEnrolmentRequired(:final enrolmentToken, :final message):
-            _enrolmentToken = enrolmentToken;
-            _enrolMessage = message;
-            final enrolment = await ref
-                .read(sessionControllerProvider.notifier)
-                .startEnrolment(enrolmentToken);
-            if (!mounted) return;
-            setState(() {
-              _enrolment = enrolment;
-              _code.clear();
-              _step = _LoginStep.enrol;
-            });
-        }
-      });
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+  Future<void> _submitCredentials() => _run(
+        () async {
+          final email = _email.text.trim();
+          final password = _password.text;
+          if (email.isEmpty || password.isEmpty) {
+            throw const AppError(
+              type: AppErrorType.validation,
+              message: 'Enter your email and password.',
+            );
+          }
+          if (!_emailPattern.hasMatch(email)) {
+            throw const AppError(
+              type: AppErrorType.validation,
+              message: 'Enter a valid email address.',
+            );
+          }
+          final result = await ref
+              .read(sessionControllerProvider.notifier)
+              .login(email, password);
+          if (!mounted) return;
+          switch (result) {
+            case LoginSuccess():
+              break; // Router redirects via the session gate.
+            case LoginTwoFactorRequired(:final challengeToken):
+              setState(() {
+                _challengeToken = challengeToken;
+                _code.clear();
+                _step = _LoginStep.challenge;
+              });
+            case LoginEnrolmentRequired(:final enrolmentToken, :final message):
+              _enrolmentToken = enrolmentToken;
+              _enrolMessage = message;
+              final enrolment = await ref
+                  .read(sessionControllerProvider.notifier)
+                  .startEnrolment(enrolmentToken);
+              if (!mounted) return;
+              setState(() {
+                _enrolment = enrolment;
+                _code.clear();
+                _step = _LoginStep.enrol;
+              });
+          }
+        },
+        // A wrong password comes back as a bare 401; the generic "session
+        // expired" copy would be misleading on a fresh sign-in.
+        mapError: (e) => e.type == AppErrorType.unauthorized
+            ? 'Incorrect email or password.'
+            : null,
+      );
 
   Future<void> _submitCode() => _run(() async {
         final code = _code.text.trim();
@@ -291,7 +310,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               SizedBox(height: 16.h),
               _primaryButton(
                 "I've saved these — continue",
-                () async => setState(() => _backupCodes = const []),
+                () async {
+                  // Tokens were already persisted in confirmEnrolment; promote
+                  // the gate now that the one-time codes are acknowledged.
+                  ref.read(sessionControllerProvider.notifier).finalizeLogin();
+                },
               ),
             ],
           ),

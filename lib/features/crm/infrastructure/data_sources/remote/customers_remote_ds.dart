@@ -20,7 +20,7 @@ class CustomersRemoteDataSource {
 
   /// The UI keeps a full in-memory list, so follow `next` a bounded number of
   /// pages instead of paging on scroll.
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
   static const int _pageSize = 100;
 
   /// Raw customer rows (up to [_maxPages] pages). Exposed separately from

@@ -184,7 +184,7 @@ class MessagesRemoteDataSource {
   final Map<String, _TemplateMeta> _templateMeta = {};
 
   static const int _pageSize = ApiConfig.defaultPageSize;
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   // ── Conversations ──
 

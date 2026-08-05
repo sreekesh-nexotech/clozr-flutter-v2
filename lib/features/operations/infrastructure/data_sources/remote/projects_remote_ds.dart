@@ -19,7 +19,7 @@ class ProjectsRemoteDataSource {
   final ApiService _api;
 
   static const int _pageSize = 100;
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   /// All projects visible to the caller — slim rows, up to 3 pages of 100.
   Future<List<Project>> fetchProjects() async {

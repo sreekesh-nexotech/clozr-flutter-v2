@@ -35,7 +35,7 @@ class TicketsRemoteDataSource {
   Future<List<Map<String, dynamic>>> fetchTicketRows() async {
     final rows = <Map<String, dynamic>>[];
     var page = 1;
-    while (page <= 3) {
+    while (page <= 50) {
       final body = await _api.get(ApiEndpoints.issues, query: {
         'page': page,
         'page_size': ApiConfig.defaultPageSize,

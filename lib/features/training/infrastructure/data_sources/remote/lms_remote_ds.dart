@@ -32,7 +32,7 @@ class LmsRemoteDataSource {
   static String _videoProgress(String videoResourceId) =>
       '/lms/video-resources/$videoResourceId/progress/';
 
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   /// `course_id → modules_count` from the last course fetch — used to expand
   /// an enrollment's overall percentage into per-module values.

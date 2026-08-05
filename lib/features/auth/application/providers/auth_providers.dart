@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/auth/session_gate.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/api_service.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/storage/app_cache.dart';
 import '../../../../data/api/user_directory.dart';
@@ -47,6 +48,10 @@ class SessionController extends StateNotifier<SessionState> {
 
   static const _userCacheKey = 'session_user';
 
+  /// Re-entrancy guard so a burst of concurrent 401s triggers exactly one
+  /// teardown instead of N cache-clears / state churn.
+  bool _tearingDown = false;
+
   AuthRepository get _repo => _ref.read(authRepositoryProvider);
 
   Future<void> _init() async {
@@ -56,38 +61,73 @@ class SessionController extends StateNotifier<SessionState> {
       return;
     }
 
-    final api = _ref.read(apiServiceProvider);
-    api.onSessionExpired = forceLogout;
+    // Keep the 401 → forceLogout hook wired to the *current* ApiService, even
+    // after it is rebuilt by a session-change invalidation. fireImmediately
+    // wires the instance that exists right now.
+    _ref.listen<ApiService>(
+      apiServiceProvider,
+      (_, next) => next.onSessionExpired = forceLogout,
+      fireImmediately: true,
+    );
 
     final tokens = _ref.read(tokenStorageProvider);
-    await tokens.init();
+    try {
+      await tokens.init();
+    } on Object {
+      // A keychain/keystore read failure must fail closed to the login screen,
+      // never leave the gate stuck on `restoring`.
+      _set(SessionStatus.unauthenticated);
+      return;
+    }
 
     if (!tokens.hasSession) {
       _set(SessionStatus.unauthenticated);
       return;
     }
 
-    // Optimistic restore: cached profile first so the app opens offline, then
-    // a live /me/ refresh in the background.
-    final cached = AppCache.get(AppCache.authBox, _userCacheKey);
-    if (cached?.data is String) {
+    final cached = _cachedUser();
+    if (cached != null) {
+      // Cached profile → adopt identity (sets `currentUserId` so `isMine`/`me`
+      // resolve correctly) and open the app immediately; refresh in background.
+      _adoptUser(cached);
+      _set(SessionStatus.authenticated);
+      _refreshProfileInBackground();
+    } else {
+      // No cached profile → we must learn the identity before opening the app,
+      // otherwise the first screens map the user's own rows to a raw uuid
+      // instead of `me`. Stay `restoring` until /me resolves.
       try {
-        final user = SessionUser.fromJson(
-            jsonDecode(cached!.data as String) as Map<String, dynamic>);
-        _adoptUser(user);
+        _adoptUser(await _repo.me());
+        _set(SessionStatus.authenticated);
+        _hydrateRoster();
       } on Object {
-        // Corrupt cache — the live fetch below still covers us.
+        // The interceptor force-logs-out on a real 401; a transient/offline
+        // error with no cached identity can't safely open the app.
+        _set(SessionStatus.unauthenticated);
       }
     }
-    _set(SessionStatus.authenticated);
+  }
 
+  Future<void> _refreshProfileInBackground() async {
     try {
       _adoptUser(await _repo.me());
     } on Object {
-      // Offline or 401 — the interceptor calls forceLogout for real auth
-      // failures; transient errors keep the cached session.
+      // Offline/transient — keep the cached session; a real 401 force-logs-out.
     }
-    UserDirectory.hydrate(api);
+    _hydrateRoster();
+  }
+
+  void _hydrateRoster() => UserDirectory.hydrate(_ref.read(apiServiceProvider));
+
+  SessionUser? _cachedUser() {
+    final cached = AppCache.get(AppCache.authBox, _userCacheKey);
+    if (cached?.data is! String) return null;
+    try {
+      return SessionUser.fromJson(
+          jsonDecode(cached!.data as String) as Map<String, dynamic>);
+    } on Object {
+      return null;
+    }
   }
 
   Future<LoginResult> login(String email, String password) async {
@@ -109,14 +149,26 @@ class SessionController extends StateNotifier<SessionState> {
   Future<TwoFactorEnrolment> startEnrolment(String enrolmentToken) =>
       _repo.startLoginEnrolment(enrolmentToken);
 
+  /// Confirms forced enrolment. When the response carries one-time backup
+  /// codes, the session is adopted but the gate is NOT promoted yet — the UI
+  /// must show the codes first and then call [finalizeLogin]. Otherwise login
+  /// completes immediately.
   Future<AuthSession> confirmEnrolment({
     required String enrolmentToken,
     required String code,
   }) async {
     final session = await _repo.confirmLoginEnrolment(
         enrolmentToken: enrolmentToken, code: code);
-    await _adoptSession(session);
+    await _adoptSession(session, promoteGate: session.backupCodes.isEmpty);
     return session;
+  }
+
+  /// Promotes the gate to authenticated after the user acknowledges their
+  /// one-time backup codes (tokens were already persisted in [confirmEnrolment]).
+  void finalizeLogin() {
+    if (state.status == SessionStatus.authenticated) return;
+    _set(SessionStatus.authenticated);
+    _hydrateRoster();
   }
 
   Future<void> logout() async {
@@ -131,14 +183,20 @@ class SessionController extends StateNotifier<SessionState> {
   /// 401 survived refresh-and-retry, or the session was revoked.
   Future<void> forceLogout() => _clearLocalSession();
 
-  Future<void> _adoptSession(AuthSession session) async {
+  Future<void> _adoptSession(AuthSession session, {bool promoteGate = true}) async {
+    // A new session must never inherit a prior tenant's cached data or the
+    // previous user's in-memory provider graph.
+    await AppCache.clearAll();
     await _ref.read(tokenStorageProvider).saveTokens(
           access: session.accessToken,
           refresh: session.refreshToken,
         );
+    _resetApiScopedProviders();
     _adoptUser(session.user);
-    _set(SessionStatus.authenticated);
-    UserDirectory.hydrate(_ref.read(apiServiceProvider));
+    if (promoteGate) {
+      _set(SessionStatus.authenticated);
+      _hydrateRoster();
+    }
   }
 
   void _adoptUser(SessionUser user) {
@@ -159,12 +217,27 @@ class SessionController extends StateNotifier<SessionState> {
   }
 
   Future<void> _clearLocalSession() async {
-    await _ref.read(tokenStorageProvider).clear();
-    await AppCache.clearAll();
-    UserDirectory.reset();
-    state = const SessionState(status: SessionStatus.unauthenticated);
-    SessionGate.instance.set(SessionStatus.unauthenticated);
+    if (_tearingDown || state.status == SessionStatus.unauthenticated) return;
+    _tearingDown = true;
+    try {
+      // Fail closed: purge cached tenant data BEFORE dropping the token, so an
+      // interrupted logout leaves no data rather than orphaned data.
+      await AppCache.clearAll();
+      await _ref.read(tokenStorageProvider).clear();
+      UserDirectory.reset();
+      _resetApiScopedProviders();
+      state = const SessionState(status: SessionStatus.unauthenticated);
+      SessionGate.instance.set(SessionStatus.unauthenticated);
+    } finally {
+      _tearingDown = false;
+    }
   }
+
+  /// Invalidating the network gateway cascades a rebuild through every
+  /// repository/list provider that `ref.watch`es it, discarding the previous
+  /// user's retained in-memory data. The `ref.listen` above re-wires
+  /// onSessionExpired onto the fresh ApiService.
+  void _resetApiScopedProviders() => _ref.invalidate(apiServiceProvider);
 
   void _set(SessionStatus status) {
     state = state.copyWith(status: status);

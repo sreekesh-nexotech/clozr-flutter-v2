@@ -38,9 +38,8 @@ class AppCache {
   static Future<void> init() async {
     if (_ready) return;
     await Hive.initFlutter();
-    for (final name in _boxes) {
-      await Hive.openBox<String>(name);
-    }
+    // Open boxes in parallel to shave startup latency.
+    await Future.wait(_boxes.map((name) => Hive.openBox<String>(name)));
     _ready = true;
   }
 

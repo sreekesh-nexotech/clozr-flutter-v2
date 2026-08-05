@@ -35,9 +35,12 @@ class ApiService {
     _dio.interceptors.add(_authInterceptor);
 
     if (kDebugMode) {
+      // requestBody stays OFF: login/2FA/logout bodies carry passwords, OTP /
+      // backup codes, and the refresh token — never log them, even in debug.
       _dio.interceptors.add(PrettyDioLogger(
-        requestBody: true,
+        requestBody: false,
         responseBody: false,
+        requestHeader: false,
         compact: true,
       ));
     }

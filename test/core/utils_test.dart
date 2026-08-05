@@ -46,6 +46,13 @@ void main() {
       expect(parseApiDate(null), isNull);
       expect(parseApiDate(''), isNull);
     });
+
+    test('a server clock ahead of the device clamps to "Just now"', () {
+      final now = DateTime(2026, 7, 9, 9, 41);
+      // Future timestamps (clock skew) must never render "-1d ago".
+      expect(relativeTime(now.add(const Duration(hours: 3)), now: now), 'Just now');
+      expect(relativeTime(now.add(const Duration(days: 2)), now: now), 'Just now');
+    });
   });
 
   group('status keys', () {

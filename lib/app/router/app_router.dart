@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/session_gate.dart';
 import '../../core/config/api_config.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
+import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/shell/presentation/clozr_shell.dart';
 import 'routes.dart';
 
@@ -91,12 +92,24 @@ final GoRouter appRouter = GoRouter(
   refreshListenable: SessionGate.instance,
   redirect: (context, state) {
     if (!ApiConfig.apiEnabled) return null;
-    final loggedIn = SessionGate.instance.status == SessionStatus.authenticated;
-    final atLogin = state.matchedLocation == Routes.login;
-    if (!loggedIn) return atLogin ? null : Routes.login;
-    return atLogin ? Routes.home : null;
+    final status = SessionGate.instance.status;
+    final loc = state.matchedLocation;
+    // While restoring the saved session, hold on the splash — don't flash the
+    // login screen at a returning user, and don't render an authed screen that
+    // would fire 401s before we know the session state.
+    if (status == SessionStatus.restoring) {
+      return loc == Routes.splash ? null : Routes.splash;
+    }
+    final loggedIn = status == SessionStatus.authenticated;
+    final atAuthRoute = loc == Routes.login || loc == Routes.splash;
+    if (!loggedIn) return loc == Routes.login ? null : Routes.login;
+    return atAuthRoute ? Routes.home : null;
   },
   routes: [
+    GoRoute(
+      path: Routes.splash,
+      builder: (context, state) => const SplashScreen(),
+    ),
     GoRoute(
       path: Routes.login,
       builder: (context, state) => const LoginScreen(),

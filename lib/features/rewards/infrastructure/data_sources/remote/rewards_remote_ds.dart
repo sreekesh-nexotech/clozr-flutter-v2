@@ -28,7 +28,7 @@ class RewardsRemoteDataSource {
 
   final ApiService _api;
 
-  static const int _maxPages = 3;
+  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
   /// GET /milestones/progress/ rows (paginated, bounded), scoped to the
   /// signed-in user when the session id is known.
