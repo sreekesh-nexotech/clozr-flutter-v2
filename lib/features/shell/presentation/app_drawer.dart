@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../app/config/constants.dart';
 import '../../../app/router/routes.dart';
+import '../../../core/config/api_config.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_text_styles.dart';
 import '../../../data/api/user_directory.dart';
@@ -15,12 +16,17 @@ import '../application/providers/shell_providers.dart';
 /// keeps the prototype build reading exactly as it did.
 const _seedName = 'Manoj Varma';
 const _seedInitials = 'MV';
+const _seedRole = 'System Admin';
 const _seedWorkspaceSub = 'Clozr workspace';
 
 class _NavGroupChild {
   final String label;
   final String path;
-  const _NavGroupChild(this.label, this.path);
+
+  /// Backend module keys (`docs-flutter/permissions.md`) that make this row
+  /// visible. Empty = never gated.
+  final List<String> modules;
+  const _NavGroupChild(this.label, this.path, {this.modules = const []});
 }
 
 class _NavEntry {
@@ -29,12 +35,17 @@ class _NavEntry {
   final IconData icon;
   final String? path; // for direct items (and the group "home")
   final List<_NavGroupChild> children;
+
+  /// Backend module keys that make this entry visible. A group lists every key
+  /// its children use, so the parent disappears only when all of them do.
+  final List<String> modules;
   const _NavEntry({
     required this.key,
     required this.label,
     required this.icon,
     this.path,
     this.children = const [],
+    this.modules = const [],
   });
 
   bool get isGroup => children.isNotEmpty;
@@ -47,28 +58,92 @@ class AppDrawer extends ConsumerWidget {
   final String location;
 
   static final List<_NavEntry> _entries = [
-    _NavEntry(key: 'dashboard', label: 'Dashboard', icon: PhosphorIconsRegular.layout, path: Routes.dashboard),
-    _NavEntry(key: 'crm', label: 'CRM', icon: PhosphorIconsRegular.usersThree, path: Routes.home, children: const [
-      _NavGroupChild('Customers', Routes.customers),
-      _NavGroupChild('Quotes', Routes.quotes),
-      _NavGroupChild('Payments', Routes.payments),
-    ]),
-    _NavEntry(key: 'ops', label: 'Operations', icon: PhosphorIconsRegular.kanban, path: Routes.opsHome),
-    _NavEntry(key: 'helpdesk', label: 'Helpdesk', icon: PhosphorIconsRegular.headset, path: Routes.helpHome),
-    _NavEntry(key: 'rewards', label: 'My Rewards', icon: PhosphorIconsRegular.trophy, path: Routes.rewards),
-    _NavEntry(key: 'training', label: 'Training', icon: PhosphorIconsRegular.graduationCap, children: const [
-      _NavGroupChild('Overview', Routes.lmsOverview),
-      _NavGroupChild('Learners', Routes.lmsLearners),
-      _NavGroupChild('My courses', Routes.lmsMy),
-    ]),
-    _NavEntry(key: 'products', label: 'Products', icon: PhosphorIconsRegular.package, path: Routes.products),
-    _NavEntry(key: 'users', label: 'People', icon: PhosphorIconsRegular.users, children: const [
-      _NavGroupChild('Members', Routes.members),
-      _NavGroupChild('Teams', Routes.teams),
-      _NavGroupChild('Roles & permissions', Routes.roles),
-    ]),
-    _NavEntry(key: 'reports', label: 'Reports', icon: PhosphorIconsRegular.chartBar, path: Routes.reports),
-    _NavEntry(key: 'billing', label: 'Billing', icon: PhosphorIconsRegular.creditCard, path: Routes.billing),
+    _NavEntry(
+        key: 'dashboard',
+        label: 'Dashboard',
+        icon: PhosphorIconsRegular.layout,
+        path: Routes.dashboard,
+        modules: const ['dashboard']),
+    _NavEntry(
+        key: 'crm',
+        label: 'CRM',
+        icon: PhosphorIconsRegular.usersThree,
+        path: Routes.home,
+        modules: const [
+          'lead',
+          'customer',
+          'quotation',
+          'payment',
+          'task',
+          'followup',
+          'contact',
+          'call_log',
+        ],
+        children: const [
+          _NavGroupChild('Customers', Routes.customers, modules: ['customer']),
+          _NavGroupChild('Quotes', Routes.quotes, modules: ['quotation']),
+          _NavGroupChild('Payments', Routes.payments, modules: ['payment']),
+        ]),
+    _NavEntry(
+        key: 'ops',
+        label: 'Operations',
+        icon: PhosphorIconsRegular.kanban,
+        path: Routes.opsHome,
+        modules: const ['project', 'project_task']),
+    _NavEntry(
+        key: 'helpdesk',
+        label: 'Helpdesk',
+        icon: PhosphorIconsRegular.headset,
+        path: Routes.helpHome,
+        modules: const ['issue']),
+    _NavEntry(
+        key: 'rewards',
+        label: 'My Rewards',
+        icon: PhosphorIconsRegular.trophy,
+        path: Routes.rewards,
+        modules: const ['milestone']),
+    _NavEntry(
+        key: 'training',
+        label: 'Training',
+        icon: PhosphorIconsRegular.graduationCap,
+        modules: const ['course', 'lms_module', 'quiz', 'course_enrollment'],
+        children: const [
+          _NavGroupChild('Overview', Routes.lmsOverview, modules: ['course']),
+          _NavGroupChild('Learners', Routes.lmsLearners,
+              modules: ['course_enrollment']),
+          _NavGroupChild('My courses', Routes.lmsMy,
+              modules: ['course_enrollment']),
+        ]),
+    _NavEntry(
+        key: 'products',
+        label: 'Products',
+        icon: PhosphorIconsRegular.package,
+        path: Routes.products,
+        modules: const ['product']),
+    _NavEntry(
+        key: 'users',
+        label: 'People',
+        icon: PhosphorIconsRegular.users,
+        modules: const ['user_management', 'team', 'role'],
+        children: const [
+          _NavGroupChild('Members', Routes.members,
+              modules: ['user_management']),
+          _NavGroupChild('Teams', Routes.teams, modules: ['team']),
+          _NavGroupChild('Roles & permissions', Routes.roles,
+              modules: ['role']),
+        ]),
+    _NavEntry(
+        key: 'reports',
+        label: 'Reports',
+        icon: PhosphorIconsRegular.chartBar,
+        path: Routes.reports,
+        modules: const ['report']),
+    _NavEntry(
+        key: 'billing',
+        label: 'Billing',
+        icon: PhosphorIconsRegular.creditCard,
+        path: Routes.billing,
+        modules: const ['payment']),
   ];
 
   void _close(WidgetRef ref) => ref.read(drawerOpenProvider.notifier).state = false;
@@ -83,6 +158,11 @@ class AppDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final expanded = ref.watch(drawerExpandedProvider);
+    // Null until /auth/me/modules/ resolves (and always in mock mode), which
+    // `canAny` treats as "not gated" — the menu never collapses on a blip.
+    final access = ref.watch(moduleAccessProvider).asData?.value;
+    bool visible(List<String> modules) =>
+        access == null || access.canAny(modules);
 
     return Stack(
       children: [
@@ -117,7 +197,9 @@ class AppDrawer extends ConsumerWidget {
                                 color: AppColors.textPlaceholder,
                                 letterSpacing: 0.6)),
                       ),
-                      for (final e in _entries) ..._row(context, ref, e, expanded),
+                      for (final e in _entries)
+                        if (visible(e.modules))
+                          ..._row(context, ref, e, expanded, visible),
                     ],
                   ),
                 ),
@@ -182,19 +264,29 @@ class AppDrawer extends ConsumerWidget {
     );
   }
 
-  List<Widget> _row(BuildContext context, WidgetRef ref, _NavEntry e, Map<String, bool> expanded) {
+  List<Widget> _row(
+    BuildContext context,
+    WidgetRef ref,
+    _NavEntry e,
+    Map<String, bool> expanded,
+    bool Function(List<String>) visible,
+  ) {
     final open = expanded[e.key] ?? false;
+    final children = e.children.where((c) => visible(c.modules)).toList();
     final anyChildActive =
-        e.children.any((c) => _childActive(c.path)) || (e.path != null && _childActive(e.path!));
+        children.any((c) => _childActive(c.path)) || (e.path != null && _childActive(e.path!));
     final active = anyChildActive;
+    // Gated against the *visible* children: a group whose rows are all hidden
+    // stops behaving like a group (no caret, no expand).
+    final isGroup = children.isNotEmpty;
 
     final rows = <Widget>[
       GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          if (e.isGroup && e.path == null) {
+          if (isGroup && e.path == null) {
             ref.read(drawerExpandedProvider.notifier).update((m) => {...m, e.key: !open});
-          } else if (e.isGroup && e.path != null) {
+          } else if (isGroup && e.path != null) {
             ref.read(drawerExpandedProvider.notifier).update((m) => {...m, e.key: true});
             _navigate(context, ref, e.path!);
           } else {
@@ -219,7 +311,7 @@ class AppDrawer extends ConsumerWidget {
                         weight: active ? FontWeight.w700 : FontWeight.w600,
                         color: active ? AppColors.navy : AppColors.textSecondary)),
               ),
-              if (e.isGroup)
+              if (isGroup)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () =>
@@ -233,8 +325,8 @@ class AppDrawer extends ConsumerWidget {
       ),
     ];
 
-    if (e.isGroup && open) {
-      for (final c in e.children) {
+    if (isGroup && open) {
+      for (final c in children) {
         final childActive = _childActive(c.path);
         rows.add(GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -267,6 +359,9 @@ class AppDrawer extends ConsumerWidget {
     final name = hasName ? user!.fullName : _seedName;
     final initials =
         hasName ? UserDirectory.initialsOf(user!.fullName) : _seedInitials;
+    final roleLabel =
+        (user?.roleLabel.isNotEmpty ?? false) ? user!.roleLabel : _seedRole;
+    final avatarUrl = user?.avatarUrl ?? '';
 
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 22.h),
@@ -275,14 +370,7 @@ class AppDrawer extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 40.w,
-            height: 40.w,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
-            child: Text(initials,
-                style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
-          ),
+          _avatar(initials, avatarUrl),
           SizedBox(width: 11.w),
           Expanded(
             child: Column(
@@ -292,26 +380,78 @@ class AppDrawer extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.bodyStrong().copyWith(fontWeight: FontWeight.w700)),
-                Text('System Admin', style: AppText.caption(color: AppColors.textPlaceholder)),
+                Text(roleLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.caption(color: AppColors.textPlaceholder)),
               ],
             ),
           ),
-          _footerIcon(ref, PhosphorIconsRegular.gearSix, AppColors.textLabelAlt),
+          _footerIcon(
+            PhosphorIconsRegular.gearSix,
+            AppColors.textLabelAlt,
+            () {
+              _close(ref);
+              ref.read(toastProvider.notifier).show('Settings — coming soon');
+            },
+          ),
           SizedBox(width: 8.w),
-          _footerIcon(ref, PhosphorIconsRegular.signOut, AppColors.error),
+          _footerIcon(
+            PhosphorIconsRegular.signOut,
+            AppColors.error,
+            () => _signOut(ref),
+          ),
         ],
       ),
     );
   }
 
-  Widget _footerIcon(WidgetRef ref, IconData icon, Color color) {
+  /// The profile picture when the account has one, initials otherwise. A broken
+  /// or slow image falls back to the same initials block rather than a gap.
+  Widget _avatar(String initials, String url) {
+    final fallback = Container(
+      width: 40.w,
+      height: 40.w,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+          color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+      child: Text(initials,
+          style: AppText.custom(
+              size: 13, weight: FontWeight.w700, color: AppColors.white)),
+    );
+    if (url.isEmpty) return fallback;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(11.r),
+      child: Image.network(
+        url,
+        width: 40.w,
+        height: 40.w,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+        loadingBuilder: (context, child, progress) =>
+            progress == null ? child : fallback,
+      ),
+    );
+  }
+
+  /// Ends the session for real: blacklists the refresh token, purges the cached
+  /// tenant data and drops the gate, which sends the router to /login. Mock
+  /// mode has no session to end, so it keeps the toast-only behavior.
+  Future<void> _signOut(WidgetRef ref) async {
+    _close(ref);
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Signed out');
+      return;
+    }
+    // No toast and no `ref` after the await: the gate flip routes to /login,
+    // which unmounts this drawer along with the toast host.
+    await ref.read(sessionControllerProvider.notifier).logout();
+  }
+
+  Widget _footerIcon(IconData icon, Color color, VoidCallback onTap) {
     return GestureDetector(
-      onTap: () {
-        _close(ref);
-        ref.read(toastProvider.notifier).show(
-              icon == PhosphorIconsRegular.signOut ? 'Signed out' : 'Settings — coming soon',
-            );
-      },
+      onTap: onTap,
       child: Container(
         width: 36.w,
         height: 36.w,

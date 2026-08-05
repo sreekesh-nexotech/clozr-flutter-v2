@@ -1,4 +1,5 @@
 import '../../domain/entities/auth_session.dart';
+import '../../domain/entities/module_access.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../data_sources/remote/auth_remote_ds.dart';
 
@@ -42,4 +43,7 @@ class AuthApiRepository implements AuthRepository {
 
   @override
   Future<SessionUser> me() => _remote.me();
+
+  @override
+  Future<ModuleAccess> modules() => _remote.modules();
 }

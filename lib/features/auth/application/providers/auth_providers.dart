@@ -9,6 +9,7 @@ import '../../../../core/network/network_providers.dart';
 import '../../../../core/storage/app_cache.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../domain/entities/auth_session.dart';
+import '../../domain/entities/module_access.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../infrastructure/data_sources/remote/auth_remote_ds.dart';
 import '../../infrastructure/repositories/auth_api_repository.dart';
@@ -205,26 +206,10 @@ class SessionController extends StateNotifier<SessionState> {
       UserDirectory.register(userId: user.id, fullName: user.fullName);
     }
     state = state.copyWith(user: user);
-    AppCache.put(
-      AppCache.authBox,
-      _userCacheKey,
-      jsonEncode({
-        'id': user.id,
-        'email': user.email,
-        'full_name': user.fullName,
-        // Cached too, so a warm start shows the real workspace name in the
-        // header instead of blanking until the background /me lands.
-        'organizations': [
-          for (final o in user.organizations)
-            {
-              'id': o.id,
-              'name': o.name,
-              'subdomain': o.subdomain,
-              'is_primary': o.isPrimary,
-            },
-        ],
-      }),
-    );
+    // The whole profile is cached — organization, role, designation, avatar —
+    // so a warm start renders the real identity instead of blanking until the
+    // background /me lands. `toJson` mirrors `fromJson`, so it round-trips.
+    AppCache.put(AppCache.authBox, _userCacheKey, jsonEncode(user.toJson()));
   }
 
   Future<void> _clearLocalSession() async {
@@ -260,3 +245,22 @@ final sessionControllerProvider =
     StateNotifierProvider<SessionController, SessionState>(
   (ref) => SessionController(ref),
 );
+
+/// `GET /auth/me/modules/` — which modules the signed-in user may see.
+///
+/// Null means "unknown, don't gate anything": mock mode, a session that isn't
+/// authenticated yet, or a failed fetch. Hiding navigation on a network blip
+/// would be worse than showing an entry the API will refuse anyway — the
+/// backend enforces access per request regardless of what the nav renders.
+final moduleAccessProvider = FutureProvider<ModuleAccess?>((ref) async {
+  if (!ApiConfig.apiEnabled) return null;
+  if (ref.watch(sessionControllerProvider).status !=
+      SessionStatus.authenticated) {
+    return null;
+  }
+  try {
+    return await ref.watch(authRepositoryProvider).modules();
+  } on Object {
+    return null;
+  }
+});

@@ -2,6 +2,7 @@ import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
 import '../../../../../core/network/app_error.dart';
 import '../../../domain/entities/auth_session.dart';
+import '../../../domain/entities/module_access.dart';
 
 /// Raw auth endpoints. HTTP + JSON→entity mapping only — token persistence
 /// and session state live above this layer.
@@ -53,6 +54,9 @@ class AuthRemoteDataSource {
 
   Future<SessionUser> me() async =>
       SessionUser.fromJson(_asMap(await _api.get(ApiEndpoints.me)));
+
+  Future<ModuleAccess> modules() async =>
+      ModuleAccess.fromJson(_asMap(await _api.get(ApiEndpoints.myModules)));
 
   // ── mapping ──
 

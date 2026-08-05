@@ -1,4 +1,5 @@
 import '../entities/auth_session.dart';
+import '../entities/module_access.dart';
 
 /// Auth contract. The session controller depends only on this; the remote
 /// implementation lives in infrastructure.
@@ -28,4 +29,7 @@ abstract class AuthRepository {
 
   /// `GET /auth/me/` — the signed-in user's profile.
   Future<SessionUser> me();
+
+  /// `GET /auth/me/modules/` — the module-access map that gates the nav.
+  Future<ModuleAccess> modules();
 }
