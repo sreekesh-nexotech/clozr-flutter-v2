@@ -7,7 +7,15 @@ import '../../../app/config/constants.dart';
 import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_text_styles.dart';
+import '../../../data/api/user_directory.dart';
+import '../../auth/application/providers/auth_providers.dart';
 import '../application/providers/shell_providers.dart';
+
+/// Shown until `/me` resolves and in mock mode, where there is no session —
+/// keeps the prototype build reading exactly as it did.
+const _seedName = 'Manoj Varma';
+const _seedInitials = 'MV';
+const _seedWorkspaceSub = 'Clozr workspace';
 
 class _NavGroupChild {
   final String label;
@@ -123,6 +131,14 @@ class AppDrawer extends ConsumerWidget {
   }
 
   Widget _header(WidgetRef ref) {
+    final org = ref.watch(sessionControllerProvider).user?.primaryOrg;
+    final workspace = (org != null && org.name.isNotEmpty)
+        ? org.name
+        : AppConstants.workspaceName;
+    final workspaceSub = (org != null && org.subdomain.isNotEmpty)
+        ? org.subdomain
+        : _seedWorkspaceSub;
+
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 56.h, 18.w, 16.h),
       decoration: const BoxDecoration(
@@ -141,9 +157,14 @@ class AppDrawer extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppConstants.workspaceName,
+                Text(workspace,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                Text('Clozr workspace', style: AppText.captionStrong(color: AppColors.textPlaceholder)),
+                Text(workspaceSub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.captionStrong(color: AppColors.textPlaceholder)),
               ],
             ),
           ),
@@ -241,6 +262,12 @@ class AppDrawer extends ConsumerWidget {
   }
 
   Widget _footer(WidgetRef ref) {
+    final user = ref.watch(sessionControllerProvider).user;
+    final hasName = user?.fullName.trim().isNotEmpty ?? false;
+    final name = hasName ? user!.fullName : _seedName;
+    final initials =
+        hasName ? UserDirectory.initialsOf(user!.fullName) : _seedInitials;
+
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 22.h),
       decoration: const BoxDecoration(
@@ -253,7 +280,7 @@ class AppDrawer extends ConsumerWidget {
             height: 40.w,
             alignment: Alignment.center,
             decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
-            child: Text('MV',
+            child: Text(initials,
                 style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
           ),
           SizedBox(width: 11.w),
@@ -261,7 +288,10 @@ class AppDrawer extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Manoj Varma', style: AppText.bodyStrong().copyWith(fontWeight: FontWeight.w700)),
+                Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.bodyStrong().copyWith(fontWeight: FontWeight.w700)),
                 Text('System Admin', style: AppText.caption(color: AppColors.textPlaceholder)),
               ],
             ),
