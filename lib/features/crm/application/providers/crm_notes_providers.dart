@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
-import '../../../../core/network/network_providers.dart';
-import '../../infrastructure/data_sources/remote/crm_notes_remote_ds.dart';
+import '../../../notes/application/providers/notes_providers.dart';
+import '../../../notes/domain/repositories/notes_repository.dart';
 
 /// Seed descriptor for a record's notes thread (#13). Equality is keyed purely
 /// on [recordId] so the same record always resolves to the same notifier —
@@ -42,37 +42,38 @@ class CrmNotesSeed {
 /// state (the composer is never gated).
 ///
 /// In API mode ([CrmNotesNotifier.remote]) the thread seeds by fetching the
-/// record's remote notes, and every add is optimistic: the local entry shows
-/// immediately, the POST fires in the background, and a failure keeps the
-/// optimistic entry (no error surface on the notes panel).
+/// record's remote notes through the shared [NotesRepository], and every add is
+/// optimistic: the local entry shows immediately, the POST fires in the
+/// background, and a failure keeps the optimistic entry (no error surface on the
+/// notes panel).
 class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
   CrmNotesNotifier(List<NoteEntry> seed)
-      : _remote = null,
+      : _repo = null,
         _apiModel = null,
         _apiRecordId = '',
         super(List.of(seed));
 
-  CrmNotesNotifier.remote(CrmNotesRemoteDataSource remote, CrmNotesSeed seed)
-      : _remote = remote,
+  CrmNotesNotifier.remote(NotesRepository repo, CrmNotesSeed seed)
+      : _repo = repo,
         _apiModel = seed.apiModel,
         _apiRecordId = seed.apiRecordId,
         super(const []) {
     _load();
   }
 
-  final CrmNotesRemoteDataSource? _remote;
+  final NotesRepository? _repo;
   final String? _apiModel;
   final String _apiRecordId;
 
   int _seq = 0;
 
   bool get _remoteWired =>
-      _remote != null && _apiModel != null && _apiRecordId.isNotEmpty;
+      _repo != null && _apiModel != null && _apiRecordId.isNotEmpty;
 
   Future<void> _load() async {
     if (!_remoteWired) return;
     try {
-      final fetched = await _remote!.fetchNotes(_apiModel!, _apiRecordId);
+      final fetched = await _repo!.fetchNotes(_apiModel!, _apiRecordId);
       if (mounted) state = fetched;
     } on Object {
       // Offline / error → the panel simply starts empty; adds still work
@@ -97,7 +98,11 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
     if (!_remoteWired) return;
     unawaited(() async {
       try {
-        final created = await _remote!.addNote(_apiModel!, _apiRecordId, body);
+        final created = await _repo!.addNote(
+          relatedTo: _apiModel!,
+          relatedToId: _apiRecordId,
+          body: body,
+        );
         if (created == null || !mounted) return;
         // Swap in the server id so replies to this note hit the real thread.
         state = [
@@ -141,7 +146,7 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
     if (!_remoteWired || noteId.startsWith('note-new-')) return;
     unawaited(() async {
       try {
-        await _remote!.addReply(noteId, body);
+        await _repo!.addReply(noteId: noteId, body: body);
       } on Object {
         // Keep the optimistic reply.
       }
@@ -155,10 +160,7 @@ final crmNotesProvider =
     StateNotifierProvider.family<CrmNotesNotifier, List<NoteEntry>, CrmNotesSeed>(
   (ref, seed) {
     if (ApiConfig.apiEnabled) {
-      return CrmNotesNotifier.remote(
-        CrmNotesRemoteDataSource(ref.watch(apiServiceProvider)),
-        seed,
-      );
+      return CrmNotesNotifier.remote(ref.read(notesRepositoryProvider), seed);
     }
     return CrmNotesNotifier(seed.build());
   },

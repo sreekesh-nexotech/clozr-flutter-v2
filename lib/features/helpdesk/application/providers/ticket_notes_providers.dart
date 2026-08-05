@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
-import '../../../../core/network/network_providers.dart';
-import '../../../crm/infrastructure/data_sources/remote/crm_notes_remote_ds.dart';
+import '../../../notes/application/providers/notes_providers.dart';
+import '../../../notes/domain/repositories/notes_repository.dart';
 
 /// Per-ticket Notes store (#13). Keyed by ticket id.
 ///
@@ -15,35 +15,35 @@ import '../../../crm/infrastructure/data_sources/remote/crm_notes_remote_ds.dart
 /// real notes from `/crm/notes/?related_to=issue&related_to_id=<ticketId>`, and
 /// every add is optimistic — the local entry shows immediately, the POST fires
 /// in the background, and the server id is swapped in on success (so replies hit
-/// the real thread). Reuses [CrmNotesRemoteDataSource]: helpdesk notes live on
-/// the same `/crm/notes/` endpoint, tagged `related_to=issue`.
+/// the real thread). Goes through the shared [NotesRepository]: helpdesk notes
+/// live on the same `/crm/notes/` endpoint, tagged `related_to=issue`.
 class TicketNotesController extends StateNotifier<List<NoteEntry>> {
   /// Mock-mode: seed the prototype's fixed sample notes.
   TicketNotesController(this.ticketId)
-      : _remote = null,
+      : _repo = null,
         super(_seed(ticketId));
 
   /// API-mode: start empty, then load the ticket's real notes.
-  TicketNotesController.remote(CrmNotesRemoteDataSource remote, this.ticketId)
-      : _remote = remote,
+  TicketNotesController.remote(NotesRepository repo, this.ticketId)
+      : _repo = repo,
         super(const []) {
     _load();
   }
 
   final String ticketId;
-  final CrmNotesRemoteDataSource? _remote;
+  final NotesRepository? _repo;
 
   /// The signed-in author — mirrors [NotesThread]'s default "MV" Manoj Varma.
   static const _me = NoteAuthor();
 
   int _seq = 0;
 
-  bool get _remoteWired => _remote != null && ticketId.isNotEmpty;
+  bool get _remoteWired => _repo != null && ticketId.isNotEmpty;
 
   Future<void> _load() async {
     if (!_remoteWired) return;
     try {
-      final fetched = await _remote!.fetchNotes('issue', ticketId);
+      final fetched = await _repo!.fetchNotes('issue', ticketId);
       if (mounted) state = fetched;
     } on Object {
       // Offline / error → the panel simply starts empty; adds still work
@@ -68,7 +68,11 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
     if (!_remoteWired) return;
     unawaited(() async {
       try {
-        final created = await _remote!.addNote('issue', ticketId, body.trim());
+        final created = await _repo!.addNote(
+          relatedTo: 'issue',
+          relatedToId: ticketId,
+          body: body.trim(),
+        );
         if (created == null || !mounted) return;
         // Swap in the server id so replies to this note hit the real thread.
         state = [
@@ -118,7 +122,7 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
     if (!_remoteWired || noteId.startsWith('tnote-')) return;
     unawaited(() async {
       try {
-        await _remote!.addReply(noteId, body.trim());
+        await _repo!.addReply(noteId: noteId, body: body.trim());
       } on Object {
         // Keep the optimistic reply.
       }
@@ -132,10 +136,7 @@ final ticketNotesProvider =
     StateNotifierProvider.family<TicketNotesController, List<NoteEntry>, String>(
   (ref, ticketId) {
     if (ApiConfig.apiEnabled) {
-      return TicketNotesController.remote(
-        CrmNotesRemoteDataSource(ref.watch(apiServiceProvider)),
-        ticketId,
-      );
+      return TicketNotesController.remote(ref.read(notesRepositoryProvider), ticketId);
     }
     return TicketNotesController(ticketId);
   },

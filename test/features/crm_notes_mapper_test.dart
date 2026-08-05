@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:clozrapp/data/api/user_directory.dart';
-import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/crm_notes_remote_ds.dart';
+import 'package:clozrapp/features/notes/infrastructure/data_sources/remote/notes_remote_ds.dart';
 
 void main() {
   final now = DateTime(2026, 7, 1, 10, 0);
@@ -26,9 +26,9 @@ void main() {
         'created_at': '2026-06-30T16:20:00Z',
       };
 
-  group('CrmNotesRemoteDataSource.noteFromJson', () {
+  group('NotesRemoteDataSource.noteFromJson', () {
     test('maps a full note row onto NoteEntry', () {
-      final n = CrmNotesRemoteDataSource.noteFromJson(row(), now: now)!;
+      final n = NotesRemoteDataSource.noteFromJson(row(), now: now)!;
       expect(n.id, 'n-uuid-1');
       expect(n.author, 'Priya Nair');
       expect(n.body, 'Client wants the quote split into two phases.');
@@ -39,7 +39,7 @@ void main() {
     });
 
     test('via only surfaces Call/Email tags', () {
-      String? viaOf(Object? noteType) => CrmNotesRemoteDataSource.noteFromJson(
+      String? viaOf(Object? noteType) => NotesRemoteDataSource.noteFromJson(
             {...row(), 'note_type': noteType},
             now: now,
           )!
@@ -51,7 +51,7 @@ void main() {
     });
 
     test('maps attachments, inferring image kind from the file extension', () {
-      final n = CrmNotesRemoteDataSource.noteFromJson({
+      final n = NotesRemoteDataSource.noteFromJson({
         ...row(),
         'attachments': [
           {
@@ -76,8 +76,8 @@ void main() {
     });
 
     test('is defensive: no note_id → null; junk fields tolerated', () {
-      expect(CrmNotesRemoteDataSource.noteFromJson({'content': 'x'}), isNull);
-      final junk = CrmNotesRemoteDataSource.noteFromJson({
+      expect(NotesRemoteDataSource.noteFromJson({'content': 'x'}), isNull);
+      final junk = NotesRemoteDataSource.noteFromJson({
         'note_id': 'n-2',
         'content': null,
         'created_by': 'not-a-map',
@@ -93,9 +93,9 @@ void main() {
     });
   });
 
-  group('CrmNotesRemoteDataSource.replyFromJson', () {
+  group('NotesRemoteDataSource.replyFromJson', () {
     test('maps a created reply with a "Just now" timestamp', () {
-      final r = CrmNotesRemoteDataSource.replyFromJson({
+      final r = NotesRemoteDataSource.replyFromJson({
         'note_id': 'n-uuid-2',
         'content': 'Keep phase 1 under 25L.',
         'parent_note': 'n-uuid-1',
@@ -107,7 +107,7 @@ void main() {
     });
 
     test('falls back to the posted body and "You" on shape surprises', () {
-      final r = CrmNotesRemoteDataSource.replyFromJson(
+      final r = NotesRemoteDataSource.replyFromJson(
         const {},
         fallbackBody: 'Typed reply',
       );

@@ -5,11 +5,11 @@ import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/user_directory.dart';
 
-/// Remote notes (`/crm/notes/`) for any CRM record (`lead` / `customer` /
-/// `task` — follow-ups pass `task` too). HTTP + JSON → [NoteEntry] mapping
-/// only; the notes notifier owns state and optimism.
-class CrmNotesRemoteDataSource {
-  const CrmNotesRemoteDataSource(this._api);
+/// Remote notes (`/crm/notes/`) for any record (`lead` / `customer` / `task` —
+/// follow-ups pass `task` too — and `issue` for helpdesk tickets). HTTP + JSON →
+/// [NoteEntry] mapping only; the notes notifier owns state and optimism.
+class NotesRemoteDataSource {
+  const NotesRemoteDataSource(this._api);
 
   final ApiService _api;
 
