@@ -5,10 +5,10 @@ import '../../../../app/config/constants.dart';
 /// Whether the module drawer is open.
 final drawerOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Which drawer groups are expanded (CRM open by default, mirroring the
-/// prototype's `drawerExpanded: { crm: true }`).
+/// Which drawer groups are expanded. Every group starts collapsed; tapping a
+/// group (or its caret) expands it for the rest of the session.
 final drawerExpandedProvider =
-    StateProvider<Map<String, bool>>((ref) => {'crm': true});
+    StateProvider<Map<String, bool>>((ref) => const {});
 
 /// Transient toast message. Auto-clears after [AppConstants.toastDuration].
 class ToastController extends StateNotifier<String?> {

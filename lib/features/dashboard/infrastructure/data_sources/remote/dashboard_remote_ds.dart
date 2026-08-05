@@ -191,8 +191,9 @@ class DashboardRemoteDataSource {
       opsRoster: _opsRoster(raw[kPmoEmployees], base.opsRoster),
       helpKpis: _helpKpis(raw[kIssueKpis], base.helpKpis),
       helpCategories: _helpCategories(raw[kIssueStatus], base.helpCategories),
-      helpSla: _donutSection(raw[kIssueSla], 'sla', base.helpSla),
-      helpPriority: _donutSection(raw[kIssueSla], 'priority', base.helpPriority),
+      helpSla: _donutSection(raw[kIssueSla], 'sla', _slaBuckets, base.helpSla),
+      helpPriority:
+          _donutSection(raw[kIssueSla], 'priority', _priorityBuckets, base.helpPriority),
       helpAttention: _helpAttention(raw[kIssueAttention], base.helpAttention),
       helpFlow: _trendOf(
         raw[kIssueFlow],
@@ -355,12 +356,20 @@ class DashboardRemoteDataSource {
     return out;
   }
 
-  /// `/dashboard-issue/kpis/` — shape undocumented, probed defensively; any
-  /// card whose value cannot be found keeps its mock figure.
+  /// `/dashboard-issue/kpis/` → the 4 Helpdesk cards.
+  ///
+  /// Documented shape: `open_tickets.count`, `sla_breaches.count`,
+  /// `avg_resolution.minutes`, `first_response.minutes` (+ a 5th `reopen_rate`
+  /// this 4-card grid has no slot for). Each candidate key carries the factor
+  /// that converts it into the card's own unit — `avg_resolution` arrives in
+  /// **minutes** but the card reads in **hours**, so it is scaled by 1/60 while
+  /// the legacy `hours` keys pass through untouched. Alternative names are kept
+  /// as a tolerance for older deployments; a card whose value cannot be found
+  /// keeps its base figure.
   static List<DashKpi> _helpKpis(Object? json, List<DashKpi> base) {
     if (json is! Map || base.length < 4) return base;
     final out = List<DashKpi>.of(base);
-    void swap(int i, List<String> names, List<String> valueKeys) {
+    void swap(int i, List<String> names, List<(String, double)> valueKeys) {
       for (final name in names) {
         final node = json[name];
         num? value;
@@ -368,8 +377,12 @@ class DashboardRemoteDataSource {
         if (node is num) {
           value = node;
         } else if (node is Map) {
-          for (final key in valueKeys) {
-            value ??= _numOf(node[key]);
+          for (final (key, factor) in valueKeys) {
+            final raw = _numOf(node[key]);
+            if (raw != null) {
+              value = raw * factor;
+              break;
+            }
           }
           trend = _numOf(node['trend_pct']);
         }
@@ -381,12 +394,14 @@ class DashboardRemoteDataSource {
       }
     }
 
-    swap(0, const ['open_tickets', 'open'], const ['count', 'value']);
-    swap(1, const ['sla_breaches', 'breaches'], const ['count', 'value']);
+    const asIs = 1.0;
+    const minToHour = 1 / 60;
+    swap(0, const ['open_tickets', 'open'], const [('count', asIs), ('value', asIs)]);
+    swap(1, const ['sla_breaches', 'breaches'], const [('count', asIs), ('value', asIs)]);
     swap(2, const ['avg_resolution', 'avg_resolution_hours', 'resolution'],
-        const ['hours', 'median_hours', 'value', 'count']);
+        const [('minutes', minToHour), ('hours', asIs), ('median_hours', asIs), ('value', asIs)]);
     swap(3, const ['first_response', 'first_response_minutes'],
-        const ['median_minutes', 'minutes', 'value']);
+        const [('minutes', asIs), ('median_minutes', asIs), ('value', asIs)]);
     return out;
   }
 
@@ -525,10 +540,46 @@ class DashboardRemoteDataSource {
     return out.isEmpty ? base : out;
   }
 
-  /// `/dashboard-issue/sla-priority-mix/` — one donut per top-level key.
-  static List<DashDonutPart> _donutSection(Object? json, String key, List<DashDonutPart> base) {
+  /// SLA block buckets — fixed field → (label, colour), in render order.
+  static const _slaBuckets = <(String, String, Color)>[
+    ('within_sla', 'Within SLA', DashColors.green),
+    ('at_risk', 'At Risk', DashColors.amber),
+    ('breached', 'Breached', DashColors.red),
+  ];
+
+  /// Priority block buckets — colours come from [_priorityColor] so the donut
+  /// and the attention-list priority pills stay in step.
+  static final _priorityBuckets = <(String, String, Color)>[
+    ('low', 'Low', _priorityColor('low')),
+    ('medium', 'Medium', _priorityColor('medium')),
+    ('high', 'High', _priorityColor('high')),
+    ('critical', 'Critical', _priorityColor('critical')),
+  ];
+
+  /// `/dashboard-issue/sla-priority-mix/` → one donut per block.
+  ///
+  /// Each block is a **flat count object keyed by category** — `{"within_sla":
+  /// 25, "at_risk": 4, "breached": 3}` — not the `{statuses:[{name, count}]}`
+  /// row list the PMO status donut returns, so [_donutParts] cannot read it.
+  /// The key set is fixed and documented, so [buckets] supplies the labels,
+  /// colours and render order while the payload supplies only the counts.
+  /// A block the API omitted falls back to [base].
+  static List<DashDonutPart> _donutSection(
+    Object? json,
+    String key,
+    List<(String, String, Color)> buckets,
+    List<DashDonutPart> base,
+  ) {
     if (json is! Map) return base;
-    return _donutParts(json[key], base);
+    final block = json[key];
+    if (block is! Map) return base;
+    final out = <DashDonutPart>[];
+    for (final (field, label, color) in buckets) {
+      final count = _intOf(block[field]);
+      if (count == null) continue;
+      out.add(DashDonutPart(label, color, count));
+    }
+    return out.isEmpty ? base : out;
   }
 
   // ── attention / sources / stuck ──
@@ -933,7 +984,9 @@ class DashboardRemoteDataSource {
 
   static Color _priorityColor(String name) {
     switch (name.toLowerCase()) {
+      // `critical` is the helpdesk API's top band; `urgent` is the CRM wording.
       case 'urgent':
+      case 'critical':
         return DashColors.red;
       case 'high':
         return DashColors.amber;

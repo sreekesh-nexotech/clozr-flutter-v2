@@ -486,6 +486,79 @@ void main() {
       expect(identical(data.helpKpis[1], base.helpKpis[1]), isTrue);
       expect(identical(data.helpKpis[2], base.helpKpis[2]), isTrue);
     });
+
+    test('issue KPIs map the documented payload, minutes → hours for resolution', () {
+      final data = map({
+        DashboardRemoteDataSource.kIssueKpis: {
+          'open_tickets': {'count': 17, 'trend_pct': -5.0},
+          'sla_breaches': {'count': 3, 'trend_pct': 50.0},
+          'avg_resolution': {'minutes': 412, 'trend_pct': -8.2},
+          'first_response': {'minutes': 95, 'trend_pct': 12.0},
+          'reopen_rate': {'pct': 4.8, 'trend_pct': 1.5}, // no slot in the 4-card grid
+        },
+      });
+      expect(data.helpKpis[0].value, '17');
+      expect(data.helpKpis[1].value, '3');
+      expect(data.helpKpis[1].trendPositive, isFalse); // more breaches = bad
+      expect(data.helpKpis[2].value, '6.9'); // 412 min → 6.87 h → 6.9
+      expect(data.helpKpis[2].unit, 'hours'); // card reads in hours, API in minutes
+      expect(data.helpKpis[2].trendPositive, isTrue); // resolving faster = good
+      expect(data.helpKpis[3].value, '95'); // already minutes, no conversion
+    });
+
+    test('legacy hours keys for avg resolution pass through unconverted', () {
+      final data = map({
+        DashboardRemoteDataSource.kIssueKpis: {
+          'avg_resolution': {'hours': 7, 'trend_pct': 0},
+        },
+      });
+      expect(data.helpKpis[2].value, '7');
+    });
+
+    test('SLA/priority mix reads the flat count blocks, not a row list', () {
+      final data = map({
+        DashboardRemoteDataSource.kIssueSla: {
+          'sla': {'within_sla': 25, 'at_risk': 4, 'breached': 3},
+          'priority': {'low': 8, 'medium': 14, 'high': 7, 'critical': 3},
+        },
+      });
+      expect(data.helpSla, hasLength(3));
+      expect(data.helpSla[0].label, 'Within SLA');
+      expect(data.helpSla[0].count, 25);
+      expect(data.helpSla[0].color, DashColors.green);
+      expect(data.helpSla[1].label, 'At Risk');
+      expect(data.helpSla[2].label, 'Breached');
+      expect(data.helpSla[2].count, 3);
+      expect(data.helpSla[2].color, DashColors.red);
+
+      expect(data.helpPriority, hasLength(4));
+      expect(data.helpPriority[1].label, 'Medium');
+      expect(data.helpPriority[1].count, 14);
+      expect(data.helpPriority[3].label, 'Critical');
+      expect(data.helpPriority[3].color, DashColors.red);
+    });
+
+    test('all-zero SLA blocks still map — an empty helpdesk is not a failure', () {
+      final data = map({
+        DashboardRemoteDataSource.kIssueSla: {
+          'sla': {'within_sla': 0, 'at_risk': 0, 'breached': 0},
+          'priority': {'low': 0, 'medium': 0, 'high': 0, 'critical': 0},
+        },
+      });
+      expect(data.helpSla, hasLength(3));
+      expect(data.helpPriority, hasLength(4));
+      expect(data.helpSla.map((p) => p.count), everyElement(0));
+    });
+
+    test('an omitted SLA block falls back to its base donut', () {
+      final data = map({
+        DashboardRemoteDataSource.kIssueSla: {
+          'priority': {'low': 1, 'medium': 0, 'high': 0, 'critical': 0},
+        },
+      });
+      expect(identical(data.helpSla, base.helpSla), isTrue);
+      expect(data.helpPriority[0].count, 1);
+    });
   });
 
   group('full fallback', () {
