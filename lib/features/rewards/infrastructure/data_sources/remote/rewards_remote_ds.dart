@@ -12,7 +12,6 @@ import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../../../data/mock/mock_users.dart';
 import '../../../domain/entities/reward.dart';
-import '../../../presentation/rewards_tokens.dart';
 
 /// Remote rewards data: HTTP via [ApiService] + JSON→[RewardsData] mapping.
 /// No caching here — and none in the repository either (LMS/rewards
@@ -74,7 +73,7 @@ class RewardsRemoteDataSource {
     (PhosphorIconsFill.gift, AppColors.tintBlue, AppColors.blueBright),
     (PhosphorIconsFill.airplaneTilt, AppColors.tintGreen, AppColors.success),
     (PhosphorIconsFill.gasPump, AppColors.tintAmber, AppColors.warningDeep),
-    (PhosphorIconsFill.trophy, RewardsColors.rewardPurpleBg, AppColors.pending),
+    (PhosphorIconsFill.trophy, AppColors.tintPurpleSoft, AppColors.pending),
   ];
 
   /// Builds the screen bundle from API rows on top of [base] (empty in API

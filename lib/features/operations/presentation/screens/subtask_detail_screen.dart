@@ -78,7 +78,7 @@ class SubtaskDetailScreen extends ConsumerWidget {
                               style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
                           SizedBox(height: 16.h),
                           _doneToggle(context, ref, taskId, index, s.done),
-                          const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 16)),
+                          ClozrDivider(margin: EdgeInsets.symmetric(vertical: 16.h)),
                           _metaRow(
                             icon: PhosphorIconsRegular.user,
                             label: 'Assignee',

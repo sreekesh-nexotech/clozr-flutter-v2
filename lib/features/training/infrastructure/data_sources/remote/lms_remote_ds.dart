@@ -223,7 +223,7 @@ class LmsRemoteDataSource {
     (AppColors.blueSubtle, AppColors.blueBright, PhosphorIconsFill.usersThree),
     (AppColors.tintGreen, AppColors.success, PhosphorIconsFill.trendUp),
     (AppColors.tintAmber, AppColors.warningDeep, PhosphorIconsFill.briefcase),
-    (Color(0xFFF3E8FA), AppColors.pending, PhosphorIconsFill.shieldCheck),
+    (AppColors.tintPurpleSoft, AppColors.pending, PhosphorIconsFill.shieldCheck),
     (AppColors.tintRed, AppColors.error, PhosphorIconsFill.headset),
     (AppColors.tintNavy, AppColors.navy, PhosphorIconsFill.hardHat),
   ];

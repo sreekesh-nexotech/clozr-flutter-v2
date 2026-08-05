@@ -73,6 +73,7 @@ class AppColors {
   static const tintAmber = Color(0xFFFFF5EB);
   static const tintRed = Color(0xFFFCEBEB);
   static const tintPurple = Color(0xFFF3EAFF);
+  static const tintPurpleSoft = Color(0xFFF3E8FA); // reward trophy / LMS chip bg
   static const tintNavy = Color(0xFFEAECF3);
   static const tintRedSoft = Color(0xFFFFE9E9);
   static const tintGrey = Color(0xFFF1F2F4);
