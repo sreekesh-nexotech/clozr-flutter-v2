@@ -62,9 +62,13 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
     var of = 0;
     for (final r in records) {
       if (r is! Map) continue;
-      of++;
       final st = r['status'];
-      if (st is String && st.toLowerCase() == 'paid') settled++;
+      final statusStr = st is String ? st.toLowerCase() : '';
+      // Cancelled records aren't part of the schedule (paymentRecordFromApi
+      // drops them too), so they must not inflate "settled X of Y".
+      if (statusStr == 'cancelled') continue;
+      of++;
+      if (statusStr == 'paid') settled++;
     }
     return Invoice(
       id: id,

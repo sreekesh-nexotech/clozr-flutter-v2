@@ -6,7 +6,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/utils/inr_format.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
@@ -18,9 +20,31 @@ class ReportsScreen extends ConsumerWidget {
 
   static const _funnel = ['new', 'qualified', 'quote', 'negotiation', 'won'];
 
+  /// Statuses that count toward open pipeline value (everything that isn't a
+  /// closed outcome).
+  static const _closed = {'won', 'lost', 'archived'};
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final leads = ref.watch(leadsProvider).valueOrNull ?? const <Lead>[];
+    final async = ref.watch(leadsProvider);
+    return Container(
+      color: AppColors.bgScreen,
+      child: Column(
+        children: [
+          _header(context),
+          Expanded(
+            child: AsyncStateView<List<Lead>>(
+              value: async,
+              onRetry: () => ref.invalidate(leadsProvider),
+              data: _body,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _body(List<Lead> leads) {
     final total = leads.length;
     final won = leads.where((l) => l.status == 'won').length;
     final winRate = total == 0 ? 0 : (won / total * 100).round();
@@ -28,6 +52,12 @@ class ReportsScreen extends ConsumerWidget {
     int countOf(String k) => leads.where((l) => l.status == k).length;
     final funnelCounts = {for (final k in _funnel) k: countOf(k)};
     final fmax = [1, ...funnelCounts.values].reduce((a, b) => a > b ? a : b);
+
+    // Open pipeline = summed value of leads still in play (not won/lost/archived).
+    final openPipelineNum = leads
+        .where((l) => !_closed.contains(l.status))
+        .fold<int>(0, (sum, l) => sum + l.valueNum);
+    final openPipeline = openPipelineNum == 0 ? '—' : formatInr(openPipelineNum);
 
     final srcCounts = <String, int>{};
     for (final l in leads) {
@@ -37,27 +67,17 @@ class ReportsScreen extends ConsumerWidget {
     final srcMax = [1, ...srcCounts.values].reduce((a, b) => a > b ? a : b);
     final statusMax = [1, ...StatusMeta$.leadOrder.map(countOf)].reduce((a, b) => a > b ? a : b);
 
-    return Container(
-      color: AppColors.bgScreen,
-      child: Column(
-        children: [
-          _header(context),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 120.h),
-              children: [
-                _summaryGrid(total, won, winRate),
-                SizedBox(height: 16.h),
-                _funnelCard(funnelCounts, fmax),
-                SizedBox(height: 16.h),
-                _statusCard(countOf, statusMax),
-                SizedBox(height: 16.h),
-                _sourcesCard(sources, srcMax),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ListView(
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 120.h),
+      children: [
+        _summaryGrid(total, won, winRate, openPipeline),
+        SizedBox(height: 16.h),
+        _funnelCard(funnelCounts, fmax),
+        SizedBox(height: 16.h),
+        _statusCard(countOf, statusMax),
+        SizedBox(height: 16.h),
+        _sourcesCard(sources, srcMax),
+      ],
     );
   }
 
@@ -112,12 +132,12 @@ class ReportsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _summaryGrid(int total, int won, int winRate) {
+  Widget _summaryGrid(int total, int won, int winRate, String openPipeline) {
     final cards = <_KpiDef>[
       _KpiDef('Total leads', '$total', PhosphorIconsFill.usersThree, AppColors.blueBright, AppColors.tintBlue),
       _KpiDef('Won deals', '$won', PhosphorIconsFill.trophy, AppColors.success, AppColors.tintGreen),
       _KpiDef('Win rate', '$winRate%', PhosphorIconsFill.target, AppColors.warning, AppColors.tintAmber),
-      _KpiDef('Open pipeline', '₹2.8Cr', PhosphorIconsFill.wallet, AppColors.navy, AppColors.tintNavy),
+      _KpiDef('Open pipeline', openPipeline, PhosphorIconsFill.wallet, AppColors.navy, AppColors.tintNavy),
     ];
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

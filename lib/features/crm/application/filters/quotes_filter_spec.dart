@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/quote.dart';
@@ -43,14 +44,14 @@ String? quoteCompany(Quote q) =>
     CrmPartyDirectory.resolve(custId: q.custId, leadId: q.leadId)?.company;
 
 /// Build the Quotes drawer spec from the current quote set.
-FilterSpec buildQuotesFilterSpec(List<Quote> quotes) {
+FilterSpec buildQuotesFilterSpec(List<Quote> quotes, {List<AppUser> roster = MockUsers.reps}) {
   const statusKeys = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
   final statuses = [
     for (final k in statusKeys) FilterOption(id: k, label: StatusMeta$.quote[k]!.label),
   ];
   final ownerIds = quotes.map((q) => q.owner).toSet();
   final owners = [
-    for (final u in MockUsers.reps)
+    for (final u in roster)
       if (ownerIds.contains(u.id)) FilterOption(id: u.id, label: u.name),
   ];
   final companies = (quotes
@@ -130,7 +131,7 @@ bool quoteMatchesFilters(Quote q, FilterValues v) {
 /// The Quotes drawer spec, derived from the loaded quotes.
 final quotesFilterSpecProvider = Provider<FilterSpec>((ref) {
   final quotes = ref.watch(quotesProvider).valueOrNull ?? const [];
-  return buildQuotesFilterSpec(quotes);
+  return buildQuotesFilterSpec(quotes, roster: ref.watch(rosterProvider));
 });
 
 /// Applied drawer filters for the Quotes list (source of the badge count).

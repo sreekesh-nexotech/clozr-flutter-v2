@@ -10,16 +10,19 @@ import '../../../../core/models/note.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
-import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
+import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
 import 'crm_status_sheet.dart';
@@ -81,27 +84,45 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final lead = ref.watch(leadByIdProvider(id));
-
-    if (lead == null) {
-      return Container(
+  /// Wraps a loading / error / not-found state under the section app bar so the
+  /// back control stays available in every state.
+  Widget _stateScaffold(Widget child) => Container(
         color: AppColors.bgDetail,
         child: Column(
           children: [
             DetailAppBar(section: 'Lead', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Lead not found'))),
+            Expanded(child: child),
           ],
         ),
       );
+
+  @override
+  Widget build(BuildContext context) {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final async = ref.watch(leadsProvider);
+    return async.when(
+      loading: () => _stateScaffold(const DetailSkeleton()),
+      error: (e, _) => _stateScaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(leadsProvider)),
+      ),
+      data: (_) => _buildLead(context, id),
+    );
+  }
+
+  Widget _buildLead(BuildContext context, String id) {
+    final lead = ref.watch(leadByIdProvider(id));
+    if (lead == null) {
+      return _stateScaffold(const EmptyState(
+        icon: PhosphorIconsRegular.magnifyingGlass,
+        title: 'Lead not found',
+        body: 'This lead may have been removed or you no longer have access to it.',
+      ));
     }
 
     final meta = StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
-    final customers = ref.watch(customersProvider).valueOrNull ?? const [];
-    final relCust = customers.where((c) => c.leadId == lead.id).toList();
-    final converted = relCust.isNotEmpty;
+    // "Converted" is derived from the lead itself (won deals are locked from
+    // re-conversion); the separate customers list is no longer fetched here.
+    final converted = lead.status == 'won';
 
     // Notes thread (#13) — seeded from the lead's mock notes; via-tagged so the
     // Call/Email pills survive. Stays editable even when the lead is locked.
@@ -148,10 +169,6 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
               children: [
                 _profileCard(lead, meta),
-                if (converted) ...[
-                  SizedBox(height: 14.h),
-                  _convertedBanner(relCust.first.id),
-                ],
                 SizedBox(height: 14.h),
                 _scoreCard(lead),
                 SizedBox(height: 14.h),
@@ -309,36 +326,6 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           SizedBox(width: 4.w),
           Text('UPSELL', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.pending)),
         ],
-      ),
-    );
-  }
-
-  Widget _convertedBanner(String custId) {
-    return GestureDetector(
-      onTap: () => context.push('${Routes.customerDetail}?id=$custId'),
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
-        decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(14.r)),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(PhosphorIconsFill.sealCheck, size: 18.sp, color: AppColors.success),
-            SizedBox(width: 10.w),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Converted to customer', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.success)),
-                  SizedBox(height: 2.h),
-                  Text('This lead is locked — manage ongoing work from the customer record.',
-                      style: AppText.custom(size: 12, weight: FontWeight.w500, color: const Color(0xFF4A7C5B))),
-                ],
-              ),
-            ),
-            SizedBox(width: 8.w),
-            Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.success),
-          ],
-        ),
       ),
     );
   }

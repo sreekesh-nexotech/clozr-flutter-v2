@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/dashboard_models.dart';
 import '../../domain/repositories/dashboard_repository.dart';
@@ -39,50 +40,120 @@ String dashApiPeriod(String label) {
   return 'month';
 }
 
-/// Holds the dashboard bundle. Seeded with the mock bundle so the panels paint
-/// instantly in both modes; [load] swaps in mapped API data when it lands and
-/// keeps the last good bundle on any failure.
-class DashboardDataNotifier extends StateNotifier<DashboardData> {
-  DashboardDataNotifier(this._repository)
-      : super(const DashboardMockDataSource().load());
+/// The dashboard's load phase: the current bundle plus loading/error flags so
+/// the screen can branch skeleton → error → panels. [settled] flips true once a
+/// first load has resolved, so a background refresh (period/team change) never
+/// flashes the skeleton over already-real data.
+class DashboardPhase {
+  const DashboardPhase({
+    required this.data,
+    this.loading = false,
+    this.error,
+    this.settled = false,
+  });
 
-  final DashboardRepository _repository;
-  int _requestSeq = 0;
+  final DashboardData data;
+  final bool loading;
+  final AppError? error;
+  final bool settled;
 
-  Future<void> load({String period = 'month', String? teamId}) async {
-    final seq = ++_requestSeq;
-    try {
-      final data = await _repository.getDashboard(period: period, teamId: teamId);
-      // A newer request (period/team changed mid-flight) wins.
-      if (mounted && seq == _requestSeq) state = data;
-    } on Object {
-      // Silent: a failed refresh keeps the last data on screen.
-    }
-  }
+  DashboardPhase copyWith({
+    DashboardData? data,
+    bool? loading,
+    AppError? error,
+    bool clearError = false,
+    bool? settled,
+  }) =>
+      DashboardPhase(
+        data: data ?? this.data,
+        loading: loading ?? this.loading,
+        error: clearError ? null : (error ?? this.error),
+        settled: settled ?? this.settled,
+      );
 }
 
-/// Internal loader; screens keep watching [dashboardDataProvider] below.
-final dashboardDataNotifierProvider =
-    StateNotifierProvider<DashboardDataNotifier, DashboardData>((ref) {
-  final notifier = DashboardDataNotifier(ref.watch(dashboardRepositoryProvider));
-  if (ApiConfig.apiEnabled) {
-    void reload() {
-      notifier.load(
-        period: dashApiPeriod(ref.read(dashPeriodProvider)),
-        teamId: ref.read(dashTeamProvider),
-      );
-    }
+/// Holds the dashboard bundle and its load phase.
+///
+/// - **Mock mode:** seeded synchronously with the mock bundle, already settled —
+///   the panels paint the seed exactly as before and [load] is a no-op, so mock
+///   behaviour stays byte-identical.
+/// - **API mode:** seeded with [DashboardData.empty] in a loading state; [load]
+///   maps real API data on success or stores an [AppError] on total failure. It
+///   NEVER falls back to mock — a failure surfaces as an error, not fake data.
+class DashboardDataNotifier extends StateNotifier<DashboardPhase> {
+  DashboardDataNotifier.mock()
+      : _repository = null,
+        super(DashboardPhase(data: const DashboardMockDataSource().load(), settled: true));
 
-    ref.listen<String>(dashPeriodProvider, (_, __) => reload());
-    ref.listen<String>(dashTeamProvider, (_, __) => reload());
-    reload();
+  DashboardDataNotifier.api(DashboardRepository repository)
+      : _repository = repository,
+        super(DashboardPhase(data: DashboardData.empty(), loading: true));
+
+  final DashboardRepository? _repository;
+  int _requestSeq = 0;
+  String _period = 'month';
+  String? _teamId;
+
+  Future<void> load({String period = 'month', String? teamId}) async {
+    final repo = _repository;
+    if (repo == null) return; // mock mode: the seed never refreshes.
+    _period = period;
+    _teamId = teamId;
+    final seq = ++_requestSeq;
+    if (mounted) state = state.copyWith(loading: true, clearError: true);
+    try {
+      final data = await repo.getDashboard(period: period, teamId: teamId);
+      // A newer request (period/team changed mid-flight) wins.
+      if (mounted && seq == _requestSeq) {
+        state = DashboardPhase(data: data, loading: false, settled: true);
+      }
+    } on AppError catch (e) {
+      if (mounted && seq == _requestSeq) {
+        state = state.copyWith(loading: false, error: e, settled: true);
+      }
+    } on Object catch (e) {
+      if (mounted && seq == _requestSeq) {
+        state = state.copyWith(
+          loading: false,
+          settled: true,
+          error: AppError(
+            type: AppErrorType.unknown,
+            message: 'Something went wrong. Please try again.',
+            cause: e,
+          ),
+        );
+      }
+    }
   }
+
+  /// Re-runs the last request — wired to the error state's Retry.
+  Future<void> reload() => load(period: _period, teamId: _teamId);
+}
+
+/// Internal loader; the screen reads phase from here, panels read the bundle
+/// from [dashboardDataProvider] below.
+final dashboardDataNotifierProvider =
+    StateNotifierProvider<DashboardDataNotifier, DashboardPhase>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return DashboardDataNotifier.mock();
+  }
+  final notifier = DashboardDataNotifier.api(ref.watch(dashboardRepositoryProvider));
+  void reload() {
+    notifier.load(
+      period: dashApiPeriod(ref.read(dashPeriodProvider)),
+      teamId: ref.read(dashTeamProvider),
+    );
+  }
+
+  ref.listen<String>(dashPeriodProvider, (_, __) => reload());
+  ref.listen<String>(dashTeamProvider, (_, __) => reload());
+  reload();
   return notifier;
 });
 
-/// The full four-panel dashboard bundle (same sync surface as before).
+/// The full four-panel dashboard bundle (same sync surface the panels watch).
 final dashboardDataProvider = Provider<DashboardData>(
-  (ref) => ref.watch(dashboardDataNotifierProvider),
+  (ref) => ref.watch(dashboardDataNotifierProvider).data,
 );
 
 // ── Scope selectors (functional selection state) ──

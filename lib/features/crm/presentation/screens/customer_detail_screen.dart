@@ -10,6 +10,9 @@ import '../../../../core/models/note.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
@@ -20,6 +23,7 @@ import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/customer.dart';
+import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
 import 'crm_status_sheet.dart';
@@ -100,21 +104,39 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final cust = ref.watch(customerByIdProvider(id));
-
-    if (cust == null) {
-      return Container(
+  /// Wraps a loading / error / not-found state under the section app bar so the
+  /// back control stays available in every state.
+  Widget _stateScaffold(Widget child) => Container(
         color: AppColors.bgDetail,
         child: Column(
           children: [
             DetailAppBar(section: 'Customer', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Customer not found'))),
+            Expanded(child: child),
           ],
         ),
       );
+
+  @override
+  Widget build(BuildContext context) {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final async = ref.watch(customersProvider);
+    return async.when(
+      loading: () => _stateScaffold(const DetailSkeleton()),
+      error: (e, _) => _stateScaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(customersProvider)),
+      ),
+      data: (_) => _buildCustomer(context, id),
+    );
+  }
+
+  Widget _buildCustomer(BuildContext context, String id) {
+    final cust = ref.watch(customerByIdProvider(id));
+    if (cust == null) {
+      return _stateScaffold(const EmptyState(
+        icon: PhosphorIconsRegular.userCircle,
+        title: 'Customer not found',
+        body: 'This customer may have been removed or you no longer have access to it.',
+      ));
     }
 
     final meta = StatusMeta$.customer[cust.status] ?? StatusMeta$.customer['active']!;

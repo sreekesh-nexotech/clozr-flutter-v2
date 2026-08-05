@@ -7,7 +7,10 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/people_providers.dart';
@@ -29,6 +32,7 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final membersAsync = ref.watch(membersProvider);
     final member = ref.watch(memberByIdProvider(id));
 
     return Container(
@@ -37,22 +41,34 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         children: [
           _header(member?.name),
           Expanded(
-            child: member == null
-                ? const Center(child: Text('Member not found'))
-                : ListView(
-                    padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
-                    children: [
-                      _profileCard(member),
-                      SizedBox(height: 14.h),
-                      _availabilityCard(member.email),
-                      SizedBox(height: 14.h),
-                      _infoCard(member),
-                      SizedBox(height: 14.h),
-                      _performanceCard(member),
-                      SizedBox(height: 14.h),
-                      _activityCard(member),
-                    ],
-                  ),
+            child: AsyncStateView<List<Member>>(
+              value: membersAsync,
+              onRetry: () => ref.invalidate(membersProvider),
+              loading: () => const DetailSkeleton(),
+              data: (_) {
+                if (member == null) {
+                  return const EmptyState(
+                    icon: PhosphorIconsRegular.userMinus,
+                    title: 'Member not found',
+                    body: 'This member may have been removed, or you may not have access to them.',
+                  );
+                }
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
+                  children: [
+                    _profileCard(member),
+                    SizedBox(height: 14.h),
+                    _availabilityCard(member.email),
+                    SizedBox(height: 14.h),
+                    _infoCard(member),
+                    SizedBox(height: 14.h),
+                    _performanceCard(member),
+                    SizedBox(height: 14.h),
+                    _activityCard(member),
+                  ],
+                );
+              },
+            ),
           ),
         ],
       ),

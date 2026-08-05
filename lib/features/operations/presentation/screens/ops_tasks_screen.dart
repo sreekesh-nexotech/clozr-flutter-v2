@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -18,6 +19,7 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/ops_tasks_filter_spec.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../domain/entities/ops_task.dart';
 import '../components/ops_task_card.dart';
 import '../components/ops_widgets.dart';
 
@@ -55,6 +57,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
       AddAction(label: 'New task', run: (ctx) => ctx.push(Routes.createTask)),
     );
 
+    final opsTasksAsync = ref.watch(opsTasksProvider);
     final base = ref.watch(otBaseProvider);
     final all = ref.watch(opsTasksListProvider);
     final projects = ref.watch(projectsListProvider);
@@ -64,11 +67,6 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
     final query = ref.watch(otSearchProvider);
     final filters = ref.watch(opsTaskFiltersProvider);
     final filterCount = filters.activeCount;
-
-    final tabVisible = ref.watch(visibleOpsTasksProvider);
-    final visible = filters.isEmpty
-        ? tabVisible
-        : tabVisible.where((t) => opsTaskMatchesFilters(t, filters)).toList();
 
     final tabDefs = <(String, String)>[
       ('all', 'All'),
@@ -126,30 +124,40 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
-                  children: const [
-                    EmptyState(
-                      icon: PhosphorIconsRegular.listChecks,
-                      title: 'No tasks found',
-                      body: 'Try a different status, clear filters, or turn off "My Tasks" to see the whole team\'s work.',
-                    ),
-                  ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 12.h),
-                  itemBuilder: (context, i) {
-                    final t = visible[i];
-                    return OpsTaskCard(
-                      task: t,
-                      projectName: projName(t.projId),
-                      unresolvedCount: unresolvedDeps(t, all).length,
-                      onTap: () => context.push('${Routes.opsTaskDetail}?id=${t.id}'),
+          child: AsyncStateView<List<OpsTask>>(
+            value: opsTasksAsync,
+            onRetry: () => ref.invalidate(opsTasksProvider),
+            data: (_) {
+              final tabVisible = ref.watch(visibleOpsTasksProvider);
+              final visible = filters.isEmpty
+                  ? tabVisible
+                  : tabVisible.where((t) => opsTaskMatchesFilters(t, filters)).toList();
+              return visible.isEmpty
+                  ? ListView(
+                      children: const [
+                        EmptyState(
+                          icon: PhosphorIconsRegular.listChecks,
+                          title: 'No tasks found',
+                          body: 'Try a different status, clear filters, or turn off "My Tasks" to see the whole team\'s work.',
+                        ),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                      itemBuilder: (context, i) {
+                        final t = visible[i];
+                        return OpsTaskCard(
+                          task: t,
+                          projectName: projName(t.projId),
+                          unresolvedCount: unresolvedDeps(t, all).length,
+                          onTap: () => context.push('${Routes.opsTaskDetail}?id=${t.id}'),
+                        );
+                      },
                     );
-                  },
-                ),
+            },
+          ),
         ),
       ],
     );

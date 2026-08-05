@@ -130,6 +130,11 @@ class CloserTrack extends Equatable {
   final int pct;
   final List<RewardLevel> levels;
 
+  /// True when there is nothing to show — the timeline has no levels. The
+  /// screen hides the whole Closer Track card in that case (the level data is
+  /// not derivable from the milestone endpoints, so it is empty in API mode).
+  bool get isEmpty => levels.isEmpty;
+
   @override
   List<Object?> get props => [upNextTitle, progLeft, pct, levels];
 }
@@ -142,6 +147,32 @@ class RewardsData extends Equatable {
     required this.goals,
     required this.closerTrack,
   });
+
+  /// A neutral, MOCK-FREE bundle: blank profile fields, no goals, and an empty
+  /// (hidden) Closer Track. Used as the enrichment base in API mode so every
+  /// field the milestone endpoints cannot provide stays honestly empty rather
+  /// than falling back to the mock seed (audit L-3 / M2), and as the loading /
+  /// error seed for the notifier.
+  factory RewardsData.empty() => const RewardsData(
+        profile: RewardProfile(
+          name: '',
+          initials: '',
+          role: '',
+          milestones: 0,
+          reportsTo: '',
+          currentLevel: '',
+        ),
+        lastUpdated: '',
+        goals: [],
+        closerTrack: CloserTrack(
+          upNextTitle: '',
+          upNextSub: '',
+          progLeft: '',
+          progRight: '',
+          pct: 0,
+          levels: [],
+        ),
+      );
 
   final RewardProfile profile;
   final String lastUpdated;

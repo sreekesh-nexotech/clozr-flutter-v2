@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -7,20 +5,24 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
-import '../../../../core/config/api_config.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/async_state_view.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/ticket_notes_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
-import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../util/ticket_sla.dart';
 
 /// Ticket detail — summary + status/assignee, SLA banner (paused when Pending),
@@ -41,43 +43,46 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     final uri = GoRouterState.of(context).uri;
     final id = uri.queryParameters['id'] ?? '';
     final fromBoard = uri.queryParameters['from'] == 'board';
+    final ticketsAsync = ref.watch(ticketsProvider);
     final base = ref.watch(ticketByIdProvider(id));
-
-    if (base == null) {
-      return Container(
-        color: AppColors.bgScreen,
-        child: Column(
-          children: [
-            _header(subject: 'Not found', fromBoard: fromBoard, ticket: null),
-            const Expanded(child: Center(child: Text('Ticket not found'))),
-          ],
-        ),
-      );
-    }
-
-    final t = base.copyWith(status: _status, assignees: _assignees);
-    final meta = StatusMeta$.ticket[t.status] ?? StatusMeta$.ticket['new']!;
+    final headerTicket = base?.copyWith(status: _status, assignees: _assignees);
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          _header(subject: t.subject, fromBoard: fromBoard, ticket: t),
+          _header(subject: headerTicket?.subject ?? '', fromBoard: fromBoard, ticket: headerTicket),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
-              children: [
-                _summaryCard(t, meta),
-                _slaBanner(t),
-                if (t.isLocked) _lockCard(),
-                SizedBox(height: 14.h),
-                _detailsCard(t),
-                SizedBox(height: 14.h),
-                _linkedTasksCard(t),
-                _notesCard(t),
-                SizedBox(height: 14.h),
-                _auditCard(t),
-              ],
+            child: AsyncStateView<List<Ticket>>(
+              value: ticketsAsync,
+              onRetry: () => ref.invalidate(ticketsProvider),
+              loading: () => const DetailSkeleton(),
+              data: (_) {
+                if (base == null) {
+                  return const EmptyState(
+                    icon: PhosphorIconsRegular.ticket,
+                    title: 'Ticket not found',
+                    body: 'This ticket may have been removed, or you may not have access to it.',
+                  );
+                }
+                final t = base.copyWith(status: _status, assignees: _assignees);
+                final meta = StatusMeta$.ticket[t.status] ?? StatusMeta$.ticket['new']!;
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
+                  children: [
+                    _summaryCard(t, meta),
+                    _slaBanner(t),
+                    if (t.isLocked) _lockCard(),
+                    SizedBox(height: 14.h),
+                    _detailsCard(t),
+                    SizedBox(height: 14.h),
+                    _linkedTasksCard(t),
+                    _notesCard(t),
+                    SizedBox(height: 14.h),
+                    _auditCard(t),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -364,8 +369,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
   // ── Details ──
   Widget _detailsCard(Ticket t) {
-    final cust = TicketDirectory.customer(t.custId);
-    final proj = TicketDirectory.project(t.projId);
+    final dir = ref.watch(ticketDirectoryProvider);
+    final cust = dir.customer(t.custId);
+    final proj = dir.project(t.projId);
     final rows = <(String, String)>[
       ('Requester', cust?.display ?? '—'),
       ('Contact person', t.contact),
@@ -669,27 +675,33 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             icon: PhosphorIconsRegular.xCircle,
             label: 'Close ticket',
             destructive: true,
-            onTap: () {
-              setState(() => _status = 'closed');
-              ref.read(toastProvider.notifier).show('Ticket → Closed');
-              _pushStatus(t.id, 'closed');
-            },
+            onTap: () => _changeStatus(t, 'closed', 'Ticket → Closed'),
           ),
       ],
     );
   }
 
-  /// Fire-and-forget status write. The local copyWith already updated the UI;
-  /// the backend catches up in the background (errors are swallowed — the next
-  /// list refresh reconciles).
-  void _pushStatus(String id, String uiStatusKey) {
-    if (!ApiConfig.apiEnabled) return;
-    unawaited(
-      ref
-          .read(ticketsRepositoryProvider)
-          .setTicketStatusByKey(id, uiStatusKey)
-          .catchError((Object _) {}),
-    );
+  /// Applies a status change with optimistic UI. In mock mode the local override
+  /// updates and a success toast shows immediately (unchanged). In API mode the
+  /// write is awaited: success toast only on success; on an [AppError] the local
+  /// override rolls back and the error message is shown (audit — no more
+  /// fire-and-forget "success" that never reached the backend).
+  Future<void> _changeStatus(Ticket t, String key, String successMsg) async {
+    final prevOverride = _status;
+    setState(() => _status = key);
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show(successMsg);
+      return;
+    }
+    try {
+      await ref.read(ticketsRepositoryProvider).setTicketStatusByKey(t.id, key);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(successMsg);
+    } on AppError catch (e) {
+      if (!mounted) return;
+      setState(() => _status = prevOverride);
+      ref.read(toastProvider.notifier).show(e.message);
+    }
   }
 
   // ── Status sheet ──
@@ -716,10 +728,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
-        setState(() => _status = key);
         Navigator.of(ctx).pop();
-        ref.read(toastProvider.notifier).show('Status → ${meta.label}');
-        _pushStatus(t.id, key);
+        _changeStatus(t, key, 'Status → ${meta.label}');
       },
       child: Container(
         margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),
@@ -744,6 +754,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   // ── Assignee sheet ──
   void _openAssigneeSheet(Ticket t) {
     final selected = List<String>.from(t.assignees);
+    final roster = ref.read(rosterProvider);
     showClozrSheet<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -758,7 +769,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                   shrinkWrap: true,
                   padding: EdgeInsets.symmetric(horizontal: 18.w),
                   children: [
-                    for (final r in MockUsers.reps)
+                    for (final r in roster)
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {

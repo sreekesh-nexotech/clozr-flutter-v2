@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -15,6 +16,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/products_filter_spec.dart';
 import '../../application/providers/products_providers.dart';
+import '../../domain/entities/product.dart';
 import '../components/add_product_sheet.dart';
 import '../components/mode_toggle.dart';
 import '../components/product_card.dart';
@@ -56,7 +58,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     );
 
     final all = ref.watch(allProductsProvider);
-    final visible = ref.watch(visibleProductsProvider);
+    final async = ref.watch(productsProvider);
     final cat = ref.watch(prodCatProvider);
     final searchOpen = ref.watch(prodSearchOpenProvider);
     final query = ref.watch(prodSearchProvider);
@@ -124,8 +126,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
+          child: AsyncStateView<List<Product>>(
+            value: async,
+            onRetry: () => ref.invalidate(productsProvider),
+            data: (_) {
+              final visible = ref.watch(visibleProductsProvider);
+              if (visible.isEmpty) {
+                return ListView(
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.package,
@@ -136,19 +143,22 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                       onCta: () => showAddProductSheet(context, mode: mode),
                     ),
                   ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 10.h),
-                  itemBuilder: (context, i) {
-                    final product = visible[i];
-                    return ProductCard(
-                      product: product,
-                      onTap: () => context.push('${Routes.productDetail}?id=${product.id}'),
-                    );
-                  },
-                ),
+                );
+              }
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => SizedBox(height: 10.h),
+                itemBuilder: (context, i) {
+                  final product = visible[i];
+                  return ProductCard(
+                    product: product,
+                    onTap: () => context.push('${Routes.productDetail}?id=${product.id}'),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );

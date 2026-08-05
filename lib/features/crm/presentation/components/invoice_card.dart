@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -6,20 +7,22 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../domain/entities/invoice.dart';
 import 'finance_widgets.dart';
 
 /// An invoice list row: receipt icon, who + "id · #quote · type", status pill +
 /// total, then an installment progress bar and a "settled / balance" footer.
-class InvoiceCard extends StatelessWidget {
+class InvoiceCard extends ConsumerWidget {
   const InvoiceCard({super.key, required this.invoice, required this.onTap});
   final Invoice invoice;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final meta = StatusMeta$.invoice[invoice.status] ?? StatusMeta$.invoice['partial']!;
+    final lookup = ref.watch(crmPartyLookupProvider);
 
     return ClozrCard(
       radius: 14,
@@ -36,7 +39,7 @@ class InvoiceCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(invoiceWho(invoice),
+                    Text(invoiceWho(invoice, lookup),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),

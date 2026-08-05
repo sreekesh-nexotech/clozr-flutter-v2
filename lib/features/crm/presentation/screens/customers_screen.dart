@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -16,6 +17,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/customers_filter_spec.dart';
 import '../../application/providers/customers_providers.dart';
+import '../../domain/entities/customer.dart';
 import '../components/customer_card.dart';
 import '../components/saved_chip_row.dart' as chips;
 import '../sheets/add_customer_sheet.dart';
@@ -54,7 +56,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     );
 
     final all = ref.watch(customersAllProvider);
-    final visible = ref.watch(visibleCustomersProvider);
+    final async = ref.watch(customersProvider);
     final tab = ref.watch(customerTabProvider);
     final searchOpen = ref.watch(customerSearchOpenProvider);
     final query = ref.watch(customerSearchProvider);
@@ -114,8 +116,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
+          child: AsyncStateView<List<Customer>>(
+            value: async,
+            onRetry: () => ref.invalidate(customersProvider),
+            data: (_) {
+              final visible = ref.watch(visibleCustomersProvider);
+              if (visible.isEmpty) {
+                return ListView(
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.userCircle,
@@ -126,20 +133,23 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                       onCta: () => showAddCustomerSheet(context, ref),
                     ),
                   ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 14.h),
-                  itemBuilder: (context, i) {
-                    final c = visible[i];
-                    return CustomerCard(
-                      customer: c,
-                      onTap: () => context.push('${Routes.customerDetail}?id=${c.id}'),
-                      onCall: () => ref.read(toastProvider.notifier).show('Calling ${c.name.split(' ').first}…'),
-                    );
-                  },
-                ),
+                );
+              }
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => SizedBox(height: 14.h),
+                itemBuilder: (context, i) {
+                  final c = visible[i];
+                  return CustomerCard(
+                    customer: c,
+                    onTap: () => context.push('${Routes.customerDetail}?id=${c.id}'),
+                    onCall: () => ref.read(toastProvider.notifier).show('Calling ${c.name.split(' ').first}…'),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );

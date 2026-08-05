@@ -7,6 +7,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -15,6 +16,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/teams_filter_spec.dart';
 import '../../application/providers/people_providers.dart';
+import '../../domain/entities/team.dart';
 import '../components/info_banner.dart';
 import '../components/people_title_actions.dart';
 import '../components/team_card.dart';
@@ -54,8 +56,7 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
       AddAction(label: 'Create team', run: (ctx) => showCreateTeamSheet(ctx)),
     );
 
-    final visible = ref.watch(filteredTeamsProvider);
-    final byId = ref.watch(membersByIdProvider);
+    final teamsAsync = ref.watch(teamsProvider);
     final searchOpen = ref.watch(teamSearchOpenProvider);
     final query = ref.watch(teamSearchProvider);
     final filterCount = ref.watch(teamFiltersProvider).activeCount;
@@ -107,34 +108,42 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
           ],
         ),
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-            children: [
-              const InfoBanner(
-                spans: [
-                  TextSpan(text: 'Teams are for grouping only — they carry '),
-                  TextSpan(text: 'no visibility scope of their own', style: TextStyle(fontWeight: FontWeight.w700)),
-                  TextSpan(text: '. Access always comes from a member’s role and reporting hierarchy.'),
-                ],
-              ),
-              SizedBox(height: 10.h),
-              if (visible.isEmpty)
-                EmptyState(
-                  icon: PhosphorIconsRegular.usersThree,
-                  iconColor: AppColors.navy,
-                  title: 'No teams found',
-                  body: 'Try a different search or clear the filters.',
-                )
-              else
-                for (int i = 0; i < visible.length; i++) ...[
-                  if (i > 0) SizedBox(height: 10.h),
-                  TeamCard(
-                    team: visible[i],
-                    membersById: byId,
-                    onAdd: () => toast('Add member — coming soon'),
+          child: AsyncStateView<List<Team>>(
+            value: teamsAsync,
+            onRetry: () => ref.invalidate(teamsProvider),
+            data: (_) {
+              final visible = ref.watch(filteredTeamsProvider);
+              final byId = ref.watch(membersByIdProvider);
+              return ListView(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                children: [
+                  const InfoBanner(
+                    spans: [
+                      TextSpan(text: 'Teams are for grouping only — they carry '),
+                      TextSpan(text: 'no visibility scope of their own', style: TextStyle(fontWeight: FontWeight.w700)),
+                      TextSpan(text: '. Access always comes from a member’s role and reporting hierarchy.'),
+                    ],
                   ),
+                  SizedBox(height: 10.h),
+                  if (visible.isEmpty)
+                    EmptyState(
+                      icon: PhosphorIconsRegular.usersThree,
+                      iconColor: AppColors.navy,
+                      title: 'No teams found',
+                      body: 'Try a different search or clear the filters.',
+                    )
+                  else
+                    for (int i = 0; i < visible.length; i++) ...[
+                      if (i > 0) SizedBox(height: 10.h),
+                      TeamCard(
+                        team: visible[i],
+                        membersById: byId,
+                        onAdd: () => toast('Add member — coming soon'),
+                      ),
+                    ],
                 ],
-            ],
+              );
+            },
           ),
         ),
       ],

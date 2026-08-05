@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../domain/entities/customer.dart';
 import '../../domain/entities/followup.dart';
@@ -39,9 +40,10 @@ FilterSpec buildFollowupsFilterSpec({
   required List<Lead> leads,
   required List<Customer> customers,
   required List<Followup> followups,
+  List<AppUser> roster = MockUsers.reps,
 }) {
   final users = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
   final companies = _allCompanies(leads, customers, followups)
       .map((c) => FilterOption(id: c, label: c))
@@ -117,7 +119,12 @@ final followupsFilterSpecProvider = Provider<FilterSpec>((ref) {
   final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
   final customers = ref.watch(customersProvider).valueOrNull ?? const [];
   final followups = ref.watch(followupsAllProvider);
-  return buildFollowupsFilterSpec(leads: leads, customers: customers, followups: followups);
+  return buildFollowupsFilterSpec(
+    leads: leads,
+    customers: customers,
+    followups: followups,
+    roster: ref.watch(rosterProvider),
+  );
 });
 
 /// Applied drawer filters for the Follow-ups list (the source of the badge).

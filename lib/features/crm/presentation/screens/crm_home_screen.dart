@@ -7,10 +7,16 @@ import '../../../../app/config/constants.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/utils/inr_format.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/kpi_card.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/sparkline.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../domain/entities/crm_home_models.dart';
 import '../../application/providers/crm_home_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/followups_providers.dart';
@@ -18,6 +24,12 @@ import '../../application/providers/leads_providers.dart';
 
 /// CRM Home dashboard — KPI grid, lead funnel, first-response trend, attention
 /// grid, recent wins and an overdue-items module (design lines 48–207).
+///
+/// In **mock mode** (`ApiConfig.apiEnabled == false`) the screen renders the
+/// const literals below unchanged. In **API mode** it is backed by the personal
+/// `dashboard-crm/*` endpoints via [crmHomeProvider]: loading → skeleton,
+/// failure → an [ErrorState] with Retry, and data → the real figures (a missing
+/// or empty section renders an empty/zero state, never the const literals).
 class CrmHomeScreen extends ConsumerWidget {
   const CrmHomeScreen({super.key});
 
@@ -27,26 +39,73 @@ class CrmHomeScreen extends ConsumerWidget {
       children: [
         _header(),
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-            children: [
-              _kpiGrid(context, ref),
-              SizedBox(height: 16.h),
-              _funnelCard(context, ref),
-              SizedBox(height: 16.h),
-              _responseTrendCard(),
-              SizedBox(height: 22.h),
-              _sectionHeading(PhosphorIconsFill.warningCircle, AppColors.warning, 'Attention needed'),
-              SizedBox(height: 11.h),
-              _attentionGrid(context, ref),
-              SizedBox(height: 16.h),
-              _winsCard(context),
-              SizedBox(height: 16.h),
-              _overdueCard(context, ref),
-            ],
-          ),
+          child: ApiConfig.apiEnabled ? _apiBody(context, ref) : _mockList(context, ref),
         ),
       ],
+    );
+  }
+
+  // ── Mock body (byte-identical to the presentation build) ──
+  Widget _mockList(BuildContext context, WidgetRef ref) {
+    return ListView(
+      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+      children: [
+        _kpiGrid(context, ref),
+        SizedBox(height: 16.h),
+        _funnelCard(context, ref),
+        SizedBox(height: 16.h),
+        _responseTrendCard(),
+        SizedBox(height: 22.h),
+        _sectionHeading(PhosphorIconsFill.warningCircle, AppColors.warning, 'Attention needed'),
+        SizedBox(height: 11.h),
+        _attentionGrid(context, ref),
+        SizedBox(height: 16.h),
+        _winsCard(context, wins: crmRecentWins, countLabel: crmWinsCount, totalLabel: crmWinsTotal),
+        SizedBox(height: 16.h),
+        _overdueCard(context, ref, data: crmOverdueData),
+      ],
+    );
+  }
+
+  // ── API body: loading → skeleton, error → ErrorState, data → real figures ──
+  Widget _apiBody(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(crmHomeProvider);
+    return async.when(
+      loading: () => const ListSkeleton(),
+      error: (e, _) {
+        final err = e is AppError
+            ? e
+            : const AppError(
+                type: AppErrorType.unknown, message: 'Something went wrong. Please try again.');
+        return ListView(
+          children: [
+            ErrorState.forError(err, onRetry: () => ref.invalidate(crmHomeProvider)),
+          ],
+        );
+      },
+      data: (d) => ListView(
+        padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+        children: [
+          _apiKpiGrid(context, ref, d.kpis),
+          SizedBox(height: 16.h),
+          _apiFunnelCard(context, ref, d.funnel),
+          SizedBox(height: 16.h),
+          _apiResponseTrendCard(d.firstResponseMedianMinutes),
+          SizedBox(height: 22.h),
+          _sectionHeading(PhosphorIconsFill.warningCircle, AppColors.warning, 'Attention needed'),
+          SizedBox(height: 11.h),
+          _apiAttentionGrid(context, ref, d.attention),
+          SizedBox(height: 16.h),
+          _winsCard(
+            context,
+            wins: d.wins,
+            countLabel: '${d.winsCount} ${d.winsCount == 1 ? 'deal' : 'deals'} won',
+            totalLabel: '${formatInr(d.winsTotal)} total value',
+          ),
+          SizedBox(height: 16.h),
+          _overdueCard(context, ref, data: d.overdue),
+        ],
+      ),
     );
   }
 
@@ -89,7 +148,7 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── KPI grid ──
+  // ── KPI grid (mock) ──
   Widget _kpiGrid(BuildContext context, WidgetRef ref) {
     void goLeads(String tab) {
       ref.read(leadTabProvider.notifier).state = tab;
@@ -142,6 +201,63 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
+  // ── KPI grid (API): fixed card chrome + values from the endpoint ──
+  Widget _apiKpiGrid(BuildContext context, WidgetRef ref, List<CrmKpiValue> kpis) {
+    void goLeads(String tab) {
+      ref.read(leadTabProvider.notifier).state = tab;
+      context.go(Routes.leads);
+    }
+
+    CrmKpiValue at(int i) => i < kpis.length ? kpis[i] : CrmKpiValue.empty;
+    String? unitOf(CrmKpiValue v) => v.unit.isEmpty ? null : v.unit;
+
+    final k0 = at(0), k1 = at(1), k2 = at(2), k3 = at(3);
+    final cards = [
+      KpiCard(
+        icon: PhosphorIconsFill.userPlus, iconColor: AppColors.success, iconBg: AppColors.tintGreen,
+        value: k0.value, unit: unitOf(k0), label: 'My New leads', sub: 'This period, all sources',
+        accent: AppColors.success, trend: k0.trend, trendUp: k0.trendUp, arrowUp: k0.arrowUp,
+        progress: k0.progress, onTap: () => goLeads('new'),
+      ),
+      KpiCard(
+        icon: PhosphorIconsFill.target, iconColor: AppColors.success, iconBg: AppColors.tintGreen,
+        value: k1.value, unit: unitOf(k1), label: 'My Win rate', sub: 'Won / qualified ratio',
+        accent: AppColors.success, trend: k1.trend, trendUp: k1.trendUp, arrowUp: k1.arrowUp,
+        progress: k1.progress, onTap: () => goLeads('won'),
+      ),
+      KpiCard(
+        icon: PhosphorIconsFill.hourglassMedium, iconColor: AppColors.blueBright, iconBg: AppColors.tintBlue,
+        value: k2.value, unit: unitOf(k2), label: 'My Quote to cash', sub: 'Quote-to-payment window',
+        accent: AppColors.blueBright, trend: k2.trend, trendUp: k2.trendUp, arrowUp: k2.arrowUp,
+        progress: k2.progress, onTap: () => context.go(Routes.payments),
+      ),
+      KpiCard(
+        icon: PhosphorIconsFill.fileText, iconColor: AppColors.blueBright, iconBg: AppColors.tintBlue,
+        value: k3.value, unit: unitOf(k3), label: 'My Quote acceptance', sub: 'Conversion rate',
+        accent: AppColors.blueBright, trend: k3.trend, trendUp: k3.trendUp, arrowUp: k3.arrowUp,
+        progress: k3.progress, onTap: () => context.go(Routes.quotes),
+      ),
+    ];
+
+    return Column(
+      children: [
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [Expanded(child: cards[0]), SizedBox(width: 12.w), Expanded(child: cards[1])],
+          ),
+        ),
+        SizedBox(height: 12.h),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [Expanded(child: cards[2]), SizedBox(width: 12.w), Expanded(child: cards[3])],
+          ),
+        ),
+      ],
+    );
+  }
+
   // ── Card shell ──
   Widget _card({required Widget child, EdgeInsetsGeometry? padding}) {
     return Container(
@@ -159,7 +275,17 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── Lead funnel ──
+  Widget _emptyBlock(String text) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 24.h),
+      child: Center(
+        child: Text(text,
+            style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+      ),
+    );
+  }
+
+  // ── Lead funnel (mock) ──
   Widget _funnelCard(BuildContext context, WidgetRef ref) {
     const data = <(String, String, int)>[
       ('new', 'New', 142),
@@ -208,6 +334,49 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
+  // ── Lead funnel (API): org stages, real counts & colours ──
+  Widget _apiFunnelCard(BuildContext context, WidgetRef ref, List<CrmFunnelBar> bars) {
+    final maxV = bars.fold<int>(1, (m, b) => b.count > m ? b.count : m);
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('My Lead Funnel', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          SizedBox(height: 1.h),
+          Text('Lead stages across your pipeline', style: AppText.caption(color: AppColors.textPlaceholder)),
+          SizedBox(height: 16.h),
+          if (bars.isEmpty)
+            _emptyBlock('No lead data yet.')
+          else
+            SizedBox(
+              height: 132.h,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (int i = 0; i < bars.length; i++) ...[
+                    if (i > 0) SizedBox(width: 8.w),
+                    Expanded(
+                      child: _funnelBar(
+                        count: bars[i].count,
+                        label: bars[i].label,
+                        color: bars[i].color,
+                        frac: (bars[i].count / maxV).clamp(0.07, 1.0),
+                        dim: bars[i].tabKey == 'lost',
+                        onTap: () {
+                          ref.read(leadTabProvider.notifier).state = bars[i].tabKey;
+                          context.go(Routes.leads);
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _funnelBar({
     required int count,
     required String label,
@@ -248,7 +417,7 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── First response trend ──
+  // ── First response trend (mock) ──
   Widget _responseTrendCard() {
     const data = <double>[34, 31, 33, 28, 27, 29, 25, 24, 26, 23, 22, 22];
     return _card(
@@ -300,6 +469,54 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
+  // ── First response trend (API): real median headline, no fabricated series ──
+  //
+  // The dashboard-crm endpoints expose the current first-response median but no
+  // time-series, so the card shows the median only — never a made-up sparkline.
+  Widget _apiResponseTrendCard(int? median) {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('My First Response', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    SizedBox(height: 1.h),
+                    Text('Median response time', style: AppText.caption(color: AppColors.textPlaceholder)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(median != null ? '$median' : '—',
+                          style: AppText.custom(size: 24, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
+                      SizedBox(width: 3.w),
+                      Text('min', style: AppText.captionStrong(color: AppColors.textPlaceholder)),
+                    ],
+                  ),
+                  Text('Current median', style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                ],
+              ),
+            ],
+          ),
+          SizedBox(height: 12.h),
+          Text('Response-time trend not available yet.',
+              style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+        ],
+      ),
+    );
+  }
+
   // ── Section heading ──
   Widget _sectionHeading(IconData icon, Color color, String title) {
     return Padding(
@@ -314,7 +531,7 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── Attention grid ──
+  // ── Attention grid (mock) ──
   Widget _attentionGrid(BuildContext context, WidgetRef ref) {
     final items = <_Attn>[
       _Attn('3', 'Payments missed', delta: '+1', up: false, note: 'Worsening', noteColor: AppColors.error, onTap: () => context.go(Routes.payments)),
@@ -331,6 +548,37 @@ class CrmHomeScreen extends ConsumerWidget {
         context.go(Routes.leads);
       }),
     ];
+    return _attentionLayout(items);
+  }
+
+  // ── Attention grid (API): real counts + directions ──
+  Widget _apiAttentionGrid(BuildContext context, WidgetRef ref, List<CrmAttentionValue> attn) {
+    CrmAttentionValue at(int i) => i < attn.length ? attn[i] : CrmAttentionValue.empty;
+    _Attn card(int i, String label, VoidCallback onTap) {
+      final v = at(i);
+      return _Attn(v.value, label,
+          delta: v.delta.isEmpty ? '0' : v.delta, up: v.up, neutral: v.neutral, note: v.note, noteColor: v.noteColor, onTap: onTap);
+    }
+
+    final items = <_Attn>[
+      card(0, 'Payments missed', () => context.go(Routes.payments)),
+      card(1, 'Followups missed', () {
+        ref.read(followupTabProvider.notifier).state = 'overdue';
+        context.go(Routes.followups);
+      }),
+      card(2, 'Tasks missed', () {
+        ref.read(crmTaskTabProvider.notifier).state = 'overdue';
+        context.go(Routes.tasks);
+      }),
+      card(3, 'Lost after quote', () {
+        ref.read(leadTabProvider.notifier).state = 'lost';
+        context.go(Routes.leads);
+      }),
+    ];
+    return _attentionLayout(items);
+  }
+
+  Widget _attentionLayout(List<_Attn> items) {
     return Column(
       children: [
         IntrinsicHeight(
@@ -397,8 +645,13 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── Recent wins ──
-  Widget _winsCard(BuildContext context) {
+  // ── Recent wins (shared: mock passes const literals, API passes real rows) ──
+  Widget _winsCard(
+    BuildContext context, {
+    required List<WinRow> wins,
+    required String countLabel,
+    required String totalLabel,
+  }) {
     return _card(
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),
       child: Column(
@@ -411,51 +664,54 @@ class CrmHomeScreen extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(crmWinsCount, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.success)),
+                Text(countLabel, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.success)),
                 const Spacer(),
-                Text(crmWinsTotal, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(totalLabel, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
               ],
             ),
           ),
-          for (final w in crmRecentWins)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => context.push('${w.route}?id=${w.id}'),
-              child: Container(
-                padding: EdgeInsets.symmetric(vertical: 12.h),
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          if (wins.isEmpty)
+            _emptyBlock('No recent wins.')
+          else
+            for (final w in wins)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.push('${w.route}?id=${w.id}'),
+                child: Container(
+                  padding: EdgeInsets.symmetric(vertical: 12.h),
+                  decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(w.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            SizedBox(height: 2.h),
+                            Text(w.deal, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption(color: AppColors.textPlaceholder)),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: 10.w),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(w.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                          SizedBox(height: 2.h),
-                          Text(w.deal, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption(color: AppColors.textPlaceholder)),
+                          Text(w.amt, style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.success)),
+                          SizedBox(height: 3.h),
+                          Text(w.when, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
                         ],
                       ),
-                    ),
-                    SizedBox(width: 10.w),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(w.amt, style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.success)),
-                        SizedBox(height: 3.h),
-                        Text(w.when, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
         ],
       ),
     );
   }
 
-  // ── Overdue items ──
-  Widget _overdueCard(BuildContext context, WidgetRef ref) {
+  // ── Overdue items (shared: mock passes const map, API passes real map) ──
+  Widget _overdueCard(BuildContext context, WidgetRef ref, {required Map<String, List<OverdueRow>> data}) {
     final tab = ref.watch(crmOverdueTabProvider);
     const chips = <(String, String)>[
       ('fu', 'Follow ups'),
@@ -463,7 +719,7 @@ class CrmHomeScreen extends ConsumerWidget {
       ('quotes', 'Quotes'),
       ('noproj', 'Project not created'),
     ];
-    final rows = crmOverdueData[tab] ?? const [];
+    final rows = data[tab] ?? const [];
 
     return _card(
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),
@@ -503,13 +759,7 @@ class CrmHomeScreen extends ConsumerWidget {
           ),
           SizedBox(height: 2.h),
           if (rows.isEmpty)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 24.h),
-              child: Center(
-                child: Text('Nothing overdue here.',
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-              ),
-            )
+            _emptyBlock('Nothing overdue here.')
           else
             for (final r in rows)
               GestureDetector(

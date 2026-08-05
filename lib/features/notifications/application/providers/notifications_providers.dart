@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/app_notification.dart';
 import '../../domain/repositories/notifications_repository.dart';
@@ -30,12 +31,14 @@ class NotificationsState {
   final NotifFilter filter;
   final int shown;
   final bool loading;
+  final AppError? error;
 
   const NotificationsState({
     required this.all,
     this.filter = NotifFilter.all,
     this.shown = _pageSize,
     this.loading = true,
+    this.error,
   });
 
   NotificationsState copyWith({
@@ -43,12 +46,15 @@ class NotificationsState {
     NotifFilter? filter,
     int? shown,
     bool? loading,
+    AppError? error,
+    bool clearError = false,
   }) =>
       NotificationsState(
         all: all ?? this.all,
         filter: filter ?? this.filter,
         shown: shown ?? this.shown,
         loading: loading ?? this.loading,
+        error: clearError ? null : (error ?? this.error),
       );
 
   static const _dayRank = {'today': 0, 'yesterday': 1, 'earlier': 2};
@@ -81,13 +87,20 @@ class NotificationsController extends StateNotifier<NotificationsState> {
   final NotificationsRepository _repo;
 
   Future<void> _load() async {
-    state = state.copyWith(loading: true);
+    state = state.copyWith(loading: true, clearError: true);
     try {
       final rows = await _repo.getNotifications();
-      if (mounted) state = state.copyWith(all: rows, loading: false);
-    } on Object {
-      // Keep whatever is on screen; just stop the shimmer.
-      if (mounted) state = state.copyWith(loading: false);
+      if (mounted) state = state.copyWith(all: rows, loading: false, clearError: true);
+    } on AppError catch (e) {
+      // Surface the failure so a real 500 isn't mistaken for "all caught up".
+      if (mounted) state = state.copyWith(loading: false, error: e);
+    } on Object catch (e) {
+      if (mounted) {
+        state = state.copyWith(
+          loading: false,
+          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+        );
+      }
     }
   }
 

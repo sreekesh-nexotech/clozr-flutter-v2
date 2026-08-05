@@ -7,6 +7,8 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/notifications_providers.dart';
 import '../../domain/entities/app_notification.dart';
@@ -33,8 +35,10 @@ class NotificationsScreen extends ConsumerWidget {
           _header(context, ref, state, ctrl),
           Expanded(
             child: state.loading
-                ? _skeletons()
-                : state.visible.isEmpty
+                ? const ListSkeleton(itemBuilder: ListSkeleton.row)
+                : state.error != null
+                    ? ErrorState.forError(state.error!, onRetry: ctrl.refresh)
+                    : state.visible.isEmpty
                     ? _empty(state.filter)
                     : ListView(
                         padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 30.h),
@@ -223,43 +227,6 @@ class NotificationsScreen extends ConsumerWidget {
               style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
         ),
       );
-
-  Widget _skeletons() {
-    return ListView(
-      padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 30.h),
-      children: [
-        for (int i = 0; i < 5; i++)
-          Container(
-            margin: EdgeInsets.only(bottom: 8.h),
-            padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 14.h),
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(14.r),
-              border: Border.all(color: AppColors.borderCardSoft),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(width: 38.w, height: 38.w, decoration: BoxDecoration(color: AppColors.borderCardSoft, borderRadius: BorderRadius.circular(11.r))),
-                SizedBox(width: 11.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(height: 12.h, width: 160.w, decoration: BoxDecoration(color: AppColors.borderCardSoft, borderRadius: BorderRadius.circular(6.r))),
-                      SizedBox(height: 9.h),
-                      Container(height: 10.h, width: double.infinity, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(6.r))),
-                      SizedBox(height: 7.h),
-                      Container(height: 10.h, width: 120.w, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(6.r))),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
 
   Widget _empty(NotifFilter filter) {
     return Center(

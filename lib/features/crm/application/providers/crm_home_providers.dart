@@ -1,48 +1,29 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../domain/entities/crm_home_models.dart';
+import '../../infrastructure/data_sources/remote/crm_home_remote_ds.dart';
+import '../../infrastructure/repositories/crm_home_repository.dart';
 
-/// A "recent win" row on the CRM Home dashboard.
-class WinRow {
-  final String name;
-  final String deal;
-  final String amt;
-  final String when;
-
-  /// Detail route to open + the record id (`?id=`).
-  final String route;
-  final String id;
-
-  const WinRow({
-    required this.name,
-    required this.deal,
-    required this.amt,
-    required this.when,
-    required this.route,
-    required this.id,
-  });
-}
-
-/// An "overdue item" row on the CRM Home dashboard.
-class OverdueRow {
-  final String name;
-  final String sub;
-  final String amt;
-  final String age;
-  final String route;
-  final String id;
-
-  const OverdueRow({
-    required this.name,
-    required this.sub,
-    required this.amt,
-    required this.age,
-    required this.route,
-    required this.id,
-  });
-}
+export '../../domain/entities/crm_home_models.dart' show WinRow, OverdueRow, CrmHomeData;
 
 /// Active chip on the Home "Overdue items" module.
 final crmOverdueTabProvider = StateProvider<String>((ref) => 'fu');
+
+// ── API-backed source (used only when ApiConfig.apiEnabled) ──
+
+/// DI seam for the CRM Home repository.
+final crmHomeRepositoryProvider = Provider<CrmHomeRepository>(
+  (ref) => CrmHomeRepository(CrmHomeRemoteDataSource(ref.watch(apiServiceProvider))),
+);
+
+/// The personal CRM Home bundle. Watched by the screen **only in API mode**; in
+/// mock mode the screen renders the const literals below and never creates this.
+final crmHomeProvider = FutureProvider<CrmHomeData>(
+  (ref) => ref.watch(crmHomeRepositoryProvider).getHome(),
+);
+
+// ── Mock literals (rendered verbatim when ApiConfig.apiEnabled is false) ──
 
 /// Summary line above "My recent wins".
 const crmWinsCount = '5 deals won';

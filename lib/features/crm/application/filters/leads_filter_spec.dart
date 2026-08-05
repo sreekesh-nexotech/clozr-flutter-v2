@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/lead.dart';
@@ -50,8 +51,10 @@ DateTime? parseLeadDate(String s) {
   return DateTime(year, month, day);
 }
 
-/// Build the Leads drawer spec from the current lead set.
-FilterSpec buildLeadsFilterSpec(List<Lead> leads) {
+/// Build the Leads drawer spec from the current lead set. [roster] supplies the
+/// owner/assignee picker options (the real workspace members in API mode, the
+/// prototype reps in mock mode).
+FilterSpec buildLeadsFilterSpec(List<Lead> leads, {List<AppUser> roster = MockUsers.reps}) {
   final sources = (leads.map((l) => l.source).toSet().toList()..sort())
       .map((s) => FilterOption(id: s, label: s))
       .toList();
@@ -63,7 +66,7 @@ FilterSpec buildLeadsFilterSpec(List<Lead> leads) {
   ];
   final teams = _allTeams().map((t) => FilterOption(id: t, label: t)).toList();
   final users = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
 
   return FilterSpec(
@@ -198,7 +201,7 @@ bool leadMatchesFilters(Lead l, FilterValues v) {
 /// The Leads drawer spec, derived from the loaded lead catalog.
 final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
   final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
-  return buildLeadsFilterSpec(leads);
+  return buildLeadsFilterSpec(leads, roster: ref.watch(rosterProvider));
 });
 
 /// Applied drawer filters for the Leads list (the source of the badge count).

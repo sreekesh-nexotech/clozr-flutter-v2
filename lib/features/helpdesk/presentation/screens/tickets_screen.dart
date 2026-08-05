@@ -9,6 +9,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
@@ -18,6 +19,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/tickets_filter_spec.dart';
 import '../../application/providers/tickets_providers.dart';
+import '../../domain/entities/ticket.dart';
 import '../components/ticket_card.dart';
 
 /// Tickets list — brand header, title + search + filter, status tabs and the
@@ -54,8 +56,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       AddAction(label: 'New ticket', run: (ctx) => ctx.push(Routes.createTicket)),
     );
 
-    final all = ref.watch(ticketsProvider).valueOrNull ?? const [];
-    final visible = ref.watch(filteredTicketsProvider);
+    final ticketsAsync = ref.watch(ticketsProvider);
+    final all = ticketsAsync.valueOrNull ?? const [];
     final tab = ref.watch(ticketTabProvider);
     final searchOpen = ref.watch(ticketSearchOpenProvider);
     final query = ref.watch(ticketSearchProvider);
@@ -111,20 +113,27 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? _empty()
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 12.h),
-                  itemBuilder: (context, i) {
-                    final t = visible[i];
-                    return TicketCard(
-                      ticket: t,
-                      onTap: () => context.push('${Routes.ticketDetail}?id=${t.id}'),
+          child: AsyncStateView<List<Ticket>>(
+            value: ticketsAsync,
+            onRetry: () => ref.invalidate(ticketsProvider),
+            data: (_) {
+              final visible = ref.watch(filteredTicketsProvider);
+              return visible.isEmpty
+                  ? _empty()
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                      itemBuilder: (context, i) {
+                        final t = visible[i];
+                        return TicketCard(
+                          ticket: t,
+                          onTap: () => context.push('${Routes.ticketDetail}?id=${t.id}'),
+                        );
+                      },
                     );
-                  },
-                ),
+            },
+          ),
         ),
       ],
     );
@@ -137,13 +146,14 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final spec = ref.read(ticketsFilterSpecProvider);
     final current = ref.read(ticketFiltersProvider);
     final base = ref.read(ticketBaseProvider);
+    final dir = ref.read(ticketDirectoryProvider);
     final activeView = ref.read(ticketSavedViewsProvider).active;
 
     final result = await showFilterSheet(
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((t) => ticketMatchesFilters(t, draft)).length,
+      previewCount: (draft) => base.where((t) => ticketMatchesFilters(t, draft, dir)).length,
       activeViewName: activeView?.name,
       onSaveView: (name, draft) {
         ref.read(ticketSavedViewsProvider.notifier).upsert(name, draft);

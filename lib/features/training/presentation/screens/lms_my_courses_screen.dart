@@ -7,6 +7,9 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -28,6 +31,10 @@ class LmsMyCoursesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final record = ref.watch(lmsRecordByIdProvider('me'));
     final courseOf = ref.watch(lmsCourseLookupProvider);
+    final load = lmsCombine([
+      ref.watch(lmsRecordsControllerProvider),
+      ref.watch(lmsCoursesControllerProvider),
+    ]);
 
     final entries = <(CourseProgress, Course)>[
       for (final e in record.courses)
@@ -86,10 +93,22 @@ class LmsMyCoursesScreen extends ConsumerWidget {
                 style: AppText.custom(size: 22, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
           ),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.only(top: 16.h, bottom: 40.h),
-              children: children,
-            ),
+            child: load.loading
+                ? const ListSkeleton()
+                : load.error != null
+                    ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
+                    : entries.isEmpty
+                        ? ListView(children: const [
+                            EmptyState(
+                              icon: PhosphorIconsFill.graduationCap,
+                              title: 'No courses assigned',
+                              body: 'Courses assigned to you will show up here once your manager enrols you.',
+                            ),
+                          ])
+                        : ListView(
+                            padding: EdgeInsets.only(top: 16.h, bottom: 40.h),
+                            children: children,
+                          ),
           ),
         ],
       ),

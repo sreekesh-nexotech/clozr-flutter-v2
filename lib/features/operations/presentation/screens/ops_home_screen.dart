@@ -6,15 +6,19 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/kpi_card.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/segmented_control.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
 import '../../domain/entities/ops_task.dart';
+import '../../domain/entities/project.dart';
 
 /// Operations Home — the staff dashboard: a 2×2 KPI grid, a sortable "My Tasks"
 /// list, a "Top Tasks Needing Attention" list and a completed-by-priority grid.
@@ -25,6 +29,43 @@ class OpsHomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tasksAsync = ref.watch(opsTasksProvider);
+    final projectsAsync = ref.watch(projectsProvider);
+    return Container(
+      color: AppColors.bgScreen,
+      child: Column(
+        children: [
+          _header(),
+          Expanded(child: _content(context, ref, tasksAsync, projectsAsync)),
+        ],
+      ),
+    );
+  }
+
+  /// Gates the dashboard on both sources: a skeleton while either loads and an
+  /// error state (with retry) if either fails, rather than a dashboard of zeros.
+  Widget _content(
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<List<OpsTask>> tasksAsync,
+    AsyncValue<List<Project>> projectsAsync,
+  ) {
+    if (tasksAsync.isLoading || projectsAsync.isLoading) {
+      return const ListSkeleton();
+    }
+    final err = tasksAsync.hasError
+        ? tasksAsync.error
+        : (projectsAsync.hasError ? projectsAsync.error : null);
+    if (err != null) {
+      final appErr = err is AppError
+          ? err
+          : const AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.');
+      return ErrorState.forError(appErr, onRetry: () {
+        ref.invalidate(opsTasksProvider);
+        ref.invalidate(projectsProvider);
+      });
+    }
+
     final tasks = ref.watch(opsTasksListProvider);
     final projects = ref.watch(projectsListProvider);
     final sort = ref.watch(opsSortProvider);
@@ -54,40 +95,30 @@ class OpsHomeScreen extends ConsumerWidget {
       context.go(Routes.opsTasks);
     }
 
-    return Container(
-      color: AppColors.bgScreen,
-      child: Column(
-        children: [
-          _header(),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-              children: [
-                _kpiGrid(
-                  active: activeProj.length,
-                  overdue: overdue.length,
-                  done: done.length,
-                  total: total.length,
-                  donePct: donePct,
-                  onActive: () {
-                    ref.read(myProjectsProvider.notifier).state = true;
-                    ref.read(projTabProvider.notifier).state = 'active';
-                    context.go(Routes.opsProjects);
-                  },
-                  onOverdue: () => goTasks(),
-                  onCompleted: () => goTasks(tab: 'completed'),
-                ),
-                SizedBox(height: 16.h),
-                _myTasksCard(context, ref, myTasks, sort, projName, () => goTasks()),
-                SizedBox(height: 16.h),
-                _attnCard(context, attn, projName),
-                SizedBox(height: 16.h),
-                _gridCard(done, () => goTasks(tab: 'completed')),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ListView(
+      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+      children: [
+        _kpiGrid(
+          active: activeProj.length,
+          overdue: overdue.length,
+          done: done.length,
+          total: total.length,
+          donePct: donePct,
+          onActive: () {
+            ref.read(myProjectsProvider.notifier).state = true;
+            ref.read(projTabProvider.notifier).state = 'active';
+            context.go(Routes.opsProjects);
+          },
+          onOverdue: () => goTasks(),
+          onCompleted: () => goTasks(tab: 'completed'),
+        ),
+        SizedBox(height: 16.h),
+        _myTasksCard(context, ref, myTasks, sort, projName, () => goTasks()),
+        SizedBox(height: 16.h),
+        _attnCard(context, attn, projName),
+        SizedBox(height: 16.h),
+        _gridCard(done, () => goTasks(tab: 'completed')),
+      ],
     );
   }
 

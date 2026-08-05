@@ -6,6 +6,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/lms_providers.dart';
 import '../../domain/entities/course.dart';
@@ -83,6 +85,10 @@ class _LmsLearnersScreenState extends ConsumerState<LmsLearnersScreen> {
   Widget build(BuildContext context) {
     final records = ref.watch(lmsRecordsProvider);
     final courseOf = ref.watch(lmsCourseLookupProvider);
+    final load = lmsCombine([
+      ref.watch(lmsRecordsControllerProvider),
+      ref.watch(lmsCoursesControllerProvider),
+    ]);
     final roleF = ref.watch(lmsRoleFilterProvider);
     final statusF = ref.watch(lmsStatusFilterProvider);
     final query = ref.watch(lmsLearnerSearchProvider).trim().toLowerCase();
@@ -172,7 +178,11 @@ class _LmsLearnersScreenState extends ConsumerState<LmsLearnersScreen> {
             ),
           ),
           Expanded(
-            child: rows.isEmpty
+            child: load.loading
+                ? const ListSkeleton()
+                : load.error != null
+                    ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
+                    : rows.isEmpty
                 ? ListView(
                     padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
                     children: [_empty()],

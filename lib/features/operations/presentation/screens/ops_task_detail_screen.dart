@@ -9,7 +9,10 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -47,63 +50,67 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final tasksAsync = ref.watch(opsTasksProvider);
     final task = ref.watch(opsTaskByIdProvider(id));
     final allTasks = ref.watch(opsTasksListProvider);
     final projects = ref.watch(projectsListProvider);
-
-    if (task == null) {
-      return Container(
-        color: AppColors.bgScreen,
-        child: Column(
-          children: [
-            _appBar('Task', null),
-            const Expanded(child: Center(child: Text('Task not found'))),
-          ],
-        ),
-      );
-    }
-
-    // Subtasks come from the shared provider so toggles stay in sync with the
-    // standalone subtask page (#12). Dependencies remain a local working copy.
-    final subtasks = ref.watch(opsSubtasksProvider(id));
-    final waitingOn = _waitingOn ??= List.of(task.waitingOn);
-    final status = _status ?? task.status;
-
-    final meta = StatusMeta$.opsTask[status] ?? StatusMeta$.opsTask['open']!;
-    final priColor = StatusMeta$.projectPriority[task.pri] ?? AppColors.textMuted;
-    final locked = status == 'completed' || status == 'cancelled';
-    final project = projects.where((p) => p.id == task.projId).firstOrNull;
-    final overdue = isTaskOverdue(task);
-    final progress = task.computedProgress(subtasks);
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          _appBar('Task', task.subject),
+          _appBar('Task', task?.subject),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
-              children: [
-                _summaryCard(task, meta, priColor, project?.name ?? '—', overdue),
-                if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
-                SizedBox(height: 14.h),
-                _detailsCard(task, meta, progress, locked),
-                SizedBox(height: 14.h),
-                _subtasksCard(task.id, subtasks, locked),
-                if (!locked || _hasDeps(task, waitingOn, allTasks)) ...[
-                  SizedBox(height: 14.h),
-                  _depsCard(task, waitingOn, allTasks, locked),
-                ],
-                NotesThread(
-                  key: _notesKey,
-                  notes: ref.watch(opsNotesProvider(task.id)),
-                  onAddNote: (body, atts) => ref.read(opsNotesProvider(task.id).notifier).addNote(body, atts),
-                  onAddReply: (noteId, body) => ref.read(opsNotesProvider(task.id).notifier).addReply(noteId, body),
-                ),
-                SizedBox(height: 14.h),
-                OpsAuditLog(entries: _audit(task, waitingOn)),
-              ],
+            child: AsyncStateView<List<OpsTask>>(
+              value: tasksAsync,
+              onRetry: () => ref.invalidate(opsTasksProvider),
+              loading: () => const DetailSkeleton(),
+              data: (_) {
+                if (task == null) {
+                  return const EmptyState(
+                    icon: PhosphorIconsRegular.listChecks,
+                    title: 'Task not found',
+                    body: 'This task may have been removed, or you may not have access to it.',
+                  );
+                }
+                // Subtasks come from the shared provider so toggles stay in sync
+                // with the standalone subtask page (#12). Dependencies remain a
+                // local working copy.
+                final subtasks = ref.watch(opsSubtasksProvider(id));
+                final waitingOn = _waitingOn ??= List.of(task.waitingOn);
+                final status = _status ?? task.status;
+
+                final meta = StatusMeta$.opsTask[status] ?? StatusMeta$.opsTask['open']!;
+                final priColor = StatusMeta$.projectPriority[task.pri] ?? AppColors.textMuted;
+                final locked = status == 'completed' || status == 'cancelled';
+                final project = projects.where((p) => p.id == task.projId).firstOrNull;
+                final overdue = isTaskOverdue(task);
+                final progress = task.computedProgress(subtasks);
+
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
+                  children: [
+                    _summaryCard(task, meta, priColor, project?.name ?? '—', overdue),
+                    if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
+                    SizedBox(height: 14.h),
+                    _detailsCard(task, meta, progress, locked),
+                    SizedBox(height: 14.h),
+                    _subtasksCard(task.id, subtasks, locked),
+                    if (!locked || _hasDeps(task, waitingOn, allTasks)) ...[
+                      SizedBox(height: 14.h),
+                      _depsCard(task, waitingOn, allTasks, locked),
+                    ],
+                    NotesThread(
+                      key: _notesKey,
+                      notes: ref.watch(opsNotesProvider(task.id)),
+                      onAddNote: (body, atts) => ref.read(opsNotesProvider(task.id).notifier).addNote(body, atts),
+                      onAddReply: (noteId, body) => ref.read(opsNotesProvider(task.id).notifier).addReply(noteId, body),
+                    ),
+                    SizedBox(height: 14.h),
+                    OpsAuditLog(entries: _audit(task, waitingOn)),
+                  ],
+                );
+              },
             ),
           ),
         ],

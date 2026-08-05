@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../../domain/entities/payment.dart';
 import 'finance_widgets.dart';
 
 /// A payment list row: method icon, customer + "#id · label", status pill +
 /// amount, and a footer with the method and the status-coloured date.
-class PaymentCard extends StatelessWidget {
+class PaymentCard extends ConsumerWidget {
   const PaymentCard({super.key, required this.payment, required this.onTap});
   final Payment payment;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final meta = StatusMeta$.payment[payment.status] ?? StatusMeta$.payment['due']!;
     final methodLabel = payment.method == '—' ? 'Not set' : payment.method;
+    final lookup = ref.watch(crmPartyLookupProvider);
 
     return ClozrCard(
       radius: 14,
@@ -36,7 +39,7 @@ class PaymentCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(paymentTitle(payment),
+                    Text(paymentTitle(payment, lookup),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),

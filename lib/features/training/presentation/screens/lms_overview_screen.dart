@@ -7,6 +7,8 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../application/providers/lms_providers.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/lms_activity.dart';
@@ -33,6 +35,11 @@ class LmsOverviewScreen extends ConsumerWidget {
     final courses = ref.watch(lmsCoursesProvider);
     final records = ref.watch(lmsRecordsProvider);
     final activity = ref.watch(lmsActivityProvider);
+    final status = lmsCombine([
+      ref.watch(lmsCoursesControllerProvider),
+      ref.watch(lmsRecordsControllerProvider),
+      ref.watch(lmsActivityControllerProvider),
+    ]);
 
     final learners = records.where((r) => r.rid != 'me').length;
     final allEntries = [for (final r in records) ...r.courses];
@@ -77,7 +84,11 @@ class LmsOverviewScreen extends ConsumerWidget {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: status.loading
+                ? const ListSkeleton()
+                : status.error != null
+                    ? ErrorState.forError(status.error!, onRetry: () => reloadLms(ref))
+                    : ListView(
               padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
               children: [
                 Row(

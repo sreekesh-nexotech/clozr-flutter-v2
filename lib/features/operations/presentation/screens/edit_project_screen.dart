@@ -8,6 +8,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -128,8 +129,9 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       _method = project.method == 'Manual' ? 'Manual' : 'Task Completion';
     }
 
+    final roster = ref.watch(rosterProvider);
     final customers = {for (final p in ref.watch(projectsListProvider)) if (p.company != null) p.company!}.toList();
-    final teams = {for (final r in MockUsers.reps) if (r.team.isNotEmpty) r.team}.toList();
+    final teams = {for (final r in roster) if (r.team.isNotEmpty) r.team}.toList();
     final mgr = _manager == null ? null : MockUsers.of(_manager!);
 
     return OpsEditScaffold(
@@ -196,7 +198,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
           placeholder: 'Select manager…',
           caret: PhosphorIconsBold.caretRight,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in MockUsers.reps) (value: r.id, label: r.name)], currentValue: _manager ?? '');
+            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in roster) (value: r.id, label: r.name)], currentValue: _manager ?? '');
             if (v != null) setState(() { _manager = v; _dirtied(); });
           },
         ),
@@ -204,7 +206,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
         _label('Assignees'),
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final r in MockUsers.reps)
+          for (final r in roster)
             OpsAssigneeChip(
               initials: r.initials,
               name: r.firstName,

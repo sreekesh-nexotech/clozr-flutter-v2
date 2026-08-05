@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_task.dart';
@@ -44,9 +45,9 @@ DateTime? parseCrmDate(String s) {
 /// Build the Tasks drawer spec (audit §3). Option lists that the audit marks
 /// admin-configurable are the audit's canonical set; the assignee list is the
 /// full workspace roster.
-FilterSpec buildTasksFilterSpec() {
+FilterSpec buildTasksFilterSpec({List<AppUser> roster = MockUsers.reps}) {
   final users = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
   final types = [
     for (final t in _taskTypes) FilterOption(id: t, label: t),
@@ -108,7 +109,8 @@ bool crmTaskMatchesFilters(CrmTask t, FilterValues v) {
 // ── Providers ──
 
 /// The Tasks drawer spec.
-final crmTasksFilterSpecProvider = Provider<FilterSpec>((ref) => buildTasksFilterSpec());
+final crmTasksFilterSpecProvider =
+    Provider<FilterSpec>((ref) => buildTasksFilterSpec(roster: ref.watch(rosterProvider)));
 
 /// Applied drawer filters for the Tasks list (the source of the badge count).
 final crmTaskFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());

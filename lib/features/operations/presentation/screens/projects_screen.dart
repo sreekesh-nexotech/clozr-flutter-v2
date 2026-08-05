@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -17,6 +18,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/projects_filter_spec.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../domain/entities/project.dart';
 import '../components/ops_widgets.dart';
 import '../components/project_card.dart';
 
@@ -54,6 +56,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       AddAction(label: 'New project', run: (ctx) => ctx.push(Routes.createProject)),
     );
 
+    final projectsAsync = ref.watch(projectsProvider);
     final base = ref.watch(projBaseProvider);
     final tab = ref.watch(projTabProvider);
     final mine = ref.watch(myProjectsProvider);
@@ -61,11 +64,6 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     final query = ref.watch(projSearchProvider);
     final filters = ref.watch(projectFiltersProvider);
     final filterCount = filters.activeCount;
-
-    final tabVisible = ref.watch(visibleProjectsProvider);
-    final visible = filters.isEmpty
-        ? tabVisible
-        : tabVisible.where((p) => projectMatchesFilters(p, filters)).toList();
 
     final tabDefs = <(String, String)>[
       ('all', 'All'),
@@ -120,28 +118,38 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
-                  children: const [
-                    EmptyState(
-                      icon: PhosphorIconsRegular.briefcase,
-                      title: 'No projects found',
-                      body: 'Try a different status, clear filters, or turn off "My Projects" to see the whole portfolio.',
-                    ),
-                  ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 12.h),
-                  itemBuilder: (context, i) {
-                    final p = visible[i];
-                    return ProjectCard(
-                      project: p,
-                      onTap: () => context.push('${Routes.projectDetail}?id=${p.id}'),
+          child: AsyncStateView<List<Project>>(
+            value: projectsAsync,
+            onRetry: () => ref.invalidate(projectsProvider),
+            data: (_) {
+              final tabVisible = ref.watch(visibleProjectsProvider);
+              final visible = filters.isEmpty
+                  ? tabVisible
+                  : tabVisible.where((p) => projectMatchesFilters(p, filters)).toList();
+              return visible.isEmpty
+                  ? ListView(
+                      children: const [
+                        EmptyState(
+                          icon: PhosphorIconsRegular.briefcase,
+                          title: 'No projects found',
+                          body: 'Try a different status, clear filters, or turn off "My Projects" to see the whole portfolio.',
+                        ),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                      itemBuilder: (context, i) {
+                        final p = visible[i];
+                        return ProjectCard(
+                          project: p,
+                          onTap: () => context.push('${Routes.projectDetail}?id=${p.id}'),
+                        );
+                      },
                     );
-                  },
-                ),
+            },
+          ),
         ),
       ],
     );

@@ -8,6 +8,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -17,6 +18,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/members_filter_spec.dart';
 import '../../application/providers/people_providers.dart';
+import '../../domain/entities/member.dart';
 import '../components/member_card.dart';
 import '../components/people_title_actions.dart';
 import '../sheets/invite_member_sheet.dart';
@@ -55,8 +57,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       AddAction(label: 'Invite member', run: (ctx) => showInviteMemberSheet(ctx)),
     );
 
-    final all = ref.watch(membersProvider).valueOrNull ?? const [];
-    final visible = ref.watch(filteredMembersProvider);
+    final membersAsync = ref.watch(membersProvider);
+    final all = membersAsync.valueOrNull ?? const [];
     final role = ref.watch(memberRoleProvider);
     final searchOpen = ref.watch(memberSearchOpenProvider);
     final query = ref.watch(memberSearchProvider);
@@ -126,28 +128,35 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
-                  children: [
-                    EmptyState(
-                      icon: PhosphorIconsRegular.users,
-                      title: 'No members found',
-                      body: 'Try a different role, clear filters, or invite a new member.',
-                    ),
-                  ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 10.h),
-                  itemBuilder: (context, i) {
-                    final m = visible[i];
-                    return MemberCard(
-                      member: m,
-                      onTap: () => context.push('${Routes.memberDetail}?id=${m.id}'),
+          child: AsyncStateView<List<Member>>(
+            value: membersAsync,
+            onRetry: () => ref.invalidate(membersProvider),
+            data: (_) {
+              final visible = ref.watch(filteredMembersProvider);
+              return visible.isEmpty
+                  ? ListView(
+                      children: [
+                        EmptyState(
+                          icon: PhosphorIconsRegular.users,
+                          title: 'No members found',
+                          body: 'Try a different role, clear filters, or invite a new member.',
+                        ),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => SizedBox(height: 10.h),
+                      itemBuilder: (context, i) {
+                        final m = visible[i];
+                        return MemberCard(
+                          member: m,
+                          onTap: () => context.push('${Routes.memberDetail}?id=${m.id}'),
+                        );
+                      },
                     );
-                  },
-                ),
+            },
+          ),
         ),
       ],
     );

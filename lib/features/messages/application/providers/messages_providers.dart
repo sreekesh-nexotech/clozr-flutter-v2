@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/whatsapp_template.dart';
@@ -22,33 +23,78 @@ final messagesRepositoryProvider = Provider<MessagesRepository>((ref) {
   );
 });
 
-/// Mutable conversation store. State seeds asynchronously from the repository;
-/// sending a message / template and opening a chat update the list
-/// optimistically first, then fire the matching repository call unawaited.
-class ConversationsController extends StateNotifier<List<Conversation>> {
+/// Immutable conversation-list UI state: the rows plus a load phase. In API
+/// mode a failed initial fetch stores the [error] so the screen can show a
+/// retry; in mock mode the fetch never fails, so the phase stays clean.
+class ConversationsState {
+  const ConversationsState({
+    this.conversations = const [],
+    this.loading = false,
+    this.error,
+  });
+
+  final List<Conversation> conversations;
+  final bool loading;
+  final AppError? error;
+
+  ConversationsState copyWith({
+    List<Conversation>? conversations,
+    bool? loading,
+    AppError? error,
+    bool clearError = false,
+  }) =>
+      ConversationsState(
+        conversations: conversations ?? this.conversations,
+        loading: loading ?? this.loading,
+        error: clearError ? null : (error ?? this.error),
+      );
+}
+
+/// Mutable conversation store. In API mode it seeds a loading phase (never
+/// mock) and stores a failure so the list can offer a retry; in mock mode it
+/// seeds empty and loads the seed exactly as before (no loading/error surface).
+/// Sending a message / template and opening a chat update the list
+/// optimistically first, then fire the matching repository call — the send
+/// result is threaded back so a rejected bubble is marked `failed` (audit M3).
+class ConversationsController extends StateNotifier<ConversationsState> {
   ConversationsController(this._repo,
       {List<WhatsappTemplate> Function()? templates})
       : _templates = templates,
-        super(const []) {
+        super(ConversationsState(loading: ApiConfig.apiEnabled)) {
     _load();
   }
 
   final MessagesRepository _repo;
   final List<WhatsappTemplate> Function()? _templates;
 
+  int _localSeq = 0;
+  String _nextLocalId() => 'local-${_localSeq++}';
+
   Future<void> _load() async {
+    if (ApiConfig.apiEnabled) state = state.copyWith(loading: true, clearError: true);
     try {
       final conversations = await _repo.getConversations();
-      if (mounted) state = conversations;
-    } on Object {
-      // The list simply stays empty when the fetch fails.
+      if (mounted) state = state.copyWith(conversations: conversations, loading: false, clearError: true);
+    } on AppError catch (e) {
+      // Mock never throws; in API mode surface the failure for a retry.
+      if (mounted) state = state.copyWith(loading: false, error: e);
+    } on Object catch (e) {
+      if (mounted) {
+        state = state.copyWith(
+          loading: false,
+          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+        );
+      }
     }
   }
 
+  /// Retry the conversation-list fetch (used by the error-state Retry CTA).
+  void reload() => _load();
+
   void markRead(String id) {
-    state = [
-      for (final c in state) c.id == id ? c.copyWith(unread: 0) : c,
-    ];
+    state = state.copyWith(conversations: [
+      for (final c in state.conversations) c.id == id ? c.copyWith(unread: 0) : c,
+    ]);
     unawaited(_repo.markRead(id));
     // The API list rows carry only a last-message preview; opening a chat is
     // the moment its real thread gets pulled in.
@@ -58,21 +104,63 @@ class ConversationsController extends StateNotifier<List<Conversation>> {
   void sendMessage(String id, String text) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    _append(id, ChatMessage(mine: true, text: trimmed, time: 'Now', status: 'sent'));
-    unawaited(_repo.sendText(id, trimmed));
+    final localId = _nextLocalId();
+    _append(id, ChatMessage(mine: true, text: trimmed, time: 'Now', status: 'sent', localId: localId));
+    unawaited(_dispatchText(id, localId, trimmed));
   }
 
   void sendTemplate(String id, String body) {
-    _append(id, ChatMessage(mine: true, text: body, time: 'Now', status: 'sent', tpl: true));
-    unawaited(_repo.sendTemplate(id, _templateIdForBody(id, body), body));
+    final localId = _nextLocalId();
+    _append(id, ChatMessage(mine: true, text: body, time: 'Now', status: 'sent', tpl: true, localId: localId));
+    unawaited(_dispatchTemplate(id, localId, body));
+  }
+
+  /// Re-fire a bubble that came back rejected. Resets it to optimistic, then
+  /// dispatches again on the same path (text vs template).
+  void retryMessage(String conversationId, ChatMessage failed) {
+    final localId = failed.localId;
+    if (localId == null) return;
+    _setStatus(conversationId, localId, 'sent');
+    if (failed.tpl) {
+      unawaited(_dispatchTemplate(conversationId, localId, failed.text));
+    } else {
+      unawaited(_dispatchText(conversationId, localId, failed.text));
+    }
+  }
+
+  Future<void> _dispatchText(String id, String localId, String text) async {
+    final sent = await _repo.sendText(id, text);
+    if (!mounted) return;
+    _setStatus(id, localId, sent != null ? _statusOf(sent) : 'failed');
+  }
+
+  Future<void> _dispatchTemplate(String id, String localId, String body) async {
+    final sent = await _repo.sendTemplate(id, _templateIdForBody(id, body), body);
+    if (!mounted) return;
+    _setStatus(id, localId, sent != null ? _statusOf(sent) : 'failed');
+  }
+
+  String _statusOf(ChatMessage m) => m.status.isNotEmpty ? m.status : 'sent';
+
+  /// Reconcile a send result onto its optimistic bubble (matched by localId).
+  void _setStatus(String conversationId, String localId, String status) {
+    state = state.copyWith(conversations: [
+      for (final c in state.conversations)
+        if (c.id == conversationId)
+          c.copyWith(messages: [
+            for (final m in c.messages) m.localId == localId ? m.copyWith(status: status) : m,
+          ])
+        else
+          c,
+    ]);
   }
 
   Future<void> _refreshMessages(String id) async {
     try {
       final fetched = await _repo.getMessages(id);
       if (!mounted) return;
-      state = [
-        for (final c in state)
+      state = state.copyWith(conversations: [
+        for (final c in state.conversations)
           if (c.id == id)
             c.copyWith(messages: [
               ...fetched,
@@ -81,7 +169,7 @@ class ConversationsController extends StateNotifier<List<Conversation>> {
             ])
           else
             c,
-      ];
+      ]);
     } on Object {
       // Keep the preview row; a failed thread fetch is never fatal.
     }
@@ -93,7 +181,7 @@ class ConversationsController extends StateNotifier<List<Conversation>> {
   String _templateIdForBody(String conversationId, String body) {
     final templates = _templates?.call() ?? const <WhatsappTemplate>[];
     var firstName = '';
-    for (final c in state) {
+    for (final c in state.conversations) {
       if (c.id == conversationId) {
         firstName = c.name.split(' ').first;
         break;
@@ -106,18 +194,18 @@ class ConversationsController extends StateNotifier<List<Conversation>> {
   }
 
   void _append(String id, ChatMessage msg) {
-    state = [
-      for (final c in state)
+    state = state.copyWith(conversations: [
+      for (final c in state.conversations)
         if (c.id == id)
           c.copyWith(lastTime: 'Now', messages: [...c.messages, msg])
         else
           c,
-    ];
+    ]);
   }
 }
 
 final conversationsProvider =
-    StateNotifierProvider<ConversationsController, List<Conversation>>((ref) {
+    StateNotifierProvider<ConversationsController, ConversationsState>((ref) {
   if (ApiConfig.apiEnabled) {
     // Warm the template cache so the picker has real templates by the time
     // the first closed-window chat is opened.
@@ -131,7 +219,7 @@ final conversationsProvider =
 
 /// Look up a single conversation by id (used by the chat screen).
 final conversationByIdProvider = Provider.family<Conversation?, String>((ref, id) {
-  for (final c in ref.watch(conversationsProvider)) {
+  for (final c in ref.watch(conversationsProvider).conversations) {
     if (c.id == id) return c;
   }
   return null;
@@ -142,7 +230,7 @@ final chatSearchProvider = StateProvider<String>((ref) => '');
 
 /// Conversations filtered by the search query (name + company).
 final visibleConversationsProvider = Provider<List<Conversation>>((ref) {
-  final all = ref.watch(conversationsProvider);
+  final all = ref.watch(conversationsProvider).conversations;
   final q = ref.watch(chatSearchProvider).trim().toLowerCase();
   if (q.isEmpty) return all;
   return all.where((c) => ('${c.name} ${c.company}').toLowerCase().contains(q)).toList();
@@ -152,17 +240,27 @@ final visibleConversationsProvider = Provider<List<Conversation>>((ref) {
 final chatTabProvider = StateProvider<String>((ref) => 'chats');
 
 /// Async bridge for the approved-template list (remote fetch in API mode).
+/// In API mode a genuinely empty result stays empty — the const seed is a
+/// MOCK-only source and is never used to paper over a real fetch (audit L-10).
 final _remoteWhatsappTemplatesProvider =
     FutureProvider<List<WhatsappTemplate>>((ref) async {
   if (!ApiConfig.apiEnabled) return kWhatsappTemplates;
-  final fetched = await ref.watch(messagesRepositoryProvider).getTemplates();
-  return fetched.isEmpty ? kWhatsappTemplates : fetched;
+  return ref.watch(messagesRepositoryProvider).getTemplates();
 });
 
-/// Approved WhatsApp templates offered by the closed-window picker. Stays a
-/// synchronous Provider (the chat screen reads it directly): it serves the
-/// const seed until the remote fetch lands, then the fetched list.
+/// Approved WhatsApp templates offered by the closed-window picker. Read
+/// synchronously by the chat screen. Mock mode serves the const seed; API mode
+/// serves the fetched list (empty until it lands / when there are none) — never
+/// the seed.
 final whatsappTemplatesProvider = Provider<List<WhatsappTemplate>>((ref) {
+  if (!ApiConfig.apiEnabled) return kWhatsappTemplates;
   return ref.watch(_remoteWhatsappTemplatesProvider).asData?.value ??
-      kWhatsappTemplates;
+      const <WhatsappTemplate>[];
+});
+
+/// Whether the approved-template fetch is still in flight (API mode only). The
+/// picker shows a loading state instead of the seed while this is true.
+final whatsappTemplatesLoadingProvider = Provider<bool>((ref) {
+  if (!ApiConfig.apiEnabled) return false;
+  return ref.watch(_remoteWhatsappTemplatesProvider).isLoading;
 });

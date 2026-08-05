@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -9,7 +7,9 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -18,6 +18,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/followups_filter_spec.dart';
 import '../../application/providers/followups_providers.dart';
+import '../../domain/entities/followup.dart';
 import '../components/followup_card.dart';
 import '../components/saved_chip_row.dart' as chips;
 import '../sheets/add_followup_sheet.dart';
@@ -62,7 +63,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     );
 
     final all = ref.watch(followupsAllProvider);
-    final visible = ref.watch(visibleFollowupsProvider);
+    final async = ref.watch(followupsProvider);
     final tab = ref.watch(followupTabProvider);
     final searchOpen = ref.watch(followupSearchOpenProvider);
     final query = ref.watch(followupSearchProvider);
@@ -116,8 +117,13 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
+          child: AsyncStateView<List<Followup>>(
+            value: async,
+            onRetry: () => ref.invalidate(followupsProvider),
+            data: (_) {
+              final visible = ref.watch(visibleFollowupsProvider);
+              if (visible.isEmpty) {
+                return ListView(
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.checkCircle,
@@ -128,38 +134,53 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                       onCta: () => showAddFollowupSheet(context, ref),
                     ),
                   ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 12.h),
-                  itemBuilder: (context, i) {
-                    final f = visible[i];
-                    return FollowupCard(
-                      followup: f,
-                      onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
-                      onToggle: () {
-                        final done = f.status == 'done';
-                        final overrides = ref.read(followupStatusOverrideProvider);
-                        ref.read(followupStatusOverrideProvider.notifier).state = {
-                          ...overrides,
-                          f.id: done ? 'due' : 'done',
-                        };
-                        if (ApiConfig.apiEnabled) {
-                          unawaited(ref
-                              .read(followupsRepositoryProvider)
-                              .setFollowupDone(f.id, !done)
-                              .catchError((_) {}));
-                        }
-                        ref.read(toastProvider.notifier).show(
-                            done ? 'Follow-up reopened' : 'Follow-up marked done');
-                      },
-                    );
-                  },
-                ),
+                );
+              }
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                itemBuilder: (context, i) {
+                  final f = visible[i];
+                  return FollowupCard(
+                    followup: f,
+                    onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
+                    onToggle: () => _toggleFollowup(f),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
+  }
+
+  /// Toggles a follow-up's done state with an optimistic override. In API mode
+  /// the write is awaited: on failure the override is rolled back to its prior
+  /// value and the error is surfaced; the success toast fires only after the
+  /// write lands. Mock mode is unchanged (optimistic + success toast).
+  Future<void> _toggleFollowup(Followup f) async {
+    final done = f.status == 'done';
+    final newStatus = done ? 'due' : 'done';
+    final prev = ref.read(followupStatusOverrideProvider);
+    ref.read(followupStatusOverrideProvider.notifier).state = {...prev, f.id: newStatus};
+    if (ApiConfig.apiEnabled) {
+      try {
+        await ref.read(followupsRepositoryProvider).setFollowupDone(f.id, !done);
+      } on AppError catch (e) {
+        final rolled = {...ref.read(followupStatusOverrideProvider)};
+        if (prev.containsKey(f.id)) {
+          rolled[f.id] = prev[f.id]!;
+        } else {
+          rolled.remove(f.id);
+        }
+        ref.read(followupStatusOverrideProvider.notifier).state = rolled;
+        ref.read(toastProvider.notifier).show(e.message);
+        return;
+      }
+    }
+    ref.read(toastProvider.notifier).show(done ? 'Follow-up reopened' : 'Follow-up marked done');
   }
 
   // ── Filter drawer ──

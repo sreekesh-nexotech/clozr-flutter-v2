@@ -27,16 +27,17 @@ const _stuckChips = [
 /// The CRM manager dashboard panel (team + period chips): KPIs, lead funnel,
 /// lead-inflow trend, attention 2×2, lead sources, stuck items and employee
 /// performance.
+///
+/// The two toggled sections (Lead Sources segment, Stuck Items chips) are their
+/// own [ConsumerWidget]s watching only their toggle provider + a `.select` on
+/// their slice of the bundle, so a chip tap repaints just that section — not
+/// the whole panel (and its fl_chart funnel/trend).
 class CrmPanel extends ConsumerWidget {
   const CrmPanel({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(dashboardDataProvider);
-    final srcMode = ref.watch(dashSourceModeProvider);
-    final stuckIdx = _stuckChips.indexWhere((c) => c.$1 == ref.watch(dashStuckChipProvider));
-    final stuckKey = _stuckChips[stuckIdx < 0 ? 0 : stuckIdx].$1;
-    final stuckRows = data.crmStuck[stuckKey] ?? const [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -83,9 +84,9 @@ class CrmPanel extends ConsumerWidget {
         SizedBox(height: 11.h),
         _attentionGrid(context, data.crmAttention),
         SizedBox(height: 16.h),
-        _sources(context, data, srcMode, ref),
+        const _SourcesSection(),
         SizedBox(height: 16.h),
-        _stuck(context, stuckIdx < 0 ? 0 : stuckIdx, stuckRows, ref),
+        const _StuckSection(),
         SizedBox(height: 16.h),
         _employees(context, data.crmEmployees),
       ],
@@ -111,7 +112,39 @@ class CrmPanel extends ConsumerWidget {
     );
   }
 
-  Widget _sources(BuildContext context, DashboardData data, int mode, WidgetRef ref) {
+  Widget _employees(BuildContext context, List<DashCrmEmployee> emps) {
+    return DashSectionCard(
+      title: 'Employee performance',
+      subtitle: 'Team activity this period',
+      padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 4.r),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: 4.h),
+          for (final e in emps)
+            DashEmployeeRow(
+              rid: e.rid,
+              sub: e.metaLine,
+              onTap: () => context.go(Routes.members),
+              trailing: DashTrailingValue(primary: e.closed, caption: e.last),
+            ),
+          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.members)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lead Sources — repaints only on its Leads/₹ toggle or a change to
+/// `crmSources`, never on the other panel toggles.
+class _SourcesSection extends ConsumerWidget {
+  const _SourcesSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(dashSourceModeProvider);
+    final sources = ref.watch(dashboardDataProvider.select((d) => d.crmSources));
+
     return DashSectionCard(
       title: 'Lead Sources',
       subtitle: 'Performance by source',
@@ -123,7 +156,7 @@ class CrmPanel extends ConsumerWidget {
       ),
       child: Padding(
         padding: EdgeInsets.only(top: 4.h),
-        child: Column(children: [for (final s in data.crmSources) _sourceRow(context, s, mode)]),
+        child: Column(children: [for (final s in sources) _sourceRow(context, s, mode)]),
       ),
     );
   }
@@ -178,8 +211,20 @@ class CrmPanel extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _stuck(BuildContext context, int idx, List<DashStuckRow> rows, WidgetRef ref) {
+/// Stuck Items — repaints only on its active chip or a change to `crmStuck`.
+class _StuckSection extends ConsumerWidget {
+  const _StuckSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stuck = ref.watch(dashboardDataProvider.select((d) => d.crmStuck));
+    final chip = ref.watch(dashStuckChipProvider);
+    final idxRaw = _stuckChips.indexWhere((c) => c.$1 == chip);
+    final idx = idxRaw < 0 ? 0 : idxRaw;
+    final rows = stuck[_stuckChips[idx].$1] ?? const [];
+
     return DashSectionCard(
       title: 'Stuck Items',
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),
@@ -235,28 +280,6 @@ class CrmPanel extends ConsumerWidget {
                   ],
                 ),
               ),
-        ],
-      ),
-    );
-  }
-
-  Widget _employees(BuildContext context, List<DashCrmEmployee> emps) {
-    return DashSectionCard(
-      title: 'Employee performance',
-      subtitle: 'Team activity this period',
-      padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 4.r),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(height: 4.h),
-          for (final e in emps)
-            DashEmployeeRow(
-              rid: e.rid,
-              sub: e.metaLine,
-              onTap: () => context.go(Routes.members),
-              trailing: DashTrailingValue(primary: e.closed, caption: e.last),
-            ),
-          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.members)),
         ],
       ),
     );

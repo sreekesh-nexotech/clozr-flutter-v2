@@ -1,6 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../crm/application/providers/customers_providers.dart';
+import '../../../crm/domain/entities/customer.dart';
+import '../../../operations/application/providers/projects_providers.dart';
+import '../../../operations/domain/entities/project.dart';
 import '../../domain/entities/ticket.dart';
 import '../../domain/repositories/tickets_repository.dart';
 import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
@@ -33,6 +37,52 @@ final ticketByIdProvider = Provider.family<Ticket?, String>((ref, id) {
     if (t.id == id) return t;
   }
   return null;
+});
+
+/// Resolves a ticket's linked customer / project to display info. In mock mode
+/// these are the ported [TicketDirectory] maps; in API mode they are rebuilt
+/// from the real customer + project lists, so a live backend never renders the
+/// prototype's fake company names or costs — an unresolved id yields null and
+/// the UI falls back to '—' (audit L-6).
+class TicketLookups {
+  const TicketLookups({required this.customers, required this.projects});
+
+  /// Builds lookups from the real CRM customers + Operations projects. Only
+  /// real records are indexed, so an id with no match resolves to null.
+  factory TicketLookups.fromData(
+      List<Customer> customers, List<Project> projects) {
+    return TicketLookups(
+      customers: {
+        for (final c in customers) c.id: TicketCustomer(c.id, c.name, c.company ?? ''),
+      },
+      projects: {
+        for (final p in projects) p.id: TicketProject(p.id, p.name, p.cost),
+      },
+    );
+  }
+
+  final Map<String, TicketCustomer> customers;
+  final Map<String, TicketProject> projects;
+
+  TicketCustomer? customer(String? id) => id == null ? null : customers[id];
+  TicketProject? project(String? id) => id == null ? null : projects[id];
+}
+
+/// Directory of ticket-linked customer/project display data. Mock maps in mock
+/// mode; real data-derived lookups in API mode (audit L-6). Widgets read this
+/// instead of the static [TicketDirectory] so fake names/costs never render
+/// against a live backend.
+final ticketDirectoryProvider = Provider<TicketLookups>((ref) {
+  if (!ApiConfig.apiEnabled) {
+    return const TicketLookups(
+      customers: TicketDirectory.customers,
+      projects: TicketDirectory.projects,
+    );
+  }
+  return TicketLookups.fromData(
+    ref.watch(customersProvider).valueOrNull ?? const [],
+    ref.watch(projectsListProvider),
+  );
 });
 
 // ── Tickets list UI state ──
@@ -77,8 +127,9 @@ final visibleTicketsProvider = Provider<List<Ticket>>((ref) {
     out = out.where((t) => t.status != 'resolved' && t.status != 'closed');
   }
   if (q.isNotEmpty) {
+    final dir = ref.watch(ticketDirectoryProvider);
     out = out.where((t) {
-      final cust = TicketDirectory.customer(t.custId);
+      final cust = dir.customer(t.custId);
       return '${t.subject} ${t.id} ${t.cat} ${cust?.display ?? ''}'.toLowerCase().contains(q);
     });
   }

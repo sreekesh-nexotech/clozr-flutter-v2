@@ -7,6 +7,9 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../domain/entities/reward.dart';
 import '../../application/providers/rewards_providers.dart';
 import '../components/reward_goal_card.dart';
@@ -21,7 +24,8 @@ class RewardsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(rewardsProvider);
+    final state = ref.watch(rewardsControllerProvider);
+    final data = state.data;
     final expanded = ref.watch(rewardsExpandedProvider);
 
     return Container(
@@ -30,26 +34,50 @@ class RewardsScreen extends ConsumerWidget {
         children: [
           _header(context),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 110.h),
-              children: [
-                _profileCard(data.profile),
-                SizedBox(height: 12.h),
-                _refreshNote(data.lastUpdated),
-                for (final goal in data.goals) ...[
-                  SizedBox(height: 14.h),
-                  RewardGoalCard(
-                    goal: goal,
-                    expanded: expanded.contains(goal.id),
-                    onTogglePast: () => _toggle(ref, goal.id),
-                  ),
-                ],
-                SizedBox(height: 14.h),
-                _closerTrack(data.closerTrack),
-              ],
-            ),
+            child: state.loading
+                ? const DetailSkeleton()
+                : state.error != null
+                    ? ErrorState.forError(
+                        state.error!,
+                        onRetry: () => ref.read(rewardsControllerProvider.notifier).reload(),
+                      )
+                    : ListView(
+                        padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 110.h),
+                        children: [
+                          _profileCard(data.profile),
+                          SizedBox(height: 12.h),
+                          if (data.lastUpdated.isNotEmpty) _refreshNote(data.lastUpdated),
+                          if (data.goals.isEmpty)
+                            _goalsEmpty()
+                          else
+                            for (final goal in data.goals) ...[
+                              SizedBox(height: 14.h),
+                              RewardGoalCard(
+                                goal: goal,
+                                expanded: expanded.contains(goal.id),
+                                onTogglePast: () => _toggle(ref, goal.id),
+                              ),
+                            ],
+                          if (!data.closerTrack.isEmpty) ...[
+                            SizedBox(height: 14.h),
+                            _closerTrack(data.closerTrack),
+                          ],
+                        ],
+                      ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Empty goals ──
+  Widget _goalsEmpty() {
+    return Padding(
+      padding: EdgeInsets.only(top: 8.h),
+      child: const EmptyState(
+        icon: PhosphorIconsFill.trophy,
+        title: 'No rewards yet',
+        body: 'Your goals and rewards will appear here once your milestones are set up.',
       ),
     );
   }

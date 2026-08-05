@@ -9,6 +9,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../../domain/entities/invoice.dart';
@@ -82,6 +83,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   void _pickInvoice() {
     final invoices = ref.read(invoicesProvider).valueOrNull ?? const [];
+    final lookup = ref.read(crmPartyLookupProvider);
     showClozrSheet<void>(
       context: context,
       builder: (ctx) => Column(
@@ -108,7 +110,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('${iv.id} · ${invoiceWho(iv)}', style: AppText.bodyStrong()),
+                                Text('${iv.id} · ${invoiceWho(iv, lookup)}', style: AppText.bodyStrong()),
                                 SizedBox(height: 2.h),
                                 Text('Balance ${iv.balance}', style: AppText.caption()),
                               ],
@@ -175,6 +177,13 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       ref.read(toastProvider.notifier).show('Payment recorded');
       return;
     }
+    // Ad-hoc branch. No backend endpoint exists, so in API mode we don't
+    // fabricate a local Payment or claim success — we say so honestly. (The UI
+    // also hides the ad-hoc toggle in API mode; this is a defensive guard.)
+    if (ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show("Recording ad-hoc payments isn't available yet");
+      return;
+    }
     final amt = int.tryParse(_amount.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     if (amt <= 0) {
       ref.read(toastProvider.notifier).show('Enter the amount received');
@@ -203,6 +212,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Widget build(BuildContext context) {
     final inv = _invoice;
     final next = _nextInstallment;
+    final lookup = ref.watch(crmPartyLookupProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -229,7 +239,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                       children: [
                         Expanded(
                           child: Text(
-                            inv != null ? '${inv.id} · ${invoiceWho(inv)}' : 'Select an invoice…',
+                            inv != null ? '${inv.id} · ${invoiceWho(inv, lookup)}' : 'Select an invoice…',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: inv != null
@@ -249,8 +259,12 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                       '${inv.id} · balance ${inv.balance} · ${inv.settled}/${inv.of} settled'),
                 ],
                 SizedBox(height: 13.h),
-                _segToggle(),
-                SizedBox(height: 12.h),
+                // Ad-hoc recording has no backend endpoint yet, so in API mode
+                // only the (real) "settle an installment" flow is offered.
+                if (!ApiConfig.apiEnabled) ...[
+                  _segToggle(),
+                  SizedBox(height: 12.h),
+                ],
                 if (_mode == 'settle')
                   _infoBanner(next != null
                       ? '${next.label} · ${next.amount}. Recording will mark it as paid.'

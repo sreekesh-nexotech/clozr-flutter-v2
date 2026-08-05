@@ -65,11 +65,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// flagged as a template, then closes the sheet and toasts.
   void _openTemplateSheet(Conversation chat) {
     final firstName = chat.name.split(' ').first;
-    final templates = ref.read(whatsappTemplatesProvider);
     showClozrSheet<void>(
       context: context,
       builder: (ctx) => _TemplatePickerSheet(
-        templates: templates,
         firstName: firstName,
         onPick: (t) {
           Navigator.of(ctx).pop();
@@ -252,7 +250,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   padding: EdgeInsets.fromLTRB(14.w, 14.h, 14.w, 10.h),
                   children: [
                     _todayChip(),
-                    for (final m in chat.messages) MessageBubble(message: m),
+                    for (final m in chat.messages)
+                      MessageBubble(
+                        message: m,
+                        onRetry: m.failed
+                            ? () => ref.read(conversationsProvider.notifier).retryMessage(chat.id, m)
+                            : null,
+                      ),
                   ],
                 ),
         ),
@@ -582,19 +586,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 /// WhatsApp templates: name (bold) with an APPROVED badge and a preview of the
 /// body with the contact's first name substituted, hairline-divided between
 /// rows. Tapping a row fires [onPick] with that template.
-class _TemplatePickerSheet extends StatelessWidget {
+///
+/// It watches the template providers directly: mock mode always has the seed;
+/// API mode shows a loading state while the fetch is in flight and an empty
+/// state when there are no approved templates — never the mock seed (audit
+/// L-10).
+class _TemplatePickerSheet extends ConsumerWidget {
   const _TemplatePickerSheet({
-    required this.templates,
     required this.firstName,
     required this.onPick,
   });
 
-  final List<WhatsappTemplate> templates;
   final String firstName;
   final ValueChanged<WhatsappTemplate> onPick;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final templates = ref.watch(whatsappTemplatesProvider);
+    final loading = ref.watch(whatsappTemplatesLoadingProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -623,18 +632,62 @@ class _TemplatePickerSheet extends StatelessWidget {
             ],
           ),
         ),
-        Flexible(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 26.h),
-            child: Column(
-              children: [
-                for (int i = 0; i < templates.length; i++)
-                  _row(templates[i], last: i == templates.length - 1),
-              ],
+        if (templates.isEmpty)
+          _placeholder(loading)
+        else
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 26.h),
+              child: Column(
+                children: [
+                  for (int i = 0; i < templates.length; i++)
+                    _row(templates[i], last: i == templates.length - 1),
+                ],
+              ),
             ),
           ),
-        ),
       ],
+    );
+  }
+
+  /// Shown when there are no templates to list: a spinner while the approved
+  /// list is still loading, otherwise an honest empty state.
+  Widget _placeholder(bool loading) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24.w, 26.h, 24.w, 34.h),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: loading
+            ? [
+                SizedBox(
+                  width: 24.r,
+                  height: 24.r,
+                  child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy),
+                ),
+                SizedBox(height: 14.h),
+                Text('Loading templates…',
+                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textMuted)),
+              ]
+            : [
+                Container(
+                  width: 56.r,
+                  height: 56.r,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(16.r)),
+                  child: Icon(PhosphorIconsRegular.chatText, size: 26.sp, color: AppColors.textPlaceholder),
+                ),
+                SizedBox(height: 14.h),
+                Text('No approved templates',
+                    style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                SizedBox(height: 5.h),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: 240.w),
+                  child: Text('Approved WhatsApp templates will appear here once they are set up.',
+                      textAlign: TextAlign.center,
+                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.5)),
+                ),
+              ],
+      ),
     );
   }
 

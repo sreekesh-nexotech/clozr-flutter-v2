@@ -8,6 +8,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -205,7 +206,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
         _label('Assignee'),
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final r in MockUsers.reps)
+          for (final r in ref.watch(rosterProvider))
             OpsAssigneeChip(
               initials: r.initials,
               name: r.firstName,

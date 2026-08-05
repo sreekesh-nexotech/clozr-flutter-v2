@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -9,7 +7,9 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -19,6 +19,7 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/tasks_filter_spec.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/crm_task.dart';
 import '../components/task_card.dart';
 import '../components/saved_chip_row.dart' as chips;
 import '../sheets/add_task_sheet.dart';
@@ -66,7 +67,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     );
 
     final all = ref.watch(crmTasksAllProvider);
-    final visible = ref.watch(visibleCrmTasksProvider);
+    final async = ref.watch(crmTasksProvider);
     final tab = ref.watch(crmTaskTabProvider);
     final searchOpen = ref.watch(crmTaskSearchOpenProvider);
     final query = ref.watch(crmTaskSearchProvider);
@@ -129,8 +130,13 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
+          child: AsyncStateView<List<CrmTask>>(
+            value: async,
+            onRetry: () => ref.invalidate(crmTasksProvider),
+            data: (_) {
+              final visible = ref.watch(visibleCrmTasksProvider);
+              if (visible.isEmpty) {
+                return ListView(
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.funnel,
@@ -141,39 +147,54 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                       onCta: () => showAddTaskSheet(context, ref),
                     ),
                   ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 12.h),
-                  itemBuilder: (context, i) {
-                    final t = visible[i];
-                    return TaskCard(
-                      task: t,
-                      relatedLine: relatedLineFor(t.leadId),
-                      onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
-                      onToggle: () {
-                        final done = t.status == 'done';
-                        final overrides = ref.read(crmTaskStatusOverrideProvider);
-                        ref.read(crmTaskStatusOverrideProvider.notifier).state = {
-                          ...overrides,
-                          t.id: done ? 'todo' : 'done',
-                        };
-                        if (ApiConfig.apiEnabled) {
-                          unawaited(ref
-                              .read(crmTasksRepositoryProvider)
-                              .setTaskStatusByKey(t.id, done ? 'todo' : 'done')
-                              .catchError((_) {}));
-                        }
-                        ref.read(toastProvider.notifier).show(
-                            done ? 'Task reopened' : 'Task marked complete');
-                      },
-                    );
-                  },
-                ),
+                );
+              }
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                itemBuilder: (context, i) {
+                  final t = visible[i];
+                  return TaskCard(
+                    task: t,
+                    relatedLine: relatedLineFor(t.leadId),
+                    onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
+                    onToggle: () => _toggleTask(t),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
+  }
+
+  /// Toggles a task's done state with an optimistic override. In API mode the
+  /// write is awaited: on failure the override is rolled back to its prior value
+  /// and the error is surfaced; the success toast fires only after the write
+  /// lands. Mock mode is unchanged (optimistic + success toast).
+  Future<void> _toggleTask(CrmTask t) async {
+    final done = t.status == 'done';
+    final newStatus = done ? 'todo' : 'done';
+    final prev = ref.read(crmTaskStatusOverrideProvider);
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, t.id: newStatus};
+    if (ApiConfig.apiEnabled) {
+      try {
+        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, newStatus);
+      } on AppError catch (e) {
+        final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
+        if (prev.containsKey(t.id)) {
+          rolled[t.id] = prev[t.id]!;
+        } else {
+          rolled.remove(t.id);
+        }
+        ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
+        ref.read(toastProvider.notifier).show(e.message);
+        return;
+      }
+    }
+    ref.read(toastProvider.notifier).show(done ? 'Task reopened' : 'Task marked complete');
   }
 
   // ── Filter drawer ──

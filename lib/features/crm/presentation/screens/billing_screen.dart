@@ -4,8 +4,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../components/finance_widgets.dart';
@@ -38,22 +40,37 @@ class BillingScreen extends ConsumerWidget {
           ],
         ),
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-            children: [
-              _planCard(toast),
-              SizedBox(height: 14.h),
-              _licensesCard(toast),
-              SizedBox(height: 14.h),
-              _storageCard(),
-              SizedBox(height: 14.h),
-              _mandateCard(toast),
-              SizedBox(height: 14.h),
-              _accountStateCard(),
-              SizedBox(height: 14.h),
-              _invoicesCard(toast),
-            ],
-          ),
+          // The plan/seats/mandate/invoice cards below are 100% static seed
+          // data with no billing repository behind them. In API mode we show an
+          // honest empty state instead of fabricated figures; mock mode keeps
+          // the prototype's illustrative billing screen unchanged.
+          child: ApiConfig.apiEnabled
+              ? ListView(
+                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                  children: const [
+                    EmptyState(
+                      icon: PhosphorIconsRegular.receipt,
+                      title: 'Billing coming soon',
+                      body: 'Your plan, seats, payment mandate and invoice history will appear here once billing is connected.',
+                    ),
+                  ],
+                )
+              : ListView(
+                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                  children: [
+                    _planCard(toast),
+                    SizedBox(height: 14.h),
+                    _licensesCard(toast),
+                    SizedBox(height: 14.h),
+                    _storageCard(),
+                    SizedBox(height: 14.h),
+                    _mandateCard(toast),
+                    SizedBox(height: 14.h),
+                    _accountStateCard(),
+                    SizedBox(height: 14.h),
+                    _invoicesCard(toast),
+                  ],
+                ),
         ),
       ],
     );

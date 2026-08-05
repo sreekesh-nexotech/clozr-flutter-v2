@@ -7,10 +7,14 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/products_providers.dart';
 import '../../domain/entities/product.dart';
+import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
 
 /// Product detail — header (name + active toggle + edit), description,
@@ -21,18 +25,40 @@ class ProductDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final product = ref.watch(productByIdProvider(id));
+    final async = ref.watch(productsProvider);
 
+    Widget scaffold(Widget child) => Container(
+          color: AppColors.bgDetail,
+          child: Column(
+            children: [
+              DetailAppBar(section: 'Product', onBack: () => context.pop()),
+              Expanded(child: child),
+            ],
+          ),
+        );
+
+    return async.when(
+      loading: () => scaffold(const DetailSkeleton()),
+      error: (e, _) => scaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(productsProvider)),
+      ),
+      data: (_) => _buildProduct(context, ref, id, scaffold),
+    );
+  }
+
+  Widget _buildProduct(
+    BuildContext context,
+    WidgetRef ref,
+    String id,
+    Widget Function(Widget) scaffold,
+  ) {
+    final product = ref.watch(productByIdProvider(id));
     if (product == null) {
-      return Container(
-        color: AppColors.bgDetail,
-        child: Column(
-          children: [
-            DetailAppBar(section: 'Product', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Product not found'))),
-          ],
-        ),
-      );
+      return scaffold(const EmptyState(
+        icon: PhosphorIconsRegular.package,
+        title: 'Product not found',
+        body: 'This catalog item may have been removed or you no longer have access to it.',
+      ));
     }
 
     final notes = [

@@ -7,6 +7,8 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../application/providers/messages_providers.dart';
 import '../components/conversation_row.dart';
 import '../messages_tokens.dart';
@@ -37,6 +39,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(conversationsProvider);
     final rows = ref.watch(visibleConversationsProvider);
 
     return Container(
@@ -45,8 +48,15 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         children: [
           _header(context),
           Expanded(
-            child: rows.isEmpty
-                ? ListView(
+            child: state.loading
+                ? const ListSkeleton(itemBuilder: ListSkeleton.row)
+                : state.error != null
+                    ? ErrorState.forError(
+                        state.error!,
+                        onRetry: () => ref.read(conversationsProvider.notifier).reload(),
+                      )
+                    : rows.isEmpty
+                        ? ListView(
                     children: const [
                       EmptyState(
                         icon: PhosphorIconsRegular.chatsCircle,
@@ -55,7 +65,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
                       ),
                     ],
                   )
-                : ListView.separated(
+                        : ListView.separated(
                     padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 28.h),
                     itemCount: rows.length,
                     separatorBuilder: (_, __) => SizedBox(height: 10.h),

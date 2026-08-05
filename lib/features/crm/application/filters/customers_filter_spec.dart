@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/customer.dart';
@@ -32,6 +33,7 @@ List<String> _allCompanies(List<Lead> leads, List<Customer> customers) {
 FilterSpec buildCustomersFilterSpec({
   required List<Customer> customers,
   required List<Lead> leads,
+  List<AppUser> roster = MockUsers.reps,
 }) {
   final statuses = [
     for (final k in StatusMeta$.customerOrder)
@@ -41,7 +43,7 @@ FilterSpec buildCustomersFilterSpec({
       .map((s) => FilterOption(id: s, label: s))
       .toList();
   final users = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
   final companies = _allCompanies(leads, customers)
       .map((c) => FilterOption(id: c, label: c))
@@ -128,7 +130,11 @@ bool customerMatchesFilters(Customer c, FilterValues v) {
 final customersFilterSpecProvider = Provider<FilterSpec>((ref) {
   final customers = ref.watch(customersAllProvider);
   final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
-  return buildCustomersFilterSpec(customers: customers, leads: leads);
+  return buildCustomersFilterSpec(
+    customers: customers,
+    leads: leads,
+    roster: ref.watch(rosterProvider),
+  );
 });
 
 /// Applied drawer filters for the Customers list (the source of the badge).

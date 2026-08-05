@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -10,9 +8,13 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -22,6 +24,7 @@ import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/crm_task.dart';
+import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
 import 'crm_status_sheet.dart';
 
@@ -59,17 +62,30 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     _notesKey.currentState?.focusComposer();
   }
 
-  /// Records a status change for an existing task so the detail + list reflect
-  /// it immediately (see `crmTaskStatusOverrideProvider`).
-  void _setStatus(String id, String status) {
-    final overrides = ref.read(crmTaskStatusOverrideProvider);
-    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...overrides, id: status};
+  /// Records a status change for an existing task, applying an optimistic
+  /// override so the detail + list reflect it immediately. In API mode the write
+  /// is awaited: on failure the override is rolled back to its prior value and
+  /// the error is surfaced; [successMessage] is toasted only after the write
+  /// lands. Mock mode is unchanged (optimistic + success toast).
+  Future<void> _setStatus(String id, String status, String successMessage) async {
+    final prev = ref.read(crmTaskStatusOverrideProvider);
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, id: status};
     if (ApiConfig.apiEnabled) {
-      unawaited(ref
-          .read(crmTasksRepositoryProvider)
-          .setTaskStatusByKey(id, status)
-          .catchError((_) {}));
+      try {
+        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(id, status);
+      } on AppError catch (e) {
+        final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
+        if (prev.containsKey(id)) {
+          rolled[id] = prev[id]!;
+        } else {
+          rolled.remove(id);
+        }
+        ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
+        ref.read(toastProvider.notifier).show(e.message);
+        return;
+      }
     }
+    ref.read(toastProvider.notifier).show(successMessage);
   }
 
   void _openTaskMenu(CrmTask task, bool done) {
@@ -91,21 +107,39 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final task = ref.watch(crmTaskByIdProvider(id));
-
-    if (task == null) {
-      return Container(
+  /// Wraps a loading / error / not-found state under the section app bar so the
+  /// back control stays available in every state.
+  Widget _stateScaffold(Widget child) => Container(
         color: AppColors.bgDetail,
         child: Column(
           children: [
             DetailAppBar(section: 'Task', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Task not found'))),
+            Expanded(child: child),
           ],
         ),
       );
+
+  @override
+  Widget build(BuildContext context) {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final async = ref.watch(crmTasksProvider);
+    return async.when(
+      loading: () => _stateScaffold(const DetailSkeleton()),
+      error: (e, _) => _stateScaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(crmTasksProvider)),
+      ),
+      data: (_) => _buildTask(context, id),
+    );
+  }
+
+  Widget _buildTask(BuildContext context, String id) {
+    final task = ref.watch(crmTaskByIdProvider(id));
+    if (task == null) {
+      return _stateScaffold(const EmptyState(
+        icon: PhosphorIconsRegular.checkSquare,
+        title: 'Task not found',
+        body: 'This task may have been removed or you no longer have access to it.',
+      ));
     }
 
     final meta = StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
@@ -247,10 +281,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       options: const ['todo', 'inprogress', 'blocked', 'done'],
       meta: StatusMeta$.task,
       current: task.status,
-      onSelect: (k) {
-        _setStatus(task.id, k);
-        ref.read(toastProvider.notifier).show('Status set to ${StatusMeta$.task[k]!.label}');
-      },
+      onSelect: (k) => _setStatus(task.id, k, 'Status set to ${StatusMeta$.task[k]!.label}'),
     );
   }
 
@@ -417,10 +448,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           SizedBox(width: 10.w),
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                _setStatus(task.id, done ? 'todo' : 'done');
-                ref.read(toastProvider.notifier).show(done ? 'Task reopened' : 'Task marked complete');
-              },
+              onTap: () => _setStatus(task.id, done ? 'todo' : 'done', done ? 'Task reopened' : 'Task marked complete'),
               child: Container(
                 height: 48.h,
                 alignment: Alignment.center,

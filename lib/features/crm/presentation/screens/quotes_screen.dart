@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -16,6 +17,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/quotes_filter_spec.dart';
 import '../../application/providers/quotes_providers.dart';
+import '../../domain/entities/quote.dart';
 import '../components/quote_card.dart';
 import '../components/saved_chip_row.dart';
 
@@ -52,8 +54,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
       AddAction(label: 'Add quote', run: (ctx) => ctx.push(Routes.addQuote)),
     );
 
-    final all = ref.watch(quotesProvider).valueOrNull ?? const [];
-    final visible = ref.watch(visibleQuotesProvider);
+    final async = ref.watch(quotesProvider);
+    final all = async.valueOrNull ?? const [];
     final tab = ref.watch(quoteTabProvider);
     final searchOpen = ref.watch(quoteSearchOpenProvider);
     final query = ref.watch(quoteSearchProvider);
@@ -109,8 +111,13 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
+          child: AsyncStateView<List<Quote>>(
+            value: async,
+            onRetry: () => ref.invalidate(quotesProvider),
+            data: (_) {
+              final visible = ref.watch(visibleQuotesProvider);
+              if (visible.isEmpty) {
+                return ListView(
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.fileText,
@@ -121,19 +128,22 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                       onCta: () => context.push(Routes.addQuote),
                     ),
                   ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 10.h),
-                  itemBuilder: (context, i) {
-                    final quote = visible[i];
-                    return QuoteCard(
-                      quote: quote,
-                      onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
-                    );
-                  },
-                ),
+                );
+              }
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => SizedBox(height: 10.h),
+                itemBuilder: (context, i) {
+                  final quote = visible[i];
+                  return QuoteCard(
+                    quote: quote,
+                    onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );

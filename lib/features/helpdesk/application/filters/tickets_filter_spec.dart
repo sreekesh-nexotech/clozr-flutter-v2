@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/ticket.dart';
@@ -20,8 +21,15 @@ import '../providers/tickets_providers.dart';
 const _dueChips = ['overdue', 'today', 'tomorrow', 'next7', 'next30', 'next60', 'next90'];
 
 /// The display label for a ticket's linked customer (company, falling back to
-/// the contact name) — the value the Customer filter matches against.
-String ticketCustomerDisplay(Ticket t) => TicketDirectory.customer(t.custId)?.display ?? '';
+/// the contact name) — the value the Customer filter matches against. Pass the
+/// resolved [lookups] (from `ticketDirectoryProvider`) so API mode reads real
+/// customers; null defaults to the mock [TicketDirectory] (mock mode).
+String ticketCustomerDisplay(Ticket t, [TicketLookups? lookups]) {
+  final c = lookups != null
+      ? lookups.customer(t.custId)
+      : TicketDirectory.customer(t.custId);
+  return c?.display ?? '';
+}
 
 /// SLA bucket for a ticket, ported from the prototype's `tktSlaState`. Only
 /// new/open tickets have a live SLA state; everything else returns null. Uses
@@ -44,8 +52,11 @@ List<FilterOption> _uniqueOptions(Iterable<String?> values) {
   return [for (final v in list) FilterOption(id: v, label: v)];
 }
 
-/// Build the Tickets drawer spec from the current ticket set.
-FilterSpec buildTicketsFilterSpec(List<Ticket> tickets) {
+/// Build the Tickets drawer spec from the current ticket set. [lookups] resolves
+/// customer options from real data in API mode; [roster] supplies the assignee
+/// options (real members in API mode, prototype reps in mock mode).
+FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
+    {TicketLookups? lookups, List<AppUser>? roster}) {
   final statuses = [
     for (final e in StatusMeta$.ticket.entries) FilterOption(id: e.key, label: e.value.label),
   ];
@@ -57,9 +68,9 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets) {
   ];
   final cats = _uniqueOptions(tickets.map((t) => t.cat));
   final products = _uniqueOptions(tickets.map((t) => t.product));
-  final customers = _uniqueOptions(tickets.map(ticketCustomerDisplay));
+  final customers = _uniqueOptions(tickets.map((t) => ticketCustomerDisplay(t, lookups)));
   final assignees = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in (roster ?? MockUsers.reps)) FilterOption(id: u.id, label: u.name),
   ];
 
   return FilterSpec(
@@ -146,13 +157,14 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets) {
 }
 
 /// Evaluate a ticket against applied filter values. Multi-valued controls use
-/// the pure [FilterMatch] helpers; radios carry helpdesk-specific logic.
-bool ticketMatchesFilters(Ticket t, FilterValues v) {
+/// the pure [FilterMatch] helpers; radios carry helpdesk-specific logic. Pass
+/// [lookups] so the Customer filter matches real display names in API mode.
+bool ticketMatchesFilters(Ticket t, FilterValues v, [TicketLookups? lookups]) {
   if (!FilterMatch.matchAnyOf(v.choice('statuses'), [t.status])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('pri'), [t.pri])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('cats'), [t.cat])) return false;
 
-  if (!FilterMatch.matchAnyOf(v.choice('companies'), [ticketCustomerDisplay(t)])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('companies'), [ticketCustomerDisplay(t, lookups)])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), t.assignees)) return false;
   if (!FilterMatch.matchAnyOf(v.choice('products'), [if (t.product != null) t.product!])) return false;
 
@@ -190,7 +202,11 @@ bool ticketMatchesFilters(Ticket t, FilterValues v) {
 /// The Tickets drawer spec, derived from the loaded ticket set.
 final ticketsFilterSpecProvider = Provider<FilterSpec>((ref) {
   final tickets = ref.watch(ticketsProvider).valueOrNull ?? const [];
-  return buildTicketsFilterSpec(tickets);
+  return buildTicketsFilterSpec(
+    tickets,
+    lookups: ref.watch(ticketDirectoryProvider),
+    roster: ref.watch(rosterProvider),
+  );
 });
 
 /// Applied drawer filters for the Tickets list (the source of the badge count).
@@ -206,5 +222,6 @@ final filteredTicketsProvider = Provider<List<Ticket>>((ref) {
   final base = ref.watch(visibleTicketsProvider);
   final filters = ref.watch(ticketFiltersProvider);
   if (filters.isEmpty) return base;
-  return base.where((t) => ticketMatchesFilters(t, filters)).toList();
+  final dir = ref.watch(ticketDirectoryProvider);
+  return base.where((t) => ticketMatchesFilters(t, filters, dir)).toList();
 });

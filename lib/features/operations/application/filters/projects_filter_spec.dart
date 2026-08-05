@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/project.dart';
@@ -14,9 +15,9 @@ import '../providers/projects_providers.dart';
 /// pure [FilterMatch] helpers.
 
 /// Team names present in the roster (excludes the admin's "You").
-List<String> _allTeams() {
+List<String> _allTeams(List<AppUser> roster) {
   final seen = <String>{};
-  for (final u in MockUsers.reps) {
+  for (final u in roster) {
     final t = u.team;
     if (t.isNotEmpty && t != 'You') seen.add(t);
   }
@@ -48,8 +49,11 @@ double projectCostRupees(Project p) {
 DateTime? projectEndDate(Project p) =>
     DateTime.tryParse(p.endISO) ?? opsParseDisplayDate(p.end);
 
-/// Build the Projects drawer spec from the current project set.
-FilterSpec buildProjectsFilterSpec(List<Project> projects) {
+/// Build the Projects drawer spec from the current project set. [roster] supplies
+/// the manager/assignee/team options (real members in API mode, prototype reps
+/// in mock mode); null defaults to the mock reps.
+FilterSpec buildProjectsFilterSpec(List<Project> projects, {List<AppUser>? roster}) {
+  final r = roster ?? MockUsers.reps;
   final types = (projects.map((p) => p.type).where((t) => t.isNotEmpty).toSet().toList()..sort())
       .map((t) => FilterOption(id: t, label: t))
       .toList();
@@ -68,9 +72,9 @@ FilterSpec buildProjectsFilterSpec(List<Project> projects) {
     const FilterOption(id: '__internal', label: 'Internal project'),
     ...companies,
   ];
-  final teams = _allTeams().map((t) => FilterOption(id: t, label: t)).toList();
+  final teams = _allTeams(r).map((t) => FilterOption(id: t, label: t)).toList();
   final users = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in r) FilterOption(id: u.id, label: u.name),
   ];
 
   return FilterSpec(
@@ -208,7 +212,10 @@ bool projectMatchesFilters(Project p, FilterValues v) {
 
 /// The Projects drawer spec, derived from the loaded project catalog.
 final projectsFilterSpecProvider = Provider<FilterSpec>((ref) {
-  return buildProjectsFilterSpec(ref.watch(projectsListProvider));
+  return buildProjectsFilterSpec(
+    ref.watch(projectsListProvider),
+    roster: ref.watch(rosterProvider),
+  );
 });
 
 /// Applied drawer filters for the Projects list (the source of the badge count).

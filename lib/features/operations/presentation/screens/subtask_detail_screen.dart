@@ -6,12 +6,16 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../application/providers/ops_notes_providers.dart';
 import '../../application/providers/ops_subtasks_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
+import '../../domain/entities/ops_task.dart';
 
 /// Subtask detail (#12). Reached by tapping a subtask row inside Task Detail.
 ///
@@ -28,90 +32,94 @@ class SubtaskDetailScreen extends ConsumerWidget {
     final taskId = params['taskId'] ?? '';
     final index = int.tryParse(params['i'] ?? '') ?? -1;
 
+    final tasksAsync = ref.watch(opsTasksProvider);
     final task = ref.watch(opsTaskByIdProvider(taskId));
     final subtasks = ref.watch(opsSubtasksProvider(taskId));
     final valid = index >= 0 && index < subtasks.length;
-
-    if (task == null || !valid) {
-      return Container(
-        color: AppColors.bgScreen,
-        child: Column(
-          children: [
-            _appBar(context, null),
-            const Expanded(child: Center(child: Text('Subtask not found'))),
-          ],
-        ),
-      );
-    }
-
-    final s = subtasks[index];
-    final assignee = MockUsers.of(s.who);
-    final notesKey = 'sub-$taskId#$index';
+    final appBarName = valid ? subtasks[index].title : null;
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          _appBar(context, s.title),
+          _appBar(context, appBarName),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
-              children: [
-                ClozrCard(
-                  radius: 18,
-                  padding: EdgeInsets.all(18.r),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(s.title,
-                          style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                      SizedBox(height: 4.h),
-                      Text('Subtask of ${task.subject}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
-                      SizedBox(height: 16.h),
-                      _doneToggle(context, ref, taskId, index, s.done),
-                      const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 16)),
-                      _metaRow(
-                        icon: PhosphorIconsRegular.user,
-                        label: 'Assignee',
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 26.w,
-                              height: 26.w,
-                              alignment: Alignment.center,
-                              decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                              child: Text(assignee.initials, style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+            child: AsyncStateView<List<OpsTask>>(
+              value: tasksAsync,
+              onRetry: () => ref.invalidate(opsTasksProvider),
+              loading: () => const DetailSkeleton(),
+              data: (_) {
+                if (task == null || !valid) {
+                  return const EmptyState(
+                    icon: PhosphorIconsRegular.listChecks,
+                    title: 'Subtask not found',
+                    body: 'This subtask may have been removed, or its task is no longer available.',
+                  );
+                }
+                final s = subtasks[index];
+                final assignee = MockUsers.of(s.who);
+                final notesKey = 'sub-$taskId#$index';
+
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
+                  children: [
+                    ClozrCard(
+                      radius: 18,
+                      padding: EdgeInsets.all(18.r),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(s.title,
+                              style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                          SizedBox(height: 4.h),
+                          Text('Subtask of ${task.subject}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+                          SizedBox(height: 16.h),
+                          _doneToggle(context, ref, taskId, index, s.done),
+                          const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 16)),
+                          _metaRow(
+                            icon: PhosphorIconsRegular.user,
+                            label: 'Assignee',
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 26.w,
+                                  height: 26.w,
+                                  alignment: Alignment.center,
+                                  decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                                  child: Text(assignee.initials, style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                                ),
+                                SizedBox(width: 8.w),
+                                Text(assignee.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                              ],
                             ),
-                            SizedBox(width: 8.w),
-                            Text(assignee.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                          ],
-                        ),
+                          ),
+                          SizedBox(height: 4.h),
+                          _metaRow(
+                            icon: PhosphorIconsRegular.calendarBlank,
+                            label: 'Due date',
+                            child: Text(s.due.isEmpty ? 'No due date' : s.due,
+                                style: AppText.custom(
+                                    size: 14,
+                                    weight: FontWeight.w700,
+                                    color: s.due.isEmpty ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 4.h),
-                      _metaRow(
-                        icon: PhosphorIconsRegular.calendarBlank,
-                        label: 'Due date',
-                        child: Text(s.due.isEmpty ? 'No due date' : s.due,
-                            style: AppText.custom(
-                                size: 14,
-                                weight: FontWeight.w700,
-                                color: s.due.isEmpty ? AppColors.textPlaceholder : AppColors.textPrimary)),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 14.h),
-                _partOfRow(context, task.subject),
-                NotesThread(
-                  notes: ref.watch(subtaskNotesProvider(notesKey)),
-                  onAddNote: (body, atts) => ref.read(subtaskNotesProvider(notesKey).notifier).addNote(body, atts),
-                  onAddReply: (noteId, body) => ref.read(subtaskNotesProvider(notesKey).notifier).addReply(noteId, body),
-                ),
-              ],
+                    ),
+                    SizedBox(height: 14.h),
+                    _partOfRow(context, task.subject),
+                    NotesThread(
+                      notes: ref.watch(subtaskNotesProvider(notesKey)),
+                      onAddNote: (body, atts) => ref.read(subtaskNotesProvider(notesKey).notifier).addNote(body, atts),
+                      onAddReply: (noteId, body) => ref.read(subtaskNotesProvider(notesKey).notifier).addReply(noteId, body),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],

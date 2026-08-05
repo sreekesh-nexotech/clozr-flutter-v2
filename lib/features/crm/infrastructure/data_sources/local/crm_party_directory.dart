@@ -45,3 +45,9 @@ class CrmPartyDirectory {
   static CrmParty? resolve({String? custId, String? leadId}) =>
       customer(custId) ?? lead(leadId);
 }
+
+/// Resolves a customer/lead reference to a display [CrmParty]. The concrete
+/// implementation is provided by `crmPartyLookupProvider`: the seed directory in
+/// mock mode, the real customers in API mode. Kept as a plain function type so
+/// the pure finance name helpers stay testable without Riverpod.
+typedef CrmPartyLookup = CrmParty? Function({String? custId, String? leadId});

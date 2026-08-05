@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -10,9 +8,13 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
@@ -22,6 +24,7 @@ import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/followup.dart';
+import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
 import 'crm_status_sheet.dart';
 
@@ -55,17 +58,30 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     _notesKey.currentState?.focusComposer();
   }
 
-  /// Records a status change for an existing follow-up so the detail + list
-  /// reflect it immediately (see `followupStatusOverrideProvider`).
-  void _setStatus(WidgetRef ref, String id, String status) {
-    final overrides = ref.read(followupStatusOverrideProvider);
-    ref.read(followupStatusOverrideProvider.notifier).state = {...overrides, id: status};
+  /// Records a status change for an existing follow-up, applying an optimistic
+  /// override so the detail + list reflect it immediately. In API mode the write
+  /// is awaited: on failure the override is rolled back to its prior value and
+  /// the error is surfaced; [successMessage] is toasted only after the write
+  /// lands. Mock mode is unchanged (optimistic + success toast).
+  Future<void> _setStatus(WidgetRef ref, String id, String status, String successMessage) async {
+    final prev = ref.read(followupStatusOverrideProvider);
+    ref.read(followupStatusOverrideProvider.notifier).state = {...prev, id: status};
     if (ApiConfig.apiEnabled) {
-      unawaited(ref
-          .read(followupsRepositoryProvider)
-          .setFollowupDone(id, status == 'done')
-          .catchError((_) {}));
+      try {
+        await ref.read(followupsRepositoryProvider).setFollowupDone(id, status == 'done');
+      } on AppError catch (e) {
+        final rolled = {...ref.read(followupStatusOverrideProvider)};
+        if (prev.containsKey(id)) {
+          rolled[id] = prev[id]!;
+        } else {
+          rolled.remove(id);
+        }
+        ref.read(followupStatusOverrideProvider.notifier).state = rolled;
+        ref.read(toastProvider.notifier).show(e.message);
+        return;
+      }
     }
+    ref.read(toastProvider.notifier).show(successMessage);
   }
 
   void _openFollowupMenu(Followup fu) {
@@ -81,21 +97,39 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final fu = ref.watch(followupByIdProvider(id));
-
-    if (fu == null) {
-      return Container(
+  /// Wraps a loading / error / not-found state under the section app bar so the
+  /// back control stays available in every state.
+  Widget _stateScaffold(Widget child) => Container(
         color: AppColors.bgDetail,
         child: Column(
           children: [
             DetailAppBar(section: 'Follow-up', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Follow-up not found'))),
+            Expanded(child: child),
           ],
         ),
       );
+
+  @override
+  Widget build(BuildContext context) {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final async = ref.watch(followupsProvider);
+    return async.when(
+      loading: () => _stateScaffold(const DetailSkeleton()),
+      error: (e, _) => _stateScaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(followupsProvider)),
+      ),
+      data: (_) => _buildFollowup(context, id),
+    );
+  }
+
+  Widget _buildFollowup(BuildContext context, String id) {
+    final fu = ref.watch(followupByIdProvider(id));
+    if (fu == null) {
+      return _stateScaffold(const EmptyState(
+        icon: PhosphorIconsRegular.clock,
+        title: 'Follow-up not found',
+        body: 'This follow-up may have been removed or you no longer have access to it.',
+      ));
     }
 
     final meta = StatusMeta$.followup[fu.status] ?? StatusMeta$.followup['due']!;
@@ -219,10 +253,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               options: const ['overdue', 'due', 'done'],
               meta: StatusMeta$.followup,
               current: fu.status,
-              onSelect: (k) {
-                _setStatus(ref, fu.id, k);
-                ref.read(toastProvider.notifier).show('Status set to ${StatusMeta$.followup[k]!.label}');
-              },
+              onSelect: (k) => _setStatus(ref, fu.id, k, 'Status set to ${StatusMeta$.followup[k]!.label}'),
             ),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
@@ -389,10 +420,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           SizedBox(width: 10.w),
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                _setStatus(ref, fu.id, done ? 'due' : 'done');
-                ref.read(toastProvider.notifier).show(done ? 'Follow-up reopened' : 'Follow-up marked done');
-              },
+              onTap: () => _setStatus(ref, fu.id, done ? 'due' : 'done', done ? 'Follow-up reopened' : 'Follow-up marked done'),
               child: Container(
                 height: 48.h,
                 alignment: Alignment.center,

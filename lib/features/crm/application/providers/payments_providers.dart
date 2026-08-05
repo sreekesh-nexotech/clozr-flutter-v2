@@ -12,6 +12,7 @@ import '../../infrastructure/data_sources/remote/payments_remote_ds.dart';
 import '../../infrastructure/repositories/payments_api_repository.dart';
 import '../../infrastructure/repositories/payments_repository_impl.dart';
 import '../filters/payments_filter_spec.dart';
+import 'crm_party_providers.dart';
 
 /// DI seam: mock-backed without a base URL, API-backed otherwise.
 final paymentsRepositoryProvider = Provider<PaymentsRepository>((ref) {
@@ -72,18 +73,25 @@ final paymentByIdProvider = Provider.family<Payment?, String>((ref, id) {
   return null;
 });
 
-/// All payments belonging to an invoice (invoice detail schedule).
+/// All payments belonging to an invoice (invoice detail schedule). Reads the
+/// merged [allPaymentsProvider] (seed + session additions + "settle" overrides)
+/// so an optimistic settle shows on the schedule immediately.
 final paymentsForInvoiceProvider = Provider.family<List<Payment>, String>((ref, invId) {
-  final payments = ref.watch(paymentsProvider).valueOrNull ?? const [];
+  final payments = ref.watch(allPaymentsProvider);
   return payments.where((p) => p.invId == invId).toList();
 });
 
-/// Customer/lead one-liner (company or name) for a payment.
-String paymentTitle(Payment p) =>
-    CrmPartyDirectory.customer(p.custId)?.company ??
-    CrmPartyDirectory.customer(p.custId)?.name ??
-    p.custId ??
-    '—';
+/// Customer/lead one-liner (company or name) for a payment, resolved via
+/// [lookup] (real customers in API mode, the seed directory in mock mode). Falls
+/// back to the raw `custId` / em-dash when the party is unknown.
+String paymentTitle(Payment p, CrmPartyLookup lookup) {
+  final party = lookup(custId: p.custId);
+  final company = party?.company;
+  if (company != null && company.isNotEmpty) return company;
+  final name = party?.name;
+  if (name != null && name.isNotEmpty) return name;
+  return p.custId ?? '—';
+}
 
 /// The prototype's `PAYMETHOD` icon map.
 IconData payMethodIcon(String method) {
@@ -129,13 +137,14 @@ final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
   final tab = ref.watch(payTabProvider);
   final filters = ref.watch(paymentFiltersProvider);
   final q = ref.watch(paySearchProvider).trim().toLowerCase();
+  final lookup = ref.watch(crmPartyLookupProvider);
 
   Iterable<Payment> out = payments;
   if (tab != 'all') out = out.where((x) => x.status == tab);
   if (!filters.isEmpty) out = out.where((x) => paymentMatchesFilters(x, filters));
   if (q.isNotEmpty) {
     out = out.where((x) =>
-        ('${x.id} ${paymentTitle(x)} ${x.invId ?? ''}').toLowerCase().contains(q));
+        ('${x.id} ${paymentTitle(x, lookup)} ${x.invId ?? ''}').toLowerCase().contains(q));
   }
   return out.toList();
 });

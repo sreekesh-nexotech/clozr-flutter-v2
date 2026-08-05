@@ -59,15 +59,22 @@ class DashDonut extends StatelessWidget {
                     sectionsSpace: 0,
                     centerSpaceRadius: 40.r,
                     startDegreeOffset: -90,
-                    sections: [
-                      for (final p in visible)
-                        PieChartSectionData(
-                          value: p.count.toDouble(),
-                          color: p.color,
-                          radius: 24.r,
-                          showTitle: false,
-                        ),
-                    ],
+                    // No data (e.g. an empty API section) → a plain grey ring
+                    // rather than feeding fl_chart an empty sections list.
+                    sections: visible.isEmpty
+                        ? [
+                            PieChartSectionData(
+                                value: 1, color: DashColors.track, radius: 24.r, showTitle: false),
+                          ]
+                        : [
+                            for (final p in visible)
+                              PieChartSectionData(
+                                value: p.count.toDouble(),
+                                color: p.color,
+                                radius: 24.r,
+                                showTitle: false,
+                              ),
+                          ],
                   )),
                 ),
               ],

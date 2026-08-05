@@ -6,6 +6,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../application/providers/lms_providers.dart';
 import '../../domain/entities/course.dart';
 import '../components/lms_course_card.dart';
@@ -51,6 +53,10 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
   Widget build(BuildContext context) {
     final courses = ref.watch(lmsCoursesProvider);
     final records = ref.watch(lmsRecordsProvider);
+    final load = lmsCombine([
+      ref.watch(lmsCoursesControllerProvider),
+      ref.watch(lmsRecordsControllerProvider),
+    ]);
     final status = ref.watch(lmsCourseStatusProvider);
     final query = ref.watch(lmsCourseSearchProvider).trim().toLowerCase();
 
@@ -97,7 +103,11 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
             ),
           ),
           Expanded(
-            child: rows.isEmpty
+            child: load.loading
+                ? const ListSkeleton()
+                : load.error != null
+                    ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
+                    : rows.isEmpty
                 ? ListView(
                     padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
                     children: [_empty()],

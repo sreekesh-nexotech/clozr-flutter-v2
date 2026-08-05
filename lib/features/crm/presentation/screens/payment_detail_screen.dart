@@ -8,14 +8,19 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../../domain/entities/payment.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
+import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
 
 /// Payment detail — header (amount + status + optional "Mark as paid"), related
@@ -26,23 +31,46 @@ class PaymentDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final payment = ref.watch(paymentByIdProvider(id));
+    final async = ref.watch(paymentsProvider);
 
+    Widget scaffold(Widget child) => Container(
+          color: AppColors.bgDetail,
+          child: Column(
+            children: [
+              DetailAppBar(section: 'Payment', onBack: () => context.pop()),
+              Expanded(child: child),
+            ],
+          ),
+        );
+
+    return async.when(
+      loading: () => scaffold(const DetailSkeleton()),
+      error: (e, _) => scaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(paymentsProvider)),
+      ),
+      data: (_) => _buildPayment(context, ref, id, scaffold),
+    );
+  }
+
+  Widget _buildPayment(
+    BuildContext context,
+    WidgetRef ref,
+    String id,
+    Widget Function(Widget) scaffold,
+  ) {
+    final payment = ref.watch(paymentByIdProvider(id));
     if (payment == null) {
-      return Container(
-        color: AppColors.bgDetail,
-        child: Column(
-          children: [
-            DetailAppBar(section: 'Payment', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Payment not found'))),
-          ],
-        ),
-      );
+      return scaffold(const EmptyState(
+        icon: PhosphorIconsRegular.wallet,
+        title: 'Payment not found',
+        body: 'This payment may have been removed or you no longer have access to it.',
+      ));
     }
 
+    final lookup = ref.watch(crmPartyLookupProvider);
     final meta = StatusMeta$.payment[payment.status] ?? StatusMeta$.payment['due']!;
     final owner = MockUsers.of(payment.owner);
-    final cust = CrmPartyDirectory.customer(payment.custId);
+    final cust = lookup(custId: payment.custId);
     final linkedInvoice = payment.invId == null ? null : ref.watch(invoiceByIdProvider(payment.invId!));
     final canMarkPaid = payment.status != 'paid';
 
@@ -52,7 +80,7 @@ class PaymentDetailScreen extends ConsumerWidget {
         children: [
           DetailAppBar(
             section: 'Payment',
-            name: paymentTitle(payment),
+            name: paymentTitle(payment, lookup),
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
@@ -87,6 +115,7 @@ class PaymentDetailScreen extends ConsumerWidget {
   }
 
   Widget _headerCard(WidgetRef ref, Payment payment, StatusMeta meta, bool canMarkPaid) {
+    final lookup = ref.watch(crmPartyLookupProvider);
     return FinanceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,7 +138,7 @@ class PaymentDetailScreen extends ConsumerWidget {
                       ],
                     ),
                     SizedBox(height: 3.h),
-                    Text(paymentTitle(payment),
+                    Text(paymentTitle(payment, lookup),
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
                     SizedBox(height: 3.h),
                     Text('${payment.id} · ${payment.label}',

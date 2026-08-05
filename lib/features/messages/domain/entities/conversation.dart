@@ -9,16 +9,33 @@ class ChatMessage extends Equatable {
     required this.time,
     this.status = '',
     this.tpl = false,
+    this.localId,
   });
 
   final bool mine; // true = sent by me (right, blue bubble)
   final String text;
   final String time;
-  final String status; // 'read' | 'sent' | '' (only meaningful when mine)
+  final String status; // 'read' | 'sent' | 'failed' | '' (only meaningful when mine)
   final bool tpl; // approved WhatsApp template message
 
+  /// Client-side id for optimistic outgoing bubbles, so the send result can be
+  /// reconciled back onto the exact bubble (mark sent/failed, retry). Null for
+  /// fetched/incoming messages.
+  final String? localId;
+
+  bool get failed => status == 'failed';
+
+  ChatMessage copyWith({String? status}) => ChatMessage(
+        mine: mine,
+        text: text,
+        time: time,
+        status: status ?? this.status,
+        tpl: tpl,
+        localId: localId,
+      );
+
   @override
-  List<Object?> get props => [mine, text, time, status, tpl];
+  List<Object?> get props => [mine, text, time, status, tpl, localId];
 }
 
 /// A shared file in the conversation's "Medias" tab.

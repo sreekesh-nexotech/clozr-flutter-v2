@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../data/mock/mock_users.dart';
+import '../../../../data/api/roster.dart';
 
 /// A field label (`12/600` muted) with an optional required asterisk. Shared by
 /// the create and edit ticket forms.
@@ -131,19 +132,20 @@ class TicketChipWrap extends StatelessWidget {
   }
 }
 
-/// A wrapping row of multi-select assignee chips (avatar + first name).
-class TicketAssigneeWrap extends StatelessWidget {
+/// A wrapping row of multi-select assignee chips (avatar + first name). Reads
+/// the workspace roster so API mode offers real members, mock mode the reps.
+class TicketAssigneeWrap extends ConsumerWidget {
   const TicketAssigneeWrap({super.key, required this.selected, required this.onToggle});
   final Set<String> selected;
   final ValueChanged<String> onToggle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Wrap(
       spacing: 8.w,
       runSpacing: 8.h,
       children: [
-        for (final r in MockUsers.reps)
+        for (final r in ref.watch(rosterProvider))
           GestureDetector(
             onTap: () => onToggle(r.id),
             child: Container(

@@ -1,4 +1,8 @@
 import 'package:flutter/widgets.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+
+import '../../../../app/router/routes.dart';
+import 'dash_colors.dart';
 
 /// Immutable value types for the manager/admin dashboard panels. These mirror
 /// the prototype's dashboard view-models (`dmKpis`, `moKpis`, `mhKpis`, …) so
@@ -311,4 +315,115 @@ class DashboardData {
     required this.helpRoster,
     required this.teamOptions,
   });
+
+  /// A neutral, **data-free** bundle: the API-mode base and per-section
+  /// fallback that replaces the mock bundle. It carries only design-token
+  /// *chrome* — KPI card icons/accents/backgrounds/labels/routes, the fixed
+  /// units and static captions, and the always-present "All teams" scope — with
+  /// every figure zeroed, every list empty and every sparkline dropped.
+  ///
+  /// This is what makes API mode honest: a section the backend didn't supply
+  /// (a failed or forbidden call) stays visibly empty instead of falling back
+  /// to fabricated mock numbers. A genuinely empty org renders these same zeros.
+  factory DashboardData.empty() {
+    DashKpi kpi({
+      required IconData icon,
+      required Color accent,
+      required Color iconBg,
+      required String label,
+      required String route,
+      String unit = '',
+      String sub = '',
+    }) =>
+        DashKpi(
+          icon: icon,
+          accent: accent,
+          iconBg: iconBg,
+          value: '0',
+          unit: unit,
+          label: label,
+          sub: sub,
+          trendPositive: true,
+          trend: '',
+          arrow: DashTrendArrow.flat,
+          route: route,
+        );
+
+    DashAttentionCard attn(String label, String route) => DashAttentionCard(
+          value: '0',
+          label: label,
+          delta: '',
+          arrow: DashTrendArrow.flat,
+          positive: false,
+          neutral: true,
+          note: '',
+          noteColor: DashColors.textMid,
+          route: route,
+        );
+
+    const emptyTrend = DashTrend(seriesA: [], seriesB: [], min: 0, max: 1, axisLabels: []);
+
+    return DashboardData(
+      // ── Business / admin ──
+      adminKpis: [
+        kpi(icon: PhosphorIconsFill.trendUp, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Sales pipeline', sub: 'Pipeline value, all stages', route: Routes.leads),
+        kpi(icon: PhosphorIconsFill.wallet, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Payments collected', route: Routes.payments),
+        kpi(icon: PhosphorIconsFill.warningCircle, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Overdue receivables', route: Routes.payments),
+        kpi(icon: PhosphorIconsFill.ticket, accent: DashColors.amber, iconBg: DashColors.tintAmber, label: 'Open tickets', sub: 'Across all priorities', route: Routes.tickets),
+      ],
+      receivablesTotal: '₹0',
+      receivablesSub: '',
+      overdueTotal: 'Overdue · ₹0',
+      upcomingTotal: 'Upcoming · ₹0',
+      aging: const [],
+      upcoming: const [],
+      outstanding: const [],
+      outstandingTotal: '₹0',
+      topCustomers: const [],
+      // ── CRM ──
+      crmKpis: [
+        kpi(icon: PhosphorIconsFill.userPlus, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'New leads', sub: 'This week, all sources', route: Routes.leads),
+        kpi(icon: PhosphorIconsFill.target, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Win rate', unit: '%', sub: 'Won / qualified ratio', route: Routes.leads),
+        kpi(icon: PhosphorIconsFill.clockCountdown, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'First to response', unit: 'minutes', sub: 'Initial engagement time', route: Routes.followups),
+        kpi(icon: PhosphorIconsFill.fileText, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Quote acceptance', unit: '%', sub: 'Conversion rate', route: Routes.quotes),
+      ],
+      crmFunnel: const [],
+      crmInflow: emptyTrend,
+      crmAttention: [
+        attn('Payments missed', Routes.payments),
+        attn('Followups missed', Routes.followups),
+        attn('Tasks missed', Routes.tasks),
+        attn('Lost after quote', Routes.leads),
+      ],
+      crmSources: const [],
+      crmStuck: const {'stale': [], 'quotes': [], 'payments': [], 'wonnc': []},
+      crmEmployees: const [],
+      // ── Operations ──
+      opsKpis: [
+        kpi(icon: PhosphorIconsFill.briefcase, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Active Projects', sub: 'In delivery right now', route: Routes.opsProjects),
+        kpi(icon: PhosphorIconsFill.flag, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Projects Overdue', sub: 'Past their end date', route: Routes.opsProjects),
+        kpi(icon: PhosphorIconsFill.listChecks, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Tasks Overdue', sub: 'Across all projects', route: Routes.opsTasks),
+        kpi(icon: PhosphorIconsFill.clock, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Avg Project Cycle', unit: 'days', sub: 'Start to handover', route: Routes.opsProjects),
+      ],
+      opsStatus: const [],
+      opsOverdue: const [],
+      opsProjects: const [],
+      opsRoster: const [],
+      // ── Helpdesk ──
+      helpKpis: [
+        kpi(icon: PhosphorIconsFill.ticket, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Open Tickets', sub: 'New, open & pending', route: Routes.tickets),
+        kpi(icon: PhosphorIconsFill.warningCircle, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'SLA Breaches', sub: 'Response or resolution', route: Routes.tickets),
+        kpi(icon: PhosphorIconsFill.timer, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Avg Resolution', unit: 'hours', sub: 'Median, this period', route: Routes.tickets),
+        kpi(icon: PhosphorIconsFill.lightning, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'First Response', unit: 'min', sub: 'Median, this period', route: Routes.tickets),
+      ],
+      helpCategories: const [],
+      helpSla: const [],
+      helpPriority: const [],
+      helpAttention: const [],
+      helpFlow: emptyTrend,
+      helpRoster: const [],
+      // ── Scope ──
+      teamOptions: const [DashTeamOption('all', 'All teams', '')],
+    );
+  }
 }

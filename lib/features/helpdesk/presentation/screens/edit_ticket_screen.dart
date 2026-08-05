@@ -11,7 +11,6 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/tickets_providers.dart';
-import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../components/ticket_form_fields.dart';
 import '../util/ticket_sla.dart';
 
@@ -76,7 +75,8 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
   @override
   Widget build(BuildContext context) {
     if (!_prefilled) _prefill();
-    final cust = TicketDirectory.customer(_custId);
+    final dir = ref.watch(ticketDirectoryProvider);
+    final cust = dir.customer(_custId);
 
     return PopScope(
       canPop: !_dirty,
@@ -179,7 +179,7 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
                   TicketFieldLabel('Related project'),
                   SizedBox(height: 7.h),
                   TicketPickerRow(
-                    label: TicketDirectory.project(_projId)?.name ?? 'No project linked',
+                    label: dir.project(_projId)?.name ?? 'No project linked',
                     placeholder: _projId == null,
                     icon: PhosphorIconsBold.caretRight,
                     onTap: () => ref.read(toastProvider.notifier).show('Project picker'),
@@ -407,7 +407,7 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
                 shrinkWrap: true,
                 padding: EdgeInsets.symmetric(horizontal: 18.w),
                 children: [
-                  for (final c in TicketDirectory.customers.values)
+                  for (final c in ref.read(ticketDirectoryProvider).customers.values)
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {

@@ -8,6 +8,9 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -33,6 +36,10 @@ class LmsCourseDetailScreen extends ConsumerWidget {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     final course = ref.watch(lmsCourseByIdProvider(id));
     final records = ref.watch(lmsRecordsProvider);
+    final load = lmsCombine([
+      ref.watch(lmsCoursesControllerProvider),
+      ref.watch(lmsRecordsControllerProvider),
+    ]);
 
     if (course == null) {
       return Container(
@@ -40,7 +47,17 @@ class LmsCourseDetailScreen extends ConsumerWidget {
         child: Column(
           children: [
             LmsHeader(onBack: () => lmsBack(context), title: Text('Course', style: AppText.h1())),
-            const Expanded(child: Center(child: Text('Course not found'))),
+            Expanded(
+              child: load.loading
+                  ? const DetailSkeleton()
+                  : load.error != null
+                      ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
+                      : const EmptyState(
+                          icon: PhosphorIconsRegular.bookOpenText,
+                          title: 'Course not found',
+                          body: 'This course may have been removed or is no longer available to you.',
+                        ),
+            ),
           ],
         ),
       );

@@ -1,13 +1,12 @@
 import '../../../../core/network/app_error.dart';
 import '../../domain/entities/reward.dart';
 import '../../domain/repositories/rewards_repository.dart';
-import '../data_sources/local/rewards_mock_ds.dart';
 import '../data_sources/remote/rewards_remote_ds.dart';
 
 /// API-backed [RewardsRepository].
 ///
 /// Caching is intentionally skipped for this slice (no dedicated AppCache box
-/// exists; the load-then-notify provider keeps its mock seed on failure).
+/// exists; the load-then-notify provider surfaces an error phase on failure).
 /// Grants are a best-effort enrichment: visibility rules can 403 the
 /// `/milestones/rewards/` list without sinking the whole bundle.
 class RewardsApiRepository implements RewardsRepository {
@@ -17,9 +16,10 @@ class RewardsApiRepository implements RewardsRepository {
 
   @override
   Future<RewardsData> getRewards() async {
-    // The mock bundle is the enrichment base: every field the two milestone
-    // endpoints cannot provide keeps its mock default (see remote DS).
-    final base = const RewardsMockDataSource().fetch();
+    // The enrichment base is an EMPTY bundle (never the mock): every field the
+    // two milestone endpoints cannot provide stays honestly empty (audit
+    // L-3 / M2), so no mock data can leak into API mode.
+    final base = RewardsData.empty();
     final progressRows = await _remote.fetchProgressRows();
     List<Map<String, dynamic>> grantRows = const [];
     try {

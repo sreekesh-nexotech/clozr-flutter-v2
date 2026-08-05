@@ -8,13 +8,18 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/quotes_providers.dart';
 import '../../domain/entities/quote.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
+import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
 import '../components/status_sheet.dart';
 
@@ -26,24 +31,47 @@ class QuoteDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final quote = ref.watch(quoteByIdProvider(id));
+    final async = ref.watch(quotesProvider);
 
+    Widget scaffold(Widget child) => Container(
+          color: AppColors.bgDetail,
+          child: Column(
+            children: [
+              DetailAppBar(section: 'Quote', onBack: () => context.pop()),
+              Expanded(child: child),
+            ],
+          ),
+        );
+
+    return async.when(
+      loading: () => scaffold(const DetailSkeleton()),
+      error: (e, _) => scaffold(
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(quotesProvider)),
+      ),
+      data: (_) => _buildQuote(context, ref, id, scaffold),
+    );
+  }
+
+  Widget _buildQuote(
+    BuildContext context,
+    WidgetRef ref,
+    String id,
+    Widget Function(Widget) scaffold,
+  ) {
+    final quote = ref.watch(quoteByIdProvider(id));
     if (quote == null) {
-      return Container(
-        color: AppColors.bgDetail,
-        child: Column(
-          children: [
-            DetailAppBar(section: 'Quote', onBack: () => context.pop()),
-            const Expanded(child: Center(child: Text('Quote not found'))),
-          ],
-        ),
-      );
+      return scaffold(const EmptyState(
+        icon: PhosphorIconsRegular.fileText,
+        title: 'Quote not found',
+        body: 'This quote may have been removed or you no longer have access to it.',
+      ));
     }
 
+    final lookup = ref.watch(crmPartyLookupProvider);
     final meta = StatusMeta$.quote[quote.status] ?? StatusMeta$.quote['draft']!;
     final owner = MockUsers.of(quote.owner);
-    final party = CrmPartyDirectory.resolve(custId: quote.custId, leadId: quote.leadId);
-    final isCust = quote.custId != null && CrmPartyDirectory.customer(quote.custId) != null;
+    final party = lookup(custId: quote.custId, leadId: quote.leadId);
+    final isCust = quote.custId != null && lookup(custId: quote.custId) != null;
     final canAccept = quote.status == 'sent' || quote.status == 'draft';
 
     return Container(
@@ -52,7 +80,7 @@ class QuoteDetailScreen extends ConsumerWidget {
         children: [
           DetailAppBar(
             section: 'Quote',
-            name: quoteWho(quote),
+            name: quoteWho(quote, lookup),
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
@@ -113,6 +141,7 @@ class QuoteDetailScreen extends ConsumerWidget {
   }
 
   Widget _headerCard(BuildContext context, WidgetRef ref, Quote quote, StatusMeta meta, bool canAccept) {
+    final lookup = ref.watch(crmPartyLookupProvider);
     final issued = quote.issued == '—' ? 'Not issued yet' : 'Issued ${quote.issued}';
     final validity = quote.valid == '—' ? 'no validity set' : 'valid till ${quote.valid}';
 
@@ -138,7 +167,7 @@ class QuoteDetailScreen extends ConsumerWidget {
                       ],
                     ),
                     SizedBox(height: 3.h),
-                    Text(quoteWho(quote),
+                    Text(quoteWho(quote, lookup),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),

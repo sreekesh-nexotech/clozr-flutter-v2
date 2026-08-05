@@ -9,6 +9,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -19,6 +20,8 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/payments_filter_spec.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
+import '../../domain/entities/invoice.dart';
+import '../../domain/entities/payment.dart';
 import '../components/invoice_card.dart';
 import '../components/mode_toggle.dart';
 import '../components/payment_card.dart';
@@ -204,57 +207,71 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   }
 
   Widget _paymentsList(BuildContext context, WidgetRef ref) {
-    final visible = ref.watch(visiblePaymentsProvider);
-    if (visible.isEmpty) {
-      return ListView(
-        children: [
-          EmptyState(
-            icon: PhosphorIconsRegular.wallet,
-            title: 'No payments found',
-            body: 'Try a different status, clear filters, or record a payment.',
-            ctaLabel: 'Record payment',
-            ctaIcon: PhosphorIconsBold.plus,
-            onCta: () => showRecordPaymentSheet(context),
-          ),
-        ],
-      );
-    }
-    return ListView.separated(
-      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-      itemCount: visible.length,
-      separatorBuilder: (_, __) => SizedBox(height: 10.h),
-      itemBuilder: (context, i) {
-        final payment = visible[i];
-        return PaymentCard(
-          payment: payment,
-          onTap: () => context.push('${Routes.paymentDetail}?id=${payment.id}'),
+    final async = ref.watch(paymentsProvider);
+    return AsyncStateView<List<Payment>>(
+      value: async,
+      onRetry: () => ref.invalidate(paymentsProvider),
+      data: (_) {
+        final visible = ref.watch(visiblePaymentsProvider);
+        if (visible.isEmpty) {
+          return ListView(
+            children: [
+              EmptyState(
+                icon: PhosphorIconsRegular.wallet,
+                title: 'No payments found',
+                body: 'Try a different status, clear filters, or record a payment.',
+                ctaLabel: 'Record payment',
+                ctaIcon: PhosphorIconsBold.plus,
+                onCta: () => showRecordPaymentSheet(context),
+              ),
+            ],
+          );
+        }
+        return ListView.separated(
+          padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+          itemCount: visible.length,
+          separatorBuilder: (_, __) => SizedBox(height: 10.h),
+          itemBuilder: (context, i) {
+            final payment = visible[i];
+            return PaymentCard(
+              payment: payment,
+              onTap: () => context.push('${Routes.paymentDetail}?id=${payment.id}'),
+            );
+          },
         );
       },
     );
   }
 
   Widget _invoicesList(BuildContext context, WidgetRef ref) {
-    final visible = ref.watch(visibleInvoicesProvider);
-    return ListView(
-      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-      children: [
-        _invoiceBanner(),
-        SizedBox(height: 10.h),
-        if (visible.isEmpty)
-          const EmptyState(
-            icon: PhosphorIconsRegular.receipt,
-            title: 'No invoices found',
-            body: 'Try a different status or clear filters.',
-          )
-        else
-          for (int i = 0; i < visible.length; i++) ...[
-            if (i > 0) SizedBox(height: 10.h),
-            InvoiceCard(
-              invoice: visible[i],
-              onTap: () => context.push('${Routes.invoiceDetail}?id=${visible[i].id}'),
-            ),
+    final async = ref.watch(invoicesProvider);
+    return AsyncStateView<List<Invoice>>(
+      value: async,
+      onRetry: () => ref.invalidate(invoicesProvider),
+      data: (_) {
+        final visible = ref.watch(visibleInvoicesProvider);
+        return ListView(
+          padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+          children: [
+            _invoiceBanner(),
+            SizedBox(height: 10.h),
+            if (visible.isEmpty)
+              const EmptyState(
+                icon: PhosphorIconsRegular.receipt,
+                title: 'No invoices found',
+                body: 'Try a different status or clear filters.',
+              )
+            else
+              for (int i = 0; i < visible.length; i++) ...[
+                if (i > 0) SizedBox(height: 10.h),
+                InvoiceCard(
+                  invoice: visible[i],
+                  onTap: () => context.push('${Routes.invoiceDetail}?id=${visible[i].id}'),
+                ),
+              ],
           ],
-      ],
+        );
+      },
     );
   }
 

@@ -10,9 +10,12 @@ import '../messages_tokens.dart';
 /// optional TEMPLATE badge and, for outgoing messages, read/sent ticks.
 /// Mirrors design lines 5780–5789.
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({super.key, required this.message, this.onRetry});
 
   final ChatMessage message;
+
+  /// Tapped when an outgoing bubble that the server rejected offers a retry.
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -54,21 +57,41 @@ class MessageBubble extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(m.time,
-                          style: AppText.custom(size: 10, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                      if (m.mine) ...[
-                        SizedBox(width: 4.w),
-                        Icon(PhosphorIconsRegular.checks,
-                            size: 13.sp,
-                            color: m.status == 'read' ? AppColors.blueBright : AppColors.textPlaceholder),
-                      ],
-                    ],
+                    children: m.mine && m.failed
+                        ? [_failedAffordance()]
+                        : [
+                            Text(m.time,
+                                style: AppText.custom(size: 10, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                            if (m.mine) ...[
+                              SizedBox(width: 4.w),
+                              Icon(PhosphorIconsRegular.checks,
+                                  size: 13.sp,
+                                  color: m.status == 'read' ? AppColors.blueBright : AppColors.textPlaceholder),
+                            ],
+                          ],
                   ),
                 ],
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Failed-send affordance: a red "Not delivered · Retry" the user can tap to
+  /// re-fire the message (honest about a server rejection — audit M3).
+  Widget _failedAffordance() {
+    return GestureDetector(
+      onTap: onRetry,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIconsFill.warningCircle, size: 12.sp, color: AppColors.error),
+          SizedBox(width: 4.w),
+          Text('Not delivered · Retry',
+              style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.error)),
         ],
       ),
     );

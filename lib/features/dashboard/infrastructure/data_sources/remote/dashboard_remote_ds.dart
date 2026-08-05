@@ -17,7 +17,9 @@ import '../../../domain/entities/dashboard_models.dart';
 /// Resilience contract: each call is individually caught — a 403 (no
 /// `view_dashboard` permission, or `scope=admin` without an admin role) or any
 /// other failure nulls just that section, and [mapDashboard] then falls back to
-/// the seeded mock value per section/field. A `scope=admin` 403 is retried once
+/// the [base] value per section/field. In production [base] is
+/// [DashboardData.empty] (zeros/empties — never fabricated figures), so an
+/// unsupplied section stays honestly empty. A `scope=admin` 403 is retried once
 /// with `scope=own` before giving up. Mapping is static so tests feed fixture
 /// maps without an HTTP stack.
 class DashboardRemoteDataSource {
@@ -53,16 +55,23 @@ class DashboardRemoteDataSource {
   static const kIssueEmployees = 'issue_employees';
 
   /// Fetches every dashboard section concurrently. Values are the decoded JSON
-  /// bodies, or null when that call failed — never throws.
+  /// bodies, or null when that call failed — never throws. Any [AppError]s
+  /// caught along the way are appended to [errors] (when supplied) so the
+  /// repository can surface a representative failure when *every* call failed.
   Future<Map<String, Object?>> fetchSections({
     String period = 'month',
     String? teamId,
+    List<AppError>? errors,
   }) async {
     // 'all' is the org-wide sentinel and 'individual' is not a team uuid —
     // both mean "no team filter" for the widget endpoints.
     final team = (teamId == null || teamId.isEmpty || teamId == 'all' || teamId == 'individual')
         ? null
         : teamId;
+
+    void note(Object err) {
+      if (errors != null && err is AppError) errors.add(err);
+    }
 
     Future<Object?> call(String path, [Map<String, dynamic>? extra]) async {
       Map<String, dynamic> query(String scope) => {
@@ -79,12 +88,15 @@ class DashboardRemoteDataSource {
           // non-admin with dashboard permission still sees their slice.
           try {
             return await _api.get(path, query: query('own'));
-          } on Object {
+          } on Object catch (e2) {
+            note(e2);
             return null;
           }
         }
+        note(e);
         return null;
-      } on Object {
+      } on Object catch (e) {
+        note(e);
         return null;
       }
     }
@@ -139,7 +151,9 @@ class DashboardRemoteDataSource {
   // ── mapping (static, visible for tests) ──
 
   /// Builds a full [DashboardData] from the raw section bundle, taking [base]
-  /// (the seeded mock bundle) for every section/field a call failed to supply.
+  /// for every section/field a call failed to supply. In production [base] is
+  /// [DashboardData.empty] so an unsupplied section stays empty (never mock);
+  /// spark/figures are only ever those the API supplied.
   static DashboardData mapDashboard(Map<String, Object?> raw, DashboardData base) {
     final receivables = _receivables(raw[kReceivables], base);
     return DashboardData(

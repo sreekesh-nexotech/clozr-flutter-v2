@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
@@ -33,7 +34,8 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tickets = ref.watch(ticketsProvider).valueOrNull ?? const [];
+    final ticketsAsync = ref.watch(ticketsProvider);
+    final tickets = ticketsAsync.valueOrNull ?? const [];
     final expanded = ref.watch(boardExpandedProvider);
 
     final buckets = <String, List<Ticket>>{'breached': [], 'lt1h': [], 'today': [], 'ontrack': []};
@@ -53,17 +55,21 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       children: [
         _header(open, buckets, closedToday),
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(2.w, 2.h, 2.w, 10.h),
-                child: Text('SLA WATCH',
-                    style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.8)),
-              ),
-              for (final (key, name) in _sections)
-                _sectionCard(key, name, buckets[key]!, expanded[key] ?? false),
-            ],
+          child: AsyncStateView<List<Ticket>>(
+            value: ticketsAsync,
+            onRetry: () => ref.invalidate(ticketsProvider),
+            data: (_) => ListView(
+              padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(2.w, 2.h, 2.w, 10.h),
+                  child: Text('SLA WATCH',
+                      style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.8)),
+                ),
+                for (final (key, name) in _sections)
+                  _sectionCard(key, name, buckets[key]!, expanded[key] ?? false),
+              ],
+            ),
           ),
         ),
       ],

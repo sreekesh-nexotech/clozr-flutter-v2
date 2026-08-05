@@ -6,6 +6,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/lms_providers.dart';
 import '../../domain/entities/course.dart';
@@ -34,13 +37,13 @@ class _LmsPlayerScreenState extends ConsumerState<LmsPlayerScreen> {
 
   void _togglePlay(String courseId, CourseProgress entry, int idx) {
     if (!_playing && (idx < entry.mods.length ? entry.mods[idx] : 0) < 35) {
-      ref.read(lmsRecordsProvider.notifier).setModule('me', courseId, idx, 35);
+      ref.read(lmsRecordsControllerProvider.notifier).setModule('me', courseId, idx, 35);
     }
     setState(() => _playing = !_playing);
   }
 
   void _markDone(String courseId, int idx) {
-    ref.read(lmsRecordsProvider.notifier).setModule('me', courseId, idx, 100);
+    ref.read(lmsRecordsControllerProvider.notifier).setModule('me', courseId, idx, 100);
     setState(() => _playing = false);
     _toast('Module completed');
   }
@@ -71,6 +74,10 @@ class _LmsPlayerScreenState extends ConsumerState<LmsPlayerScreen> {
     final course = ref.watch(lmsCourseByIdProvider(courseId));
     final record = ref.watch(lmsRecordByIdProvider('me'));
     final entry = record.entryFor(courseId);
+    final load = lmsCombine([
+      ref.watch(lmsCoursesControllerProvider),
+      ref.watch(lmsRecordsControllerProvider),
+    ]);
 
     if (course == null || entry == null) {
       return Container(
@@ -78,7 +85,17 @@ class _LmsPlayerScreenState extends ConsumerState<LmsPlayerScreen> {
         child: Column(
           children: [
             LmsHeader(onBack: () => lmsBack(context), title: Text('Lesson', style: AppText.h1())),
-            const Expanded(child: Center(child: Text('Lesson not found'))),
+            Expanded(
+              child: load.loading
+                  ? const DetailSkeleton()
+                  : load.error != null
+                      ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
+                      : const EmptyState(
+                          icon: PhosphorIconsRegular.playCircle,
+                          title: 'Lesson not found',
+                          body: 'This lesson is no longer available, or you are not enrolled in this course.',
+                        ),
+            ),
           ],
         ),
       );

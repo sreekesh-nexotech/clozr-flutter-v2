@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/payment.dart';
@@ -33,7 +34,7 @@ String? paymentCompany(Payment p) =>
     CrmPartyDirectory.customer(p.custId)?.company ?? CrmPartyDirectory.customer(p.custId)?.name;
 
 /// Build the Payments drawer spec from the current payment set.
-FilterSpec buildPaymentsFilterSpec(List<Payment> payments) {
+FilterSpec buildPaymentsFilterSpec(List<Payment> payments, {List<AppUser> roster = MockUsers.reps}) {
   // Canonical method vocabulary (audit §7).
   const methodValues = ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque'];
   final methods = [for (final m in methodValues) FilterOption(id: m, label: m)];
@@ -43,7 +44,7 @@ FilterSpec buildPaymentsFilterSpec(List<Payment> payments) {
   ];
   final ownerIds = payments.map((p) => p.owner).toSet();
   final owners = [
-    for (final u in MockUsers.reps)
+    for (final u in roster)
       if (ownerIds.contains(u.id)) FilterOption(id: u.id, label: u.name),
   ];
   final companies = (payments
@@ -124,7 +125,7 @@ bool paymentMatchesFilters(Payment p, FilterValues v) {
 /// The Payments drawer spec, derived from the loaded payments.
 final paymentsFilterSpecProvider = Provider<FilterSpec>((ref) {
   final payments = ref.watch(allPaymentsProvider);
-  return buildPaymentsFilterSpec(payments);
+  return buildPaymentsFilterSpec(payments, roster: ref.watch(rosterProvider));
 });
 
 /// Applied drawer filters for the Payments list (source of the badge count).

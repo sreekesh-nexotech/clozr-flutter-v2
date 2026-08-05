@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/products_providers.dart';
@@ -535,10 +536,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   }
 
   Future<void> _pickOwner() async {
+    final roster = ref.read(rosterProvider);
     final chosen = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _OwnerSheet(current: _owner),
+      builder: (ctx) => _OwnerSheet(current: _owner, roster: roster),
     );
     if (chosen != null) setState(() => _owner = chosen);
   }
@@ -554,8 +556,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
 
 /// Minimal owner picker sheet reusing the sheet chrome.
 class _OwnerSheet extends StatelessWidget {
-  const _OwnerSheet({required this.current});
+  const _OwnerSheet({required this.current, required this.roster});
   final String current;
+  final List<AppUser> roster;
 
   @override
   Widget build(BuildContext context) {
@@ -584,7 +587,7 @@ class _OwnerSheet extends StatelessWidget {
                 child: Text('Owner', style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
               ),
             ),
-            for (final r in MockUsers.reps)
+            for (final r in roster)
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.of(context).pop(r.id),

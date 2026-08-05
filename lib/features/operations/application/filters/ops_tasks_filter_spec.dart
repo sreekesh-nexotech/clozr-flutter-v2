@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/ops_task.dart';
@@ -17,8 +18,11 @@ import '../providers/projects_providers.dart';
 /// The task's due date (ISO preferred).
 DateTime? opsTaskDueDate(OpsTask t) => DateTime.tryParse(t.endISO);
 
-/// Build the Ops Tasks drawer spec from the current task + project sets.
-FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects) {
+/// Build the Ops Tasks drawer spec from the current task + project sets. [roster]
+/// supplies the assignee options (real members in API mode, prototype reps in
+/// mock mode); null defaults to the mock reps.
+FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
+    {List<AppUser>? roster}) {
   final statuses = [
     for (final k in StatusMeta$.opsTask.keys) FilterOption(id: k, label: StatusMeta$.opsTask[k]!.label),
   ];
@@ -32,7 +36,7 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects) 
       .map((d) => FilterOption(id: d, label: d))
       .toList();
   final users = [
-    for (final u in MockUsers.reps) FilterOption(id: u.id, label: u.name),
+    for (final u in (roster ?? MockUsers.reps)) FilterOption(id: u.id, label: u.name),
   ];
 
   return FilterSpec(
@@ -158,6 +162,7 @@ final opsTasksFilterSpecProvider = Provider<FilterSpec>((ref) {
   return buildOpsTasksFilterSpec(
     ref.watch(opsTasksListProvider),
     ref.watch(projectsListProvider),
+    roster: ref.watch(rosterProvider),
   );
 });
 

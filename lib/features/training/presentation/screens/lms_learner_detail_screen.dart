@@ -7,6 +7,9 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -37,6 +40,10 @@ class LmsLearnerDetailScreen extends ConsumerWidget {
     final rid = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     final record = ref.watch(lmsRecordByIdProvider(rid));
     final courseOf = ref.watch(lmsCourseLookupProvider);
+    final load = lmsCombine([
+      ref.watch(lmsRecordsControllerProvider),
+      ref.watch(lmsCoursesControllerProvider),
+    ]);
     final person = LmsPeople.of(rid);
     final agg = LmsLogic.aggStatus(record, courseOf);
     final rolePill = LmsStyle.rolePill(person.role);
@@ -59,7 +66,17 @@ class LmsLearnerDetailScreen extends ConsumerWidget {
                 style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
           ),
           Expanded(
-            child: ListView(
+            child: load.loading
+                ? const DetailSkeleton()
+                : load.error != null
+                    ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
+                    : record.courses.isEmpty
+                        ? const EmptyState(
+                            icon: PhosphorIconsRegular.student,
+                            title: 'No training record',
+                            body: 'This learner has no assigned courses yet.',
+                          )
+                        : ListView(
               padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 40.h),
               children: [
                 ClozrCard(

@@ -9,6 +9,7 @@ import '../../infrastructure/data_sources/remote/quotes_remote_ds.dart';
 import '../../infrastructure/repositories/quotes_api_repository.dart';
 import '../../infrastructure/repositories/quotes_repository_impl.dart';
 import '../filters/quotes_filter_spec.dart';
+import 'crm_party_providers.dart';
 
 /// DI seam: mock-backed without a base URL, API-backed otherwise.
 final quotesRepositoryProvider = Provider<QuotesRepository>((ref) {
@@ -35,9 +36,11 @@ final quoteByIdProvider = Provider.family<Quote?, String>((ref, id) {
   return null;
 });
 
-/// The "Company · Name" one-liner for a quote's linked customer/lead.
-String quoteWho(Quote q) =>
-    CrmPartyDirectory.resolve(custId: q.custId, leadId: q.leadId)?.who ?? '—';
+/// The "Company · Name" one-liner for a quote's linked customer/lead, resolved
+/// via [lookup] (real customers in API mode, the seed directory in mock mode).
+/// Falls back to the em-dash when the party is unknown.
+String quoteWho(Quote q, CrmPartyLookup lookup) =>
+    lookup(custId: q.custId, leadId: q.leadId)?.who ?? '—';
 
 // ── List UI state ──
 final quoteTabProvider = StateProvider<String>((ref) => 'all');
@@ -50,12 +53,13 @@ final visibleQuotesProvider = Provider<List<Quote>>((ref) {
   final tab = ref.watch(quoteTabProvider);
   final filters = ref.watch(quoteFiltersProvider);
   final q = ref.watch(quoteSearchProvider).trim().toLowerCase();
+  final lookup = ref.watch(crmPartyLookupProvider);
 
   Iterable<Quote> out = quotes;
   if (tab != 'all') out = out.where((x) => x.status == tab);
   if (!filters.isEmpty) out = out.where((x) => quoteMatchesFilters(x, filters));
   if (q.isNotEmpty) {
-    out = out.where((x) => ('${x.id} ${quoteWho(x)}').toLowerCase().contains(q));
+    out = out.where((x) => ('${x.id} ${quoteWho(x, lookup)}').toLowerCase().contains(q));
   }
   return out.toList();
 });

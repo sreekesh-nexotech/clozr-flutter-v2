@@ -11,6 +11,7 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -89,6 +90,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   }
 
   void _pickOwner() {
+    final roster = ref.read(rosterProvider);
     showClozrSheet<void>(
       context: context,
       builder: (ctx) => Column(
@@ -100,7 +102,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
               shrinkWrap: true,
               padding: EdgeInsets.fromLTRB(14.w, 4.h, 14.w, 28.h),
               children: [
-                for (final r in MockUsers.reps)
+                for (final r in roster)
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {

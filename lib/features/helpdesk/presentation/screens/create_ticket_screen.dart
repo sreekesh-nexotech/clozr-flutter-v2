@@ -46,7 +46,8 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   @override
   Widget build(BuildContext context) {
     final sla = TicketDirectory.sla[_pri] ?? TicketDirectory.sla['Medium']!;
-    final cust = TicketDirectory.customer(_custId);
+    final dir = ref.watch(ticketDirectoryProvider);
+    final cust = dir.customer(_custId);
 
     return Container(
       color: AppColors.bgApp,
@@ -128,7 +129,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 TicketFieldLabel('Related project'),
                 SizedBox(height: 7.h),
                 TicketPickerRow(
-                  label: TicketDirectory.project(_projId)?.name ?? 'Select (optional)…',
+                  label: dir.project(_projId)?.name ?? 'Select (optional)…',
                   placeholder: _projId == null,
                   icon: PhosphorIconsRegular.magnifyingGlass,
                   onTap: () => ref.read(toastProvider.notifier).show('Project picker'),
@@ -190,7 +191,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 shrinkWrap: true,
                 padding: EdgeInsets.symmetric(horizontal: 18.w),
                 children: [
-                  for (final c in TicketDirectory.customers.values)
+                  for (final c in ref.read(ticketDirectoryProvider).customers.values)
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -7,23 +8,23 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
-import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../util/ticket_sla.dart';
 
 /// The Tickets list card: subject (+ linked-task glyph), id · category and
 /// customer on the left; status + priority pills on the right; an assignee
 /// avatar stack and the SLA pill below a hairline.
-class TicketCard extends StatelessWidget {
+class TicketCard extends ConsumerWidget {
   const TicketCard({super.key, required this.ticket, required this.onTap});
 
   final Ticket ticket;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final meta = StatusMeta$.ticket[ticket.status] ?? StatusMeta$.ticket['new']!;
-    final cust = TicketDirectory.customer(ticket.custId);
+    final cust = ref.watch(ticketDirectoryProvider).customer(ticket.custId);
     final ids = ticket.assignees.take(2).toList();
     final more = ticket.assignees.length - ids.length;
 

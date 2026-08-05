@@ -8,6 +8,7 @@ import '../../infrastructure/data_sources/local/invoices_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/invoices_remote_ds.dart';
 import '../../infrastructure/repositories/invoices_api_repository.dart';
 import '../../infrastructure/repositories/invoices_repository_impl.dart';
+import 'crm_party_providers.dart';
 import 'payments_providers.dart';
 
 /// DI seam: mock-backed without a base URL, API-backed otherwise.
@@ -35,15 +36,21 @@ final invoiceByIdProvider = Provider.family<Invoice?, String>((ref, id) {
   return null;
 });
 
-/// Customer one-liner (company or name) for an invoice.
-String invoiceWho(Invoice iv) =>
-    CrmPartyDirectory.customer(iv.custId)?.company ??
-    CrmPartyDirectory.customer(iv.custId)?.name ??
-    iv.custId ??
-    '—';
+/// Customer one-liner (company or name) for an invoice, resolved via [lookup]
+/// (real customers in API mode, the seed directory in mock mode). Falls back to
+/// the raw `custId` / em-dash when the party is unknown.
+String invoiceWho(Invoice iv, CrmPartyLookup lookup) {
+  final party = lookup(custId: iv.custId);
+  final company = party?.company;
+  if (company != null && company.isNotEmpty) return company;
+  final name = party?.name;
+  if (name != null && name.isNotEmpty) return name;
+  return iv.custId ?? '—';
+}
 
-/// Customer contact person name for an invoice.
-String invoiceContact(Invoice iv) => CrmPartyDirectory.customer(iv.custId)?.name ?? '';
+/// Customer contact person name for an invoice, resolved via [lookup].
+String invoiceContact(Invoice iv, CrmPartyLookup lookup) =>
+    lookup(custId: iv.custId)?.name ?? '';
 
 // ── Invoices mode UI state (shares the Payments screen search field) ──
 final invTabProvider = StateProvider<String>((ref) => 'all');
@@ -53,11 +60,12 @@ final visibleInvoicesProvider = Provider<List<Invoice>>((ref) {
   final invoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
   final tab = ref.watch(invTabProvider);
   final q = ref.watch(paySearchProvider).trim().toLowerCase();
+  final lookup = ref.watch(crmPartyLookupProvider);
 
   Iterable<Invoice> out = invoices;
   if (tab != 'all') out = out.where((x) => x.status == tab);
   if (q.isNotEmpty) {
-    out = out.where((x) => ('${x.id} ${invoiceWho(x)}').toLowerCase().contains(q));
+    out = out.where((x) => ('${x.id} ${invoiceWho(x, lookup)}').toLowerCase().contains(q));
   }
   return out.toList();
 });

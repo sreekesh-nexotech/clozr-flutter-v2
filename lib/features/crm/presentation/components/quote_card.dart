@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -6,20 +7,22 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/quotes_providers.dart';
 import '../../domain/entities/quote.dart';
 import 'finance_widgets.dart';
 
 /// A quote list row: file icon, who + "#id · N items", status pill + amount, and
 /// a footer with the validity line and payment type.
-class QuoteCard extends StatelessWidget {
+class QuoteCard extends ConsumerWidget {
   const QuoteCard({super.key, required this.quote, required this.onTap});
   final Quote quote;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final meta = StatusMeta$.quote[quote.status] ?? StatusMeta$.quote['draft']!;
+    final lookup = ref.watch(crmPartyLookupProvider);
     final itemsLabel = '${quote.items.length} ${quote.items.length == 1 ? 'item' : 'items'}';
     final validLabel = quote.valid == '—' ? 'Draft — not issued' : 'Valid till ${quote.valid}';
 
@@ -38,7 +41,7 @@ class QuoteCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(quoteWho(quote),
+                    Text(quoteWho(quote, lookup),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),

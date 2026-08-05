@@ -8,7 +8,10 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -40,51 +43,54 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final projectsAsync = ref.watch(projectsProvider);
     final project = ref.watch(projectByIdProvider(id));
     final tasks = ref.watch(opsTasksListProvider);
-
-    if (project == null) {
-      return Container(
-        color: AppColors.bgScreen,
-        child: Column(
-          children: [
-            _appBar('Project', null),
-            const Expanded(child: Center(child: Text('Project not found'))),
-          ],
-        ),
-      );
-    }
-
-    final status = _status ?? project.status;
-    final meta = StatusMeta$.project[status] ?? StatusMeta$.project['planning']!;
-    final priColor = StatusMeta$.projectPriority[project.pri] ?? AppColors.textMuted;
-    final mgr = MockUsers.of(project.manager);
-    final overdue = isProjectOverdue(project);
-    final locked = status == 'completed' || status == 'cancelled';
-    final projTasks = tasks.where((t) => t.projId == project.id).toList();
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          _appBar('Project', project.name),
+          _appBar('Project', project?.name),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
-              children: [
-                _summaryCard(project, meta, priColor, mgr, overdue),
-                if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
-                SizedBox(height: 14.h),
-                _tabsCard(project, meta, projTasks, locked),
-                NotesThread(
-                  key: _notesKey,
-                  notes: ref.watch(opsNotesProvider(project.id)),
-                  onAddNote: (body, atts) => ref.read(opsNotesProvider(project.id).notifier).addNote(body, atts),
-                  onAddReply: (noteId, body) => ref.read(opsNotesProvider(project.id).notifier).addReply(noteId, body),
-                ),
-                SizedBox(height: 14.h),
-                OpsAuditLog(entries: _audit(project, meta, mgr.name)),
-              ],
+            child: AsyncStateView<List<Project>>(
+              value: projectsAsync,
+              onRetry: () => ref.invalidate(projectsProvider),
+              loading: () => const DetailSkeleton(),
+              data: (_) {
+                if (project == null) {
+                  return const EmptyState(
+                    icon: PhosphorIconsRegular.folderOpen,
+                    title: 'Project not found',
+                    body: 'This project may have been removed, or you may not have access to it.',
+                  );
+                }
+                final status = _status ?? project.status;
+                final meta = StatusMeta$.project[status] ?? StatusMeta$.project['planning']!;
+                final priColor = StatusMeta$.projectPriority[project.pri] ?? AppColors.textMuted;
+                final mgr = MockUsers.of(project.manager);
+                final overdue = isProjectOverdue(project);
+                final locked = status == 'completed' || status == 'cancelled';
+                final projTasks = tasks.where((t) => t.projId == project.id).toList();
+
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
+                  children: [
+                    _summaryCard(project, meta, priColor, mgr, overdue),
+                    if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
+                    SizedBox(height: 14.h),
+                    _tabsCard(project, meta, projTasks, locked),
+                    NotesThread(
+                      key: _notesKey,
+                      notes: ref.watch(opsNotesProvider(project.id)),
+                      onAddNote: (body, atts) => ref.read(opsNotesProvider(project.id).notifier).addNote(body, atts),
+                      onAddReply: (noteId, body) => ref.read(opsNotesProvider(project.id).notifier).addReply(noteId, body),
+                    ),
+                    SizedBox(height: 14.h),
+                    OpsAuditLog(entries: _audit(project, meta, mgr.name)),
+                  ],
+                );
+              },
             ),
           ),
         ],

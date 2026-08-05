@@ -18,11 +18,14 @@ import '../../../presentation/rewards_tokens.dart';
 /// No caching here — and none in the repository either (LMS/rewards
 /// intentionally skip the Hive fallback; no dedicated cache box exists).
 ///
-/// Mapping is a PARTIAL ENRICHMENT of the mock bundle: goals come from
-/// `/milestones/progress/` rows (+ reward payloads from `/milestones/rewards/`
-/// grants when readable); everything that is not derivable from those two
-/// endpoints (profile.reportsTo, currentLevel, the Closer Track levels) keeps
-/// the mock default by design.
+/// Mapping is a PARTIAL ENRICHMENT of the [base] bundle passed in: goals come
+/// from `/milestones/progress/` rows (+ reward payloads from
+/// `/milestones/rewards/` grants when readable); everything that is not
+/// derivable from those two endpoints (profile.reportsTo, currentLevel, the
+/// Closer Track levels) is copied straight from [base]. The API repository
+/// passes an EMPTY base, so those fields stay honestly empty in API mode — no
+/// mock ever leaks (audit L-3 / M2). The tests pass the mock bundle as [base]
+/// to assert the copy-through behaviour.
 class RewardsRemoteDataSource {
   RewardsRemoteDataSource(this._api);
 
@@ -74,10 +77,11 @@ class RewardsRemoteDataSource {
     (PhosphorIconsFill.trophy, RewardsColors.rewardPurpleBg, AppColors.pending),
   ];
 
-  /// Builds the screen bundle from API rows on top of the mock [base].
-  /// Malformed rows are skipped, never fatal. With zero progress rows the
-  /// goals list is honestly empty (mock goals are NOT shown against a real
-  /// backend); non-derivable fields always keep the [base] values.
+  /// Builds the screen bundle from API rows on top of [base] (empty in API
+  /// mode; the mock bundle only in tests). Malformed rows are skipped, never
+  /// fatal. With zero progress rows the goals list is honestly empty (mock
+  /// goals are NOT shown against a real backend); non-derivable fields always
+  /// keep the [base] values.
   static RewardsData mapRewards({
     required RewardsData base,
     required List<dynamic> progressRows,
@@ -136,7 +140,7 @@ class RewardsRemoteDataSource {
 
     // Profile: session identity (auth hydrates MockUsers['me']); milestone
     // count from achieved rows; reportsTo/currentLevel are not derivable from
-    // these endpoints → mock defaults.
+    // these endpoints → copied from [base] (empty in API mode).
     final self = MockUsers.of('me');
     final selfRole = self.role.replaceAll(RegExp(r'\s*·\s*You$'), '').trim();
     final profile = RewardProfile(
@@ -155,7 +159,8 @@ class RewardsRemoteDataSource {
           : DateFormat('d MMM yyyy, HH:mm').format(lastSwept.toLocal()),
       goals: goals,
       // Closer Track levels live on /milestones/tracks/ + /steps/ (not part
-      // of this slice) → keep the mock structure untouched.
+      // of this slice) → copied from [base] (empty in API mode, so the screen
+      // hides the whole card).
       closerTrack: base.closerTrack,
     );
   }

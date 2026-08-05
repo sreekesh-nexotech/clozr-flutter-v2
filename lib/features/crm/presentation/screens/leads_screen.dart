@@ -9,6 +9,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -18,6 +19,7 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/leads_filter_spec.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/lead.dart';
 import '../components/lead_card.dart';
 import '../components/saved_chip_row.dart' as chips;
 
@@ -56,7 +58,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       AddAction(label: 'Add lead', run: (ctx) => ctx.push(Routes.addLead)),
     );
 
-    final visible = ref.watch(visibleLeadsProvider);
+    final async = ref.watch(leadsProvider);
     final tab = ref.watch(leadTabProvider);
     final searchOpen = ref.watch(leadSearchOpenProvider);
     final query = ref.watch(leadSearchProvider);
@@ -118,8 +120,13 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
           ],
         ),
         Expanded(
-          child: visible.isEmpty
-              ? ListView(
+          child: AsyncStateView<List<Lead>>(
+            value: async,
+            onRetry: () => ref.invalidate(leadsProvider),
+            data: (_) {
+              final visible = ref.watch(visibleLeadsProvider);
+              if (visible.isEmpty) {
+                return ListView(
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.magnifyingGlass,
@@ -130,20 +137,23 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
                       onCta: () => context.push(Routes.addLead),
                     ),
                   ],
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 14.h),
-                  itemBuilder: (context, i) {
-                    final lead = visible[i];
-                    return LeadCard(
-                      lead: lead,
-                      onTap: () => context.push('${Routes.leadDetail}?id=${lead.id}'),
-                      onCall: () => ref.read(toastProvider.notifier).show('Calling ${lead.name.split(' ').first}…'),
-                    );
-                  },
-                ),
+                );
+              }
+              return ListView.separated(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => SizedBox(height: 14.h),
+                itemBuilder: (context, i) {
+                  final lead = visible[i];
+                  return LeadCard(
+                    lead: lead,
+                    onTap: () => context.push('${Routes.leadDetail}?id=${lead.id}'),
+                    onCall: () => ref.read(toastProvider.notifier).show('Calling ${lead.name.split(' ').first}…'),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );

@@ -8,12 +8,12 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/kpi_card.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
-import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../components/donut_chart.dart';
 import '../util/ticket_sla.dart';
 
@@ -31,22 +31,8 @@ class HelpHomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tickets = ref.watch(ticketsProvider).valueOrNull ?? const [];
+    final ticketsAsync = ref.watch(ticketsProvider);
     final slaVal = ref.watch(helpSlaValProvider);
-
-    final mineAll = tickets.where((t) => t.isMine).toList();
-    final openT = mineAll.where((t) => t.status == 'new' || t.status == 'open' || t.status == 'pending').toList();
-    final doneMine = mineAll.where((t) => t.status == 'resolved' || t.status == 'closed').toList();
-    final breached = openT.where((t) => homeState(t) == 'breached').toList()..sort((a, b) => _homeDue(b).compareTo(_homeDue(a)));
-    final risk = openT.where((t) => homeState(t) == 'risk').toList();
-    final withinOpen = openT.where((t) => homeState(t) == 'within').length;
-
-    final attn = openT.where((t) => homeState(t) != 'within' || t.status == 'pending').toList()
-      ..sort((a, b) {
-        final ra = homeState(a) == 'breached' ? 0 : 1;
-        final rb = homeState(b) == 'breached' ? 0 : 1;
-        return ra != rb ? ra - rb : _homeDue(a).compareTo(_homeDue(b));
-      });
 
     return Column(
       children: [
@@ -77,19 +63,40 @@ class HelpHomeScreen extends ConsumerWidget {
           ],
         ),
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-            children: [
-              _kpiGrid(context, ref, openT.length, breached.length),
-              SizedBox(height: 16.h),
-              _slaMixCard(withinOpen, doneMine.length, risk.length, breached.length, mineAll),
-              SizedBox(height: 16.h),
-              _crossedCard(context, ref, breached, slaVal),
-              SizedBox(height: 16.h),
-              _attentionCard(context, attn),
-              SizedBox(height: 16.h),
-              _resolvedGrid(context, ref, doneMine),
-            ],
+          child: AsyncStateView<List<Ticket>>(
+            value: ticketsAsync,
+            onRetry: () => ref.invalidate(ticketsProvider),
+            data: (tickets) {
+              final dir = ref.watch(ticketDirectoryProvider);
+              final mineAll = tickets.where((t) => t.isMine).toList();
+              final openT = mineAll.where((t) => t.status == 'new' || t.status == 'open' || t.status == 'pending').toList();
+              final doneMine = mineAll.where((t) => t.status == 'resolved' || t.status == 'closed').toList();
+              final breached = openT.where((t) => homeState(t) == 'breached').toList()..sort((a, b) => _homeDue(b).compareTo(_homeDue(a)));
+              final risk = openT.where((t) => homeState(t) == 'risk').toList();
+              final withinOpen = openT.where((t) => homeState(t) == 'within').length;
+
+              final attn = openT.where((t) => homeState(t) != 'within' || t.status == 'pending').toList()
+                ..sort((a, b) {
+                  final ra = homeState(a) == 'breached' ? 0 : 1;
+                  final rb = homeState(b) == 'breached' ? 0 : 1;
+                  return ra != rb ? ra - rb : _homeDue(a).compareTo(_homeDue(b));
+                });
+
+              return ListView(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                children: [
+                  _kpiGrid(context, ref, openT.length, breached.length),
+                  SizedBox(height: 16.h),
+                  _slaMixCard(withinOpen, doneMine.length, risk.length, breached.length, mineAll),
+                  SizedBox(height: 16.h),
+                  _crossedCard(context, ref, breached, slaVal, dir),
+                  SizedBox(height: 16.h),
+                  _attentionCard(context, attn, dir),
+                  SizedBox(height: 16.h),
+                  _resolvedGrid(context, ref, doneMine),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -202,7 +209,7 @@ class HelpHomeScreen extends ConsumerWidget {
   }
 
   // ── Crossed SLA ──
-  Widget _crossedCard(BuildContext context, WidgetRef ref, List<Ticket> breached, bool slaVal) {
+  Widget _crossedCard(BuildContext context, WidgetRef ref, List<Ticket> breached, bool slaVal, TicketLookups dir) {
     return ClozrCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +236,7 @@ class HelpHomeScreen extends ConsumerWidget {
               child: Center(child: Text('No breached tickets right now.', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder))),
             )
           else
-            for (final t in breached) _crossedRow(context, t, slaVal),
+            for (final t in breached) _crossedRow(context, t, slaVal, dir),
         ],
       ),
     );
@@ -259,9 +266,9 @@ class HelpHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _crossedRow(BuildContext context, Ticket t, bool slaVal) {
-    final cust = TicketDirectory.customer(t.custId);
-    final right = slaVal ? (TicketDirectory.project(t.projId)?.cost ?? '—') : homeOverLabel(t);
+  Widget _crossedRow(BuildContext context, Ticket t, bool slaVal, TicketLookups dir) {
+    final cust = dir.customer(t.custId);
+    final right = slaVal ? (dir.project(t.projId)?.cost ?? '—') : homeOverLabel(t);
     return GestureDetector(
       onTap: () => context.push('${Routes.ticketDetail}?id=${t.id}'),
       child: Container(
@@ -292,7 +299,7 @@ class HelpHomeScreen extends ConsumerWidget {
   }
 
   // ── Needing attention ──
-  Widget _attentionCard(BuildContext context, List<Ticket> attn) {
+  Widget _attentionCard(BuildContext context, List<Ticket> attn, TicketLookups dir) {
     return ClozrCard(
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 6.h),
       child: Column(
@@ -308,14 +315,14 @@ class HelpHomeScreen extends ConsumerWidget {
               child: Center(child: Text('Nothing needs attention right now.', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder))),
             )
           else
-            for (final t in attn) _attnRow(context, t),
+            for (final t in attn) _attnRow(context, t, dir),
         ],
       ),
     );
   }
 
-  Widget _attnRow(BuildContext context, Ticket t) {
-    final cust = TicketDirectory.customer(t.custId);
+  Widget _attnRow(BuildContext context, Ticket t, TicketLookups dir) {
+    final cust = dir.customer(t.custId);
     final breachedNow = homeState(t) == 'breached';
     final slaLabel = breachedNow ? homeOverLabel(t) : 'Respond by ${t.respByLabel ?? t.resolveByLabel ?? '—'}';
     return GestureDetector(

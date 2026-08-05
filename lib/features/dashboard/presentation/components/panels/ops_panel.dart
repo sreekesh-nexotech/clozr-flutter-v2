@@ -21,14 +21,17 @@ const _projTabs = [('all', 'All active'), ('risk', 'At risk'), ('overdue', 'Over
 /// The Operations manager dashboard panel: KPIs, project-status donut, overdue
 /// tasks (₹ Value / Days toggle), active projects (segment filter + progress)
 /// and employee performance.
+///
+/// The two toggled sections (Overdue Tasks segment, Active Projects segment) are
+/// their own [ConsumerWidget]s watching only their toggle provider + a `.select`
+/// on their slice of the bundle, so a segment tap repaints just that section
+/// rather than the whole panel (and its fl_chart donut).
 class OpsPanel extends ConsumerWidget {
   const OpsPanel({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(dashboardDataProvider);
-    final valueMode = ref.watch(dashOpsValueModeProvider); // 0 = Value, 1 = Days
-    final projTab = ref.watch(dashActiveProjTabProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -46,16 +49,48 @@ class OpsPanel extends ConsumerWidget {
           ),
         ),
         SizedBox(height: 16.h),
-        _overdueTasks(context, data.opsOverdue, valueMode, ref),
+        const _OverdueTasksSection(),
         SizedBox(height: 16.h),
-        _activeProjects(context, data.opsProjects, projTab, ref),
+        const _ActiveProjectsSection(),
         SizedBox(height: 16.h),
         _employees(context, data.opsRoster),
       ],
     );
   }
 
-  Widget _overdueTasks(BuildContext context, List<DashOverdueTask> tasks, int mode, WidgetRef ref) {
+  Widget _employees(BuildContext context, List<DashRosterRow> roster) {
+    return DashSectionCard(
+      title: 'Employee Performance',
+      subtitle: 'Delivery workload across the team',
+      padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: 4.h),
+          for (final e in roster)
+            DashEmployeeRow(
+              rid: e.rid,
+              sub: e.sub,
+              onTap: () => context.go(Routes.opsTasks),
+              trailing: DashStatChip(label: e.chipLabel, bad: e.chipBad),
+            ),
+          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.members)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Overdue Tasks — repaints only on its ₹/Days toggle or a change to
+/// `opsOverdue`.
+class _OverdueTasksSection extends ConsumerWidget {
+  const _OverdueTasksSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(dashOpsValueModeProvider); // 0 = Value, 1 = Days
+    final tasks = ref.watch(dashboardDataProvider.select((d) => d.opsOverdue));
+
     return DashSectionCard(
       title: 'Overdue Tasks',
       subtitle: 'Most overdue first',
@@ -113,8 +148,18 @@ class OpsPanel extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _activeProjects(BuildContext context, List<DashProjectRow> all, String tab, WidgetRef ref) {
+/// Active Projects — repaints only on its segment filter or a change to
+/// `opsProjects`.
+class _ActiveProjectsSection extends ConsumerWidget {
+  const _ActiveProjectsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tab = ref.watch(dashActiveProjTabProvider);
+    final all = ref.watch(dashboardDataProvider.select((d) => d.opsProjects));
+
     final rows = all.where((p) {
       switch (tab) {
         case 'risk':
@@ -223,28 +268,6 @@ class OpsPanel extends ConsumerWidget {
       ),
       child: Text('${days}d',
           style: AppText.custom(size: 11, weight: FontWeight.w800, color: bad ? DashColors.red : DashColors.green)),
-    );
-  }
-
-  Widget _employees(BuildContext context, List<DashRosterRow> roster) {
-    return DashSectionCard(
-      title: 'Employee Performance',
-      subtitle: 'Delivery workload across the team',
-      padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(height: 4.h),
-          for (final e in roster)
-            DashEmployeeRow(
-              rid: e.rid,
-              sub: e.sub,
-              onTap: () => context.go(Routes.opsTasks),
-              trailing: DashStatChip(label: e.chipLabel, bad: e.chipBad),
-            ),
-          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.members)),
-        ],
-      ),
     );
   }
 }
