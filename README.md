@@ -12,12 +12,33 @@ Mobile-first B2B CRM. This branch (`feat/presentation-layer`) contains the
 > Note: the generated scaffold declared `sdk: ^3.11.0`; the constraint was
 > lowered to `>=3.5.0 <4.0.0` to match the documented 3.24.5 toolchain.
 
+## Toolchain (read this before your first run)
+The 3.24.5 pin is **not optional** — the project does not compile on recent
+Flutter releases:
+- `phosphor_flutter` 2.1.0 (the latest and final release) does
+  `class PhosphorIconData extends IconData`, and Flutter marked `IconData`
+  as a `final class` in 3.43. See
+  <https://docs.flutter.dev/release/breaking-changes/icondata-class-marked-final>.
+- `CupertinoPageTransitionsBuilder` (used in `lib/app/theme/app_theme.dart`)
+  moved out of the `material` library into `cupertino` in the same era, so it
+  is no longer reachable through `package:flutter/material.dart`.
+
+The pin is declared in `.fvmrc` and applied with [FVM](https://fvm.app):
+```bash
+dart pub global activate fvm     # once per machine
+fvm install                      # reads .fvmrc → fetches 3.24.5
+fvm use 3.24.5                   # links .fvm/flutter_sdk
+```
+Then prefix commands with `fvm` (VS Code picks the SDK up automatically via
+`.vscode/settings.json`). A bare `flutter` on your PATH will use whatever
+version you have installed globally and will fail to build.
+
 ## Run
 ```bash
-flutter pub get
-flutter run                 # device / emulator
+fvm flutter pub get
+fvm flutter run             # device / emulator
 # Web (used for the pixel-comparison pass):
-flutter build web --web-renderer canvaskit --no-web-resources-cdn
+fvm flutter build web --web-renderer canvaskit --no-web-resources-cdn
 ```
 
 ## Architecture (feature-first, 4 layers)
