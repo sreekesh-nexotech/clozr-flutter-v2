@@ -14,12 +14,14 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/tasks_filter_spec.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
 import '../components/task_card.dart';
 import '../components/saved_chip_row.dart' as chips;
@@ -37,15 +39,41 @@ class TasksScreen extends ConsumerStatefulWidget {
 class _TasksScreenState extends ConsumerState<TasksScreen> {
   final _searchCtrl = TextEditingController();
 
-  static const _tabDefs = <(String, String)>[
+  /// Tabs that are not statuses at all — these stay built-in.
+  static const _pseudoTabs = <(String, String)>[
     ('all', 'All'),
     ('mine', 'My tasks'),
     ('overdue', 'Overdue'),
+  ];
+
+  /// The built-in lane vocabulary, used **only** until the org's own arrives.
+  ///
+  /// A fallback, not the source of truth: these are the four folded buckets, so
+  /// an org whose lanes are Open / In Progress / Completed / Cancelled would
+  /// read "To do" / "Blocked" / "Done" — names it does not use.
+  static const _builtinLaneTabs = <(String, String)>[
     ('todo', 'To do'),
     ('inprogress', 'In Progress'),
     ('blocked', 'Blocked'),
     ('done', 'Done'),
   ];
+
+  /// Whether a chip should read as selected.
+  ///
+  /// Tolerant on purpose: the catalog can land after the user has already
+  /// picked a built-in lane, swapping "To do" for the org's "Open". Matching
+  /// the folded key as well keeps that chip highlighted through the swap
+  /// instead of leaving the row with nothing selected.
+  bool _tabActive(String tab, String chipKey, List<CatalogOption> statuses) {
+    if (tab == chipKey) return true;
+    for (final s in statuses) {
+      if (s.name == chipKey &&
+          crmTaskStatusKey(name: s.name, type: s.statusType) == tab) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -79,6 +107,21 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     ref.watch(taskTypeOptionsProvider);
     ref.watch(taskPriorityOptionsProvider);
     final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
+
+    // The org's own lanes drive the tab row — names, order and count. Empty
+    // (mock mode, still loading, failed fetch) falls back to the built-in
+    // vocabulary, the same "empty schema is no opinion" contract used
+    // everywhere else.
+    final statuses = ref.watch(taskStatusOptionsProvider);
+    final tabs = [
+      ..._pseudoTabs,
+      if (statuses.isEmpty)
+        ..._builtinLaneTabs
+      else
+        for (final s in statuses) (s.name, s.name),
+    ];
+    // The org's list-card layout: which of the card's slots to render.
+    final cardSchema = ref.watch(taskListSchemaProvider);
 
     String? relatedLineFor(String? leadId) {
       if (leadId == null) return null;
@@ -121,10 +164,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               height: 40.h,
               child: TabChipRow(
                 children: [
-                  for (final (k, lbl) in _tabDefs)
+                  for (final (k, lbl) in tabs)
                     TabChip(
                       label: '$lbl (${crmTaskTabCount(all, k)})',
-                      active: tab == k,
+                      active: _tabActive(tab, k, statuses),
                       onTap: () => ref.read(crmTaskTabProvider.notifier).state = k,
                     ),
                 ],
@@ -163,6 +206,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                   final t = visible[i];
                   return TaskCard(
                     task: t,
+                    schema: cardSchema,
                     relatedLine: relatedLineFor(t.leadId),
                     onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
                     onToggle: () => _toggleTask(t),

@@ -182,6 +182,17 @@ final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
   return out.toList();
 });
 
+/// Whether a task belongs under a status tab.
+///
+/// The tab key is the org's own lane name once the catalog has loaded ("Open",
+/// "Cancelled"), and a built-in folded key ("todo", "blocked") before it does
+/// or in mock mode. Both are accepted so the screen keeps working through the
+/// switch-over, and so a task whose lane was deleted still lands somewhere via
+/// its folded key rather than vanishing.
+bool crmTaskInTab(CrmTask t, String tabKey) =>
+    t.statusName.trim().toLowerCase() == tabKey.trim().toLowerCase() ||
+    t.status == tabKey;
+
 /// Count of tasks for a given tab key.
 int crmTaskTabCount(List<CrmTask> all, String key) {
   switch (key) {
@@ -192,6 +203,6 @@ int crmTaskTabCount(List<CrmTask> all, String key) {
     case 'overdue':
       return all.where((t) => t.isOverdue).length;
     default:
-      return all.where((t) => t.status == key).length;
+      return all.where((t) => crmTaskInTab(t, key)).length;
   }
 }
