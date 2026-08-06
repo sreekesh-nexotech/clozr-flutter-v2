@@ -18,6 +18,8 @@ class ViewColumn extends Equatable {
     this.type = '',
     this.isCustom = false,
     this.isFixed = false,
+    this.inFields = false,
+    this.relatedModel = '',
   });
 
   final String name;
@@ -38,6 +40,19 @@ class ViewColumn extends Equatable {
 
   /// A protected column the org cannot hide.
   final bool isFixed;
+
+  /// Whether the column is a real serializer field (`in_fields`) rather than a
+  /// display-only one.
+  ///
+  /// This is what separates a column you can *edit* from one you can only
+  /// *read*: `lead_value` is visible and labelled "Value / Need", but arrives
+  /// with `in_fields: false` and no `field_info` — the API accepts a write to
+  /// it, returns `200`, and stores nothing.
+  final bool inFields;
+
+  /// For `foreignkey` / `manytomany` columns, the model the value points at
+  /// (`LeadSource`, `LeadStatus`, `User`, `Territory`, …). Empty otherwise.
+  final String relatedModel;
 
   /// Maps one column, or null when it is hidden or unusable. `visible` is
   /// treated as opt-in: a column that does not say it is visible is not shown.
@@ -63,15 +78,33 @@ class ViewColumn extends Equatable {
       isCustom: isCustom,
       // Detail views send no `is_fixed` at all — only `is_protected`.
       isFixed: row['is_fixed'] == true || row['is_protected'] == true,
+      // `field_info` is only present for serializer fields, so its presence is
+      // the same signal as the flag; either one is enough.
+      inFields: row['in_fields'] == true || info is Map,
+      relatedModel:
+          info is Map ? (info['related_model'] ?? '').toString() : '',
     );
   }
+
+  /// Whether this column can be rendered as an input on a form.
+  ///
+  /// Custom fields are excluded for now: they live under `custom_fields.<slug>`
+  /// and need their own write shape, which no screen builds yet.
+  bool get isEditable => inFields && !isCustom && type.isNotEmpty;
+
+  /// Whether the value is chosen from a catalog rather than typed.
+  bool get isChoice => type == 'foreignkey' || type == 'manytomany';
+
+  /// Whether the column holds several values.
+  bool get isMulti => type == 'manytomany';
 
   /// The `custom_fields` key this column reads, for custom columns.
   String get customKey =>
       isCustom ? name.substring(name.indexOf('.') + 1) : name;
 
   @override
-  List<Object?> get props => [name, label, order, type, isCustom, isFixed];
+  List<Object?> get props =>
+      [name, label, order, type, isCustom, isFixed, inFields, relatedModel];
 }
 
 /// The org's Leads list layout: which columns to render, in which order, under
@@ -126,6 +159,14 @@ class ViewSchema extends Equatable {
       hasOrgConfig: body['has_org_config'] == true,
     );
   }
+
+  /// The columns a form can render as inputs, in the org's order.
+  ///
+  /// Narrower than [columns]: a layout mixes editable fields with display-only
+  /// ones (`lead_value`, `lead_score`, `created_at`), and putting a box around
+  /// a display-only field produces a form that accepts input the API discards.
+  List<ViewColumn> get editableColumns =>
+      [for (final c in columns) if (c.isEditable) c];
 
   ViewColumn? column(String name) {
     for (final c in columns) {

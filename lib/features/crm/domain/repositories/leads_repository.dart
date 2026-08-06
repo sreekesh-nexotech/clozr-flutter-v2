@@ -40,6 +40,15 @@ abstract class LeadsRepository {
   /// lead, or null when the backend response shape is unexpected.
   Future<Lead?> createLead(Map<String, dynamic> fields);
 
+  /// The raw `GET /crm/leads/{id}/` payload, unmapped.
+  ///
+  /// The schema-driven edit form renders whichever fields the org configured,
+  /// so it needs values by field **name** — something the mapped [Lead] entity
+  /// cannot answer, since it exposes a fixed set of properties.
+  ///
+  /// Null when the lead is missing, or in mock mode (no payload to serve).
+  Future<Map<String, dynamic>?> getLeadRow(String id);
+
   /// `PATCH /crm/leads/{id}/` — saves the Edit lead form.
   ///
   /// Only the fields the form owns are sent, and every one of them is sent

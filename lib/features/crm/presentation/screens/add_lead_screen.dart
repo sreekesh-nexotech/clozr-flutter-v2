@@ -15,9 +15,15 @@ import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/list_skeleton.dart';
+import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/lead_schema.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
+import '../components/crm_async.dart';
+import '../components/lead_schema_form.dart';
 
 /// Add lead — a grouped form (Contact / Deal / Qualification / Schedule /
 /// Pipeline). Static submit validates name + phone, then toasts and pops.
@@ -54,6 +60,9 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   String _owner = 'am';
   String _status = 'new';
   bool _showErrors = false;
+
+  /// Reads the schema-driven form's values at submit time.
+  final _formKey = GlobalKey<LeadSchemaFormState>();
 
   /// True while a save is in flight, so the button can't be double-tapped into
   /// two writes.
@@ -108,7 +117,15 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   Future<void> _submit() async {
     if (_saving) return;
     setState(() => _showErrors = true);
-    if (!_nameOk || !_phoneOk || !_projectOk) {
+
+    final schema = ref.read(leadDetailSchemaProvider);
+    final dynamicForm = schema.editableColumns.isNotEmpty;
+
+    // The built-in layout validates its own required boxes. The schema-driven
+    // one does not: which fields are mandatory is the org's call, and the API
+    // is the only thing that actually knows — so let it answer and surface the
+    // field error rather than inventing rules the org never set.
+    if (!dynamicForm && (!_nameOk || !_phoneOk || !_projectOk)) {
       ref.read(toastProvider.notifier).show('Please complete the required fields');
       return;
     }
@@ -123,15 +140,22 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
       return;
     }
 
-    // One field map for both paths, so create and update can never disagree
-    // about what a field is called.
-    final fields = LeadsRemoteDataSource.leadWriteFields(
-      name: _name.text,
-      company: _company.text,
-      email: _email.text,
-      phone: _phone.text,
-      website: _website.text,
-    );
+    // The org's layout is also the org's writable set, so when it is available
+    // it decides the payload. The hand-written map stays as the fallback for a
+    // failed schema fetch.
+    final fields = dynamicForm
+        ? (_formKey.currentState?.payload ?? const <String, dynamic>{})
+        : LeadsRemoteDataSource.leadWriteFields(
+            name: _name.text,
+            company: _company.text,
+            email: _email.text,
+            phone: _phone.text,
+            website: _website.text,
+          );
+    if (fields.isEmpty) {
+      ref.read(toastProvider.notifier).show('Nothing to save');
+      return;
+    }
 
     setState(() => _saving = true);
     try {
@@ -210,17 +234,98 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     );
   }
 
+  /// The org-configured form: one input per editable column the schema lists,
+  /// in the org's order, under the org's labels.
+  Widget _schemaForm(
+    BuildContext context, {
+    required bool editing,
+    required String editingId,
+    required LeadListSchema schema,
+  }) {
+    final rowAsync = editing
+        ? ref.watch(leadRowProvider(editingId))
+        : const AsyncValue<Map<String, dynamic>?>.data(<String, dynamic>{});
+    // An edit must not paint its boxes before the record lands — an empty box
+    // is indistinguishable from a cleared one, and saving would persist the
+    // difference.
+    final waiting = editing && rowAsync.valueOrNull == null && !rowAsync.hasError;
+
+    return Container(
+      color: AppColors.bgDetail,
+      child: Column(
+        children: [
+          DetailAppBar(
+              section: editing ? 'Edit lead' : 'Add lead',
+              onBack: () => context.pop()),
+          Expanded(
+            child: waiting
+                ? const DetailSkeleton()
+                : rowAsync.hasError && editing
+                    ? ErrorState.forError(
+                        crmAppError(rowAsync.error!),
+                        onRetry: () => ref.invalidate(leadRowProvider(editingId)),
+                      )
+                    : ListView(
+                        padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
+                        children: [
+                          FormSection(
+                            title: 'Lead',
+                            children: [
+                              LeadSchemaForm(
+                                key: _formKey,
+                                schema: schema,
+                                row: rowAsync.valueOrNull ?? const {},
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+          ),
+          StickyActionBar(
+            children: [
+              PrimaryButton(
+                  label: 'Cancel',
+                  ghost: true,
+                  expand: false,
+                  height: 48,
+                  onTap: () => context.pop()),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: PrimaryButton(
+                  label: _saving
+                      ? 'Saving…'
+                      : (editing ? 'Save changes' : 'Add lead'),
+                  icon: PhosphorIconsBold.check,
+                  height: 48,
+                  onTap: waiting ? () {} : _submit,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final editingId = _editingId;
-    if (editingId.isNotEmpty) {
-      // The record is authoritative (it carries email, mobile, website and
-      // territory); the list row stands in until it lands so the form is never
-      // blank behind a spinner.
-      _prefillFrom(ref.watch(leadDetailProvider(editingId)).valueOrNull ??
-          ref.watch(leadByIdProvider(editingId)));
-    }
     final editing = editingId.isNotEmpty;
+
+    // The org's layout decides the form. Empty means mock mode or a failed
+    // fetch, which falls back to the built-in field set below — the same
+    // "empty schema is no opinion" contract the list and detail screens use.
+    final schema = ref.watch(leadDetailSchemaProvider);
+    if (schema.editableColumns.isNotEmpty) {
+      return _schemaForm(context, editing: editing, editingId: editingId, schema: schema);
+    }
+
+    if (editing) {
+      // Only the record carries email, mobile, website and territory — the list
+      // row does not, and prefilling from it would blank those boxes and then
+      // clear them on save.
+      _prefillFrom(ref.watch(leadDetailProvider(editingId)).valueOrNull);
+    }
 
     return Container(
       color: AppColors.bgDetail,

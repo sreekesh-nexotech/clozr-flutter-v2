@@ -60,6 +60,18 @@ class CrmCatalogRemoteDataSource {
         query: {'is_active': true},
       );
 
+  /// The org's territories, for the schema-driven lead form's Territory picker.
+  ///
+  /// Territory's primary key is the plain `id` (the schema reports
+  /// `Territory.id`, not a `territory_id` uuid like the other catalogs), so the
+  /// id key differs here.
+  Future<List<CatalogOption>> fetchTerritories() =>
+      _fetch(ApiEndpoints.territories, 'id');
+
+  /// The org's industries, for the schema-driven lead form's Industry picker.
+  Future<List<CatalogOption>> fetchIndustries() =>
+      _fetch(ApiEndpoints.industries, 'industry_id');
+
   Future<List<CatalogOption>> _fetch(
     String path,
     String idKey, {

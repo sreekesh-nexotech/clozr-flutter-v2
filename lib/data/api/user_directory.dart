@@ -33,6 +33,17 @@ class UserDirectory {
   static int _colorSeq = 0;
 
   /// `'me'` for the signed-in user, the uuid itself otherwise.
+  /// The inverse of [mapUserId]: turns the `'me'` sentinel back into the
+  /// signed-in user's real uuid so it can be written to the API.
+  ///
+  /// Every picker in the app deals in the mapped id, but a write needs the id
+  /// the server knows — posting `'me'` as an owner is a validation error.
+  /// Returns null when the id is `'me'` and no session uuid is known.
+  static String? realUserId(String? mappedId) {
+    if (mappedId == null || mappedId.isEmpty) return null;
+    return mappedId == 'me' ? currentUserId : mappedId;
+  }
+
   static String mapUserId(String? userId) {
     if (userId == null || userId.isEmpty) return '';
     return userId == currentUserId ? 'me' : userId;

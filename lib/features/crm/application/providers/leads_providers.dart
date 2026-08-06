@@ -134,6 +134,18 @@ final leadDetailProvider = FutureProvider.family<Lead?, String>(
   (ref, id) => ref.watch(leadsRepositoryProvider).getLead(id),
 );
 
+/// The same record, **unmapped**, for the schema-driven edit form.
+///
+/// The form renders whichever fields the org configured, so it needs values by
+/// field name — something the mapped [Lead] cannot answer, since it exposes a
+/// fixed set of properties. Same endpoint as [leadDetailProvider]; the two
+/// share the repository's per-id cache entry.
+final leadRowProvider =
+    FutureProvider.family<Map<String, dynamic>?, String>((ref, id) {
+  if (id.isEmpty) return Future.value(null);
+  return ref.watch(leadsRepositoryProvider).getLeadRow(id);
+});
+
 /// The already-loaded list row for a lead, if there is one — the seed the
 /// detail screen shows while [leadDetailProvider] is in flight, so opening a
 /// lead paints instantly instead of flashing a skeleton.

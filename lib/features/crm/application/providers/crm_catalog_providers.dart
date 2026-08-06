@@ -55,6 +55,28 @@ final followupTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) as
   return ds == null ? const <CatalogOption>[] : ds.fetchFollowupTypes();
 });
 
+/// `GET /crm/territories/` — the org's territories, for the lead form.
+final territoryCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchTerritories();
+});
+
+/// `GET /crm/industries/` — the org's industries, for the lead form.
+final industryCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchIndustries();
+});
+
+/// Synchronous view of [territoryCatalogProvider].
+final territoryOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(territoryCatalogProvider).valueOrNull ?? const [],
+);
+
+/// Synchronous view of [industryCatalogProvider].
+final industryOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(industryCatalogProvider).valueOrNull ?? const [],
+);
+
 /// Synchronous view of [leadStatusCatalogProvider] — empty while in flight, so
 /// the tabs render immediately from `StatusMeta$` and swap to the org's stages
 /// when the catalog arrives, instead of blocking the list behind a spinner.

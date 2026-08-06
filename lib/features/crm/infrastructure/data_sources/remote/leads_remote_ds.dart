@@ -6,6 +6,7 @@ import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../domain/entities/lead.dart';
+import '../../../domain/entities/view_schema.dart';
 
 /// Remote lead data: HTTP via [ApiService] + JSON→[Lead] mapping. No caching
 /// here — the api repository owns the Hive fallback.
@@ -149,6 +150,15 @@ class LeadsRemoteDataSource {
       return null; // unexpected shape → null, never a crash
     }
   }
+
+  /// The API key a schema column is written under.
+  ///
+  /// Almost always the field's own name. **`status` is the exception**: the
+  /// serializer exposes it read-only as the display name, so a write to
+  /// `status` returns `200` and changes nothing — it has to go to `status_id`.
+  /// Verified against a live org.
+  static String writeKeyFor(ViewColumn column) =>
+      column.name == 'status' ? 'status_id' : column.name;
 
   /// The Add/Edit lead form's fields, under the names the API actually stores
   /// them as. Shared by create and update so the two can never drift.

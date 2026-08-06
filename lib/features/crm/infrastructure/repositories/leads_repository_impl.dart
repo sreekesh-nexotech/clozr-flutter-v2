@@ -79,6 +79,11 @@ class LeadsRepositoryImpl implements LeadsRepository {
     );
   }
 
+  /// Null — mock mode has no API payload. The schema is empty there too, so
+  /// the form falls back to its built-in layout and never asks for this.
+  @override
+  Future<Map<String, dynamic>?> getLeadRow(String id) async => null;
+
   /// No-op — mock mode has nothing to persist to. Returning null keeps the
   /// form on its toast-only path rather than claiming the edit was saved.
   @override

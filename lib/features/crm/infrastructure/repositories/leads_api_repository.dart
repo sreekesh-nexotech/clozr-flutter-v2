@@ -101,6 +101,23 @@ class LeadsApiRepository implements LeadsRepository {
   }
 
   @override
+  Future<Map<String, dynamic>?> getLeadRow(String id) async {
+    final key = 'lead_$id';
+    try {
+      final row = await _remote.fetchLeadRow(id);
+      if (row != null) await AppCache.put(AppCache.crmCache, key, row);
+      return row;
+    } on AppError catch (e) {
+      if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
+        rethrow;
+      }
+      final cached = AppCache.get(AppCache.crmCache, key)?.data;
+      if (cached is Map<String, dynamic>) return cached;
+      rethrow;
+    }
+  }
+
+  @override
   Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields) async {
     final lead = await _remote.updateLead(leadId, fields);
     // The edited lead appears in both list scopes and in its own detail cache.
