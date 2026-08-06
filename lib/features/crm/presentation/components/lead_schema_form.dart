@@ -29,6 +29,7 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
     super.key,
     required this.schema,
     required this.row,
+    this.optionsByColumn = const {},
   });
 
   /// The org's detail layout. Only [ViewSchema.editableColumns] are rendered.
@@ -36,6 +37,15 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
 
   /// The lead's raw record, for prefill. Null/empty for a new lead.
   final Map<String, dynamic>? row;
+
+  /// Options for columns whose catalog the schema cannot name.
+  ///
+  /// A `foreignkey` column says which model it points at, so its catalog is
+  /// resolvable. A plain `string` column that is really a choice does not —
+  /// a follow-up's `task_type` is stored as text but must be one of the org's
+  /// follow-up types. Supplying options here renders such a column as a picker
+  /// instead of a free-text box, and the picked **name** is what gets written.
+  final Map<String, List<CatalogOption>> optionsByColumn;
 
   @override
   ConsumerState<LeadSchemaForm> createState() => LeadSchemaFormState();
@@ -170,8 +180,11 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   String? _writeId(ViewColumn c, String? id) =>
       c.relatedModel == 'User' ? UserDirectory.realUserId(id) : id;
 
-  /// The catalog backing a choice column, picked by the model it points at.
+  /// The catalog backing a choice column: a caller's override first, then the
+  /// model the column points at.
   List<CatalogOption> _optionsFor(ViewColumn c) {
+    final override = widget.optionsByColumn[c.name];
+    if (override != null) return override;
     switch (c.relatedModel) {
       case 'LeadStatus':
         return ref.read(leadStatusesProvider);
@@ -282,6 +295,29 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     setState(() => _choice[c.name] = picked.isEmpty ? null : picked.first);
   }
 
+  /// Picks a value for a text column whose options the caller supplied. The
+  /// **name** is written, not an id — the API stores this one as text.
+  Future<void> _pickTextChoice(ViewColumn c) async {
+    final options = _optionsFor(c);
+    final current = _controller(c.name).text.trim();
+    final picked = await showOptionPicker(
+      context: context,
+      title: c.label,
+      options: options,
+      selected: {
+        for (final o in options)
+          if (o.name == current) o.id,
+      },
+      emptyNote: 'No ${c.label.toLowerCase()} options are configured for this '
+          'organisation yet.',
+    );
+    if (picked == null || !mounted) return;
+    final name = picked.isEmpty
+        ? ''
+        : options.firstWhere((o) => o.id == picked.first).name;
+    setState(() => _controller(c.name).text = name);
+  }
+
   Future<void> _pickMany(ViewColumn c) async {
     final picked = await showOptionPicker(
       context: context,
@@ -320,7 +356,24 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     );
   }
 
+  /// Whether this column is a picker despite being typed as plain text —
+  /// true only when the caller supplied its options.
+  bool _isTextChoice(ViewColumn c) =>
+      c.type != 'foreignkey' &&
+      c.type != 'manytomany' &&
+      widget.optionsByColumn.containsKey(c.name);
+
   Widget _field(ViewColumn c) {
+    if (_isTextChoice(c)) {
+      return AppTextField(
+        label: c.label,
+        readOnly: true,
+        value: _controller(c.name).text,
+        hint: 'Select ${c.label.toLowerCase()}…',
+        suffixIcon: PhosphorIconsRegular.caretDown,
+        onTap: () => _pickTextChoice(c),
+      );
+    }
     switch (c.type) {
       case 'foreignkey':
         return AppTextField(

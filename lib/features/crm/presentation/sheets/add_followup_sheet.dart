@@ -14,6 +14,9 @@ import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/crm_catalog.dart';
+import '../../domain/entities/view_schema.dart';
+import '../components/lead_schema_form.dart';
 import 'add_sheet_kit.dart';
 
 /// Add follow-up — a focused-but-faithful port of the prototype's `addFollowup`
@@ -43,6 +46,9 @@ class _AddFollowupSheet extends StatefulWidget {
 }
 
 class _AddFollowupSheetState extends State<_AddFollowupSheet> {
+  /// Reads the schema-driven form's values at submit time.
+  final _schemaFormKey = GlobalKey<LeadSchemaFormState>();
+
   final _company = TextEditingController();
   final _contact = TextEditingController();
   final _date = TextEditingController();
@@ -94,7 +100,45 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
 
   bool get _contactOk => _contact.text.trim().isNotEmpty;
 
+  /// The org's own follow-up layout. Empty in mock mode, on a failed fetch, or
+  /// for an org with no config — which is the signal to use the built-in form.
+  ViewSchema get _schema => widget.ref.read(followupDetailSchemaProvider);
+
+  bool get _schemaDriven => _schema.editableColumns.isNotEmpty;
+
+  /// Submits the org-configured form.
+  ///
+  /// The payload is whatever the schema said the form owns, under the names the
+  /// API stores them as — so a field an admin adds tomorrow is saved with no
+  /// code change. `is_followup` is forced: this sheet only ever makes
+  /// follow-ups, and without it the row lands on the Tasks list instead.
+  Future<void> _submitSchemaForm() async {
+    final state = _schemaFormKey.currentState;
+    if (state == null) return;
+    final lead = widget.lead;
+    final fields = <String, dynamic>{
+      ...state.payload,
+      'is_followup': true,
+      if (lead != null) 'related_to': 'lead',
+      if (lead != null) 'related_to_id': lead.id,
+    };
+
+    try {
+      await widget.ref.read(followupsRepositoryProvider).createFollowupFields(fields);
+    } on AppError catch (e) {
+      // `title` and `task_type` are required server-side; an empty box comes
+      // back as a per-field message, which is more use than a generic one.
+      widget.ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    refreshFollowups(widget.ref);
+    widget.ref.invalidate(leadFollowupsProvider);
+    widget.ref.read(toastProvider.notifier).show('Follow-up scheduled');
+    if (mounted) Navigator.of(context).pop();
+  }
+
   Future<void> _submit() async {
+    if (_schemaDriven) return _submitSchemaForm();
     setState(() => _showErrors = true);
     if (!_contactOk) {
       widget.ref.read(toastProvider.notifier).show('Enter a contact name');
@@ -149,7 +193,11 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
   Widget build(BuildContext context) {
     // Watched here so the type chips swap from the built-in list to the org's
     // own the moment the catalog resolves, even with the sheet already open.
-    widget.ref.watch(followupTypeOptionsProvider);
+    final types = widget.ref.watch(followupTypeOptionsProvider);
+    final schema = widget.ref.watch(followupDetailSchemaProvider);
+    if (schema.editableColumns.isNotEmpty) {
+      return _schemaSheet(schema, types);
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -210,6 +258,52 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
           ),
         ),
         SheetSubmitBar(label: 'Add follow-up', icon: PhosphorIconsBold.plus, onTap: _submit),
+      ],
+    );
+  }
+
+  /// The org-configured sheet: one input per editable column the schema lists,
+  /// in the org's order and under the org's labels.
+  ///
+  /// `task_type` is overridden to a picker over the org's follow-up types. The
+  /// schema types it as a plain string with the Task model's own choices
+  /// (Task / Call / Meeting / Email / Deadline), but a follow-up's type is the
+  /// separate `/crm/follow-up-types/` catalog — and the API stores whichever
+  /// name it is given without validating against either, so a free-text box
+  /// would happily save a typo.
+  Widget _schemaSheet(ViewSchema schema, List<CatalogOption> types) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SheetHeader(
+            title: 'New follow-up', onClose: () => Navigator.of(context).pop()),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 12.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.lead != null) ...[
+                  LinkedLeadField(lead: widget.lead!),
+                  SizedBox(height: 16.h),
+                ],
+                LeadSchemaForm(
+                  key: _schemaFormKey,
+                  schema: schema,
+                  row: null,
+                  optionsByColumn: {
+                    if (types.isNotEmpty)
+                      'task_type': types,
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        SheetSubmitBar(
+            label: 'Add follow-up',
+            icon: PhosphorIconsBold.plus,
+            onTap: _submit),
       ],
     );
   }

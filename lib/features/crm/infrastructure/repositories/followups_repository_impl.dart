@@ -46,6 +46,11 @@ class FollowupsRepositoryImpl implements FollowupsRepository {
   }
 
   /// No-op — mock mode persists status flips via the session override provider.
+  /// Mock mode has no schema, so the sheet never takes the schema-driven path
+  /// and never calls this.
+  @override
+  Future<Followup?> createFollowupFields(Map<String, dynamic> fields) async => null;
+
   @override
   Future<void> setFollowupDone(String id, bool done) async {}
 }

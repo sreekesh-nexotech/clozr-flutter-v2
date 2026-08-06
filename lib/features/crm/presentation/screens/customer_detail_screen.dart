@@ -142,7 +142,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
     final meta = StatusMeta$.customer[cust.status] ?? StatusMeta$.customer['active']!;
 
-    // Notes thread (#13) — seeded from the customer's mock notes, via-tagged.
+    // Notes thread (#13). `apiModel` is what wires it to the backend: without
+    // it the thread stays local-only even in API mode, so a note — and any
+    // file attached to it — was composed, shown, and never sent anywhere. The
+    // builder below is the **mock-mode** seed; the remote notifier ignores it
+    // and loads `GET /crm/notes/?related_to=customer&related_to_id=…` instead.
     final notesSeed = CrmNotesSeed(cust.id, () => [
           NoteEntry(
             id: '${cust.id}-n0',

@@ -135,6 +135,9 @@ final GoRouter appRouter = GoRouter(
         _r(Routes.tasks, const TasksScreen()),
         _push(Routes.taskDetail, const TaskDetailScreen()),
         _push(Routes.editCrmTask, const EditCrmTaskScreen()),
+        // Same schema-driven form, with no `?id=` — which is what puts it in
+        // create mode.
+        _push(Routes.addCrmTask, const EditCrmTaskScreen()),
         _r(Routes.quotes, const QuotesScreen()),
         _push(Routes.quoteDetail, const QuoteDetailScreen()),
         _push(Routes.addQuote, const AddQuoteScreen()),

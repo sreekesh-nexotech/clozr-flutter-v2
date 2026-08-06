@@ -413,8 +413,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // re-conversion); the separate customers list is no longer fetched here.
     final converted = lead.status == 'won';
 
-    // Notes thread (#13) — seeded from the lead's mock notes; via-tagged so the
-    // Call/Email pills survive. Stays editable even when the lead is locked.
+    // Notes thread (#13). `apiModel` is what wires it to the backend: without
+    // it the thread is local-only even in API mode, so a note — and any file
+    // attached to it — was composed, shown, and never sent anywhere. The
+    // builder below is the **mock-mode** seed; the remote notifier ignores it
+    // and loads `GET /crm/notes/?related_to=lead&related_to_id=…` instead.
     final notesSeed = CrmNotesSeed(lead.id, () => [
           NoteEntry(
             id: '${lead.id}-n0',

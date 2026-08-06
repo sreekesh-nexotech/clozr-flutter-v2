@@ -348,3 +348,24 @@ final followupDetailSchemaProvider = Provider<ViewSchema>(
   (ref) =>
       ref.watch(followupDetailSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
 );
+
+/// Completes once everything the Add follow-up sheet needs has resolved: the
+/// org's form layout, and the catalogs its pickers read.
+///
+/// Two jobs, the same two the Leads filter drawer needed. Watching it from the
+/// screen starts the fetches at mount rather than when the sheet opens, and
+/// awaiting it before opening removes the ambiguity in an empty schema — after
+/// this completes, empty means *the org has no config*, never *it has not
+/// arrived*. Without it the first tap would render the built-in form and a
+/// second tap the configured one.
+///
+/// Never fails: each of these turns errors into an empty result by design.
+final followupFormReadyProvider = FutureProvider<void>((ref) async {
+  await Future.wait([
+    ref.watch(followupDetailSchemaFutureProvider.future),
+    ref.watch(followupTypeCatalogProvider.future),
+    ref.watch(taskStatusCatalogProvider.future),
+    ref.watch(taskPriorityCatalogProvider.future),
+    ref.watch(teamCatalogProvider.future),
+  ]);
+});

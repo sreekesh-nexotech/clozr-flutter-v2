@@ -134,19 +134,40 @@ class CrmTasksRemoteDataSource {
       mapRows(await fetchTaskRowsForLead(leadId));
 
   /// Creates a task; returns the mapped created row (null on shape surprise).
+  /// Creates a task; returns the mapped created row (null on shape surprise).
+  ///
+  /// [fields] is sent **as given** apart from the normalising below, so a
+  /// schema-driven form can post the org's whole field set — status, priority,
+  /// duration, assignee, assignees — not just the handful this used to allow.
+  /// It previously rebuilt the body from six known keys and dropped the rest,
+  /// which silently discarded everything the built-in sheet did not collect.
+  ///
+  /// Verified against a live org: `status` writes as `status_id`, while
+  /// `priority`, `assigned_to`, `assigned_team` and `assignees` all take their
+  /// own names with bare uuids.
   Future<CrmTask?> createTask(Map<String, dynamic> fields) async {
-    final body = <String, dynamic>{
-      'title': _str(fields['title'])?.trim() ?? '',
-      'task_type': _str(fields['task_type']) ?? 'Task',
-      'is_followup': false,
-    };
-    final desc = _str(fields['description'])?.trim();
-    if (desc != null && desc.isNotEmpty) body['description'] = desc;
-    final iso = isoDateOrNull(_str(fields['due_date']));
-    if (iso != null) body['due_date'] = iso;
-    final time = apiTimeOrNull(_str(fields['due_time']));
-    if (time != null) body['due_time'] = time;
-    body.addAll(relatedTo(fields));
+    final body = <String, dynamic>{...fields};
+
+    // `task_type` is required and has no server default.
+    final type = _str(body['task_type'])?.trim();
+    if (type == null || type.isEmpty) body['task_type'] = 'Task';
+
+    // This endpoint serves tasks and follow-ups; without the flag a task can
+    // be created as a follow-up and vanish from the Tasks list.
+    body['is_followup'] ??= false;
+
+    // The hand-written sheet supplies display forms ("24 Jun 2026", "10:00");
+    // the schema form already supplies API forms. Both normalise to the same
+    // thing here, and an unparseable value is dropped rather than rejected.
+    if (body.containsKey('due_date')) {
+      final iso = isoDateOrNull(_str(body['due_date']));
+      iso == null ? body.remove('due_date') : body['due_date'] = iso;
+    }
+    if (body.containsKey('due_time')) {
+      final time = apiTimeOrNull(_str(body['due_time']));
+      time == null ? body.remove('due_time') : body['due_time'] = time;
+    }
+
     final res = await _api.post(ApiEndpoints.crmTasks, body: body);
     return res is Map<String, dynamic> ? taskFromJson(res) : null;
   }

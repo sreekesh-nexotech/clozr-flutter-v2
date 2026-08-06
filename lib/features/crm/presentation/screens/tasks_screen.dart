@@ -25,7 +25,6 @@ import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
 import '../components/task_card.dart';
 import '../components/saved_chip_row.dart' as chips;
-import '../sheets/add_task_sheet.dart';
 
 /// Tasks list — checkbox cards with status pills, wired to the spec-driven
 /// filter engine and the contextual Add task sheet.
@@ -92,7 +91,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     // Contextual add: the bottom-nav `+` opens the Add task sheet here.
     registerAdd(
       ref,
-      AddAction(label: 'Add task', run: (ctx) => showAddTaskSheet(ctx, ref)),
+      // The org's own Task layout, not the built-in sheet's fixed field set —
+      // the sheet collected five boxes and could not offer status, priority,
+      // assignee, team or duration at all.
+      AddAction(label: 'Add task', run: (ctx) => ctx.push(Routes.addCrmTask)),
     );
 
     final all = ref.watch(crmTasksAllProvider);
@@ -193,7 +195,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                       body: 'Try a different status, clear filters, or add a new task.',
                       ctaLabel: 'Add task',
                       ctaIcon: PhosphorIconsBold.plus,
-                      onCta: () => showAddTaskSheet(context, ref),
+                      onCta: () => context.push(Routes.addCrmTask),
                     ),
                   ],
                 );

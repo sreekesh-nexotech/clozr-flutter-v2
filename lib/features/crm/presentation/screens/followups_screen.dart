@@ -53,7 +53,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     // Contextual add: the bottom-nav `+` opens the Add follow-up sheet here.
     registerAdd(
       ref,
-      AddAction(label: 'Add follow-up', run: (ctx) => showAddFollowupSheet(ctx, ref)),
+      AddAction(label: 'Add follow-up', run: _openAddSheet),
     );
 
     final all = ref.watch(followupsAllProvider);
@@ -74,6 +74,9 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     ref.watch(taskPriorityOptionsProvider);
     final statuses = ref.watch(taskStatusOptionsProvider);
     final schema = ref.watch(followupCardSchemaProvider);
+    // Starts the Add-sheet's layout + picker catalogs now, so the first tap on
+    // `+` opens the org's form rather than the built-in one.
+    ref.watch(followupFormReadyProvider);
 
     return Column(
       children: [
@@ -203,6 +206,15 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
   }
 
   // ── Filter drawer ──
+  /// Opens the Add follow-up sheet once its layout has settled — the sheet
+  /// picks its form from a synchronous read, so opening mid-fetch would show
+  /// the built-in one. Normally already resolved, so this yields and no more.
+  Future<void> _openAddSheet(BuildContext ctx) async {
+    await ref.read(followupFormReadyProvider.future);
+    if (!mounted) return;
+    await showAddFollowupSheet(ctx, ref);
+  }
+
   Future<void> _openFilters() async {
     final spec = ref.read(followupsFilterSpecProvider);
     final current = ref.read(followupFiltersProvider);

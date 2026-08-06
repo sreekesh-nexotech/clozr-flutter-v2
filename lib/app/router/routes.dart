@@ -33,6 +33,7 @@ class Routes {
   static const tasks = '/tasks';
   static const taskDetail = '/tasks/detail';
   static const editCrmTask = '/tasks/edit';
+  static const addCrmTask = '/tasks/add';
   static const quotes = '/quotes';
   static const quoteDetail = '/quotes/detail';
   static const addQuote = '/quotes/add';
@@ -99,6 +100,7 @@ class Routes {
     tasks: RouteMeta(NavContext.crm, true),
     taskDetail: RouteMeta(NavContext.crm, false),
     editCrmTask: RouteMeta(NavContext.crm, false),
+    addCrmTask: RouteMeta(NavContext.crm, false),
     quotes: RouteMeta(NavContext.crm, true),
     quoteDetail: RouteMeta(NavContext.crm, false),
     addQuote: RouteMeta(NavContext.crm, false),

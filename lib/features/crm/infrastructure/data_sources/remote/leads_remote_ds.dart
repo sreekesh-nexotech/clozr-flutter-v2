@@ -140,7 +140,7 @@ class LeadsRemoteDataSource {
   /// (e.g. a merge-mode duplicate response with an unexpected shape).
   Future<Lead?> createLead(Map<String, dynamic> fields) async {
     final body = await _api.post(ApiEndpoints.leads, body: {
-      for (final e in fields.entries)
+      for (final e in withCreateNameParts(fields).entries)
         if (e.value != null && e.value.toString().trim().isNotEmpty)
           e.key: e.value,
     });
@@ -150,6 +150,38 @@ class LeadsRemoteDataSource {
     } on Object {
       return null; // unexpected shape → null, never a crash
     }
+  }
+
+  /// [fields] with `first_name` / `last_name` filled in from `lead_name`.
+  ///
+  /// **`first_name` is required on create** — the model stores a person's name
+  /// in parts — but it is seeded `visible: false` on the detail layout, and the
+  /// UI only ever collects one "Lead name" box. So neither the schema-driven
+  /// form nor the hand-written one could produce a valid payload: every create
+  /// came back
+  /// `400 {"first_name": ["This field is required."]}`.
+  ///
+  /// Splitting on the first space is the same convention the read side already
+  /// uses to build initials. Anything the caller supplied explicitly wins.
+  static Map<String, dynamic> withCreateNameParts(Map<String, dynamic> fields) {
+    final name = (fields['lead_name'] ?? '').toString().trim();
+    if (name.isEmpty) return fields;
+
+    final hasFirst = (fields['first_name'] ?? '').toString().trim().isNotEmpty;
+    final hasLast = (fields['last_name'] ?? '').toString().trim().isNotEmpty;
+    if (hasFirst && hasLast) return fields;
+
+    final space = name.indexOf(' ');
+    final first = space > 0 ? name.substring(0, space) : name;
+    final last = space > 0 ? name.substring(space + 1).trim() : '';
+
+    return {
+      ...fields,
+      if (!hasFirst) 'first_name': first,
+      // Only sent when there is one — a single-word name has no surname, and an
+      // empty string is not an improvement on omitting the key.
+      if (!hasLast && last.isNotEmpty) 'last_name': last,
+    };
   }
 
   /// The API key a schema column is written under.

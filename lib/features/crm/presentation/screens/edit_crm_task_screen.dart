@@ -52,11 +52,21 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
 
     setState(() => _saving = true);
     try {
-      await ref.read(crmTasksRepositoryProvider).updateTask(id, payload);
+      // No id means this is a new record. Which fields are mandatory is the
+      // org's call and only the API knows it, so a blank required box comes
+      // back as a field error rather than being second-guessed here.
+      if (id.isEmpty) {
+        await ref.read(crmTasksRepositoryProvider).createTask({
+          ...payload,
+          'is_followup': widget.isFollowup,
+        });
+      } else {
+        await ref.read(crmTasksRepositoryProvider).updateTask(id, payload);
+      }
       if (!mounted) return;
       // The record and every list holding a copy are now stale. The activity
       // log refreshes itself off the write tick.
-      ref.invalidate(taskRowProvider(id));
+      if (id.isNotEmpty) ref.invalidate(taskRowProvider(id));
       if (widget.isFollowup) {
         refreshFollowups(ref);
         ref.invalidate(leadFollowupsProvider);
@@ -64,8 +74,12 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
         ref.invalidate(crmTasksProvider);
         ref.invalidate(leadTasksProvider);
       }
-      ref.read(toastProvider.notifier).show(
-          widget.isFollowup ? 'Follow-up updated' : 'Task updated');
+      ref.read(toastProvider.notifier).show(switch ((id.isEmpty, widget.isFollowup)) {
+        (true, true) => 'Follow-up added',
+        (true, false) => 'Task added',
+        (false, true) => 'Follow-up updated',
+        (false, false) => 'Task updated',
+      });
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
@@ -77,12 +91,18 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    // No id → this form is creating rather than editing. Same schema, same
+    // widget; only the write and the empty starting values differ.
+    final creating = id.isEmpty;
     // Independent field configs — a follow-up's layout is not a task's.
     final schema = widget.isFollowup
         ? ref.watch(followupDetailSchemaProvider)
         : ref.watch(taskDetailSchemaProvider);
-    // One record endpoint for both: a follow-up *is* a task.
-    final row = ref.watch(taskRowProvider(id));
+    // One record endpoint for both: a follow-up *is* a task. A create has no
+    // record to wait for, so it starts from an empty row.
+    final row = creating
+        ? const AsyncValue<Map<String, dynamic>?>.data(<String, dynamic>{})
+        : ref.watch(taskRowProvider(id));
 
     // The pickers read these; watched here so they are loading by the time the
     // user opens one rather than starting on first tap.
@@ -96,7 +116,12 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
         children: [
           DetailAppBar(
             section: widget.isFollowup ? 'Follow-up' : 'Task',
-            name: widget.isFollowup ? 'Edit follow-up' : 'Edit task',
+            name: switch ((creating, widget.isFollowup)) {
+              (true, true) => 'New follow-up',
+              (true, false) => 'New task',
+              (false, true) => 'Edit follow-up',
+              (false, false) => 'Edit task',
+            },
             onBack: () => context.pop(),
           ),
           Expanded(
@@ -124,6 +149,15 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
                         key: _formKey,
                         schema: schema,
                         row: row.valueOrNull,
+                        // `task_type` is typed `string` in the schema but is
+                        // really a choice — the org's own type list, which no
+                        // `related_model` names. Without these it renders as a
+                        // free-text box and a typo is a rejected save.
+                        optionsByColumn: {
+                          'task_type': widget.isFollowup
+                              ? ref.watch(followupTypeOptionsProvider)
+                              : ref.watch(taskTypeOptionsProvider),
+                        },
                       ),
                   ],
                 ),
@@ -136,6 +170,7 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
   }
 
   Widget _actionBar(String id) {
+    final creating = id.isEmpty;
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
       decoration: const BoxDecoration(
@@ -183,7 +218,7 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
                         children: [
                           Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
                           SizedBox(width: 8.w),
-                          Text('Save changes',
+                          Text(creating ? 'Add $_noun' : 'Save changes',
                               style: AppText.custom(
                                   size: 15, weight: FontWeight.w700, color: AppColors.white)),
                         ],

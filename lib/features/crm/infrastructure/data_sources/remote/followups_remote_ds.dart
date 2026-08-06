@@ -81,6 +81,28 @@ class FollowupsRemoteDataSource {
     return res is Map<String, dynamic> ? followupFromJson(res) : null;
   }
 
+  /// Creates a follow-up from the **schema-driven** form.
+  ///
+  /// Unlike [createFollowup], the field set is not fixed: the org's `detail`
+  /// layout decides it, so the payload is sent as given rather than rebuilt
+  /// from known keys — that is the whole point of a configurable form.
+  ///
+  /// `is_followup` is forced on: this is the only thing separating a follow-up
+  /// from a task on the shared endpoint. Empty strings are dropped because the
+  /// API rejects `""` for typed fields, but `null` is kept — the form uses it
+  /// to mean "clear", which matters when this same payload shape is reused for
+  /// an edit.
+  Future<Followup?> createFollowupFields(Map<String, dynamic> fields) async {
+    final body = <String, dynamic>{
+      for (final e in fields.entries)
+        if (!(e.value is String && (e.value as String).trim().isEmpty))
+          e.key: e.value,
+      'is_followup': true,
+    };
+    final res = await _api.post(ApiEndpoints.crmTasks, body: body);
+    return res is Map<String, dynamic> ? followupFromJson(res) : null;
+  }
+
   /// Marks a follow-up done (→ the org's completed-type status) or reopens it
   /// (→ the default / first open-type status). No usable status → no-op.
   Future<void> setFollowupDone(String id, bool done) async {

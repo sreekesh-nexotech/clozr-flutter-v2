@@ -64,6 +64,10 @@ class FollowupsApiRepository implements FollowupsRepository {
   }
 
   @override
+  Future<Followup?> createFollowupFields(Map<String, dynamic> fields) =>
+      _remote.createFollowupFields(fields);
+
+  @override
   Future<void> setFollowupDone(String id, bool done) async {
     await _remote.setFollowupDone(id, done);
     await AppCache.remove(AppCache.crmCache, _cacheKey);

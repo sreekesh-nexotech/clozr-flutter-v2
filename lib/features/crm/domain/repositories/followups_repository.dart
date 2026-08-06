@@ -16,6 +16,11 @@ abstract class FollowupsRepository {
   /// follow-up, or null when the response shape was unexpected.
   Future<Followup?> createFollowup(Map<String, dynamic> fields);
 
+  /// Creates a follow-up from the org-configured form, whose field set is the
+  /// org's `detail` layout rather than a fixed list. Returns the created
+  /// follow-up, or null when the response shape was unexpected.
+  Future<Followup?> createFollowupFields(Map<String, dynamic> fields);
+
   /// Marks a follow-up done (or reopens it when [done] is false).
   Future<void> setFollowupDone(String id, bool done);
 }
