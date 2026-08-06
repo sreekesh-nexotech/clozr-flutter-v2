@@ -37,9 +37,15 @@ class ApiService {
     if (kDebugMode) {
       // requestBody stays OFF: login/2FA/logout bodies carry passwords, OTP /
       // backup codes, and the refresh token — never log them, even in debug.
+      //
+      // TEMPORARY: responseBody is ON to inspect the payload shape (which
+      // columns the org's field config actually sends). It dumps every response
+      // in full — including `/auth/login/` and `/auth/login/refresh/`, whose
+      // bodies ARE the JWT pair. Set it back to false once you have what you
+      // need, and don't share these logs meanwhile.
       _dio.interceptors.add(PrettyDioLogger(
         requestBody: false,
-        responseBody: false,
+        responseBody: true,
         requestHeader: false,
         compact: true,
       ));

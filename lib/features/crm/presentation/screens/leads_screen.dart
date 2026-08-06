@@ -73,6 +73,11 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // the catalog, so the row looks unchanged but reads the org's stages.
     final tabDefs = ref.watch(leadTabsProvider);
     final statuses = ref.watch(leadStatusesProvider);
+    // Watched purely to start the drawer's option-list fetches now, at mount.
+    // Nothing else on this screen references them, so without this they would
+    // not begin loading until the user opened the drawer — and the sheet would
+    // snapshot them half-loaded.
+    ref.watch(leadFilterCatalogsProvider);
     // The org's own card layout. Empty until it loads (and in mock mode), which
     // the card reads as "use the built-in layout" — so the list never waits on
     // this call.
@@ -172,6 +177,12 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
 
   // ── Filter drawer ──
   Future<void> _openFilters() async {
+    // The sheet takes its spec once and keeps it, so the option lists must be
+    // settled before it opens. Normally already resolved — the fetches started
+    // when the screen mounted — so this yields for a microtask and no more.
+    await ref.read(leadFilterCatalogsProvider.future);
+    if (!mounted) return;
+
     final spec = ref.read(leadsFilterSpecProvider);
     final current = ref.read(leadFiltersProvider);
     final base = ref.read(leadBaseProvider);
@@ -235,7 +246,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     );
   }
 
-  void _toggleView(String id) {
+  Future<void> _toggleView(String id) async {
     final saved = ref.read(leadSavedFiltersProvider);
     if (saved.activeId == id) {
       // Tapping the active view deactivates it and clears the applied filters.
@@ -252,8 +263,12 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
           );
       return;
     }
-    // Decoded now rather than at load time: the org catalogs that map stored
-    // ids back to drawer options arrive asynchronously.
+    // A chip is tappable without ever opening the drawer, so wait for the same
+    // catalogs here: decoding maps stored server ids back to drawer options,
+    // and half-loaded catalogs would resolve them to the wrong thing.
+    await ref.read(leadFilterCatalogsProvider.future);
+    if (!mounted) return;
+
     final values = ref
         .read(leadFilterCodecProvider)
         .decode(view.definition, ref.read(leadsFilterSpecProvider));

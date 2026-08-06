@@ -12,9 +12,14 @@ import '../../../domain/entities/lead.dart';
 ///
 /// Mappers are static so tests can feed fixture maps without any HTTP stack.
 class LeadsRemoteDataSource {
-  LeadsRemoteDataSource(this._api);
+  LeadsRemoteDataSource(this._api, {this.statusTypesLoader});
 
   final ApiService _api;
+
+  /// Supplies the `name` → `status_type` map from an already-fetched source,
+  /// so the app does not request `/crm/lead-statuses/` twice — once here and
+  /// once for the status tabs. Falls back to fetching when null.
+  final Future<Map<String, String>> Function()? statusTypesLoader;
 
   /// Org lead-status catalog (`name` → `status_type`), fetched once per
   /// data-source lifetime. The leads *list* serializer sends `status` as a
@@ -64,6 +69,15 @@ class LeadsRemoteDataSource {
   Future<Map<String, String>> statusTypes() async {
     final cached = _statusTypeCache;
     if (cached != null) return cached;
+    final loader = statusTypesLoader;
+    if (loader != null) {
+      try {
+        final out = await loader();
+        return out.isEmpty ? out : (_statusTypeCache = out);
+      } on Object {
+        return const {};
+      }
+    }
     try {
       final body =
           await _api.get(ApiEndpoints.leadStatuses, query: {'page_size': 100});

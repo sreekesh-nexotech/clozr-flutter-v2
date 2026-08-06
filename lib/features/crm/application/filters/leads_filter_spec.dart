@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -241,6 +242,11 @@ bool leadMatchesFilters(Lead l, FilterValues v) {
 
 /// The Leads drawer spec: the org's configured stages, sources and products
 /// when they have loaded, otherwise options derived from the loaded leads.
+///
+/// Read this only once [leadFilterCatalogsProvider] has completed. It is a
+/// synchronous snapshot and the sheet keeps whichever one it opened with, so
+/// building it mid-fetch is exactly what made the first open show a partial
+/// list.
 final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
   // Derived options come from the rows in the current My/All scope, so the
   // drawer never offers a value that cannot match anything on screen.
@@ -251,6 +257,9 @@ final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
     sourceCatalog: ref.watch(leadSourcesProvider),
     productCatalog: ref.watch(productOptionsProvider),
     teamCatalog: ref.watch(teamOptionsProvider),
+    // Prototype teams are a mock-mode affordance only. Against a real backend
+    // `/management/teams/` is authoritative — including when it returns none.
+    fallbackTeams: ApiConfig.apiEnabled ? const [] : _allTeams(),
   );
 });
 

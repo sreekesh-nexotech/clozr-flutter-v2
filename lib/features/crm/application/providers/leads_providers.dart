@@ -20,7 +20,20 @@ final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
     return const LeadsRepositoryImpl(LeadsMockDataSource());
   }
   return LeadsApiRepository(
-    LeadsRemoteDataSource(ref.watch(apiServiceProvider)),
+    LeadsRemoteDataSource(
+      ref.watch(apiServiceProvider),
+      // Reuse the status catalog the tabs already fetch, instead of the data
+      // source requesting `/crm/lead-statuses/` a second time for the same
+      // `name` → `status_type` map.
+      statusTypesLoader: () async {
+        final catalog = await ref.read(leadStatusCatalogProvider.future);
+        return {
+          for (final s in catalog)
+            if (s.statusType != null && s.statusType!.isNotEmpty)
+              s.key: s.statusType!,
+        };
+      },
+    ),
   );
 });
 
