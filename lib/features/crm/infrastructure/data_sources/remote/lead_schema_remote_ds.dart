@@ -30,6 +30,19 @@ class LeadSchemaRemoteDataSource {
     return mobile.isNotEmpty ? mobile : _fetch('list');
   }
 
+  /// The layout for the lead detail page.
+  ///
+  /// No fallback to another view type: `detail` is the only layout that
+  /// describes this screen, and it is also what the **record** endpoint trims
+  /// itself to (`GET /crm/leads/{id}/` resolves `retrieve` → `detail`). Layout
+  /// and payload therefore agree here, unlike the list.
+  ///
+  /// Fetching this also has a side effect the server documents: an org's detail
+  /// config seeds lazily on the first `schema/?view_type=detail` call, and until
+  /// it exists the record endpoint returns the whole untrimmed lead. Asking for
+  /// the layout is what makes the trim start applying.
+  Future<LeadListSchema> fetchDetailSchema() => _fetch('detail');
+
   Future<LeadListSchema> _fetch(String viewType) async {
     try {
       final body = await _api.get(

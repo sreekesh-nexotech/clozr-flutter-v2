@@ -9,8 +9,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:clozrapp/core/filters/filter_models.dart';
 import 'package:clozrapp/core/network/api_service.dart';
 import 'package:clozrapp/core/storage/token_storage.dart';
+import 'package:clozrapp/features/crm/application/filters/leads_filter_spec.dart';
 import 'package:clozrapp/features/crm/application/providers/leads_providers.dart';
 import 'package:clozrapp/features/crm/domain/entities/lead.dart';
 import 'package:clozrapp/features/crm/domain/repositories/leads_repository.dart';
@@ -127,6 +129,43 @@ void main() {
       expect(adapter.requests.single.queryParameters.containsKey('is_teams'), isFalse);
     });
 
+    test('sends the drawer filters as query params, is-not included', () async {
+      final adapter = _PagingAdapter();
+      final ds = LeadsRemoteDataSource(_apiWith(adapter));
+
+      await ds.fetchLeadRows(filters: const {
+        'status__not': 'st-lost',
+        'lead_source__in': 'src-web,src-ref',
+        'lead_score_min': 75,
+      });
+
+      final q = adapter.requests.single.queryParameters;
+      // The whole point: the negation is resolved by the server, over every
+      // lead in the org, not by the app over the pages it happened to load.
+      expect(q['status__not'], 'st-lost');
+      expect(q['lead_source__in'], 'src-web,src-ref');
+      expect(q['lead_score_min'], 75);
+    });
+
+    test('paging and scope keys survive a filter that collides with them', () async {
+      final adapter = _PagingAdapter(pages: 2);
+      final ds = LeadsRemoteDataSource(_apiWith(adapter));
+
+      // A stored filter carrying `page`/`page_size` must not derail the walk.
+      await ds.fetchLeadRows(
+        mineOnly: true,
+        filters: const {'page': 99, 'page_size': 5, 'status__not': 'x'},
+      );
+
+      expect(adapter.requests.map((r) => r.queryParameters['page']).toList(),
+          [null, 2]);
+      for (final r in adapter.requests) {
+        expect(r.queryParameters['page_size'], 200);
+        expect(r.queryParameters['is_teams'], true);
+        expect(r.queryParameters['status__not'], 'x');
+      }
+    });
+
     test('follows every page and keeps the scope on each request', () async {
       final adapter = _PagingAdapter(pages: 3);
       final ds = LeadsRemoteDataSource(_apiWith(adapter));
@@ -154,6 +193,55 @@ void main() {
 
       expect(mine.length, lessThan(all.length));
       expect(mine.every((l) => l.isMine), isTrue);
+    });
+  });
+
+  group('drawer filters are a server query, not a local pass', () {
+    test('editing a filter refetches with it; clearing refetches without', () async {
+      final repo = _RecordingRepo();
+      final container = ProviderContainer(overrides: [
+        leadsRepositoryProvider.overrideWithValue(repo),
+        // Stands in for the codec, which needs the org catalogs to resolve ids.
+        leadFilterParamsProvider.overrideWith((ref) {
+          final v = ref.watch(leadFiltersProvider);
+          final stages = v.choice('stages');
+          if (stages == null || stages.ids.isEmpty) return const {};
+          return {'status__not': stages.ids.join(',')};
+        }),
+      ]);
+      addTearDown(container.dispose);
+
+      container.listen(leadsListProvider, (_, __) {}, fireImmediately: true);
+      await _settle();
+      expect(repo.filterCalls, [const <String, dynamic>{}]);
+
+      // Applying "Stage is not Lost" must reach the server, not be matched here.
+      container.read(leadFiltersProvider.notifier).state = FilterValues({
+        'stages': ChoiceValue(ids: {'st-lost'}, isNot: true),
+      });
+      await _settle();
+      expect(repo.filterCalls.last, {'status__not': 'st-lost'});
+
+      // Returning to a combination already fetched is served from the family
+      // cache — which is why the screen drops the target query before applying,
+      // exactly as the My/All toggle does.
+      container.read(leadFiltersProvider.notifier).state = FilterValues();
+      await _settle();
+      expect(repo.filterCalls.length, 2, reason: 'cached; no third request');
+
+      container.invalidate(leadsScopedProvider(const LeadListQuery(mineOnly: true)));
+      await _settle();
+      expect(repo.filterCalls.last, isEmpty);
+      expect(repo.filterCalls.length, 3);
+    });
+
+    test('the same query is one request, whatever order the keys came in', () {
+      const a = LeadListQuery(mineOnly: true, filters: {'x': 1, 'y': 2});
+      const b = LeadListQuery(mineOnly: true, filters: {'y': 2, 'x': 1});
+      const c = LeadListQuery(mineOnly: false, filters: {'x': 1, 'y': 2});
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(c)); // scope is part of the identity
     });
   });
 

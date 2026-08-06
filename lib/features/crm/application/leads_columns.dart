@@ -19,6 +19,46 @@ const Set<String> kLeadCardFrameColumns = {
   'assignees',
 };
 
+/// Columns the lead **detail** page renders in its own chrome rather than as an
+/// information row: the profile card (name, company, value, status), the score
+/// card, and the Owner & Assignees block. Excluded from [leadDetailRows] so a
+/// field is never shown twice on one screen.
+const Set<String> kLeadDetailFrameColumns = {
+  'lead_name',
+  'organization_name',
+  'lead_value',
+  'status',
+  'lead_score',
+  'lead_owner',
+  'assignees',
+  'assigned_team',
+};
+
+/// The information rows for the lead detail page: every column the org made
+/// visible on its `detail` layout that the page's chrome does not already show,
+/// in the org's order and under the org's labels.
+///
+/// Unlike the list card, layout and payload agree here — the record endpoint
+/// trims itself to this same `detail` config — so a visible column having no
+/// value means the lead genuinely has none. Those rows are kept and rendered
+/// as `—`, because on a detail page "we have no phone number for this lead" is
+/// information; a silently missing row is not.
+List<({String label, String value})> leadDetailRows(
+  Lead lead,
+  LeadListSchema schema,
+) {
+  final out = <({String label, String value})>[];
+  for (final column in schema.columns) {
+    if (kLeadDetailFrameColumns.contains(column.name)) continue;
+    final value = leadColumnText(lead, column);
+    // A column the entity cannot supply at all (null) is skipped; one it can
+    // supply but that is empty for this lead shows as an em dash.
+    if (value == null) continue;
+    out.add((label: column.label, value: value.isEmpty ? '—' : value));
+  }
+  return out;
+}
+
 /// The extra columns to render as chips: everything the org made visible that
 /// the card's fixed layout does not already show, in the org's order.
 ///
@@ -74,6 +114,10 @@ String? leadColumnText(Lead lead, LeadColumn column) {
     case 'mobile_no':
     case 'phone':
       return lead.phone;
+    case 'whatsapp_no':
+      return lead.whatsappNo;
+    case 'territory':
+      return lead.territory;
     case 'email':
       return lead.email;
     case 'website':

@@ -19,7 +19,9 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
+import '../../application/leads_columns.dart';
 import '../../application/providers/followups_providers.dart';
+import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
 import '../components/crm_async.dart';
@@ -44,6 +46,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   final _notesKey = GlobalKey<NotesThreadState>();
 
   static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Quotes', 'Files'];
+
+  /// Information rows shown before "Show more". An org with a long detail
+  /// layout collapses to this; a shorter one shows every row and drops the
+  /// toggle entirely.
+  static const _infoRowsCollapsed = 7;
 
   /// Scrolls the notes card into view and focuses the composer — wired to the
   /// sticky-bar note-pencil affordance (#13).
@@ -170,8 +177,12 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               children: [
                 _profileCard(lead, meta),
                 SizedBox(height: 14.h),
-                _scoreCard(lead),
-                SizedBox(height: 14.h),
+                // The whole score card is one configurable column; an org that
+                // hides `lead_score` should not see a card about it.
+                if (ref.watch(leadDetailSchemaProvider).shows('lead_score')) ...[
+                  _scoreCard(lead),
+                  SizedBox(height: 14.h),
+                ],
                 _infoCard(lead),
                 SizedBox(height: 14.h),
                 _activityCard(lead),
@@ -244,15 +255,17 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   ],
                 ),
               ),
-              SizedBox(width: 8.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(lead.value, style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                  SizedBox(height: 1.h),
-                  Text('VALUE', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
-                ],
-              ),
+              if (ref.watch(leadDetailSchemaProvider).shows('lead_value')) ...[
+                SizedBox(width: 8.w),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(lead.value, style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+                    SizedBox(height: 1.h),
+                    Text('VALUE', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                  ],
+                ),
+              ],
             ],
           ),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
@@ -403,22 +416,33 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// The built-in information rows, used when the org's `detail` layout has not
+  /// loaded (and in mock mode). Keeps the screen looking exactly as it did
+  /// before the layout became configurable.
+  List<({String label, String value})> _fallbackInfoRows(Lead lead) => [
+        (label: 'Email', value: lead.email),
+        (label: 'Mobile', value: lead.phone),
+        (label: 'Lead source', value: lead.source),
+        (label: 'Product / Need', value: lead.project),
+        (label: 'Deal value', value: lead.value),
+        (label: 'Industry', value: lead.industry),
+        (label: 'Location', value: lead.location),
+        (label: 'Created on', value: lead.createdOn),
+        (label: 'Website', value: lead.website),
+      ];
+
   // ── Information ──
   Widget _infoCard(Lead lead) {
-    final all = <(String, String)>[
-      ('Email', lead.email),
-      ('Mobile', lead.phone),
-      ('Lead source', lead.source),
-      ('Product / Need', lead.project),
-      ('Deal value', lead.value),
-      ('Industry', lead.industry),
-      ('Location', lead.location),
-      ('Created on', lead.createdOn),
-      ('Website', lead.website),
-      ('Warranty period', '—'),
-      ('Custom fields', 'Configured in web app'),
-    ];
-    final rows = _infoMore ? all : all.take(7).toList();
+    // The org's own detail layout drives these rows: which fields, in what
+    // order, under what labels. Empty schema → the built-in list above.
+    final schema = ref.watch(leadDetailSchemaProvider);
+    final all = schema.isEmpty
+        ? _fallbackInfoRows(lead)
+        : leadDetailRows(lead, schema);
+    // Long layouts stay collapsed behind "Show more"; a short one shows whole.
+    final collapsible = all.length > _infoRowsCollapsed;
+    final rows =
+        (_infoMore || !collapsible) ? all : all.take(_infoRowsCollapsed).toList();
     final owner = MockUsers.of(lead.owner);
     final assignees = lead.team.where((t) => t != lead.owner).toList();
     final teamName = () {
@@ -434,7 +458,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         children: [
           Text('Lead information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
-          for (final r in rows) DetailInfoRow(label: r.$1, value: r.$2),
+          for (final r in rows) DetailInfoRow(label: r.label, value: r.value),
+          if (collapsible)
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => _infoMore = !_infoMore),
@@ -460,9 +485,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               Text('Fields are edited in the web app', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
             ],
           ),
+          // The people block mirrors three configurable columns; when the org
+          // has hidden all three there is nothing to head, so the whole section
+          // goes with them.
+          if (schema.showsAny(const ['lead_owner', 'assignees', 'assigned_team'])) ...[
           SizedBox(height: 18.h),
           Text('OWNER & ASSIGNEES', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6)),
           SizedBox(height: 4.h),
+          if (schema.shows('lead_owner'))
           Container(
             padding: EdgeInsets.symmetric(vertical: 10.h),
             decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
@@ -490,6 +520,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               ],
             ),
           ),
+          if (schema.shows('assignees'))
           Container(
             padding: EdgeInsets.symmetric(vertical: 10.h),
             decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
@@ -499,7 +530,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Assignees', style: AppText.caption(color: AppColors.textMuted)),
+                      Text(schema.labelOf('assignees', 'Assignees'),
+                          style: AppText.caption(color: AppColors.textMuted)),
                       SizedBox(height: 4.h),
                       if (assignees.isEmpty)
                         Text('No assignees yet', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
@@ -513,12 +545,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               ],
             ),
           ),
+          if (schema.shows('assigned_team'))
           Padding(
             padding: EdgeInsets.only(top: 10.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Assigned team', style: AppText.caption(color: AppColors.textMuted)),
+                Text(schema.labelOf('assigned_team', 'Assigned team'),
+                    style: AppText.caption(color: AppColors.textMuted)),
                 SizedBox(height: 5.h),
                 Row(
                   children: [
@@ -530,6 +564,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               ],
             ),
           ),
+          ],
         ],
       ),
     );

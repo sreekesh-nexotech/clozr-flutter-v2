@@ -11,6 +11,8 @@ import '../../infrastructure/data_sources/local/leads_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 import '../../infrastructure/repositories/leads_api_repository.dart';
 import '../../infrastructure/repositories/leads_repository_impl.dart';
+import '../../../../core/filters/filter_models.dart';
+import '../filters/lead_filter_codec.dart';
 import '../filters/leads_filter_spec.dart';
 import 'crm_catalog_providers.dart';
 import 'saved_filters_providers.dart';
@@ -74,17 +76,25 @@ final leadsScopedProvider = FutureProvider.family<List<Lead>, LeadListQuery>(
       .getLeads(mineOnly: q.mineOnly, filters: q.filters),
 );
 
+/// The server params a given drawer state produces.
+///
+/// Shared by [leadFilterParamsProvider] and by the screen, which needs to build
+/// the *next* query key before it applies a filter. Both must agree exactly, or
+/// the screen would invalidate a key the list never watches.
+Map<String, dynamic> leadFilterParamsFor(FilterValues values, LeadFilterCodec codec) {
+  // Mock mode has no query engine behind it — the matcher runs locally there.
+  if (!ApiConfig.apiEnabled || values.isEmpty) return const {};
+  return codec.encode(values);
+}
+
 /// The drawer's filters as server params — the payload that makes `is not`
 /// mean "not, anywhere in the org" instead of "not, among the rows we loaded".
-///
-/// Empty in mock mode: the seed source cannot execute query params, so there
-/// [visibleLeadsProvider] keeps matching locally instead.
-final leadFilterParamsProvider = Provider<Map<String, dynamic>>((ref) {
-  if (!ApiConfig.apiEnabled) return const {};
-  final values = ref.watch(leadFiltersProvider);
-  if (values.isEmpty) return const {};
-  return ref.watch(leadFilterCodecProvider).encode(values);
-});
+final leadFilterParamsProvider = Provider<Map<String, dynamic>>(
+  (ref) => leadFilterParamsFor(
+    ref.watch(leadFiltersProvider),
+    ref.watch(leadFilterCodecProvider),
+  ),
+);
 
 /// Org-wide leads — the cross-screen lookup source. Tasks, follow-ups and
 /// customers resolve a linked lead by id here, and reports aggregate over it,

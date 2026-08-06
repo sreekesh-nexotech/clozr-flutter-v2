@@ -47,13 +47,15 @@ class LeadsRemoteDataSource {
     bool mineOnly = false,
     Map<String, dynamic> filters = const {},
   }) async {
+    // Paging steers the walk itself, so a filter can never own it — dropped
+    // outright rather than merged, since on the first request there is no
+    // `page` of ours to override a stored one with.
+    final safe = {...filters}..removeWhere(_isPagingKey);
     final rows = <Map<String, dynamic>>[];
     int? page;
     for (var i = 0; i < _maxPages; i++) {
       final body = await _api.get(ApiEndpoints.leads, query: {
-        // Drawer filters first, so paging and scope keys below always win —
-        // a stray `page` in a stored filter must not derail the walk.
-        ...filters,
+        ...safe,
         'page_size': _pageSize,
         if (mineOnly) 'is_teams': true,
         if (page != null) 'page': page,
@@ -103,9 +105,12 @@ class LeadsRemoteDataSource {
   /// Drops the cached status catalog (org switch / sign-out).
   void resetStatusCache() => _statusTypeCache = null;
 
-  Future<List<Lead>> fetchLeads({bool mineOnly = false}) async {
+  Future<List<Lead>> fetchLeads({
+    bool mineOnly = false,
+    Map<String, dynamic> filters = const {},
+  }) async {
     final types = statusTypes(); // starts concurrently with the row fetch
-    final rows = await fetchLeadRows(mineOnly: mineOnly);
+    final rows = await fetchLeadRows(mineOnly: mineOnly, filters: filters);
     return mapLeadRows(rows, statusTypes: await types);
   }
 
@@ -134,6 +139,9 @@ class LeadsRemoteDataSource {
       return null; // unexpected shape → null, never a crash
     }
   }
+
+  static bool _isPagingKey(String key, Object? _) =>
+      key == 'page' || key == 'page_size';
 
   /// Extracts the page number from a DRF `next` URL (absolute or relative).
   static int? _pageOf(String? next) {
@@ -227,6 +235,9 @@ class LeadsRemoteDataSource {
           row['assigned_team'] is Map ? _refName(row['assigned_team']) : '',
       assignedTeamId: _refId(row['assigned_team'], 'team_id'),
       phone: _phoneOf(row),
+      whatsappNo: _str(row, 'whatsapp_no'),
+      // Sent as a nested object on the detail payload, a bare name elsewhere.
+      territory: _refName(row['territory']),
       email: _str(row, 'email'),
       website: _str(row, 'website'),
       industry: industryName.isNotEmpty ? industryName : _refName(row['industry']),

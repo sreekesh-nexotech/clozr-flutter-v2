@@ -213,7 +213,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     );
     if (result == null) return;
 
-    ref.read(leadFiltersProvider.notifier).state = result;
+    _applyFilters(result);
     // A manual Apply deactivates the active saved view unless the draft still
     // means the same thing (prototype `deactivateViews` parity). Compared as
     // encoded definitions, since that is what the view actually stores.
@@ -225,6 +225,21 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       }
     }
     ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  /// Applies a filter set to the list.
+  ///
+  /// The query it is about to watch is dropped first, so re-applying a
+  /// combination that was fetched earlier really re-queries instead of serving
+  /// the list as it looked then — the same reason [_setTeamAll] invalidates
+  /// before switching scope.
+  void _applyFilters(FilterValues values) {
+    final params = leadFilterParamsFor(values, ref.read(leadFilterCodecProvider));
+    ref.invalidate(leadsScopedProvider(LeadListQuery(
+      mineOnly: !ref.read(leadTeamAllProvider),
+      filters: params,
+    )));
+    ref.read(leadFiltersProvider.notifier).state = values;
   }
 
   /// Persists the drawer draft as a saved filter. The API stores the backend's
@@ -266,7 +281,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     if (saved.activeId == id) {
       // Tapping the active view deactivates it and clears the applied filters.
       ref.read(leadSavedFiltersProvider.notifier).deactivate();
-      ref.read(leadFiltersProvider.notifier).state = FilterValues();
+      _applyFilters(FilterValues());
       return;
     }
     final view = saved.filters.firstWhere((f) => f.id == id);
@@ -288,13 +303,13 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
         .read(leadFilterCodecProvider)
         .decode(view.definition, ref.read(leadsFilterSpecProvider));
     ref.read(leadSavedFiltersProvider.notifier).apply(id);
-    ref.read(leadFiltersProvider.notifier).state = values;
+    _applyFilters(values);
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
   void _clearFilters() {
     ref.read(leadSavedFiltersProvider.notifier).deactivate();
-    ref.read(leadFiltersProvider.notifier).state = FilterValues();
+    _applyFilters(FilterValues());
     ref.read(toastProvider.notifier).show('Filters cleared');
   }
 

@@ -33,3 +33,19 @@ final leadListSchemaFutureProvider = FutureProvider<LeadListSchema>((ref) async 
 final leadListSchemaProvider = Provider<LeadListSchema>(
   (ref) => ref.watch(leadListSchemaFutureProvider).valueOrNull ?? LeadListSchema.empty,
 );
+
+/// `GET /crm/leads/schema/?view_type=detail` — the lead detail page's layout.
+///
+/// Kept separate from the list schema rather than derived from it: the two view
+/// types are independently configurable, and an org routinely shows fields on
+/// the detail page that its list omits.
+final leadDetailSchemaFutureProvider = FutureProvider<LeadListSchema>((ref) async {
+  final ds = ref.watch(leadSchemaRemoteDataSourceProvider);
+  return ds == null ? LeadListSchema.empty : ds.fetchDetailSchema();
+});
+
+/// Synchronous view of [leadDetailSchemaFutureProvider]. Same empty-while-
+/// loading contract as [leadListSchemaProvider].
+final leadDetailSchemaProvider = Provider<LeadListSchema>(
+  (ref) => ref.watch(leadDetailSchemaFutureProvider).valueOrNull ?? LeadListSchema.empty,
+);

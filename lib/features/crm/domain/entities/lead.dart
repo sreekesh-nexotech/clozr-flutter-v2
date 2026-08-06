@@ -33,6 +33,15 @@ class Lead extends Equatable {
   final String assignedTeam;
   final String assignedTeamId;
   final String phone;
+
+  /// The lead's WhatsApp number (`whatsapp_no`) — a **different** number from
+  /// [phone], which is why it is kept apart rather than folded in. Populated on
+  /// the detail payload; empty when the org hides the column, and in mock mode.
+  final String whatsappNo;
+
+  /// The lead's sales territory (`territory`), by name. Empty unless the org's
+  /// field config makes the column visible, and in mock mode.
+  final String territory;
   final String email;
   final String website;
   final String industry;
@@ -72,6 +81,8 @@ class Lead extends Equatable {
     this.assignedTeam = '',
     this.assignedTeamId = '',
     required this.phone,
+    this.whatsappNo = '',
+    this.territory = '',
     required this.email,
     required this.website,
     required this.industry,
