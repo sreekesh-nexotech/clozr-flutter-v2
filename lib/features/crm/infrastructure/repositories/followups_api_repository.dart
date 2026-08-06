@@ -36,6 +36,27 @@ class FollowupsApiRepository implements FollowupsRepository {
   }
 
   @override
+  Future<List<Followup>> getFollowupsForLead(String leadId) async {
+    final key = '${_cacheKey}_lead_$leadId';
+    try {
+      final rows = await _remote.fetchFollowupRowsForLead(leadId);
+      await AppCache.put(AppCache.crmCache, key, rows);
+      return FollowupsRemoteDataSource.mapRows(rows);
+    } on AppError catch (e) {
+      if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
+        final data = AppCache.get(AppCache.crmCache, key)?.data;
+        if (data is List) {
+          return FollowupsRemoteDataSource.mapRows([
+            for (final row in data)
+              if (row is Map) Map<String, dynamic>.from(row),
+          ]);
+        }
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<Followup?> createFollowup(Map<String, dynamic> fields) async {
     final created = await _remote.createFollowup(fields);
     await AppCache.remove(AppCache.crmCache, _cacheKey);

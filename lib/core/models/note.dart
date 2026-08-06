@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../app/theme/app_colors.dart';
 
-/// A photo/file attached to a note (#13). Simulated in the presentation layer —
-/// [url] stays null until a real upload endpoint is wired.
+/// A photo/file attached to a note (#13).
+///
+/// Carries one of two things depending on which side it came from:
+/// - **picked on the device** — [localPath] points at the file to upload, and
+///   [url] is null until the upload returns;
+/// - **loaded from the API** — [url] is the CDN link and [localPath] is null.
 class NoteAttachment {
-  const NoteAttachment({required this.name, required this.kind, this.size, this.url});
+  const NoteAttachment({
+    required this.name,
+    required this.kind,
+    this.size,
+    this.url,
+    this.localPath,
+  });
 
   /// 'image' or 'file'.
   final String kind;
@@ -12,7 +22,22 @@ class NoteAttachment {
   final String? size;
   final String? url;
 
+  /// Absolute path to the picked file, set only before upload. The presence of
+  /// this is what tells the notifier there is something to send.
+  final String? localPath;
+
   bool get isImage => kind == 'image';
+
+  /// Whether this attachment still needs uploading.
+  bool get isPending => localPath != null && url == null;
+
+  NoteAttachment copyWith({String? url, String? localPath}) => NoteAttachment(
+        name: name,
+        kind: kind,
+        size: size,
+        url: url ?? this.url,
+        localPath: localPath,
+      );
 }
 
 /// A reply beneath a note.

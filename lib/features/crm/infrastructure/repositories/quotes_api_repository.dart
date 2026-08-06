@@ -31,6 +31,22 @@ class QuotesApiRepository implements QuotesRepository {
   }
 
   @override
+  Future<List<Quote>> getQuotesForLead(String leadId) async {
+    final key = '${_cacheKey}_lead_$leadId';
+    try {
+      final rows = await _remote.fetchQuoteRowsForLead(leadId);
+      await AppCache.put(AppCache.crmCache, key, rows);
+      return quotesFromApiRows(rows);
+    } on AppError catch (e) {
+      if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
+        final data = AppCache.get(AppCache.crmCache, key)?.data;
+        if (data is List) return quotesFromApiRows(data);
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<ViewSchema> getQuoteSchema() => _remote.fetchQuoteSchema();
 
   @override

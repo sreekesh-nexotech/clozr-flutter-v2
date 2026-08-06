@@ -27,6 +27,14 @@ final quotesProvider = FutureProvider<List<Quote>>(
   (ref) => ref.watch(quotesRepositoryProvider).getQuotes(),
 );
 
+/// The quotes raised against one lead — the Quotes tab on the lead detail
+/// screen. Keyed by lead id: `GET /quotations/quotations/?lead=<lead_id>`.
+final leadQuotesProvider =
+    FutureProvider.family<List<Quote>, String>((ref, leadId) {
+  if (leadId.isEmpty) return Future.value(const <Quote>[]);
+  return ref.watch(quotesRepositoryProvider).getQuotesForLead(leadId);
+});
+
 /// The org's Quote layout, driving the New quote form.
 ///
 /// `view_type=detail` — the only schema call that describes the whole form (see

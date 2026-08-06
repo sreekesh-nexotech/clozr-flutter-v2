@@ -24,6 +24,15 @@ final followupsProvider = FutureProvider<List<Followup>>(
   (ref) => ref.watch(followupsRepositoryProvider).getFollowups(),
 );
 
+/// The follow-ups linked to one lead — the Follow-ups tab on the lead detail
+/// screen. Keyed by lead id: `GET /crm/tasks/?related_to=lead&
+/// related_to_id=<lead_id>&is_followup=true`.
+final leadFollowupsProvider =
+    FutureProvider.family<List<Followup>, String>((ref, leadId) {
+  if (leadId.isEmpty) return Future.value(const <Followup>[]);
+  return ref.watch(followupsRepositoryProvider).getFollowupsForLead(leadId);
+});
+
 /// Look up a single follow-up by id (used by the detail screen). Reads the
 /// merged "all" set so session drafts and status overrides are reflected.
 final followupByIdProvider = Provider.family<Followup?, String>((ref, id) {

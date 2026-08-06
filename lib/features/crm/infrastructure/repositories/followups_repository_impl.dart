@@ -15,6 +15,14 @@ class FollowupsRepositoryImpl implements FollowupsRepository {
     return _local.fetchFollowups();
   }
 
+  /// Mock mode has no server-side filter, so the seed is narrowed here — the
+  /// same result the API returns for `?related_to=lead&related_to_id=…`.
+  @override
+  Future<List<Followup>> getFollowupsForLead(String leadId) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return _local.fetchFollowups().where((f) => f.leadId == leadId).toList();
+  }
+
   /// Local echo — builds the follow-up the way the Add-follow-up sheet does.
   /// Mock mode keeps its session-draft flow; this honours the contract.
   @override

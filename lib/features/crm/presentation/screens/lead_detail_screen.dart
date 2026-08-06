@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
@@ -17,7 +18,10 @@ import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../auth/application/providers/auth_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/attachments_providers.dart';
+import '../../application/providers/call_logs_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
@@ -25,8 +29,14 @@ import '../../application/leads_columns.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../application/providers/quotes_providers.dart';
+import '../../domain/entities/call_log.dart';
 import '../../domain/entities/crm_catalog.dart';
+import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/lead_file.dart';
+import '../../domain/entities/quote.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
@@ -68,11 +78,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
 
   void _openLeadMenu(Lead lead, bool converted) {
     final toast = ref.read(toastProvider.notifier);
-    final first = lead.name.split(' ').first;
     showActionMenu(
       context,
       actions: [
-        MenuAction(icon: PhosphorIconsFill.phone, label: 'Call lead', onTap: () => toast.show('Calling $first…')),
+        MenuAction(icon: PhosphorIconsFill.phone, label: 'Call lead', onTap: () => _callLead(lead)),
         MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => toast.show('Opening WhatsApp…')),
         MenuAction(icon: PhosphorIconsRegular.envelopeSimple, label: 'Send email', onTap: () => toast.show('Composing email…')),
         MenuAction(
@@ -130,6 +139,52 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       title: 'Lead not found',
       body: 'This lead may have been removed or you no longer have access to it.',
     ));
+  }
+
+  /// Places a call to the lead, then records it.
+  ///
+  /// Two separate things, because the backend has no "place a call" endpoint:
+  /// the device dials, and `POST /crm/call-logs/` records that it happened
+  /// (which also re-scores the lead server-side).
+  ///
+  /// The log needs the caller's **own** number as `from_number` — a required
+  /// field with no default. An account whose profile has no phone therefore
+  /// dials fine but cannot be logged, and is told so rather than left to
+  /// assume the call was recorded.
+  Future<void> _callLead(Lead lead) async {
+    final toast = ref.read(toastProvider.notifier);
+    final to = lead.phone.trim();
+    if (to.isEmpty) {
+      toast.show('This lead has no phone number.');
+      return;
+    }
+
+    final dialled = await launchUrl(Uri(scheme: 'tel', path: to));
+    if (!mounted) return;
+    if (!dialled) {
+      toast.show('Could not open the dialler.');
+      return;
+    }
+
+    final from = ref.read(sessionControllerProvider).user?.phone.trim() ?? '';
+    if (from.isEmpty) {
+      toast.show('Call not logged — add your phone number to your profile.');
+      return;
+    }
+
+    try {
+      await ref.read(callLogsRepositoryProvider).logOutgoingCall(
+            leadId: lead.id,
+            fromNumber: from,
+            toNumber: to,
+          );
+      // The Call log tab and the lead's score both move on a logged call.
+      ref.invalidate(leadCallLogsProvider(lead.id));
+      ref.invalidate(leadDetailProvider(lead.id));
+    } on Object catch (e) {
+      if (!mounted) return;
+      toast.show(e is AppError ? e.message : 'Could not log the call.');
+    }
   }
 
   /// Opens the stage picker.
@@ -690,28 +745,46 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       case 0:
         return _tasksTab(lead);
       case 1:
-        return _callLogTab();
+        return _callLogTab(lead);
       case 2:
         return _followupsTab(lead);
       case 3:
-        return _quotesTab();
+        return _quotesTab(lead);
       default:
-        return const DetailTabEmpty(
-          icon: PhosphorIconsRegular.paperclip,
-          title: 'No files shared',
-          body: 'Drawings, moodboards and documents will appear here.',
-        );
+        return _filesTab(lead);
     }
   }
 
+  /// Loading / error / empty / data for one activity tab.
+  ///
+  /// Every tab reads its own lead-scoped provider, so a failed fetch shows a
+  /// retry rather than an empty state — "nothing logged yet" and "we couldn't
+  /// load it" must not look the same.
+  Widget _tabAsync<T>(
+    AsyncValue<List<T>> async, {
+    required Widget empty,
+    required Widget Function(List<T> items) data,
+    required VoidCallback onRetry,
+  }) {
+    return async.when(
+      loading: () => ListSkeleton(
+        itemCount: 3,
+        itemHeight: 54.h,
+        padding: EdgeInsets.symmetric(vertical: 14.h),
+      ),
+      error: (e, _) => ErrorState.forError(crmAppError(e), onRetry: onRetry),
+      data: (items) => items.isEmpty ? empty : data(items),
+    );
+  }
+
   Widget _tasksTab(Lead lead) {
-    final tasks = (ref.watch(crmTasksProvider).valueOrNull ?? const []).where((t) => t.leadId == lead.id).toList();
-    if (tasks.isEmpty) {
-      return const DetailTabEmpty(icon: PhosphorIconsRegular.checkSquare, title: 'No tasks yet', body: 'Tasks linked to this lead will appear here.');
-    }
-    return Column(
-      children: [
-        for (final t in tasks)
+    return _tabAsync<CrmTask>(
+      ref.watch(leadTasksProvider(lead.id)),
+      onRetry: () => ref.invalidate(leadTasksProvider(lead.id)),
+      empty: const DetailTabEmpty(icon: PhosphorIconsRegular.checkSquare, title: 'No tasks yet', body: 'Tasks linked to this lead will appear here.'),
+      data: (tasks) => Column(
+        children: [
+          for (final t in tasks)
           Container(
             padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
             decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
@@ -740,60 +813,89 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _callLogTab() {
-    final rows = <(IconData, Color, String, String)>[
-      (PhosphorIconsRegular.phoneOutgoing, AppColors.success, 'Connected · 4m 12s', 'Today, 9:32 AM'),
-      (PhosphorIconsRegular.phoneOutgoing, AppColors.textPlaceholder, 'No answer', 'Yesterday, 5:10 PM'),
-      (PhosphorIconsRegular.phoneIncoming, AppColors.blueBright, 'Connected · 2m 40s', '2 days ago, 11:04 AM'),
-      (PhosphorIconsRegular.phoneX, AppColors.error, 'Missed call', '4 days ago, 3:22 PM'),
-    ];
-    return Column(
-      children: [
-        for (final r in rows)
+  Widget _callLogTab(Lead lead) {
+    return _tabAsync<CallLog>(
+      ref.watch(leadCallLogsProvider(lead.id)),
+      onRetry: () => ref.invalidate(leadCallLogsProvider(lead.id)),
+      empty: const DetailTabEmpty(icon: PhosphorIconsRegular.phone, title: 'No calls logged', body: 'Calls made to or received from this lead will appear here.'),
+      data: (calls) => Column(children: [for (final c in calls) _callRow(c)]),
+    );
+  }
+
+  /// One call row. The icon shows direction, the tint shows how it ended —
+  /// answered (green out / blue in), unanswered (grey) or missed (red).
+  Widget _callRow(CallLog c) {
+    final icon = c.isMissed
+        ? PhosphorIconsRegular.phoneX
+        : c.isIncoming
+            ? PhosphorIconsRegular.phoneIncoming
+            : PhosphorIconsRegular.phoneOutgoing;
+    final tone = c.isMissed
+        ? AppColors.error
+        : !c.connected
+            ? AppColors.textPlaceholder
+            : c.isIncoming
+                ? AppColors.blueBright
+                : AppColors.success;
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Container(
-            padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
+            width: 38.w,
+            height: 38.w,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+            child: Icon(icon, size: 18.sp, color: tone),
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 38.w,
-                  height: 38.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-                  child: Icon(r.$1, size: 18.sp, color: r.$2),
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(r.$3, style: AppText.bodyStrong()),
-                      SizedBox(height: 2.h),
-                      Text(r.$4, style: AppText.caption()),
+                Row(
+                  children: [
+                    Expanded(child: Text(c.outcome, style: AppText.bodyStrong())),
+                    if (c.hasRecording) ...[
+                      SizedBox(width: 6.w),
+                      Icon(PhosphorIconsRegular.waveform, size: 14.sp, color: AppColors.textPlaceholder),
                     ],
-                  ),
+                  ],
                 ),
+                SizedBox(height: 2.h),
+                Text(c.time, style: AppText.caption()),
+                if (c.summary.isNotEmpty) ...[
+                  SizedBox(height: 5.h),
+                  Text(c.summary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.4)),
+                ],
               ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _followupsTab(Lead lead) {
-    final fus = (ref.watch(followupsProvider).valueOrNull ?? const []).where((f) => f.leadId == lead.id).toList();
-    if (fus.isEmpty) {
-      return const DetailTabEmpty(icon: PhosphorIconsRegular.clock, title: 'No follow-ups scheduled', body: 'Follow-ups scheduled for this lead will appear here.');
-    }
-    return Padding(
-      padding: EdgeInsets.only(top: 12.h),
-      child: Column(
-        children: [
-          for (final f in fus)
+    return _tabAsync<Followup>(
+      ref.watch(leadFollowupsProvider(lead.id)),
+      onRetry: () => ref.invalidate(leadFollowupsProvider(lead.id)),
+      empty: const DetailTabEmpty(icon: PhosphorIconsRegular.clock, title: 'No follow-ups scheduled', body: 'Follow-ups scheduled for this lead will appear here.'),
+      data: (fus) => Padding(
+        padding: EdgeInsets.only(top: 12.h),
+        child: Column(
+          children: [
+            for (final f in fus)
             Container(
               margin: EdgeInsets.only(bottom: 12.h),
               padding: EdgeInsets.all(14.r),
@@ -824,37 +926,146 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                         ],
                       ),
                     ),
-                    _miniPill(StatusMeta$.followup[f.status] ?? StatusMeta$.followup['due']!),
-                  ],
+                      _miniPill(StatusMeta$.followup[f.status] ?? StatusMeta$.followup['due']!),
+                    ],
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _quotesTab() {
-    return DetailTabEmpty(
-      icon: PhosphorIconsRegular.fileText,
-      title: 'No quotes yet',
-      body: 'Create a quotation to share pricing with this lead.',
-      cta: GestureDetector(
-        onTap: () => context.push(Routes.addQuote),
-        child: Container(
-          height: 42.h,
-          padding: EdgeInsets.symmetric(horizontal: 18.w),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(PhosphorIconsBold.plus, size: 14.sp, color: AppColors.white),
-              SizedBox(width: 7.w),
-              Text('Create quote', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
-            ],
+  Widget _quotesTab(Lead lead) {
+    return _tabAsync<Quote>(
+      ref.watch(leadQuotesProvider(lead.id)),
+      onRetry: () => ref.invalidate(leadQuotesProvider(lead.id)),
+      empty: DetailTabEmpty(
+        icon: PhosphorIconsRegular.fileText,
+        title: 'No quotes yet',
+        body: 'Create a quotation to share pricing with this lead.',
+        cta: GestureDetector(
+          onTap: () => context.push(Routes.addQuote),
+          child: Container(
+            height: 42.h,
+            padding: EdgeInsets.symmetric(horizontal: 18.w),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(PhosphorIconsBold.plus, size: 14.sp, color: AppColors.white),
+                SizedBox(width: 7.w),
+                Text('Create quote', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
+              ],
+            ),
           ),
         ),
+      ),
+      data: (quotes) => Column(children: [for (final q in quotes) _quoteRow(q)]),
+    );
+  }
+
+  Widget _quoteRow(Quote q) {
+    final meta = StatusMeta$.quote[q.status] ?? StatusMeta$.quote['draft']!;
+    final validLabel = q.valid == '—' || q.valid.isEmpty ? 'Draft — not issued' : 'Valid till ${q.valid}';
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      child: GestureDetector(
+        onTap: () => context.push('${Routes.quoteDetail}?id=${q.id}'),
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38.w,
+              height: 38.w,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsRegular.fileText, size: 18.sp, color: AppColors.textSecondary),
+            ),
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('#${q.id}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                  SizedBox(height: 3.h),
+                  Text(validLabel, style: AppText.caption()),
+                ],
+              ),
+            ),
+            SizedBox(width: 8.w),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _miniPill(meta),
+                SizedBox(height: 5.h),
+                Text(q.amount, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filesTab(Lead lead) {
+    return _tabAsync<LeadFile>(
+      ref.watch(leadFilesProvider(lead.id)),
+      onRetry: () => ref.invalidate(leadFilesProvider(lead.id)),
+      empty: const DetailTabEmpty(
+        icon: PhosphorIconsRegular.paperclip,
+        title: 'No files shared',
+        body: 'Drawings, moodboards and documents will appear here.',
+      ),
+      data: (files) => Column(children: [for (final f in files) _fileRow(f)]),
+    );
+  }
+
+  Widget _fileRow(LeadFile f) {
+    final uploader = MockUsers.of(f.uploadedBy).name.split(' ').first;
+    final meta = [f.ext, if (uploader.isNotEmpty) uploader, if (f.uploadedAt.isNotEmpty) f.uploadedAt].join(' · ');
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38.w,
+            height: 38.w,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+            child: Icon(PhosphorIconsRegular.paperclip, size: 18.sp, color: AppColors.textSecondary),
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(f.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                SizedBox(height: 3.h),
+                Text(meta, style: AppText.caption()),
+                if (f.description.isNotEmpty) ...[
+                  SizedBox(height: 4.h),
+                  Text(f.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.4)),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -906,7 +1117,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         children: [
           Expanded(
             child: GestureDetector(
-              onTap: () => ref.read(toastProvider.notifier).show('Calling ${lead.name.split(' ').first}…'),
+              onTap: () => _callLead(lead),
               child: Container(
                 height: 52.h,
                 alignment: Alignment.center,

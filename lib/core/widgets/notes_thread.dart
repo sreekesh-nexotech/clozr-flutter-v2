@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -82,10 +83,10 @@ class NotesThreadState extends State<NotesThread> {
             child: Column(
               children: [
                 _attachOption(ctx, PhosphorIconsRegular.image, 'Photo', () {
-                  _addMockAttachment('image');
+                  _pickFrom(FileType.image);
                 }),
                 _attachOption(ctx, PhosphorIconsRegular.paperclip, 'File', () {
-                  _addMockAttachment('file');
+                  _pickFrom(FileType.custom);
                 }),
               ],
             ),
@@ -95,14 +96,52 @@ class NotesThreadState extends State<NotesThread> {
     );
   }
 
-  // Simulated pick — a real image_picker/file_picker call slots in here later.
-  void _addMockAttachment(String kind) {
-    final n = _pending.where((a) => a.kind == kind).length + 1;
+  /// The file types the notes API accepts (rulebook §11.6): images, PDF, Excel
+  /// and Markdown. Constraining the picker means a rejected upload is something
+  /// the user can't stumble into.
+  static const _allowedExtensions = [
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
+    'pdf', 'xls', 'xlsx', 'csv', 'md',
+  ];
+
+  /// Picks real files off the device and queues them for upload.
+  ///
+  /// Multi-select: the composer already renders a chip per pending file, and
+  /// the upload loop posts them one at a time.
+  Future<void> _pickFrom(FileType type) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: type,
+      allowMultiple: true,
+      withData: false, // paths only — a large file should not sit in memory
+      allowedExtensions: type == FileType.custom ? _allowedExtensions : null,
+    );
+    if (result == null || !mounted) return; // cancelled
+
     setState(() {
-      _pending.add(kind == 'image'
-          ? NoteAttachment(name: 'Photo $n.jpg', kind: 'image', size: '1.2 MB')
-          : NoteAttachment(name: 'Document $n.pdf', kind: 'file', size: '340 KB'));
+      for (final f in result.files) {
+        final path = f.path;
+        if (path == null) continue;
+        _pending.add(NoteAttachment(
+          name: f.name,
+          kind: _kindOf(f.extension),
+          size: _formatBytes(f.size),
+          localPath: path,
+        ));
+      }
     });
+  }
+
+  static String _kindOf(String? extension) {
+    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'};
+    return imageExts.contains((extension ?? '').toLowerCase()) ? 'image' : 'file';
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).round()} KB';
+    return '$bytes B';
   }
 
   Widget _attachOption(BuildContext ctx, IconData icon, String label, VoidCallback onTap) {

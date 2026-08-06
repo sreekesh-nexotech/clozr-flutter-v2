@@ -76,6 +76,9 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
         return;
       }
       widget.ref.invalidate(crmTasksProvider);
+      // Every lead's Tasks tab reads its own scoped fetch, so the org-wide
+      // list alone going stale is not enough to refresh them.
+      widget.ref.invalidate(leadTasksProvider);
       widget.ref.read(toastProvider.notifier).show('Task added');
       if (mounted) Navigator.of(context).pop();
       return;

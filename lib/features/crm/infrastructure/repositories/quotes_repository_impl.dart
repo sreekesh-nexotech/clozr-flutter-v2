@@ -17,6 +17,14 @@ class QuotesRepositoryImpl implements QuotesRepository {
     return _local.fetchQuotes();
   }
 
+  /// Mock mode has no server-side filter, so the seed is narrowed here — the
+  /// same result the API returns for `?lead=<lead_id>`.
+  @override
+  Future<List<Quote>> getQuotesForLead(String leadId) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return _local.fetchQuotes().where((q) => q.leadId == leadId).toList();
+  }
+
   /// Mock mode has no org config, so the form falls back to its built-in
   /// field set — the same contract as an org that has not configured one.
   @override

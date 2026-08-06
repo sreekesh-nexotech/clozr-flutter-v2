@@ -104,6 +104,10 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
           body: body,
         );
         if (created == null || !mounted) return;
+        // Attachments are a second call — the upload points at a note_id, so
+        // it can only happen now that the note exists.
+        final uploaded = await _uploadAttachments(created.id, attachments);
+        if (!mounted) return;
         // Swap in the server id so replies to this note hit the real thread.
         state = [
           for (final n in state)
@@ -116,7 +120,7 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
                     via: n.via,
                     avatarColor: n.avatarColor,
                     replies: n.replies,
-                    attachments: n.attachments,
+                    attachments: uploaded,
                   )
                 : n,
         ];
@@ -124,6 +128,33 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
         // Keep the optimistic entry.
       }
     }());
+  }
+
+  /// Uploads each pending file against [noteId], one at a time.
+  ///
+  /// Returns the attachments to display: an upload that succeeds swaps in its
+  /// hosted url, one that fails keeps the local entry so the chip does not
+  /// vanish from a note the user can see. Sequential rather than parallel —
+  /// these are phone uploads on a mobile connection, and a burst of them
+  /// competes for the same bandwidth.
+  Future<List<NoteAttachment>> _uploadAttachments(
+    String noteId,
+    List<NoteAttachment> attachments,
+  ) async {
+    if (attachments.isEmpty) return attachments;
+    final out = <NoteAttachment>[];
+    for (final a in attachments) {
+      if (!a.isPending) {
+        out.add(a);
+        continue;
+      }
+      try {
+        out.add(await _repo!.addAttachment(noteId: noteId, attachment: a) ?? a);
+      } on Object {
+        out.add(a); // upload failed — keep showing what the user attached
+      }
+    }
+    return out;
   }
 
   /// Appends a reply to the note identified by [noteId].

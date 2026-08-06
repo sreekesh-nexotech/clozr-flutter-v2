@@ -46,12 +46,17 @@ class ApiEndpoints {
   static const taskPriorities = '/crm/task-priorities/';
   static const followUpTypes = '/crm/follow-up-types/';
 
+  // ── CRM: call logs (telephony activity on a lead / customer) ──
+  static const callLogs = '/crm/call-logs/';
+  static String callLog(String id) => '/crm/call-logs/$id/';
+
   // ── CRM: notes / attachments / products ──
   static const notes = '/crm/notes/';
   static String note(String id) => '/crm/notes/$id/';
   static String noteReplies(String id) => '/crm/notes/$id/replies/';
   static const noteTypes = '/crm/note-types/';
   static const attachments = '/crm/attachments/';
+  static String attachment(String id) => '/crm/attachments/$id/';
   static const products = '/crm/products/';
   static String product(String id) => '/crm/products/$id/';
 

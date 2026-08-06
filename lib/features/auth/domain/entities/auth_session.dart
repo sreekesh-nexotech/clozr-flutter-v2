@@ -37,6 +37,7 @@ class SessionUser extends Equatable {
     this.roleName = '',
     this.designation = '',
     this.avatarUrl = '',
+    this.phone = '',
   });
 
   final String id;
@@ -52,6 +53,13 @@ class SessionUser extends Equatable {
 
   /// `profile.profile_picture` — absolute or relative URL, empty when unset.
   final String avatarUrl;
+
+  /// `profile.phone` — the signed-in user's own number.
+  ///
+  /// Empty on an account whose profile was never filled in, which matters:
+  /// it is the `from_number` a call log requires, so without it a placed call
+  /// cannot be logged.
+  final String phone;
 
   OrgSummary? get primaryOrg => organizations.isEmpty
       ? null
@@ -78,6 +86,7 @@ class SessionUser extends Equatable {
       roleName: role is Map ? (role['name'] as String? ?? '') : '',
       designation: profileField('designation'),
       avatarUrl: profileField('profile_picture'),
+      phone: profileField('phone'),
     );
   }
 
@@ -97,7 +106,11 @@ class SessionUser extends Equatable {
             },
         ],
         'role': {'name': roleName},
-        'profile': {'designation': designation, 'profile_picture': avatarUrl},
+        'profile': {
+          'designation': designation,
+          'profile_picture': avatarUrl,
+          'phone': phone,
+        },
       };
 
   @override

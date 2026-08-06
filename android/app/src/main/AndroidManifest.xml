@@ -1,4 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Note attachments: the picker reads images and documents the user
+         chooses. READ_MEDIA_IMAGES is the Android 13+ (API 33) permission;
+         READ_EXTERNAL_STORAGE covers API 32 and below, where the granular
+         media permissions do not exist. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
         android:label="clozrapp"
         android:name="${applicationName}"
@@ -41,6 +50,14 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- The Call action hands a `tel:` number to the dialler. Android 11+
+             hides other apps unless they are declared here, so without this
+             `canLaunchUrl` reports false on a device that can dial perfectly
+             well. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
         </intent>
     </queries>
 </manifest>

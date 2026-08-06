@@ -24,4 +24,14 @@ abstract class NotesRepository {
     required String noteId,
     required String body,
   });
+
+  /// Uploads one picked file against an existing note.
+  ///
+  /// Separate from [addNote] because the API requires it: the upload points at
+  /// a `note_id`, so the note has to exist first. Returns the attachment with
+  /// its hosted url, or null when the upload produced nothing usable.
+  Future<NoteAttachment?> addAttachment({
+    required String noteId,
+    required NoteAttachment attachment,
+  });
 }

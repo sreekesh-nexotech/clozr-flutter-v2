@@ -19,13 +19,22 @@ class QuotesRemoteDataSource {
 
   /// Raw `/quotations/quotations/` rows, following `next` up to 3 pages. The
   /// repository caches these and maps them via [quotesFromApiRows].
-  Future<List<Map<String, dynamic>>> fetchQuoteRows() async {
+  Future<List<Map<String, dynamic>>> fetchQuoteRows() => _fetchRows();
+
+  /// Raw rows for the quotes raised against one lead. Unlike tasks and call
+  /// logs, quotations carry a real `lead` FK, so the filter is a plain
+  /// `?lead=<lead_id>` rather than the generic-relation pair.
+  Future<List<Map<String, dynamic>>> fetchQuoteRowsForLead(String leadId) =>
+      _fetchRows(leadId: leadId);
+
+  Future<List<Map<String, dynamic>>> _fetchRows({String? leadId}) async {
     final out = <Map<String, dynamic>>[];
     var page = 1;
     while (page <= 50) {
       final body = await _api.get(ApiEndpoints.quotations, query: {
         'page': page,
         'page_size': ApiConfig.defaultPageSize,
+        if (leadId != null) 'lead': leadId,
       });
       final paged = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
       out.addAll(paged.results);

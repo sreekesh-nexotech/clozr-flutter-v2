@@ -24,6 +24,15 @@ final crmTasksProvider = FutureProvider<List<CrmTask>>(
   (ref) => ref.watch(crmTasksRepositoryProvider).getTasks(),
 );
 
+/// The tasks linked to one lead — the Tasks tab on the lead detail screen.
+/// Keyed by lead id: `GET /crm/tasks/?related_to=lead&related_to_id=<lead_id>
+/// &is_followup=false`.
+final leadTasksProvider =
+    FutureProvider.family<List<CrmTask>, String>((ref, leadId) {
+  if (leadId.isEmpty) return Future.value(const <CrmTask>[]);
+  return ref.watch(crmTasksRepositoryProvider).getTasksForLead(leadId);
+});
+
 /// Look up a single task by id (used by the detail screen). Reads the merged
 /// "all" set so session drafts and status overrides are reflected.
 final crmTaskByIdProvider = Provider.family<CrmTask?, String>((ref, id) {

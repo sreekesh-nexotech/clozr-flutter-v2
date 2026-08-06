@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../../../core/models/note.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
@@ -41,6 +43,35 @@ class NotesRemoteDataSource {
       'related_to_id': relatedToId,
     });
     return res is Map<String, dynamic> ? noteFromJson(res) : null;
+  }
+
+  /// `POST /crm/attachments/` (multipart) — attaches one picked file to a note.
+  ///
+  /// Attachments are a **second call**: the note must exist first, because the
+  /// upload points back at its `note_id`. A reply is a note too, so the same
+  /// call attaches to either.
+  ///
+  /// Returns the attachment with its CDN [NoteAttachment.url] filled in, or
+  /// null when the response has no usable file link.
+  Future<NoteAttachment?> addAttachment(
+    String noteId,
+    NoteAttachment attachment,
+  ) async {
+    final path = attachment.localPath;
+    if (path == null) return null;
+
+    final form = FormData.fromMap({
+      'related_to': 'note',
+      'related_to_id': noteId,
+      'name': attachment.name,
+      'file_upload': await MultipartFile.fromFile(path, filename: attachment.name),
+    });
+    final res = await _api.postForm(ApiEndpoints.attachments, form);
+    if (res is! Map<String, dynamic>) return null;
+
+    final url = _str(res['file']);
+    if (url == null) return null;
+    return attachment.copyWith(url: url);
   }
 
   /// Posts a reply under [noteId]; returns the mapped reply.

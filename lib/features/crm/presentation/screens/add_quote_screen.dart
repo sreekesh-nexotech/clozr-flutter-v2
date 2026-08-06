@@ -149,6 +149,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       if (!mounted) return;
       // The list is now stale either way.
       ref.invalidate(quotesProvider);
+      // So is the Quotes tab of whichever lead this quote was raised against;
+      // it reads its own scoped fetch rather than filtering the list above.
+      ref.invalidate(leadQuotesProvider);
       // A null quote means mock mode (nothing was persisted) — say so rather
       // than claiming a quote number that does not exist.
       toast.show(quote == null ? 'Quote created' : 'Quote ${quote.id} created');

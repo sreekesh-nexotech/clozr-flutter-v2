@@ -28,4 +28,11 @@ class NotesApiRepository implements NotesRepository {
     required String body,
   }) =>
       _remote.addReply(noteId, body);
+
+  @override
+  Future<NoteAttachment?> addAttachment({
+    required String noteId,
+    required NoteAttachment attachment,
+  }) =>
+      _remote.addAttachment(noteId, attachment);
 }

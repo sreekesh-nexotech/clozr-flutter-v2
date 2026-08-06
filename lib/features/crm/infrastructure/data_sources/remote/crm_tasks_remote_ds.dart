@@ -20,12 +20,21 @@ class CrmTasksRemoteDataSource {
   List<Map<String, dynamic>>? _statusCache;
 
   /// Raw list rows (followed up to 3 pages). The repository caches these.
-  Future<List<Map<String, dynamic>>> fetchTaskRows() async {
+  Future<List<Map<String, dynamic>>> fetchTaskRows() => _fetchRows();
+
+  /// Raw rows for the tasks linked to one lead, scoped server-side with the
+  /// shared generic-relation params rather than filtered after the fact.
+  Future<List<Map<String, dynamic>>> fetchTaskRowsForLead(String leadId) =>
+      _fetchRows(leadId: leadId);
+
+  Future<List<Map<String, dynamic>>> _fetchRows({String? leadId}) async {
     final rows = <Map<String, dynamic>>[];
     for (var page = 1; page <= 50; page++) {
       final body = await _api.get(ApiEndpoints.crmTasks, query: {
         'is_followup': 'false',
         'page_size': 100,
+        if (leadId != null) 'related_to': 'lead',
+        if (leadId != null) 'related_to_id': leadId,
         if (page > 1) 'page': page,
       });
       final chunk = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
@@ -37,6 +46,10 @@ class CrmTasksRemoteDataSource {
 
   /// Mapped task list (malformed rows are skipped, never fatal).
   Future<List<CrmTask>> fetchTasks() async => mapRows(await fetchTaskRows());
+
+  /// Mapped task list for one lead.
+  Future<List<CrmTask>> fetchTasksForLead(String leadId) async =>
+      mapRows(await fetchTaskRowsForLead(leadId));
 
   /// Creates a task; returns the mapped created row (null on shape surprise).
   Future<CrmTask?> createTask(Map<String, dynamic> fields) async {

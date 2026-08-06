@@ -39,6 +39,11 @@ dependencies:
   intl: ^0.19.0
   equatable: ^2.0.5
 
+  # Picking photos/files off the device for note attachments. One package for
+  # both: `FileType.image` for the Photo action, `FileType.custom` (the types
+  # the notes API accepts) for the File action.
+  file_picker: ^8.1.7
+
   # Networking (per Technical_stack.md)
   dio: ^5.7.0
   pretty_dio_logger: ^1.4.0
@@ -49,6 +54,11 @@ dependencies:
 
   # Session tokens (per Technical_stack.md — never in Hive, per security rules)
   flutter_secure_storage: ^9.2.2
+
+  # Hands a `tel:` number to the device dialler. The backend has no "place a
+  # call" endpoint — dialling is the device's job, the API only logs that the
+  # call happened (`POST /crm/call-logs/`).
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

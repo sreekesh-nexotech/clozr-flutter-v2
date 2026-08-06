@@ -36,6 +36,27 @@ class CrmTasksApiRepository implements CrmTasksRepository {
   }
 
   @override
+  Future<List<CrmTask>> getTasksForLead(String leadId) async {
+    final key = '${_cacheKey}_lead_$leadId';
+    try {
+      final rows = await _remote.fetchTaskRowsForLead(leadId);
+      await AppCache.put(AppCache.crmCache, key, rows);
+      return CrmTasksRemoteDataSource.mapRows(rows);
+    } on AppError catch (e) {
+      if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
+        final data = AppCache.get(AppCache.crmCache, key)?.data;
+        if (data is List) {
+          return CrmTasksRemoteDataSource.mapRows([
+            for (final row in data)
+              if (row is Map) Map<String, dynamic>.from(row),
+          ]);
+        }
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<CrmTask?> createTask(Map<String, dynamic> fields) async {
     final created = await _remote.createTask(fields);
     await AppCache.remove(AppCache.crmCache, _cacheKey);

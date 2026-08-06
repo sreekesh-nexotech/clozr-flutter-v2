@@ -74,6 +74,9 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
           body: body.trim(),
         );
         if (created == null || !mounted) return;
+        // Attachments upload against the created note, so only now.
+        final uploaded = await _uploadAttachments(created.id, attachments);
+        if (!mounted) return;
         // Swap in the server id so replies to this note hit the real thread.
         state = [
           for (final n in state)
@@ -86,7 +89,7 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
                     via: n.via,
                     avatarColor: n.avatarColor,
                     replies: n.replies,
-                    attachments: n.attachments,
+                    attachments: uploaded,
                   )
                 : n,
         ];
@@ -94,6 +97,28 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
         // Keep the optimistic entry.
       }
     }());
+  }
+
+  /// Uploads each pending file against [noteId]. A failed upload keeps the
+  /// local chip rather than dropping it from a note already on screen.
+  Future<List<NoteAttachment>> _uploadAttachments(
+    String noteId,
+    List<NoteAttachment> attachments,
+  ) async {
+    if (attachments.isEmpty) return attachments;
+    final out = <NoteAttachment>[];
+    for (final a in attachments) {
+      if (!a.isPending) {
+        out.add(a);
+        continue;
+      }
+      try {
+        out.add(await _repo!.addAttachment(noteId: noteId, attachment: a) ?? a);
+      } on Object {
+        out.add(a);
+      }
+    }
+    return out;
   }
 
   void addReply(String noteId, String body) {

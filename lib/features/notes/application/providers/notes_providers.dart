@@ -39,4 +39,13 @@ class _NoopNotesRepository implements NotesRepository {
     required String body,
   }) async =>
       null;
+
+  /// Null keeps the picked file showing as a local chip — mock mode has nowhere
+  /// to upload it to.
+  @override
+  Future<NoteAttachment?> addAttachment({
+    required String noteId,
+    required NoteAttachment attachment,
+  }) async =>
+      null;
 }

@@ -7,6 +7,10 @@ import '../entities/view_schema.dart';
 abstract class QuotesRepository {
   Future<List<Quote>> getQuotes();
 
+  /// The quotes raised against one lead — the Quotes tab on the lead detail
+  /// screen. Scoped by the backend, not by filtering the org-wide list.
+  Future<List<Quote>> getQuotesForLead(String leadId);
+
   /// The org's Quote layout, which drives the New quote form — which fields it
   /// offers, in what order, under what labels.
   ///
