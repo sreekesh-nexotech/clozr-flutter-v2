@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
@@ -18,11 +17,11 @@ import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
-import '../../../auth/application/providers/auth_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/call_logs_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
+import '../../application/providers/lead_call_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/leads_columns.dart';
@@ -141,16 +140,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     ));
   }
 
-  /// Places a call to the lead, then records it.
-  ///
-  /// Two separate things, because the backend has no "place a call" endpoint:
-  /// the device dials, and `POST /crm/call-logs/` records that it happened
-  /// (which also re-scores the lead server-side).
-  ///
-  /// The log needs the caller's **own** number as `from_number` — a required
-  /// field with no default. An account whose profile has no phone therefore
-  /// dials fine but cannot be logged, and is told so rather than left to
-  /// assume the call was recorded.
+  /// Places a call to the lead. [LeadCallService] picks the route — Exotel
+  /// click-to-call when the org has telephony, the device dialler otherwise —
+  /// and this only reports the outcome and refreshes what the call changed.
   Future<void> _callLead(Lead lead) async {
     final outcome = await ref.read(leadCallServiceProvider).call(
           leadId: lead.id,
@@ -243,6 +235,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   Widget _buildLead(BuildContext context, Lead lead) {
 
     final statuses = ref.watch(leadStatusesProvider);
+    // Watched only to start the telephony-status fetch at mount, so the Call
+    // button knows its route before it is tapped.
+    ref.watch(exotelStatusProvider);
     // Same resolution the list card uses, so the pill here and the pill there
     // never disagree about a lead's stage name or colour.
     final meta = leadStatusMeta(lead, statuses);
