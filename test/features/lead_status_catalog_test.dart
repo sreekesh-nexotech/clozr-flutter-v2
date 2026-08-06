@@ -287,6 +287,28 @@ void main() {
       expect(leadMatchesFilters(south, v), isFalse);
     });
 
+    test('an org with no teams gets an empty section, never invented ones', () {
+      // Regression: the drawer used to fall back to the prototype roster's
+      // teams, so a real org briefly showed "Team Kochi" and friends.
+      final f = buildLeadsFilterSpec(const []).fieldById('teams')!;
+      expect(f.options, isEmpty);
+    });
+
+    test('mock mode still offers the prototype teams, passed in explicitly', () {
+      final f = buildLeadsFilterSpec(const [], fallbackTeams: const ['Team Kochi'])
+          .fieldById('teams')!;
+      expect(f.options.single.label, 'Team Kochi');
+    });
+
+    test('the catalog wins over any fallback', () {
+      final f = buildLeadsFilterSpec(
+        const [],
+        teamCatalog: teams,
+        fallbackTeams: const ['Team Kochi'],
+      ).fieldById('teams')!;
+      expect(f.options.map((o) => o.label), ['Team North', 'Team South']);
+    });
+
     test('falls back to the people-derived team when the API sent none', () {
       // Mock leads carry no assigned_team; the prototype path must still work.
       expect(leadWith(status: 'new').teamValues, isEmpty);
