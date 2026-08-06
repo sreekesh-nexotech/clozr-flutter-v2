@@ -56,7 +56,31 @@ class _PagingAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-ApiService _apiWith(_PagingAdapter adapter) {
+/// Echoes one lead record back and records the request that produced it.
+class _RecordAdapter implements HttpClientAdapter {
+  final List<RequestOptions> requests = [];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options);
+    return ResponseBody.fromString(
+      jsonEncode({'lead_id': 'L1', 'lead_name': 'Lead 1', 'status': 'Contacted'}),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+ApiService _apiWith(HttpClientAdapter adapter) {
   final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
     ..httpClientAdapter = adapter;
   return ApiService(tokens: TokenStorage(), dio: dio);
@@ -106,6 +130,9 @@ class _RecordingRepo implements LeadsRepository {
 
   @override
   Future<Lead?> getLead(String id) async => null;
+
+  @override
+  Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
 
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
@@ -184,6 +211,30 @@ void main() {
       }
       expect(adapter.requests.map((r) => r.queryParameters['page']).toList(),
           [null, 2, 3]);
+    });
+  });
+
+  group('status update', () {
+    test('PATCHes status_id — not status, which the server ignores', () async {
+      final adapter = _RecordAdapter();
+      final ds = LeadsRemoteDataSource(_apiWith(adapter));
+
+      final lead = await ds.updateLeadStatus('L1', 'st-contacted');
+
+      final req = adapter.requests.first;
+      expect(req.method, 'PATCH');
+      expect(req.path, '/crm/leads/L1/');
+      // `status` is read-only on the serializer: patching it is accepted and
+      // silently does nothing, so sending the wrong key would look like success.
+      expect(req.data, {'status_id': 'st-contacted'});
+      expect((req.data as Map).containsKey('status'), isFalse);
+      // The echoed record is mapped, so the caller gets the new stage back.
+      expect(lead?.statusName, 'Contacted');
+    });
+
+    test('mock mode does not pretend to persist', () async {
+      const repo = LeadsRepositoryImpl(LeadsMockDataSource());
+      expect(await repo.updateLeadStatus('L1', 'st-x'), isNull);
     });
   });
 

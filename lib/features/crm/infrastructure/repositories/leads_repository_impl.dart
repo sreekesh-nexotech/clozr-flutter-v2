@@ -38,6 +38,13 @@ class LeadsRepositoryImpl implements LeadsRepository {
     return null;
   }
 
+  /// Not supported in mock mode: the seed list is immutable, so "persisting" a
+  /// stage here would be undone by the next read. Returning null lets the
+  /// caller keep the prototype's toast-only behaviour rather than showing a
+  /// change that did not happen.
+  @override
+  Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
+
   /// Local echo — mock mode has no backend, so the "created" lead is built
   /// from the submitted fields (never persisted; mock behavior unchanged).
   @override

@@ -1,6 +1,7 @@
 import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/app_cache.dart';
 import '../../domain/entities/quote.dart';
+import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/quotes_repository.dart';
 import '../data_sources/remote/quotes_remote_ds.dart';
 
@@ -27,5 +28,20 @@ class QuotesApiRepository implements QuotesRepository {
       }
       rethrow;
     }
+  }
+
+  @override
+  Future<ViewSchema> getQuoteSchema() => _remote.fetchQuoteSchema();
+
+  @override
+  Future<List<QuoteTemplate>> getQuoteTemplates() => _remote.fetchTemplates();
+
+  @override
+  Future<Quote?> createQuote(Map<String, dynamic> fields) async {
+    final quote = await _remote.createQuote(fields);
+    // The new quote belongs in the list — drop the cache so the next read
+    // refetches rather than serving a set that predates it.
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+    return quote;
   }
 }

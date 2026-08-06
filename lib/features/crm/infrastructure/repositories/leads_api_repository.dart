@@ -81,6 +81,17 @@ class LeadsApiRepository implements LeadsRepository {
   }
 
   @override
+  Future<Lead?> updateLeadStatus(String leadId, String statusId) async {
+    final lead = await _remote.updateLeadStatus(leadId, statusId);
+    // The stage is part of both list rows and the record, so every cached copy
+    // is now stale — drop them rather than serve the old stage offline.
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+    await AppCache.remove(AppCache.crmCache, _mineCacheKey);
+    await AppCache.remove(AppCache.crmCache, 'lead_$leadId');
+    return lead;
+  }
+
+  @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async {
     final lead = await _remote.createLead(fields);
     // Both scopes can contain the new lead — drop each so either view refetches.

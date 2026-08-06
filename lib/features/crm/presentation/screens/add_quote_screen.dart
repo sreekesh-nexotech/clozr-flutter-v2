@@ -8,9 +8,16 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/leads_providers.dart';
 import '../../application/providers/products_providers.dart';
+import '../../application/providers/quotes_providers.dart';
+import '../../application/quote_draft.dart';
+import '../../domain/entities/lead.dart';
 import '../../domain/entities/product.dart';
+import '../../domain/repositories/quotes_repository.dart';
+import '../components/lead_picker_sheet.dart';
 
 /// New quote — a full-screen form. Line items are chosen from the live product
 /// catalog and the total recomputes as you go; submit is a static toast + pop.
@@ -37,12 +44,19 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   final _billingCtrl = TextEditingController(text: '30');
 
   final List<_QuoteLine> _lines = [_QuoteLine('')];
-  String _template = 'Standard';
-  String _payType = 'Lump sum';
+
+  /// The template's id, not its name — `template` is an FK on create. Null
+  /// means "let the server apply the org default".
+  String? _templateId;
+  QuotePaymentType _payType = QuotePaymentType.lumpsum;
   String _owner = 'me';
 
-  static const _templates = ['Standard', 'Compact', 'Detailed'];
-  static const _payTypes = ['Lump sum', 'Subscription', 'Installments – even split', 'Installments – custom amounts'];
+  /// The lead this quote is for — the API's one required field.
+  Lead? _lead;
+
+  /// True while the create request is in flight, so the button can't be
+  /// double-tapped into two quotes.
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -60,6 +74,91 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   }
 
   int _parseAmt(String s) => int.tryParse(s.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+
+  /// The selected template's name, defaulting to the org's default one so the
+  /// chip row is never blank.
+  String _templateName(List<QuoteTemplate> templates) {
+    if (templates.isEmpty) return '';
+    final selected = templates.where((t) => t.id == _templateId);
+    if (selected.isNotEmpty) return selected.first.name;
+    final byDefault = templates.where((t) => t.isDefault);
+    return (byDefault.isNotEmpty ? byDefault.first : templates.first).name;
+  }
+
+  /// Picks the lead this quote is for — the API's one required field.
+  Future<void> _pickLead() async {
+    final leads = ref.read(leadsProvider).valueOrNull ?? const <Lead>[];
+    if (leads.isEmpty) {
+      ref.read(toastProvider.notifier).show('No leads available yet');
+      return;
+    }
+    final picked = await showLeadPickerSheet(context: context, leads: leads);
+    if (picked != null) setState(() => _lead = picked);
+  }
+
+  /// Builds the draft from the form's current state.
+  QuoteDraft _draft(List<Product> products) => QuoteDraft(
+        leadId: _lead?.id ?? '',
+        templateId: _templateId,
+        title: _titleCtrl.text,
+        validUntil: DateTime.tryParse(_validCtrl.text.trim()),
+        paymentType: _payType,
+        numInstallments: int.tryParse(_installmentsCtrl.text.trim()) ?? 2,
+        billingPeriodDays: int.tryParse(_billingCtrl.text.trim()),
+        notes: _notesCtrl.text,
+        terms: _termsCtrl.text,
+        lines: [
+          for (final line in _lines)
+            if (_productById(products, line.productId) case final p?)
+              QuoteDraftLine(
+                description: p.name,
+                quantity: int.tryParse(line.qtyCtrl.text) ?? 1,
+                // Rupees as a plain string — the API takes decimals as strings,
+                // and the catalog price is a display value like "₹2,400".
+                unitPrice: '${_parseAmt(p.price)}',
+              ),
+        ],
+      );
+
+  /// `POST /quotations/quotations/`.
+  Future<void> _submit(List<Product> products) async {
+    if (_saving) return;
+    final toast = ref.read(toastProvider.notifier);
+    final draft = _draft(products);
+
+    // Guard the two things the API will reject outright, so the user sees the
+    // reason here rather than a 400 from the server.
+    if (draft.leadId.isEmpty) {
+      toast.show('Pick a lead first');
+      return;
+    }
+    if (draft.lines.isEmpty) {
+      toast.show('Add at least one product line');
+      return;
+    }
+    if (_payType.needsInstallmentCount && draft.numInstallments < 2) {
+      toast.show('An even split needs at least 2 installments');
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      final quote = await ref
+          .read(quotesRepositoryProvider)
+          .createQuote(draft.toCreateJson(schema: ref.read(quoteSchemaProvider)));
+      if (!mounted) return;
+      // The list is now stale either way.
+      ref.invalidate(quotesProvider);
+      // A null quote means mock mode (nothing was persisted) — say so rather
+      // than claiming a quote number that does not exist.
+      toast.show(quote == null ? 'Quote created' : 'Quote ${quote.id} created');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      toast.show(e.message);
+    }
+  }
 
   String _fmtAmt(int n) {
     if (n == 0) return '₹0';
@@ -93,6 +192,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   Widget build(BuildContext context) {
     final products = ref.watch(productsProvider).valueOrNull ?? const <Product>[];
     final active = products.where((p) => p.active).toList();
+    // The org's Quote layout. Empty until it loads (and in mock mode), which
+    // every `shows()` below reads as "render it" — so the form is never held
+    // behind the schema call.
+    final schema = ref.watch(quoteSchemaProvider);
+    final templates = ref.watch(quoteTemplatesProvider);
 
     int total = 0;
     for (final line in _lines) {
@@ -114,32 +218,52 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   label: 'Lead',
                   required: true,
                   readOnly: true,
+                  value: _lead?.name,
                   hint: 'Search by name, company or #id',
                   suffixIcon: PhosphorIconsRegular.magnifyingGlass,
-                  onTap: () => ref.read(toastProvider.notifier).show('Lead search — coming soon'),
+                  onTap: _pickLead,
                 ),
                 SizedBox(height: 6.h),
                 Row(
                   children: [
-                    Icon(PhosphorIconsRegular.magnifyingGlass, size: 14.sp, color: AppColors.textPlaceholder),
+                    Icon(
+                        _lead == null
+                            ? PhosphorIconsRegular.magnifyingGlass
+                            : PhosphorIconsRegular.link,
+                        size: 14.sp,
+                        color: AppColors.textPlaceholder),
                     SizedBox(width: 6.w),
                     Flexible(
-                      child: Text('No matching lead yet — search by name, company or #id',
+                      child: Text(
+                          _lead == null
+                              ? 'Pick the lead this quote is for — it is required'
+                              : '${_lead!.company ?? _lead!.name} · #${_lead!.id}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                     ),
                   ],
                 ),
                 SizedBox(height: 14.h),
-                AppTextField(label: 'Quote title', controller: _titleCtrl, hint: 'e.g. Showroom fit-out — phase 2'),
-                SizedBox(height: 14.h),
-                _chipField(
-                  label: 'Template',
-                  required: true,
-                  options: _templates,
-                  selected: _template,
-                  onSelect: (v) => setState(() => _template = v),
-                ),
-                SizedBox(height: 14.h),
+                if (schema.shows('quotation_title')) ...[
+                  AppTextField(
+                      label: schema.labelOf('quotation_title', 'Quote title'),
+                      controller: _titleCtrl,
+                      hint: 'e.g. Showroom fit-out — phase 2'),
+                  SizedBox(height: 14.h),
+                ],
+                // Real templates, by id. Hidden when the org has none — the
+                // server then applies its default on create.
+                if (templates.isNotEmpty) ...[
+                  _chipField(
+                    label: schema.labelOf('template', 'Template'),
+                    options: [for (final t in templates) t.name],
+                    selected: _templateName(templates),
+                    onSelect: (name) => setState(() => _templateId =
+                        templates.firstWhere((t) => t.name == name).id),
+                  ),
+                  SizedBox(height: 14.h),
+                ],
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -201,37 +325,54 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 SizedBox(height: 22.h),
                 _sectionLabel('Payment & validity'),
                 _chipField(
-                  label: 'Payment type',
+                  label: schema.labelOf('payment_type', 'Payment type'),
                   required: true,
-                  options: _payTypes,
-                  selected: _payType,
-                  onSelect: (v) => setState(() => _payType = v),
+                  options: [for (final p in QuotePaymentType.values) p.label],
+                  selected: _payType.label,
+                  onSelect: (label) => setState(() => _payType = QuotePaymentType.values
+                      .firstWhere((p) => p.label == label)),
                 ),
-                if (_payType.contains('even split')) ...[
+                // The API requires a count (>= 2) for an even split only.
+                if (_payType.needsInstallmentCount) ...[
                   SizedBox(height: 14.h),
                   AppTextField(label: 'Number of installments (min 2)', controller: _installmentsCtrl, hint: 'e.g. 3', keyboardType: TextInputType.number),
                 ],
-                if (_payType != 'Lump sum') ...[
+                if (_payType == QuotePaymentType.subscription &&
+                    schema.shows('billing_period_days')) ...[
                   SizedBox(height: 14.h),
-                  AppTextField(label: 'Billing period (days)', controller: _billingCtrl, hint: 'e.g. 30', keyboardType: TextInputType.number),
+                  AppTextField(
+                      label: schema.labelOf('billing_period_days', 'Billing period (days)'),
+                      controller: _billingCtrl,
+                      hint: 'e.g. 30',
+                      keyboardType: TextInputType.number),
                 ],
-                SizedBox(height: 14.h),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: AppTextField(label: 'Valid until', controller: _validCtrl, hint: 'e.g. 18 Jul 2026')),
-                    SizedBox(width: 9.w),
-                    Expanded(child: AppTextField(label: 'Due date', controller: _dueCtrl, hint: 'e.g. 25 Jul 2026')),
-                  ],
-                ),
-                SizedBox(height: 14.h),
-                AppTextField(label: 'Notes', controller: _notesCtrl, multiline: true, hint: 'Notes shown on the quote…'),
-                SizedBox(height: 14.h),
-                AppTextField(label: 'Terms & conditions', controller: _termsCtrl, multiline: true, hint: 'The T&C text printed on the quote…'),
+                if (schema.shows('valid_until')) ...[
+                  SizedBox(height: 14.h),
+                  AppTextField(
+                      label: schema.labelOf('valid_until', 'Valid until'),
+                      controller: _validCtrl,
+                      hint: 'e.g. 2026-09-04'),
+                ],
+                if (schema.shows('notes')) ...[
+                  SizedBox(height: 14.h),
+                  AppTextField(
+                      label: schema.labelOf('notes', 'Notes'),
+                      controller: _notesCtrl,
+                      multiline: true,
+                      hint: 'Notes shown on the quote…'),
+                ],
+                if (schema.shows('terms_and_conditions')) ...[
+                  SizedBox(height: 14.h),
+                  AppTextField(
+                      label: schema.labelOf('terms_and_conditions', 'Terms & conditions'),
+                      controller: _termsCtrl,
+                      multiline: true,
+                      hint: 'The T&C text printed on the quote…'),
+                ],
               ],
             ),
           ),
-          _actionBar(context),
+          _actionBar(context, products),
         ],
       ),
     );
@@ -287,7 +428,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
 
   Widget _chipField({
     required String label,
-    required bool required,
+    bool required = false,
     required List<String> options,
     required String selected,
     required ValueChanged<String> onSelect,
@@ -485,7 +626,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     );
   }
 
-  Widget _actionBar(BuildContext context) {
+  Widget _actionBar(BuildContext context, List<Product> products) {
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
       decoration: const BoxDecoration(
@@ -511,22 +652,28 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           SizedBox(width: 10.w),
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                ref.read(toastProvider.notifier).show('Quote created');
-                context.pop();
-              },
+              onTap: _saving ? null : () => _submit(products),
               child: Container(
                 height: 48.h,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
-                    SizedBox(width: 8.w),
-                    Text('Create quote', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
-                  ],
-                ),
+                decoration: BoxDecoration(
+                    color: _saving ? AppColors.textPlaceholder : AppColors.navy,
+                    borderRadius: BorderRadius.circular(12.r)),
+                child: _saving
+                    ? SizedBox(
+                        width: 18.w,
+                        height: 18.w,
+                        child: const CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.white),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
+                          SizedBox(width: 8.w),
+                          Text('Create quote', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                        ],
+                      ),
               ),
             ),
           ),

@@ -56,52 +56,14 @@ class LeadSchemaRemoteDataSource {
   }
 
   // ── mapping (visible for tests) ──
+  //
+  // The parsing itself lives on [ViewSchema], shared with the other modules
+  // that drive off the same Org View Settings shape. These stay as the Leads
+  // entry points.
 
-  /// Maps a `/schema/` response. Hidden columns are dropped here — the settings
-  /// panel needs them to render toggles, a list card never does.
-  static LeadListSchema mapSchema(Object? body) {
-    if (body is! Map<String, dynamic>) return LeadListSchema.empty;
-    final all = body['all_fields'];
-    final rows = all is Map ? all['columns'] : null;
-    if (rows is! List) return LeadListSchema.empty;
+  /// Maps a `/schema/` response.
+  static LeadListSchema mapSchema(Object? body) => ViewSchema.fromResponse(body);
 
-    final columns = <LeadColumn>[];
-    for (final row in rows) {
-      final column = mapColumn(row);
-      if (column != null) columns.add(column);
-    }
-    columns.sort((a, b) => a.order.compareTo(b.order));
-
-    return LeadListSchema(
-      columns: columns,
-      hasOrgConfig: body['has_org_config'] == true,
-    );
-  }
-
-  /// Maps one column, or null when it is hidden or unusable. `visible` is
-  /// treated as opt-in: a column that does not say it is visible is not shown.
-  static LeadColumn? mapColumn(Object? row) {
-    if (row is! Map) return null;
-    if (row['visible'] != true) return null;
-
-    final name = (row['name'] ?? '').toString().trim();
-    if (name.isEmpty) return null;
-
-    final info = row['field_info'];
-    final isCustom =
-        (info is Map && info['is_custom'] == true) || name.startsWith('custom_fields.');
-
-    final label = (row['label'] ?? '').toString().trim();
-
-    return LeadColumn(
-      name: name,
-      // A column with no label is still renderable — fall back to its key
-      // rather than dropping the field.
-      label: label.isNotEmpty ? label : name,
-      order: (row['order'] as num?)?.toInt() ?? 0,
-      type: info is Map ? (info['type'] ?? '').toString() : '',
-      isCustom: isCustom,
-      isFixed: row['is_fixed'] == true || row['is_protected'] == true,
-    );
-  }
+  /// Maps one column, or null when it is hidden or unusable.
+  static LeadColumn? mapColumn(Object? row) => ViewColumn.fromJson(row);
 }

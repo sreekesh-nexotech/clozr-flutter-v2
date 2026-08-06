@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/models/note.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
@@ -17,12 +18,14 @@ import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/leads_columns.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/lead.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
@@ -129,9 +132,67 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     ));
   }
 
+  /// Opens the stage picker.
+  ///
+  /// With the org catalog loaded the options are the org's own stages and
+  /// picking one writes it. Without it (mock mode, or a failed fetch) it falls
+  /// back to the built-in vocabulary with no `onSelect` — the prototype's
+  /// toast-only behaviour, because there is nothing to persist to.
+  void _openStatusSheet(Lead lead, List<CatalogOption> statuses) {
+    if (statuses.isEmpty) {
+      showCrmStatusSheet(
+        context: context,
+        ref: ref,
+        title: 'Update lead status',
+        options: StatusMeta$.leadAll,
+        meta: StatusMeta$.lead,
+        current: lead.status,
+      );
+      return;
+    }
+    // The record does not echo `status_id` back, so the current selection is
+    // matched on the stage name the API did send.
+    final currentKey = lead.statusName.toLowerCase().trim();
+    showCrmStatusSheet(
+      context: context,
+      ref: ref,
+      title: 'Update lead status',
+      options: [for (final s in statuses) s.id],
+      meta: {
+        for (final s in statuses) s.id: StatusMeta(s.name, leadStatusColor(s)),
+      },
+      current: statuses
+          .where((s) => s.key == currentKey)
+          .map((s) => s.id)
+          .firstOrNull ?? '',
+      onSelect: (statusId) => _setStatus(lead, statusId),
+    );
+  }
+
+  /// Writes the new stage, then refreshes the record and every lead list so the
+  /// card pill and the tab counts follow.
+  Future<void> _setStatus(Lead lead, String statusId) async {
+    try {
+      await ref.read(leadsRepositoryProvider).updateLeadStatus(lead.id, statusId);
+      ref.invalidate(leadDetailProvider(lead.id));
+      ref.invalidate(leadsScopedProvider);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('Status updated');
+    } on Object catch (e) {
+      if (!mounted) return;
+      // A rejected write must not leave a stage on screen that was never saved.
+      ref.read(toastProvider.notifier).show(
+            e is AppError ? e.message : 'Could not update the status.',
+          );
+    }
+  }
+
   Widget _buildLead(BuildContext context, Lead lead) {
 
-    final meta = StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
+    final statuses = ref.watch(leadStatusesProvider);
+    // Same resolution the list card uses, so the pill here and the pill there
+    // never disagree about a lead's stage name or colour.
+    final meta = leadStatusMeta(lead, statuses);
     // "Converted" is derived from the lead itself (won deals are locked from
     // re-conversion); the separate customers list is no longer fetched here.
     final converted = lead.status == 'won';
@@ -180,7 +241,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             child: ListView(
               padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
               children: [
-                _profileCard(lead, meta),
+                _profileCard(lead, meta, statuses),
                 SizedBox(height: 14.h),
                 // The whole score card is one configurable column; an org that
                 // hides `lead_score` should not see a card about it.
@@ -212,7 +273,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   }
 
   // ── Profile ──
-  Widget _profileCard(Lead lead, StatusMeta meta) {
+  Widget _profileCard(Lead lead, StatusMeta meta, List<CatalogOption> statuses) {
     final sd = lead.statusDays;
     final stageLine = sd == 0 ? 'In status since today' : '$sd ${sd == 1 ? 'day' : 'days'} in status';
     return ClozrCard(
@@ -278,14 +339,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => showCrmStatusSheet(
-                    context: context,
-                    ref: ref,
-                    title: 'Update lead status',
-                    options: StatusMeta$.leadAll,
-                    meta: StatusMeta$.lead,
-                    current: lead.status,
-                  ),
+                  onTap: () => _openStatusSheet(lead, statuses),
                   child: Container(
                     height: 44.h,
                     padding: EdgeInsets.symmetric(horizontal: 12.w),

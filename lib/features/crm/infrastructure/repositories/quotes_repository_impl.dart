@@ -1,5 +1,6 @@
 import '../../../../app/config/constants.dart';
 import '../../domain/entities/quote.dart';
+import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/quotes_repository.dart';
 import '../data_sources/local/quotes_mock_ds.dart';
 
@@ -14,5 +15,23 @@ class QuotesRepositoryImpl implements QuotesRepository {
   Future<List<Quote>> getQuotes() async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchQuotes();
+  }
+
+  /// Mock mode has no org config, so the form falls back to its built-in
+  /// field set — the same contract as an org that has not configured one.
+  @override
+  Future<ViewSchema> getQuoteSchema() async => ViewSchema.empty;
+
+  /// No template catalog without a backend; the picker hides itself.
+  @override
+  Future<List<QuoteTemplate>> getQuoteTemplates() async => const [];
+
+  /// Local echo — mock mode has no backend, so nothing is persisted. Returning
+  /// null keeps the caller on the prototype's toast-only path rather than
+  /// claiming a quote was created.
+  @override
+  Future<Quote?> createQuote(Map<String, dynamic> fields) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return null;
   }
 }

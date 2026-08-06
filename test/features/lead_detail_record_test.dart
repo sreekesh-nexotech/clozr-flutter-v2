@@ -99,6 +99,9 @@ class _SplitRepo implements LeadsRepository {
   }
 
   @override
+  Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
+
+  @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
 }
 

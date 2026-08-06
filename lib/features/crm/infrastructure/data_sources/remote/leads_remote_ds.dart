@@ -150,6 +150,18 @@ class LeadsRemoteDataSource {
     }
   }
 
+  /// `PATCH /crm/leads/{id}/` — moves the lead to another pipeline stage.
+  ///
+  /// The field is **`status_id`**, not `status`: the serializer exposes
+  /// `status` read-only as the display name, so patching that is accepted and
+  /// silently ignored. The response echoes the updated record (and a freshly
+  /// stamped `stage_entered_at`, which the aging filter reads).
+  Future<Lead?> updateLeadStatus(String id, String statusId) async {
+    final body = await _api.patch(ApiEndpoints.lead(id), body: {'status_id': statusId});
+    if (body is! Map<String, dynamic>) return null;
+    return mapLead(body, statusTypes: await statusTypes());
+  }
+
   static bool _isPagingKey(String key, Object? _) =>
       key == 'page' || key == 'page_size';
 

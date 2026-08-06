@@ -7,6 +7,8 @@ import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../domain/entities/quote.dart';
+import '../../../domain/entities/view_schema.dart';
+import '../../../domain/repositories/quotes_repository.dart';
 
 /// Raw quotation endpoints — HTTP + JSON→entity mapping only. Caching lives in
 /// the API repository above this layer.
@@ -32,8 +34,76 @@ class QuotesRemoteDataSource {
     }
     return out;
   }
-}
 
+  /// The org's Quote layout, used to drive the New quote form.
+  ///
+  /// **`view_type=detail`, deliberately — not `form`.** `template`, `lead`,
+  /// `owner` and `line_items` are serializer fields, not model fields, and
+  /// `?view_type=form` introspects model fields only, so it returns none of
+  /// them. `detail` is the only call that describes the whole form.
+  ///
+  /// Best-effort: any failure yields the empty schema, which the form reads as
+  /// "show every field I know how to render".
+  Future<ViewSchema> fetchQuoteSchema() async {
+    try {
+      final body = await _api.get(
+        ApiEndpoints.quotationSchema,
+        query: {'view_type': 'detail'},
+      );
+      return ViewSchema.fromResponse(body);
+    } on Object {
+      return ViewSchema.empty;
+    }
+  }
+
+  /// The org's quote templates, as `(id, name)` options for the picker.
+  /// Best-effort — an empty list means the form omits the picker and lets the
+  /// server apply the org's default template.
+  Future<List<QuoteTemplate>> fetchTemplates() async {
+    try {
+      final body = await _api.get(
+        ApiEndpoints.quotationTemplates,
+        query: {'page_size': 100, 'is_active': true},
+      );
+      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final out = <QuoteTemplate>[];
+      for (final row in rows) {
+        final id = _str(row['template_id']);
+        // The list serializer names it `template_name`; `name` is accepted as
+        // an alternate shape.
+        final name = _str(row['template_name']) ?? _str(row['name']);
+        if (id == null || name == null) continue;
+        out.add(QuoteTemplate(
+          id: id,
+          name: name,
+          isDefault: row['is_default'] == true,
+        ));
+      }
+      return out;
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// `POST /quotations/quotations/` — creates a quote.
+  ///
+  /// [fields] is sent as-is: the caller has already shaped it to the API's
+  /// contract (`lead`, `payment_type`, `line_items`, …). `owner` and `customer`
+  /// are deliberately never included — the server stamps the owner as the
+  /// creating user, and a quote only gains a customer if its lead converts.
+  ///
+  /// Returns the created quote, or null when the response is not a row we can
+  /// map (never a crash).
+  Future<Quote?> createQuote(Map<String, dynamic> fields) async {
+    final body = await _api.post(ApiEndpoints.quotations, body: fields);
+    if (body is! Map<String, dynamic>) return null;
+    try {
+      return quoteFromApi(body);
+    } on Object {
+      return null;
+    }
+  }
+}
 // ── JSON → entity mapping (public so the repository and tests reuse it) ──
 
 /// Maps a list of raw rows, skipping malformed entries.

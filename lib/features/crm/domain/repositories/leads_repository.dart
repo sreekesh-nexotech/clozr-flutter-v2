@@ -27,6 +27,14 @@ abstract class LeadsRepository {
   /// Returns null when no such lead is visible to the caller.
   Future<Lead?> getLead(String id);
 
+  /// Moves a lead to another pipeline stage. [statusId] is a `lead_status_id`
+  /// from the org's `/crm/lead-statuses/` catalog.
+  ///
+  /// Returns the updated lead, or null when the backend response shape is
+  /// unexpected. Throws on a rejected write — the caller surfaces it, because
+  /// silently leaving the old status on screen would be a lie.
+  Future<Lead?> updateLeadStatus(String leadId, String statusId);
+
   /// Creates a lead from API-shaped form fields (`lead_name`,
   /// `organization_name`, `email`, `phone`, `purpose`). Returns the created
   /// lead, or null when the backend response shape is unexpected.

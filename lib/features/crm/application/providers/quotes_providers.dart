@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/quote.dart';
+import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/quotes_repository.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../../infrastructure/data_sources/local/quotes_mock_ds.dart';
@@ -24,6 +25,33 @@ final quotesRepositoryProvider = Provider<QuotesRepository>((ref) {
 /// Async source of all quotes.
 final quotesProvider = FutureProvider<List<Quote>>(
   (ref) => ref.watch(quotesRepositoryProvider).getQuotes(),
+);
+
+/// The org's Quote layout, driving the New quote form.
+///
+/// `view_type=detail` — the only schema call that describes the whole form (see
+/// [QuotesRemoteDataSource.fetchQuoteSchema]). Fetched once per session, since
+/// the layout changes when an admin edits it, not when quotes change.
+final quoteSchemaFutureProvider = FutureProvider<ViewSchema>(
+  (ref) => ref.watch(quotesRepositoryProvider).getQuoteSchema(),
+);
+
+/// Synchronous view of [quoteSchemaFutureProvider] — empty while in flight, so
+/// the form renders straight away with its built-in field set and adopts the
+/// org's layout when it arrives.
+final quoteSchemaProvider = Provider<ViewSchema>(
+  (ref) => ref.watch(quoteSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+);
+
+/// `GET /quotations/templates/` — the org's quote templates.
+final quoteTemplatesFutureProvider = FutureProvider<List<QuoteTemplate>>(
+  (ref) => ref.watch(quotesRepositoryProvider).getQuoteTemplates(),
+);
+
+/// Synchronous view of [quoteTemplatesFutureProvider]; empty means the picker
+/// is hidden and the server applies the org default on create.
+final quoteTemplatesProvider = Provider<List<QuoteTemplate>>(
+  (ref) => ref.watch(quoteTemplatesFutureProvider).valueOrNull ?? const [],
 );
 
 /// Look up a single quote by id (detail screen).

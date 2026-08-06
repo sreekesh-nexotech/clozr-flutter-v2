@@ -65,6 +65,8 @@ class ApiEndpoints {
   // ── Quotations / payments ──
   static const quotations = '/quotations/quotations/';
   static String quotation(String id) => '/quotations/quotations/$id/';
+  static const quotationSchema = '/quotations/quotations/schema/';
+  static const quotationTemplates = '/quotations/templates/';
   static const quotationStatuses = '/quotations/statuses/';
   static const payments = '/quotations/payments/';
   static String payment(String id) => '/quotations/payments/$id/';
