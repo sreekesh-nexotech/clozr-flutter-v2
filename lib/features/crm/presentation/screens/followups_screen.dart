@@ -72,6 +72,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     // The drawer's Priority section; without this it would snapshot an unloaded
     // catalog and omit the section entirely.
     ref.watch(taskPriorityOptionsProvider);
+    final statuses = ref.watch(taskStatusOptionsProvider);
     final schema = ref.watch(followupCardSchemaProvider);
 
     return Column(
@@ -149,6 +150,9 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                   final f = visible[i];
                   return FollowupCard(
                     followup: f,
+                    // Resolved here rather than in the card so the pill and the
+                    // tab above it always agree on name and colour.
+                    status: followupStatusMeta(f, statuses),
                     schema: schema,
                     onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
                     onToggle: () => _toggleFollowup(f),

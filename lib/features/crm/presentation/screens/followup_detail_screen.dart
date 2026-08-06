@@ -179,11 +179,12 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       return;
     }
     if (!mounted) return;
+    // Leave **first**: the record this screen is showing no longer exists, and
+    // staying on it means the activity log — which refetches off the write
+    // tick — immediately asks the API for the audit trail of a deleted task.
+    context.pop();
     _refreshAfterWrite(fu);
     ref.read(toastProvider.notifier).show('Follow-up deleted');
-    // The record this screen is showing no longer exists — leave rather than
-    // sit on a "not found".
-    context.pop();
   }
 
   /// Moves the follow-up to one of the org's own task lanes.
@@ -303,7 +304,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     // a tap that beat the fetch used to land on the built-in fallback list.
     ref.watch(taskStatusCatalogProvider);
 
-    final meta = StatusMeta$.followup[fu.status] ?? StatusMeta$.followup['due']!;
+    // The org's own status name, so the detail page reads "In Progress" rather
+    // than folding it into the built-in Upcoming bucket.
+    final meta = followupStatusMeta(fu, ref.watch(taskStatusOptionsProvider));
     final owner = MockUsers.of(fu.owner);
     final done = fu.status == 'done';
     final title = fu.agenda.isNotEmpty ? fu.agenda : '${fu.kind} — ${fu.company}';
@@ -681,14 +684,18 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       ),
       child: Row(
         children: [
+          // The pencil beside Mark done opens the same edit screen as the
+          // menu's "Edit follow-up" — it reads as an edit affordance either
+          // way, and the task detail screen's bottom bar already behaves so.
+          // "Add note" keeps its place in the overflow menu.
           GestureDetector(
-            onTap: _focusNotes,
+            onTap: () => context.push('${Routes.editFollowup}?id=${fu.id}'),
             child: Container(
               width: 48.w,
               height: 48.w,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(12.r), border: Border.all(color: AppColors.borderInput)),
-              child: Icon(PhosphorIconsRegular.notePencil, size: 21.sp, color: AppColors.navy),
+              child: Icon(PhosphorIconsRegular.pencilSimple, size: 21.sp, color: AppColors.navy),
             ),
           ),
           SizedBox(width: 10.w),

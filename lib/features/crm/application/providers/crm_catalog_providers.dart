@@ -7,6 +7,7 @@ import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead.dart';
 import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart';
 
@@ -223,5 +224,31 @@ StatusMeta leadStatusMeta(Lead lead, List<CatalogOption> statuses) {
   // Catalog still loading, fetch failed, or the stage was removed since this
   // lead was written: keep the org's own name, colour it by its bucket.
   final fallback = StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
+  return StatusMeta(name, fallback.color);
+}
+
+/// The pill a follow-up's status should render as.
+///
+/// Follow-ups are Tasks, so their statuses are the org's own `CRMTaskStatus`
+/// set — Open / In Progress / Completed / Cancelled by default. Whenever the
+/// API named the status, the pill shows **that** name, so a follow-up in
+/// "In Progress" reads "In Progress" and agrees with the tab it sits under.
+///
+/// Only rows carrying no status name — mock mode, or a follow-up the org never
+/// set one on — fall back to the built-in Overdue / Upcoming / Done buckets.
+/// That fallback used to be the *only* thing rendered, which is why the real
+/// statuses never appeared on the card or the detail page.
+StatusMeta followupStatusMeta(Followup fu, List<CatalogOption> statuses) {
+  final name = fu.statusName.trim();
+  final fallback =
+      StatusMeta$.followup[fu.status] ?? StatusMeta$.followup['due']!;
+  if (name.isEmpty) return fallback;
+
+  final key = name.toLowerCase();
+  for (final s in statuses) {
+    if (s.key == key) return StatusMeta(s.name, s.color ?? fallback.color);
+  }
+  // Catalog still loading, fetch failed, or the status was removed since this
+  // follow-up was written: keep the org's own name, colour it by its bucket.
   return StatusMeta(name, fallback.color);
 }

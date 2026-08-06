@@ -22,7 +22,12 @@ class FollowupCard extends StatelessWidget {
     required this.onTap,
     required this.onToggle,
     this.schema = ViewSchema.empty,
+    this.status,
   });
+
+  /// The status pill to render — the org's own status name and colour, resolved
+  /// by the screen so every card in one list agrees with the tab above it.
+  final StatusMeta? status;
 
   final Followup followup;
 
@@ -35,7 +40,11 @@ class FollowupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meta = StatusMeta$.followup[followup.status] ?? StatusMeta$.followup['due']!;
+    // The org's own status when the screen resolved one; only a follow-up with
+    // no status name at all falls back to the built-in bucket.
+    final meta = status ??
+        StatusMeta$.followup[followup.status] ??
+        StatusMeta$.followup['due']!;
     final done = followup.status == 'done';
     final owner = MockUsers.of(followup.owner);
     final title = followup.agenda.isNotEmpty ? followup.agenda : '${followup.kind} — ${followup.company}';

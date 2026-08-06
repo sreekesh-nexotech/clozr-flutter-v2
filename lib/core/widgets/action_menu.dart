@@ -25,15 +25,24 @@ class MenuAction {
 
 /// Presents the standard overflow action sheet used by every detail page.
 /// Pass the page's actions; disabled rows render muted and don't dismiss.
+///
+/// The chosen action runs **after** the sheet has finished closing, not while
+/// it is closing. That ordering matters: a row used to pop the route and then
+/// call its callback synchronously, so an action that presented another modal
+/// raced the closing menu and could be dismissed on arrival — Reschedule opened
+/// a sheet that vanished — and an action that called `context.pop()` could pop
+/// the still-live menu route instead of the page behind it. Awaiting the pop
+/// first removes the race for every menu in the app.
 Future<void> showActionMenu(
   BuildContext context, {
   String? title,
   required List<MenuAction> actions,
-}) {
-  return showClozrSheet<void>(
+}) async {
+  final chosen = await showClozrSheet<MenuAction>(
     context: context,
     builder: (ctx) => ClozrActionMenu(title: title, actions: actions),
   );
+  chosen?.onTap();
 }
 
 class ClozrActionMenu extends StatelessWidget {
@@ -69,12 +78,9 @@ class ClozrActionMenu extends StatelessWidget {
       opacity: a.enabled ? 1 : 0.6,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: a.enabled
-            ? () {
-                Navigator.of(context).pop();
-                a.onTap();
-              }
-            : null,
+        // Hands the action back to [showActionMenu], which runs it once this
+        // route has actually closed.
+        onTap: a.enabled ? () => Navigator.of(context).pop(a) : null,
         child: Container(
           height: 52.h,
           padding: EdgeInsets.symmetric(horizontal: 10.w),
