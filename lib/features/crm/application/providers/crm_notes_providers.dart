@@ -5,6 +5,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
 import '../../../notes/application/providers/notes_providers.dart';
 import '../../../notes/domain/repositories/notes_repository.dart';
+import 'audit_log_providers.dart';
 
 /// Seed descriptor for a record's notes thread (#13). Equality is keyed purely
 /// on [recordId] so the same record always resolves to the same notifier —
@@ -49,11 +50,12 @@ class CrmNotesSeed {
 class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
   CrmNotesNotifier(List<NoteEntry> seed)
       : _repo = null,
+        onRemoteChange = null,
         _apiModel = null,
         _apiRecordId = '',
         super(List.of(seed));
 
-  CrmNotesNotifier.remote(NotesRepository repo, CrmNotesSeed seed)
+  CrmNotesNotifier.remote(NotesRepository repo, CrmNotesSeed seed, {this.onRemoteChange})
       : _repo = repo,
         _apiModel = seed.apiModel,
         _apiRecordId = seed.apiRecordId,
@@ -64,6 +66,11 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
   final NotesRepository? _repo;
   final String? _apiModel;
   final String _apiRecordId;
+
+  /// Called once a note or reply is actually stored. The audit trail only gains
+  /// an entry when the POST lands, so anything watching it must be told then —
+  /// not when the optimistic entry appears.
+  final void Function()? onRemoteChange;
 
   int _seq = 0;
 
@@ -103,7 +110,9 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
           relatedToId: _apiRecordId,
           body: body,
         );
-        if (created == null || !mounted) return;
+        if (created == null) return;
+        onRemoteChange?.call();
+        if (!mounted) return;
         // Attachments are a second call — the upload points at a note_id, so
         // it can only happen now that the note exists.
         final uploaded = await _uploadAttachments(created.id, attachments);
@@ -178,6 +187,7 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
     unawaited(() async {
       try {
         await _repo!.addReply(noteId: noteId, body: body);
+        onRemoteChange?.call();
       } on Object {
         // Keep the optimistic reply.
       }
@@ -191,7 +201,13 @@ final crmNotesProvider =
     StateNotifierProvider.family<CrmNotesNotifier, List<NoteEntry>, CrmNotesSeed>(
   (ref, seed) {
     if (ApiConfig.apiEnabled) {
-      return CrmNotesNotifier.remote(ref.read(notesRepositoryProvider), seed);
+      return CrmNotesNotifier.remote(
+        ref.read(notesRepositoryProvider),
+        seed,
+        onRemoteChange: () => ref
+            .read(recordRevisionProvider(seed.apiRecordId).notifier)
+            .update((v) => v + 1),
+      );
     }
     return CrmNotesNotifier(seed.build());
   },

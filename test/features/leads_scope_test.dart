@@ -136,6 +136,10 @@ class _RecordingRepo implements LeadsRepository {
 
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
+
+  @override
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields) async =>
+      null;
 }
 
 /// Lets the FutureProviders resolve.

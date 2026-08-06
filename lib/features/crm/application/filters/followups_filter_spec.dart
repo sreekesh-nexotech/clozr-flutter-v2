@@ -72,17 +72,23 @@ FilterSpec buildFollowupsFilterSpec({
   return FilterSpec(
     title: 'Follow-ups',
     sections: [
+      // Type and status carry the is / is not toggle, like the Leads drawer's
+      // Source / Product / Stage. The matcher already honoured `isNot` on every
+      // field here — these two simply never offered the control, so "everything
+      // except Email" could not be expressed.
       FilterSection(title: 'Type & status', fields: [
         FilterField(
             id: 'types',
             label: 'Type',
-            control: FilterControl.checkboxGroup,
+            control: FilterControl.checkboxIsNot,
+            isNotToggle: true,
             twoCol: true,
             options: types),
         const FilterField(
             id: 'statuses',
             label: 'Status',
-            control: FilterControl.checkboxGroup,
+            control: FilterControl.checkboxIsNot,
+            isNotToggle: true,
             twoCol: true,
             options: [
               FilterOption(id: 'due', label: 'Upcoming'),

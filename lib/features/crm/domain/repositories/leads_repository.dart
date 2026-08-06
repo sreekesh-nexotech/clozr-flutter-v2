@@ -39,4 +39,14 @@ abstract class LeadsRepository {
   /// `organization_name`, `email`, `phone`, `purpose`). Returns the created
   /// lead, or null when the backend response shape is unexpected.
   Future<Lead?> createLead(Map<String, dynamic> fields);
+
+  /// `PATCH /crm/leads/{id}/` — saves the Edit lead form.
+  ///
+  /// Only the fields the form owns are sent, and every one of them is sent
+  /// even when blank: the form was prefilled from the record, so an empty box
+  /// means "clear this", not "leave it alone".
+  ///
+  /// Returns the updated lead, or null when the response shape is unexpected.
+  /// Throws on a rejected write (a converted lead is frozen — `403`).
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields);
 }

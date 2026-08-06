@@ -19,7 +19,7 @@ const _orgTypes = [
   CatalogOption(id: 't5', name: 'Site Visit'),
 ];
 
-Followup _fu({required String kind}) => Followup(
+Followup _fu({required String kind, String status = 'due'}) => Followup(
       id: 'F1',
       kind: kind,
       contact: 'Ishaan',
@@ -28,7 +28,7 @@ Followup _fu({required String kind}) => Followup(
       company: 'DataForge',
       due: '09 Jul 2026',
       time: '10:00',
-      status: 'due',
+      status: status,
       owner: 'me',
       agenda: 'Follow-up',
     );
@@ -88,6 +88,56 @@ void main() {
         ..['types'] = ChoiceValue(ids: {'Site visit'});
 
       expect(followupMatchesFilters(_fu(kind: 'Site Visit'), values), isFalse);
+    });
+  });
+
+  group('is / is not', () {
+    FilterField fieldNamed(String id) => buildFollowupsFilterSpec(
+          leads: const [],
+          customers: const [],
+          followups: const [],
+          typeCatalog: _orgTypes,
+        ).sections.expand((s) => s.fields).firstWhere((f) => f.id == id);
+
+    test('every choice field in the drawer offers the toggle', () {
+      for (final id in ['types', 'statuses', 'owners', 'companies']) {
+        expect(fieldNamed(id).isNotToggle, isTrue,
+            reason: '$id should be negatable');
+      }
+    });
+
+    test('"is not" on Type excludes the chosen types, keeps the rest', () {
+      final values = FilterValues()
+        ..['types'] = ChoiceValue(ids: {'Email'}, isNot: true);
+
+      expect(followupMatchesFilters(_fu(kind: 'Email'), values), isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'Call'), values), isTrue);
+    });
+
+    test('"is not" on Status excludes the chosen statuses', () {
+      final values = FilterValues()
+        ..['statuses'] = ChoiceValue(ids: {'done'}, isNot: true);
+
+      expect(followupMatchesFilters(_fu(kind: 'Call', status: 'done'), values), isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'Call', status: 'due'), values), isTrue);
+    });
+
+    test('negating several types excludes all of them', () {
+      final values = FilterValues()
+        ..['types'] = ChoiceValue(ids: {'Email', 'WhatsApp'}, isNot: true);
+
+      expect(followupMatchesFilters(_fu(kind: 'Email'), values), isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'WhatsApp'), values), isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'Meeting'), values), isTrue);
+    });
+
+    test('flipping to "is not" without picking anything filters nothing', () {
+      final values = FilterValues()
+        ..['types'] = ChoiceValue(ids: {}, isNot: true);
+
+      expect(followupMatchesFilters(_fu(kind: 'Email'), values), isTrue);
+      // …and does not light up the filter badge.
+      expect(values.activeCount, 0);
     });
   });
 

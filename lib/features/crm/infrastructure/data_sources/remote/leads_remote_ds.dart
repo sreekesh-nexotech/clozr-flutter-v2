@@ -150,6 +150,55 @@ class LeadsRemoteDataSource {
     }
   }
 
+  /// The Add/Edit lead form's fields, under the names the API actually stores
+  /// them as. Shared by create and update so the two can never drift.
+  ///
+  /// Two names deliberately absent, both verified against a live org:
+  ///
+  /// * **`phone`** — the model has one, but the serializer's contact field is
+  ///   `mobile_no` (which is also what [_phoneOf] reads first). A `phone` sent
+  ///   here is accepted, echoed back in the response, and never stored.
+  /// * **`purpose`** — not a Lead field at all. The form's "project" box has no
+  ///   backend counterpart; `Lead.project` is derived from the lead's linked
+  ///   products, which this form does not edit.
+  ///
+  /// A field the org has not configured as detail-visible is likewise not on
+  /// the serializer, so it is silently dropped. That is the server's call, not
+  /// something this map can predict — it sends the superset it knows is real.
+  static Map<String, dynamic> leadWriteFields({
+    required String name,
+    required String company,
+    required String email,
+    required String phone,
+    required String website,
+  }) =>
+      {
+        'lead_name': name.trim(),
+        'organization_name': company.trim(),
+        'email': email.trim(),
+        'mobile_no': phone.trim(),
+        'website': website.trim(),
+      };
+
+  /// `PATCH /crm/leads/{id}/` — saves the Edit lead form.
+  ///
+  /// Unlike [createLead] this does **not** drop blank values: the form was
+  /// prefilled from the record, so a box the user emptied is an instruction to
+  /// clear that field.
+  ///
+  /// A field this org has not configured as visible is not on the serializer
+  /// at all, so the API accepts it, echoes it back and never stores it. Send
+  /// only names the schema actually exposes — see [leadWriteFields].
+  Future<Lead?> updateLead(String id, Map<String, dynamic> fields) async {
+    final body = await _api.patch(ApiEndpoints.lead(id), body: fields);
+    if (body is! Map<String, dynamic>) return null;
+    try {
+      return mapLead(body);
+    } on Object {
+      return null; // unexpected shape → null, never a crash
+    }
+  }
+
   /// `PATCH /crm/leads/{id}/` — moves the lead to another pipeline stage.
   ///
   /// The field is **`status_id`**, not `status`: the serializer exposes

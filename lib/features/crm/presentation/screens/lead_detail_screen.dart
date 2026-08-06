@@ -88,6 +88,22 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     _notesKey.currentState?.focusComposer();
   }
 
+  /// Opens the lead form in edit mode. Reached from two places — the overflow
+  /// menu's "Edit lead" and the sticky bar's pencil — so the converted guard
+  /// lives here rather than at each call site.
+  ///
+  /// A converted lead is frozen server-side (`403` on `PATCH`); say so instead
+  /// of opening a form whose save could only fail.
+  void _editLead(Lead lead) {
+    if (lead.status == 'won') {
+      ref
+          .read(toastProvider.notifier)
+          .show('This lead has converted — edit the customer instead.');
+      return;
+    }
+    context.push('${Routes.addLead}?id=${lead.id}');
+  }
+
   void _openLeadMenu(Lead lead, bool converted) {
     final toast = ref.read(toastProvider.notifier);
     showActionMenu(
@@ -104,12 +120,15 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           onTap: () => toast.show('Converting to customer…'),
         ),
         MenuAction(icon: PhosphorIconsRegular.userSwitch, label: 'Reassign owner', onTap: () => toast.show('Reassign owner')),
+        // The sticky bar's pencil now opens Edit lead, so the notes composer
+        // keeps its shortcut here rather than losing one entirely.
+        MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
         MenuAction(
           icon: PhosphorIconsRegular.pencilSimple,
           label: 'Edit lead',
           enabled: !converted,
           sublabel: converted ? 'Locked — lead converted' : null,
-          onTap: () => context.push('${Routes.addLead}?id=${lead.id}'),
+          onTap: () => _editLead(lead),
         ),
       ],
     );
@@ -171,6 +190,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         outcome.result == LeadCallResult.dialledAndLogged) {
       ref.invalidate(leadCallLogsProvider(lead.id));
       ref.invalidate(leadDetailProvider(lead.id));
+      markRecordChanged(ref, lead.id);
     }
 
     final toast = ref.read(toastProvider.notifier);
@@ -234,6 +254,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       await ref.read(leadsRepositoryProvider).updateLeadStatus(lead.id, statusId);
       ref.invalidate(leadDetailProvider(lead.id));
       ref.invalidate(leadsScopedProvider);
+      markRecordChanged(ref, lead.id);
       if (!mounted) return;
       ref.read(toastProvider.notifier).show('Status updated');
     } on Object catch (e) {
@@ -719,6 +740,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       default:
         await _uploadFiles(lead);
     }
+    // The sheets report no outcome, so this fires even on cancel — one wasted
+    // read of a small log beats an activity entry that never shows up.
+    if (mounted) markRecordChanged(ref, lead.id);
   }
 
   /// Picks files off the device and posts them to this lead.
@@ -767,7 +791,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (!mounted) return;
     setState(() => _uploading = false);
 
-    if (stored > 0) ref.invalidate(leadFilesProvider(lead.id));
+    if (stored > 0) {
+      ref.invalidate(leadFilesProvider(lead.id));
+      markRecordChanged(ref, lead.id);
+    }
     if (failure != null) {
       // Say what did land before what didn't, so a partial batch is not read
       // as a total failure.
@@ -1235,7 +1262,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           SizedBox(width: 10.w),
           _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
           SizedBox(width: 10.w),
-          _squareAction(PhosphorIconsBold.notePencil, AppColors.white, _focusNotes, border: const Color(0xFFB9C2D8), borderWidth: 1.5),
+          // Same destination as the overflow menu's Edit lead, and the same
+          // lock: a converted lead is frozen server-side (403), so offering the
+          // form would only produce a rejected save.
+          _squareAction(
+            PhosphorIconsBold.pencilSimple,
+            AppColors.white,
+            () => _editLead(lead),
+            border: const Color(0xFFB9C2D8),
+            borderWidth: 1.5,
+          ),
         ],
       ),
     );

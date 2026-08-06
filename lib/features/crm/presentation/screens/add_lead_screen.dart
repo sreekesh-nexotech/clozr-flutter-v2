@@ -16,9 +16,16 @@ import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/lead.dart';
+import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 
 /// Add lead — a grouped form (Contact / Deal / Qualification / Schedule /
 /// Pipeline). Static submit validates name + phone, then toasts and pops.
+///
+/// Doubles as **Edit lead** when opened with `?id=<lead_id>` (from the lead
+/// detail screen's overflow menu and its sticky-bar edit affordance): the form
+/// prefills from the record and saves with `PATCH` instead of creating a
+/// second lead.
 class AddLeadScreen extends ConsumerStatefulWidget {
   const AddLeadScreen({super.key});
 
@@ -48,6 +55,44 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   String _status = 'new';
   bool _showErrors = false;
 
+  /// True while a save is in flight, so the button can't be double-tapped into
+  /// two writes.
+  bool _saving = false;
+
+  /// Whether the record has been copied into the fields yet. One-shot, so a
+  /// late-arriving detail fetch never overwrites what the user has typed.
+  bool _prefilled = false;
+
+  /// The lead being edited — empty for the Add case.
+  String get _editingId =>
+      GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+
+  /// Copies the record into the form, once.
+  ///
+  /// Runs from build rather than initState because the lead comes from a
+  /// provider that may still be loading, and the route's query parameters are
+  /// not readable until the widget is in the tree.
+  void _prefillFrom(Lead? lead) {
+    if (_prefilled || lead == null) return;
+    _prefilled = true;
+    _name.text = lead.name;
+    _phone.text = lead.phone;
+    _email.text = lead.email;
+    _company.text = lead.company ?? '';
+    _project.text = lead.project;
+    _value.text = lead.value == '—' ? '' : lead.value;
+    _industry.text = lead.industry;
+    _website.text = lead.website;
+    _territory.text = lead.territory;
+    _source.text = lead.source;
+    _owner = lead.owner;
+    _status = lead.status;
+    // Painting is already under way; defer the rebuild past this frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void dispose() {
     for (final c in [_name, _phone, _email, _company, _project, _value, _industry, _website, _employees, _revenue, _territory, _fitout, _nextFu, _expClose, _source, _note]) {
@@ -61,31 +106,51 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   bool get _projectOk => _project.text.trim().isNotEmpty;
 
   Future<void> _submit() async {
+    if (_saving) return;
     setState(() => _showErrors = true);
     if (!_nameOk || !_phoneOk || !_projectOk) {
       ref.read(toastProvider.notifier).show('Please complete the required fields');
       return;
     }
+
+    final editingId = _editingId;
+    final editing = editingId.isNotEmpty;
+    final done = editing ? 'Lead updated' : 'Lead added';
+
     if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show('Lead added');
+      ref.read(toastProvider.notifier).show(done);
       context.pop();
       return;
     }
+
+    // One field map for both paths, so create and update can never disagree
+    // about what a field is called.
+    final fields = LeadsRemoteDataSource.leadWriteFields(
+      name: _name.text,
+      company: _company.text,
+      email: _email.text,
+      phone: _phone.text,
+      website: _website.text,
+    );
+
+    setState(() => _saving = true);
     try {
-      await ref.read(leadsRepositoryProvider).createLead({
-        'lead_name': _name.text.trim(),
-        'organization_name': _company.text.trim(),
-        'email': _email.text.trim(),
-        'phone': _phone.text.trim(),
-        'purpose': _project.text.trim(),
-      });
+      final repo = ref.read(leadsRepositoryProvider);
+      if (editing) {
+        await repo.updateLead(editingId, fields);
+      } else {
+        await repo.createLead(fields);
+      }
       if (!mounted) return;
-      // Both ownership scopes can contain the new lead — refresh either view.
+      // Both ownership scopes can contain the lead — refresh either view.
       ref.invalidate(leadsScopedProvider);
-      ref.read(toastProvider.notifier).show('Lead added');
+      // An edit also moves the record the detail screen is showing behind us.
+      if (editing) ref.invalidate(leadDetailProvider(editingId));
+      ref.read(toastProvider.notifier).show(done);
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
+      setState(() => _saving = false);
       ref.read(toastProvider.notifier).show(e.message);
     }
   }
@@ -147,11 +212,23 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final editingId = _editingId;
+    if (editingId.isNotEmpty) {
+      // The record is authoritative (it carries email, mobile, website and
+      // territory); the list row stands in until it lands so the form is never
+      // blank behind a spinner.
+      _prefillFrom(ref.watch(leadDetailProvider(editingId)).valueOrNull ??
+          ref.watch(leadByIdProvider(editingId)));
+    }
+    final editing = editingId.isNotEmpty;
+
     return Container(
       color: AppColors.bgDetail,
       child: Column(
         children: [
-          DetailAppBar(section: 'Add lead', onBack: () => context.pop()),
+          DetailAppBar(
+              section: editing ? 'Edit lead' : 'Add lead',
+              onBack: () => context.pop()),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
@@ -216,7 +293,14 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
               PrimaryButton(label: 'Cancel', ghost: true, expand: false, height: 48, onTap: () => context.pop()),
               SizedBox(width: 10.w),
               Expanded(
-                child: PrimaryButton(label: 'Add lead', icon: PhosphorIconsBold.check, height: 48, onTap: _submit),
+                child: PrimaryButton(
+                  label: _saving
+                      ? 'Saving…'
+                      : (editing ? 'Save changes' : 'Add lead'),
+                  icon: PhosphorIconsBold.check,
+                  height: 48,
+                  onTap: _submit,
+                ),
               ),
             ],
           ),

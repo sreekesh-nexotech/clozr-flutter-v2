@@ -56,7 +56,9 @@ class LeadsRepositoryImpl implements LeadsRepository {
       name: name,
       initials: UserDirectory.initialsOf(name),
       company: (fields['organization_name'] ?? '').toString(),
-      project: (fields['purpose'] ?? '').toString(),
+      // `project` is derived from the lead's linked products server-side, not
+      // from anything the form submits — there is nothing to echo here.
+      project: '',
       value: '—',
       valueNum: 0,
       status: 'new',
@@ -65,9 +67,9 @@ class LeadsRepositoryImpl implements LeadsRepository {
       source: '',
       owner: 'me',
       team: const ['me'],
-      phone: (fields['phone'] ?? '').toString(),
+      phone: (fields['mobile_no'] ?? '').toString(),
       email: (fields['email'] ?? '').toString(),
-      website: '',
+      website: (fields['website'] ?? '').toString(),
       industry: '',
       location: '',
       createdOn: '',
@@ -75,5 +77,13 @@ class LeadsRepositoryImpl implements LeadsRepository {
       lastFu: '',
       notif: 0,
     );
+  }
+
+  /// No-op — mock mode has nothing to persist to. Returning null keeps the
+  /// form on its toast-only path rather than claiming the edit was saved.
+  @override
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return null;
   }
 }
