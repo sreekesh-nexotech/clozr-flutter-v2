@@ -46,6 +46,7 @@ import '../../../../data/api/user_directory.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
+import '../sheets/reassign_owner_sheet.dart';
 import '../components/option_picker_sheet.dart';
 import '../sheets/add_followup_sheet.dart';
 import '../sheets/add_task_sheet.dart';
@@ -212,7 +213,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           sublabel: converted ? 'Already converted' : null,
           onTap: () => toast.show('Converting to customer…'),
         ),
-        MenuAction(icon: PhosphorIconsRegular.userSwitch, label: 'Reassign owner', onTap: () => toast.show('Reassign owner')),
+        MenuAction(icon: PhosphorIconsRegular.userSwitch, label: 'Reassign owner', onTap: () => _reassignOwner(lead)),
         // The sticky bar's pencil now opens Edit lead, so the notes composer
         // keeps its shortcut here rather than losing one entirely.
         MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
@@ -299,6 +300,48 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       case LeadCallResult.dialledAndLogged:
       case LeadCallResult.dialledLogFailed:
         break; // the dialler is on screen; a log failure already toasted
+    }
+  }
+
+  /// Reassigns the lead to another user.
+  ///
+  /// The candidates come from the record's own `assignable-users` endpoint, not
+  /// the org roster — the server decides who is eligible for *this* lead.
+  Future<void> _reassignOwner(Lead lead) async {
+    final toast = ref.read(toastProvider.notifier);
+    List<CatalogOption> users;
+    try {
+      users = await ref.read(assignableUsersProvider(lead.id).future);
+    } on Object catch (e) {
+      if (!mounted) return;
+      toast.show(e is AppError ? e.message : 'Could not load the user list.');
+      return;
+    }
+    if (!mounted) return;
+    if (users.isEmpty) {
+      toast.show('No one else can be assigned to this lead.');
+      return;
+    }
+
+    final picked = await showReassignOwnerSheet(
+      context: context,
+      users: users,
+      currentOwnerId: lead.owner,
+    );
+    if (picked == null || !mounted) return;
+    if (UserDirectory.mapUserId(picked) == lead.owner) return; // unchanged
+
+    try {
+      await ref.read(leadsRepositoryProvider).updateLead(lead.id, {'lead_owner': picked});
+      // The PATCH response omits `lead_owner` (it is trimmed out of the write
+      // echo), so the new owner has to be read back rather than taken from it.
+      ref.invalidate(leadDetailProvider(lead.id));
+      ref.invalidate(leadsScopedProvider);
+      if (!mounted) return;
+      toast.show('Owner reassigned');
+    } on Object catch (e) {
+      if (!mounted) return;
+      toast.show(e is AppError ? e.message : 'Could not reassign the owner.');
     }
   }
 

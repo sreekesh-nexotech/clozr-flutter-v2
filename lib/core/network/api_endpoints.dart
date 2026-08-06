@@ -22,6 +22,8 @@ class ApiEndpoints {
   static const leadSchema = '/crm/leads/schema/';
   static const leadBoard = '/crm/leads/board/';
   static String leadConvert(String id) => '/crm/leads/$id/convert/';
+  static String leadAssignableUsers(String id) =>
+      '/crm/leads/$id/assignable-users/';
   static const leadStatuses = '/crm/lead-statuses/';
   static const leadSources = '/crm/lead-sources/';
   static const industries = '/crm/industries/';

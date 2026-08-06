@@ -1,5 +1,7 @@
 import '../../../../app/config/constants.dart';
 import '../../../../data/api/user_directory.dart';
+import '../../../../data/mock/mock_users.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../data_sources/local/leads_mock_ds.dart';
@@ -44,6 +46,13 @@ class LeadsRepositoryImpl implements LeadsRepository {
   /// change that did not happen.
   @override
   Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
+
+  /// The prototype roster stands in for the server's eligibility check.
+  @override
+  Future<List<CatalogOption>> getAssignableUsers(String leadId) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return [for (final u in MockUsers.reps) CatalogOption(id: u.id, name: u.name)];
+  }
 
   /// Local echo — mock mode has no backend, so the "created" lead is built
   /// from the submitted fields (never persisted; mock behavior unchanged).

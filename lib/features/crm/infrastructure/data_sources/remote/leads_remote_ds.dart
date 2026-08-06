@@ -5,6 +5,7 @@ import '../../../../../core/utils/inr_format.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
 import '../../../../../data/api/user_directory.dart';
+import '../../../domain/entities/crm_catalog.dart';
 import '../../../domain/entities/lead.dart';
 import '../../../domain/entities/view_schema.dart';
 
@@ -207,6 +208,31 @@ class LeadsRemoteDataSource {
     } on Object {
       return null; // unexpected shape → null, never a crash
     }
+  }
+
+  /// `GET /crm/leads/{id}/assignable-users/` — who this lead may be assigned
+  /// to: active org users, filtered by record access for the caller.
+  ///
+  /// Not the same as the org roster: the server decides who is eligible for
+  /// *this* record, so the picker cannot be built from `/management/users/`.
+  ///
+  /// Each row is registered into [UserDirectory] on the way through, so the
+  /// picker's avatars and the lead's own owner row resolve to the same person.
+  Future<List<CatalogOption>> fetchAssignableUsers(String id) async {
+    final body = await _api.get(ApiEndpoints.leadAssignableUsers(id),
+        query: {'page_size': 200});
+    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final out = <CatalogOption>[];
+    for (final row in rows) {
+      UserDirectory.registerJson(row);
+      final userId = _str(row, 'user_id');
+      final name = _str(row, 'full_name').trim().isNotEmpty
+          ? _str(row, 'full_name')
+          : _str(row, 'username');
+      if (userId.isEmpty || name.isEmpty) continue;
+      out.add(CatalogOption(id: userId, name: name));
+    }
+    return out;
   }
 
   /// `PATCH /crm/leads/{id}/` — moves the lead to another pipeline stage.

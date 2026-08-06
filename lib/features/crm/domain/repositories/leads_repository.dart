@@ -1,3 +1,4 @@
+import '../entities/crm_catalog.dart';
 import '../entities/lead.dart';
 
 /// Abstract contract for lead data. The presentation layer depends only on
@@ -34,6 +35,10 @@ abstract class LeadsRepository {
   /// unexpected. Throws on a rejected write — the caller surfaces it, because
   /// silently leaving the old status on screen would be a lie.
   Future<Lead?> updateLeadStatus(String leadId, String statusId);
+
+  /// The users this lead may be reassigned to, as `{user_id, full_name}`
+  /// options. Server-filtered by record access, so it is not the org roster.
+  Future<List<CatalogOption>> getAssignableUsers(String leadId);
 
   /// Creates a lead from API-shaped form fields (`lead_name`,
   /// `organization_name`, `email`, `phone`, `purpose`). Returns the created

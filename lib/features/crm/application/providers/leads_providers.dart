@@ -140,6 +140,17 @@ final leadDetailProvider = FutureProvider.family<Lead?, String>(
 /// field name — something the mapped [Lead] cannot answer, since it exposes a
 /// fixed set of properties. Same endpoint as [leadDetailProvider]; the two
 /// share the repository's per-id cache entry.
+/// Who this lead may be reassigned to — `GET /crm/leads/{id}/assignable-users/`.
+///
+/// Not the org roster: the server filters by record access, so it answers who
+/// is eligible for *this* lead. `autoDispose` because the picker is opened
+/// rarely and eligibility is the server's answer at that moment — caching it
+/// for the session could offer someone since deactivated.
+final assignableUsersProvider =
+    FutureProvider.autoDispose.family<List<CatalogOption>, String>(
+  (ref, leadId) => ref.watch(leadsRepositoryProvider).getAssignableUsers(leadId),
+);
+
 final leadRowProvider =
     FutureProvider.family<Map<String, dynamic>?, String>((ref, id) {
   if (id.isEmpty) return Future.value(null);

@@ -1,5 +1,6 @@
 import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/app_cache.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../data_sources/remote/leads_remote_ds.dart';
@@ -90,6 +91,10 @@ class LeadsApiRepository implements LeadsRepository {
     await AppCache.remove(AppCache.crmCache, 'lead_$leadId');
     return lead;
   }
+
+  @override
+  Future<List<CatalogOption>> getAssignableUsers(String leadId) =>
+      _remote.fetchAssignableUsers(leadId);
 
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async {

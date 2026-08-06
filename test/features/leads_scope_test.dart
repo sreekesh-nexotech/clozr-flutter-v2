@@ -14,6 +14,7 @@ import 'package:clozrapp/core/network/api_service.dart';
 import 'package:clozrapp/core/storage/token_storage.dart';
 import 'package:clozrapp/features/crm/application/filters/leads_filter_spec.dart';
 import 'package:clozrapp/features/crm/application/providers/leads_providers.dart';
+import 'package:clozrapp/features/crm/domain/entities/crm_catalog.dart';
 import 'package:clozrapp/features/crm/domain/entities/lead.dart';
 import 'package:clozrapp/features/crm/domain/repositories/leads_repository.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/local/leads_mock_ds.dart';
@@ -133,6 +134,9 @@ class _RecordingRepo implements LeadsRepository {
 
   @override
   Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
+
+  @override
+  Future<List<CatalogOption>> getAssignableUsers(String leadId) async => const [];
 
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
