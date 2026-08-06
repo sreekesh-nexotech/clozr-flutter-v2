@@ -133,13 +133,14 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
           // not resolve — a display name the catalog has not loaded yet, most
           // often. Omitting the key leaves the field untouched; sending the
           // unresolved value would either 400 or overwrite it with rubbish.
-          final id = _known(c, _selectedId(c));
-          if (id != null) out[key] = _writeId(c, id);
+          final id = _writeId(c, _known(c, _selectedId(c)));
+          // Omitted rather than sent as null: null *clears* the field, and a
+          // value we could not resolve is not an instruction to clear it.
+          if (id != null) out[key] = id;
         case 'manytomany':
           out[key] = [
             for (final id in _selectedIds(c))
-              if (_known(c, id) != null && _writeId(c, id) != null)
-                _writeId(c, id),
+              if (_writeId(c, _known(c, id)) != null) _writeId(c, _known(c, id)),
           ];
         case 'boolean':
           out[key] = _controller(c.name).text.trim().toLowerCase() == 'yes';

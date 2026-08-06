@@ -21,6 +21,22 @@ class UserDirectory {
   /// The signed-in user's uuid (set by the auth session controller).
   static String? currentUserId;
 
+  /// Every uuid this directory has seen from the API.
+  ///
+  /// `MockUsers.byId` is seeded with the prototype reps and real users are
+  /// registered into that same map, so membership there says nothing about
+  /// whether a user exists on the server. This set does — it is what keeps the
+  /// prototype's `am`/`rk`/`dr` ids out of pickers, and out of writes: the API
+  /// rejects them outright (`"dr" is not a valid UUID`).
+  static final Set<String> _apiIds = {};
+
+  /// Whether [mappedId] refers to a user the server actually knows.
+  static bool isApiUser(String? mappedId) {
+    if (mappedId == null || mappedId.isEmpty) return false;
+    if (mappedId == 'me') return currentUserId != null;
+    return _apiIds.contains(mappedId);
+  }
+
   static const List<Color> _palette = [
     AppColors.navy,
     AppColors.teal,
@@ -32,18 +48,22 @@ class UserDirectory {
   ];
   static int _colorSeq = 0;
 
-  /// `'me'` for the signed-in user, the uuid itself otherwise.
-  /// The inverse of [mapUserId]: turns the `'me'` sentinel back into the
-  /// signed-in user's real uuid so it can be written to the API.
+  /// The inverse of [mapUserId]: the uuid to write for a picker's id.
   ///
   /// Every picker in the app deals in the mapped id, but a write needs the id
-  /// the server knows — posting `'me'` as an owner is a validation error.
-  /// Returns null when the id is `'me'` and no session uuid is known.
+  /// the server knows — posting `'me'` as an owner is a validation error, and
+  /// so is posting a prototype id like `'dr'`.
+  ///
+  /// Returns null for anything the server would reject, so a caller that skips
+  /// nulls can never send an id the API has not confirmed exists.
   static String? realUserId(String? mappedId) {
     if (mappedId == null || mappedId.isEmpty) return null;
-    return mappedId == 'me' ? currentUserId : mappedId;
+    final id = mappedId == 'me' ? currentUserId : mappedId;
+    if (id == null || id.isEmpty) return null;
+    return (id == currentUserId || _apiIds.contains(id)) ? id : null;
   }
 
+  /// `'me'` for the signed-in user, the uuid itself otherwise.
   static String mapUserId(String? userId) {
     if (userId == null || userId.isEmpty) return '';
     return userId == currentUserId ? 'me' : userId;
@@ -57,6 +77,7 @@ class UserDirectory {
     String role = '',
   }) {
     if (userId.isEmpty || fullName.isEmpty) return;
+    _apiIds.add(userId);
     final user = AppUser(
       id: mapUserId(userId),
       name: fullName,
@@ -128,8 +149,10 @@ class UserDirectory {
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
-  /// Clears session-specific state on logout.
+  /// Clears session-specific state on logout. The known-user set goes with it:
+  /// it is another tenant's roster to the next session.
   static void reset() {
     currentUserId = null;
+    _apiIds.clear();
   }
 }
