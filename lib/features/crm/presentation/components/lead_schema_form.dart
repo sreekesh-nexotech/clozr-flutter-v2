@@ -3,9 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../../../app/theme/app_colors.dart';
-import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/api/user_directory.dart';
@@ -13,6 +10,7 @@ import '../../application/providers/crm_catalog_providers.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/view_schema.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
+import 'option_picker_sheet.dart';
 import '../sheets/add_sheet_kit.dart';
 
 /// A lead form built from the org's own layout rather than a fixed field list.
@@ -262,44 +260,31 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   // ── pickers ──
 
   Future<void> _pickOne(ViewColumn c) async {
-    final options = _optionsFor(c);
-    if (options.isEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('No ${c.label.toLowerCase()} options configured')),
-      );
-      return;
-    }
-    await showClozrSheet<void>(
+    final picked = await showOptionPicker(
       context: context,
-      builder: (ctx) => _OptionSheet(
-        title: c.label,
-        options: options,
-        selected: {if (_selectedId(c) != null) _selectedId(c)!},
-        multi: false,
-        onDone: (ids) =>
-            setState(() => _choice[c.name] = ids.isEmpty ? null : ids.first),
-      ),
+      title: c.label,
+      options: _optionsFor(c),
+      selected: {if (_selectedId(c) != null) _selectedId(c)!},
+      emptyNote: 'No ${c.label.toLowerCase()} options are configured for this '
+          'organisation yet.',
     );
+    // Dismissed without choosing — leave the field as it was.
+    if (picked == null || !mounted) return;
+    setState(() => _choice[c.name] = picked.isEmpty ? null : picked.first);
   }
 
   Future<void> _pickMany(ViewColumn c) async {
-    final options = _optionsFor(c);
-    if (options.isEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('No ${c.label.toLowerCase()} options configured')),
-      );
-      return;
-    }
-    await showClozrSheet<void>(
+    final picked = await showOptionPicker(
       context: context,
-      builder: (ctx) => _OptionSheet(
-        title: c.label,
-        options: options,
-        selected: {..._selectedIds(c)},
-        multi: true,
-        onDone: (ids) => setState(() => _multi[c.name] = ids.toList()),
-      ),
+      title: c.label,
+      options: _optionsFor(c),
+      selected: {..._selectedIds(c)},
+      multi: true,
+      emptyNote: 'No ${c.label.toLowerCase()} options are configured for this '
+          'organisation yet.',
     );
+    if (picked == null || !mounted) return;
+    setState(() => _multi[c.name] = picked.toList());
   }
 
   // ── rendering ──
@@ -398,90 +383,5 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
           hint: 'Enter ${c.label.toLowerCase()}…',
         );
     }
-  }
-}
-
-/// A single- or multi-select list of catalog options.
-class _OptionSheet extends StatefulWidget {
-  const _OptionSheet({
-    required this.title,
-    required this.options,
-    required this.selected,
-    required this.multi,
-    required this.onDone,
-  });
-
-  final String title;
-  final List<CatalogOption> options;
-  final Set<String> selected;
-  final bool multi;
-  final void Function(Set<String> ids) onDone;
-
-  @override
-  State<_OptionSheet> createState() => _OptionSheetState();
-}
-
-class _OptionSheetState extends State<_OptionSheet> {
-  late final Set<String> _picked = {...widget.selected};
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SheetHeader(title: widget.title, onClose: () => Navigator.of(context).pop()),
-        Flexible(
-          child: ListView(
-            shrinkWrap: true,
-            padding: EdgeInsets.fromLTRB(14.w, 4.h, 14.w, 12.h),
-            children: [
-              for (final o in widget.options)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    if (widget.multi) {
-                      setState(() => _picked.contains(o.id)
-                          ? _picked.remove(o.id)
-                          : _picked.add(o.id));
-                      return;
-                    }
-                    widget.onDone({o.id});
-                    Navigator.of(context).pop();
-                  },
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
-                    child: Row(
-                      children: [
-                        if (o.color != null) ...[
-                          Container(
-                            width: 9.w,
-                            height: 9.w,
-                            decoration: BoxDecoration(
-                                color: o.color, shape: BoxShape.circle),
-                          ),
-                          SizedBox(width: 10.w),
-                        ],
-                        Expanded(child: Text(o.name, style: AppText.bodyStrong())),
-                        if (_picked.contains(o.id))
-                          Icon(PhosphorIconsBold.check,
-                              size: 19.sp, color: AppColors.success),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (widget.multi)
-          SheetSubmitBar(
-            label: 'Done',
-            icon: PhosphorIconsBold.check,
-            onTap: () {
-              widget.onDone(_picked);
-              Navigator.of(context).pop();
-            },
-          ),
-      ],
-    );
   }
 }

@@ -19,33 +19,23 @@ final auditLogRemoteDataSourceProvider =
   return AuditLogRemoteDataSource(ref.watch(apiServiceProvider));
 });
 
-/// Bumped whenever a record is changed, so anything derived from its audit
-/// trail refetches. One counter per record id.
-///
-/// The activity log is the one card on a detail screen that reflects *every*
-/// action rather than one list, so it cannot piggyback on the provider a given
-/// action already refreshes. Watching all of them instead would be worse: the
-/// tab lists are created lazily, one per open tab, so depending on them would
-/// fire a request for every tab the moment the screen opened.
-final recordRevisionProvider = StateProvider.family<int, String>((ref, _) => 0);
-
-/// Signals that [recordId] changed. Call after any write that the audit trail
-/// would record — a stage change, a call, a task, a note, an upload.
-void markRecordChanged(WidgetRef ref, String recordId) {
-  if (recordId.isEmpty) return;
-  ref.read(recordRevisionProvider(recordId).notifier).update((v) => v + 1);
-}
-
 /// The activity log for one lead: `?model_name=Lead&record_id=<lead_id>`.
 ///
 /// The org's stage catalog is passed into the mapper so a status change reads
 /// "Status changed to Qualified" — the raw row carries only a `status_id`.
+/// Refetches after **any** successful write the app makes, not just the actions
+/// wired to it. The log reflects everything that happens to a lead — a stage
+/// change, a call, a task, a note, an upload, an edit — so listing those call
+/// sites by hand would go stale the moment a new one was added. Watching the
+/// write tick means every POST/PUT/PATCH/DELETE refreshes it for free.
+///
+/// `autoDispose` matters here: without it, every lead opened this session would
+/// still be listening and would refetch on every write anywhere.
 final leadActivityLogProvider =
-    FutureProvider.family<List<AuditEntry>, String>((ref, leadId) async {
+    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, leadId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
-  // Refetch on every recorded change to this lead.
-  ref.watch(recordRevisionProvider(leadId));
+  ref.watch(apiWriteTickProvider);
   final statuses = ref.watch(leadStatusesProvider);
   return ds.fetchFor(
     modelName: 'Lead',

@@ -2,9 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
+import '../providers/crm_catalog_providers.dart';
 
 /// Tasks filter — spec-driven drawer (audit §3). Wired exactly like the Leads
 /// reference: spec provider → applied provider → matcher → saved views.
@@ -12,15 +15,25 @@ import '../../domain/entities/crm_task.dart';
 /// Sections and options come straight from the audit: Assignee (Search & Select
 /// + is/is not), Task type (2-col, icons), Priority (inline, icons), Due date.
 
-const List<String> _taskTypes = [
+/// The built-in task-type vocabulary, used only until the org's own arrives.
+///
+/// A **fallback, not the source of truth**: task rows carry `task_type` as a
+/// string and the matcher compares it exactly, so this list has to be the
+/// server's own choice set. The canonical set is Task / Call / Meeting / Email
+/// / Deadline — note `Task` is the default type, so a drawer missing it cannot
+/// filter the most common row on the screen.
+const List<String> kBuiltinTaskTypes = [
+  'Task',
   'Call',
-  'Email',
   'Meeting',
-  'WhatsApp',
-  'Site visit',
-  'Follow-up',
-  'Payment',
+  'Email',
+  'Deadline',
 ];
+
+/// The built-in priority vocabulary — the folded display values the app shows
+/// when the org catalog has not loaded. See [kBuiltinTaskTypes] for why this is
+/// a fallback only.
+const List<String> kBuiltinTaskPriorities = ['Urgent', 'High', 'Medium', 'Low'];
 
 const _months = {
   'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
@@ -45,17 +58,36 @@ DateTime? parseCrmDate(String s) {
 /// Build the Tasks drawer spec (audit §3). Option lists that the audit marks
 /// admin-configurable are the audit's canonical set; the assignee list is the
 /// full workspace roster.
-FilterSpec buildTasksFilterSpec({List<AppUser> roster = MockUsers.reps}) {
+FilterSpec buildTasksFilterSpec({
+  List<AppUser> roster = MockUsers.reps,
+  List<CatalogOption> typeCatalog = const [],
+  List<CatalogOption> priorityCatalog = const [],
+}) {
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
+  // The server's own choice set when it has loaded. The option id is the
+  // `task_type` **value**, which is what a row carries.
   final types = [
-    for (final t in _taskTypes) FilterOption(id: t, label: t),
+    for (final t in typeCatalog.isNotEmpty
+        ? [for (final c in typeCatalog) c.id]
+        : kBuiltinTaskTypes)
+      FilterOption(id: t, label: t),
   ];
+  // Priorities are folded to the built-in display vocabulary on the way in
+  // (`priorityKey`), so the option ids must be folded the same way — otherwise
+  // the org's lower-case "high" would never match a row's "High". Folding also
+  // collapses duplicates, hence the de-dup.
+  final priorityNames = priorityCatalog.isNotEmpty
+      ? {for (final p in priorityCatalog) priorityKey(p.name)}.toList()
+      : kBuiltinTaskPriorities;
   final priorities = [
-    FilterOption(id: 'High', label: 'High', dot: StatusMeta$.priorityTone['High']!.fg),
-    FilterOption(id: 'Medium', label: 'Medium', dot: StatusMeta$.priorityTone['Medium']!.fg),
-    FilterOption(id: 'Low', label: 'Low', dot: StatusMeta$.priorityTone['Low']!.fg),
+    for (final p in priorityNames)
+      FilterOption(
+        id: p,
+        label: p,
+        dot: StatusMeta$.priorityTone[p]?.fg,
+      ),
   ];
 
   return FilterSpec(
@@ -108,9 +140,14 @@ bool crmTaskMatchesFilters(CrmTask t, FilterValues v) {
 
 // ── Providers ──
 
-/// The Tasks drawer spec.
-final crmTasksFilterSpecProvider =
-    Provider<FilterSpec>((ref) => buildTasksFilterSpec(roster: ref.watch(rosterProvider)));
+/// The Tasks drawer spec, with the org's own type and priority vocabularies.
+final crmTasksFilterSpecProvider = Provider<FilterSpec>(
+  (ref) => buildTasksFilterSpec(
+    roster: ref.watch(rosterProvider),
+    typeCatalog: ref.watch(taskTypeOptionsProvider),
+    priorityCatalog: ref.watch(taskPriorityOptionsProvider),
+  ),
+);
 
 /// Applied drawer filters for the Tasks list (the source of the badge count).
 final crmTaskFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());

@@ -9,9 +9,12 @@ import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/api/roster.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/tasks_filter_spec.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/lead.dart';
@@ -30,8 +33,6 @@ Future<void> showAddTaskSheet(BuildContext context, WidgetRef ref, {Lead? lead})
     builder: (_) => _AddTaskSheet(ref: ref, lead: lead),
   );
 }
-
-const _taskTypes = ['Task', 'Call', 'Meeting', 'Email', 'Deadline'];
 
 class _AddTaskSheet extends StatefulWidget {
   const _AddTaskSheet({required this.ref, this.lead});
@@ -52,6 +53,39 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
   String _status = 'todo';
   String _type = 'Call';
   String _priority = 'Medium';
+
+  /// The server's task-type choice set, falling back to the built-in list
+  /// before it loads. `task_type` is submitted as the value, so offering one
+  /// the server does not accept is rejected on save.
+  ///
+  /// Read rather than watched so it is valid from the submit callback; build
+  /// watches the catalogs to keep the chips fresh.
+  List<String> get _taskTypes {
+    final catalog = widget.ref.read(taskTypeOptionsProvider);
+    return catalog.isNotEmpty ? [for (final t in catalog) t.id] : kBuiltinTaskTypes;
+  }
+
+  /// The org's priorities, folded to the display vocabulary the rest of the app
+  /// uses — an org spelling them "critical"/"high" still shows Urgent/High.
+  List<String> get _priorities {
+    final catalog = widget.ref.read(taskPriorityOptionsProvider);
+    return catalog.isNotEmpty
+        ? {for (final p in catalog) priorityKey(p.name)}.toList()
+        : kBuiltinTaskPriorities;
+  }
+
+  /// The chosen values, corrected to something this org offers — the defaults
+  /// are guesses until the catalogs say otherwise.
+  String get _selectedPriority {
+    final list = _priorities;
+    return list.isEmpty || list.contains(_priority) ? _priority : list.first;
+  }
+
+  String get _selectedType {
+    final list = _taskTypes;
+    return list.isEmpty || list.contains(_type) ? _type : list.first;
+  }
+
   String _assignee = 'me';
   bool _showErrors = false;
 
@@ -76,7 +110,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
       try {
         await widget.ref.read(crmTasksRepositoryProvider).createTask({
           'title': _title.text.trim(),
-          'task_type': _type,
+          'task_type': _selectedType,
           'due_date': _due.text.trim(),
           'due_time': _dueTime.text.trim(),
           'description': _desc.text.trim(),
@@ -103,10 +137,10 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
     final task = CrmTask(
       id: genId('TL-'),
       title: _title.text.trim(),
-      type: _type,
+      type: _selectedType,
       leadId: lead?.id,
       status: _status,
-      priority: _priority,
+      priority: _selectedPriority,
       assignee: _assignee,
       due: dueLabel,
       dueNote: '',
@@ -177,6 +211,10 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched here so the chips swap from the built-in lists to the org's own
+    // the moment the catalogs resolve, even with the sheet already open.
+    widget.ref.watch(taskTypeOptionsProvider);
+    widget.ref.watch(taskPriorityOptionsProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -227,7 +265,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                   runSpacing: 8.h,
                   children: [
                     for (final t in _taskTypes)
-                      SelectChip(label: t, selected: _type == t, onTap: () => setState(() => _type = t)),
+                      SelectChip(label: t, selected: _selectedType == t, onTap: () => setState(() => _type = t)),
                   ],
                 ),
                 SizedBox(height: 16.h),
@@ -236,11 +274,11 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                   spacing: 8.w,
                   runSpacing: 8.h,
                   children: [
-                    for (final p in const ['High', 'Medium', 'Low'])
+                    for (final p in _priorities)
                       SelectChip(
                         label: p,
-                        selected: _priority == p,
-                        dot: StatusMeta$.priorityTone[p]!.fg,
+                        selected: _selectedPriority == p,
+                        dot: StatusMeta$.priorityTone[p]?.fg,
                         onTap: () => setState(() => _priority = p),
                       ),
                   ],

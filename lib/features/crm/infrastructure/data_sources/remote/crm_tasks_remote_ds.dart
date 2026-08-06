@@ -44,6 +44,22 @@ class CrmTasksRemoteDataSource {
     return rows;
   }
 
+  /// The raw record row for one task: `GET /crm/tasks/{id}/`.
+  ///
+  /// Returned **unmapped** on purpose. The detail panel renders whichever
+  /// columns the org configured, so it needs values by field name — something
+  /// the mapped [CrmTask] cannot answer, since it exposes a fixed set of
+  /// properties and drops `description`, `due_time`, `duration`,
+  /// `assigned_team` and `assignees` entirely.
+  ///
+  /// The record is also trimmed to the org's **detail** config, so it carries
+  /// fields the list rows do not.
+  Future<Map<String, dynamic>?> fetchTaskRow(String id) async {
+    if (id.isEmpty) return null;
+    final body = await _api.get(ApiEndpoints.crmTask(id));
+    return body is Map<String, dynamic> ? body : null;
+  }
+
   /// Mapped task list (malformed rows are skipped, never fatal).
   Future<List<CrmTask>> fetchTasks() async => mapRows(await fetchTaskRows());
 

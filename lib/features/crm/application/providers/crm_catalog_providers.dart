@@ -55,6 +55,25 @@ final followupTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) as
   return ds == null ? const <CatalogOption>[] : ds.fetchFollowupTypes();
 });
 
+/// `GET /crm/task-priorities/?is_active=true` — the org's task priorities.
+final taskPriorityCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchTaskPriorities();
+});
+
+/// `GET /crm/crm-task-statuses/` — the org's task statuses, with status types.
+final taskStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchTaskStatuses();
+});
+
+/// The task types, read out of `GET /crm/tasks/schema/?view_type=form` — they
+/// are model choices, not an org catalog, so they have no list endpoint.
+final taskTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchTaskTypes();
+});
+
 /// `GET /crm/territories/` — the org's territories, for the lead form.
 final territoryCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
@@ -107,6 +126,22 @@ final teamOptionsProvider = Provider<List<CatalogOption>>(
 /// sheet then fall back to the built-in type list.
 final followupTypeOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(followupTypeCatalogProvider).valueOrNull ?? const [],
+);
+
+/// Synchronous view of [taskTypeCatalogProvider]. Same empty-means-fall-back
+/// contract as [followupTypeOptionsProvider].
+final taskTypeOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(taskTypeCatalogProvider).valueOrNull ?? const [],
+);
+
+/// Synchronous view of [taskPriorityCatalogProvider].
+final taskPriorityOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(taskPriorityCatalogProvider).valueOrNull ?? const [],
+);
+
+/// Synchronous view of [taskStatusCatalogProvider].
+final taskStatusOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [],
 );
 
 /// Completes once **every** option catalog the Leads filter drawer needs has

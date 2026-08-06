@@ -56,6 +56,18 @@ class ApiService {
   late final Dio _dio;
   late final AuthInterceptor _authInterceptor;
 
+  final ValueNotifier<int> _writes = ValueNotifier<int>(0);
+
+  /// Ticks once after every successful write the app makes — POST, PUT, PATCH,
+  /// DELETE, from anywhere.
+  ///
+  /// Views that show "what has happened to this record" (the activity log above
+  /// all) reflect *every* action rather than one list, so hooking each call
+  /// site cannot stay correct as actions are added. Signalling here, at the one
+  /// point every request already passes through, means a new action announces
+  /// itself for free.
+  ValueListenable<int> get writes => _writes;
+
   TokenStorage get tokens => _tokens;
 
   /// Called when a 401 survives the refresh-and-retry cycle. The auth
@@ -86,6 +98,7 @@ class ApiService {
   Future<dynamic> _run(Future<Response<dynamic>> Function() call) async {
     try {
       final res = await call();
+      if (res.requestOptions.method.toUpperCase() != 'GET') _writes.value++;
       return res.data;
     } on DioException catch (e) {
       throw AppError.fromDio(e);

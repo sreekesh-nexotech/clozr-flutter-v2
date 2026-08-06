@@ -17,6 +17,7 @@ import '../../../../core/widgets/tab_chip.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/tasks_filter_spec.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/crm_task.dart';
@@ -72,6 +73,11 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final searchOpen = ref.watch(crmTaskSearchOpenProvider);
     final query = ref.watch(crmTaskSearchProvider);
     final filterCount = ref.watch(crmTaskFiltersProvider).activeCount;
+    // Watched purely to start the type/priority catalog fetches at mount.
+    // Nothing else here references them, so without this the drawer would
+    // snapshot them unloaded and fall back to the built-in vocabularies.
+    ref.watch(taskTypeOptionsProvider);
+    ref.watch(taskPriorityOptionsProvider);
     final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
 
     String? relatedLineFor(String? leadId) {

@@ -42,9 +42,11 @@ import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_file.dart';
 import '../../domain/entities/quote.dart';
+import '../../../../data/api/user_directory.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
+import '../components/option_picker_sheet.dart';
 import '../sheets/add_followup_sheet.dart';
 import '../sheets/add_task_sheet.dart';
 import '../sheets/log_call_sheet.dart';
@@ -86,6 +88,60 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
     }
     _notesKey.currentState?.focusComposer();
+  }
+
+  /// Adds or removes the lead's assignees.
+  ///
+  /// `assignees` is a many-to-many, so the write replaces the whole list —
+  /// there is no add-one endpoint. The picker therefore opens pre-ticked with
+  /// the current set and sends back whatever it ends up as.
+  ///
+  /// Note this works from [Lead.team], not the `assignees` shown in the row
+  /// above: that display list has the owner filtered out for readability, and
+  /// saving it would silently unassign them.
+  Future<void> _editAssignees(Lead lead) async {
+    final roster = ref.read(rosterProvider);
+    final picked = await showOptionPicker(
+      context: context,
+      title: 'Assignees',
+      multi: true,
+      options: [
+        for (final u in roster) CatalogOption(id: u.id, name: u.name),
+      ],
+      selected: {...lead.team},
+      emptyNote: 'No teammates have loaded yet. Open a few records, or ask an '
+          'admin to check your access to the members list.',
+    );
+    if (picked == null || !mounted) return;
+
+    // Ids the API will accept — the directory holds prototype users too, and
+    // it rejects those outright.
+    final ids = [
+      for (final id in picked)
+        if (UserDirectory.realUserId(id) != null) UserDirectory.realUserId(id)!,
+    ];
+    if (ids.length == lead.team.length &&
+        ids.toSet().containsAll(lead.team.map(UserDirectory.realUserId))) {
+      return; // nothing actually changed
+    }
+
+    try {
+      await ref
+          .read(leadsRepositoryProvider)
+          .updateLead(lead.id, {'assignees': ids});
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    if (!mounted) return;
+    // The record, its raw twin behind the edit form, and both list scopes all
+    // carry assignees.
+    ref.invalidate(leadDetailProvider(lead.id));
+    ref.invalidate(leadRowProvider(lead.id));
+    ref.invalidate(leadsScopedProvider);
+    ref.read(toastProvider.notifier).show(
+        ids.isEmpty ? 'Assignees cleared' : 'Assignees updated');
   }
 
   /// Opens the lead form in edit mode. Reached from two places — the overflow
@@ -190,7 +246,6 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         outcome.result == LeadCallResult.dialledAndLogged) {
       ref.invalidate(leadCallLogsProvider(lead.id));
       ref.invalidate(leadDetailProvider(lead.id));
-      markRecordChanged(ref, lead.id);
     }
 
     final toast = ref.read(toastProvider.notifier);
@@ -254,7 +309,6 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       await ref.read(leadsRepositoryProvider).updateLeadStatus(lead.id, statusId);
       ref.invalidate(leadDetailProvider(lead.id));
       ref.invalidate(leadsScopedProvider);
-      markRecordChanged(ref, lead.id);
       if (!mounted) return;
       ref.read(toastProvider.notifier).show('Status updated');
     } on Object catch (e) {
@@ -683,7 +737,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     ],
                   ),
                 ),
-                _roundAction(PhosphorIconsRegular.userPlus, () => ref.read(toastProvider.notifier).show('Add assignee')),
+                _roundAction(PhosphorIconsRegular.userPlus, () => _editAssignees(lead)),
               ],
             ),
           ),
@@ -740,9 +794,6 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       default:
         await _uploadFiles(lead);
     }
-    // The sheets report no outcome, so this fires even on cancel — one wasted
-    // read of a small log beats an activity entry that never shows up.
-    if (mounted) markRecordChanged(ref, lead.id);
   }
 
   /// Picks files off the device and posts them to this lead.
@@ -791,10 +842,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (!mounted) return;
     setState(() => _uploading = false);
 
-    if (stored > 0) {
-      ref.invalidate(leadFilesProvider(lead.id));
-      markRecordChanged(ref, lead.id);
-    }
+    if (stored > 0) ref.invalidate(leadFilesProvider(lead.id));
     if (failure != null) {
       // Say what did land before what didn't, so a partial batch is not read
       // as a total failure.
@@ -879,6 +927,53 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// A task's status, with any session override laid on top.
+  ///
+  /// Shared with the task detail screen, so ticking a task here and opening it
+  /// there agree before either has refetched.
+  String _taskStatus(CrmTask t) =>
+      ref.watch(crmTaskStatusOverrideProvider)[t.id] ?? t.status;
+
+  /// Ticks a task done, or reopens it — `PATCH /crm/tasks/{id}/` with the org
+  /// status whose type maps to the UI key.
+  ///
+  /// Optimistic, then rolled back if the write is refused. That matters more
+  /// than usual here: completing a task is **not** always allowed. An org can
+  /// require a note first, and the API answers `400 {"status": ["A task must
+  /// have at least one note before it can be completed."]}` — a tick that
+  /// stayed ticked would be a lie.
+  Future<void> _toggleTask(Lead lead, CrmTask t) async {
+    final next = _taskStatus(t) == 'done' ? 'todo' : 'done';
+    final prev = ref.read(crmTaskStatusOverrideProvider);
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, t.id: next};
+
+    if (ApiConfig.apiEnabled) {
+      try {
+        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, next);
+      } on AppError catch (e) {
+        final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
+        if (prev.containsKey(t.id)) {
+          rolled[t.id] = prev[t.id]!;
+        } else {
+          rolled.remove(t.id);
+        }
+        ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
+        if (mounted) ref.read(toastProvider.notifier).show(e.message);
+        return;
+      }
+      if (!mounted) return;
+      // Refetch so the row reflects what the server actually stored, rather
+      // than living on the override forever.
+      ref.invalidate(leadTasksProvider(lead.id));
+      ref.invalidate(crmTasksProvider);
+    }
+    if (mounted) {
+      ref
+          .read(toastProvider.notifier)
+          .show(next == 'done' ? 'Task completed' : 'Task reopened');
+    }
+  }
+
   Widget _tasksTab(Lead lead) {
     return _tabAsync<CrmTask>(
       ref.watch(leadTasksProvider(lead.id)),
@@ -893,7 +988,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CrmCheckBox(done: t.status == 'done', onTap: () => ref.read(toastProvider.notifier).show('Task updated')),
+                CrmCheckBox(done: _taskStatus(t) == 'done', onTap: () => _toggleTask(lead, t)),
                 SizedBox(width: 12.w),
                 Expanded(
                   child: GestureDetector(
@@ -902,8 +997,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(t.titleClean,
-                            style: AppText.custom(size: 14, weight: FontWeight.w600, color: t.status == 'done' ? AppColors.textPlaceholder : AppColors.textPrimary)
-                                .copyWith(decoration: t.status == 'done' ? TextDecoration.lineThrough : null)),
+                            style: AppText.custom(size: 14, weight: FontWeight.w600, color: _taskStatus(t) == 'done' ? AppColors.textPlaceholder : AppColors.textPrimary)
+                                .copyWith(decoration: _taskStatus(t) == 'done' ? TextDecoration.lineThrough : null)),
                         SizedBox(height: 3.h),
                         Text('${t.due} · ${MockUsers.of(t.assignee).name.split(' ').first} · ${t.priority}', style: AppText.caption()),
                       ],

@@ -185,9 +185,14 @@ String ticketStatusKey(String? name) {
 }
 
 /// Priorities are capitalized display strings in the UI (`Urgent|High|Medium|Low`).
+///
+/// `critical` is the top level in the seeded org catalog and has no built-in
+/// counterpart; it folds into `Urgent` rather than falling through to the
+/// `Medium` default, which used to show the org's most severe tasks as ordinary
+/// ones.
 String priorityKey(String? value) {
   final n = _norm(value);
-  if (n.startsWith('urg')) return 'Urgent';
+  if (n.startsWith('urg') || n.startsWith('crit')) return 'Urgent';
   if (n.startsWith('hi')) return 'High';
   if (n.startsWith('lo')) return 'Low';
   return 'Medium';

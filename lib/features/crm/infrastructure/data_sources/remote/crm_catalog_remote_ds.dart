@@ -60,6 +60,62 @@ class CrmCatalogRemoteDataSource {
         query: {'is_active': true},
       );
 
+  /// The org's task priorities (low / medium / high / critical), active only.
+  ///
+  /// Org-editable and matched on the **name**, so the built-in `High / Medium /
+  /// Low` list could not work: this org spells them lower-case and has a
+  /// `critical` the built-in set has no room for.
+  Future<List<CatalogOption>> fetchTaskPriorities() => _fetch(
+        ApiEndpoints.taskPriorities,
+        'task_priority_id',
+        query: {'is_active': true},
+      );
+
+  /// The org's task statuses, with their fixed `status_type`
+  /// (`open` / `in_progress` / `completed` / `cancelled`).
+  Future<List<CatalogOption>> fetchTaskStatuses() =>
+      _fetch(ApiEndpoints.crmTaskStatuses, 'crm_task_status_id', withType: true);
+
+  /// The task **types**, which are model choices rather than an org catalog —
+  /// so they come from the form schema, not a list endpoint:
+  /// `GET /crm/tasks/schema/?view_type=form` → `fields.task_type.choices`.
+  ///
+  /// Best-effort like the rest: an empty list means the caller falls back to
+  /// its built-in vocabulary.
+  Future<List<CatalogOption>> fetchTaskTypes() async {
+    try {
+      final body = await _api.get(
+        ApiEndpoints.crmTaskSchema,
+        query: {'view_type': 'form'},
+      );
+      return mapTaskTypeChoices(body);
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// Reads `fields.task_type.choices` out of a task form schema.
+  ///
+  /// Each choice is `{value, label}`; the **value** is what a task row carries
+  /// and what the filter must match, so it is used as the option id.
+  static List<CatalogOption> mapTaskTypeChoices(Object? body) {
+    if (body is! Map<String, dynamic>) return const [];
+    final fields = body['fields'];
+    final field = fields is Map ? fields['task_type'] : null;
+    final choices = field is Map ? field['choices'] : null;
+    if (choices is! List) return const [];
+
+    final out = <CatalogOption>[];
+    for (final c in choices) {
+      if (c is! Map) continue;
+      final value = (c['value'] ?? '').toString().trim();
+      if (value.isEmpty) continue;
+      final label = (c['label'] ?? '').toString().trim();
+      out.add(CatalogOption(id: value, name: label.isEmpty ? value : label));
+    }
+    return out;
+  }
+
   /// The org's territories, for the schema-driven lead form's Territory picker.
   ///
   /// Territory's primary key is the plain `id` (the schema reports
