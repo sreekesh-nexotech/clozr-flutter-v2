@@ -49,6 +49,12 @@ final teamCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
   return ds == null ? const <CatalogOption>[] : ds.fetchTeams();
 });
 
+/// `GET /crm/follow-up-types/?is_active=true` — the org's follow-up types.
+final followupTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchFollowupTypes();
+});
+
 /// Synchronous view of [leadStatusCatalogProvider] — empty while in flight, so
 /// the tabs render immediately from `StatusMeta$` and swap to the org's stages
 /// when the catalog arrives, instead of blocking the list behind a spinner.
@@ -72,6 +78,13 @@ final productOptionsProvider = Provider<List<CatalogOption>>(
 /// contract as [leadStatusesProvider].
 final teamOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(teamCatalogProvider).valueOrNull ?? const [],
+);
+
+/// Synchronous view of [followupTypeCatalogProvider]. Empty while loading, in
+/// mock mode, and on failure — the Follow-ups drawer and the Add follow-up
+/// sheet then fall back to the built-in type list.
+final followupTypeOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(followupTypeCatalogProvider).valueOrNull ?? const [],
 );
 
 /// Completes once **every** option catalog the Leads filter drawer needs has

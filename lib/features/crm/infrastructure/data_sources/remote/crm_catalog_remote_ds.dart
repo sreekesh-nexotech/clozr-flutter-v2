@@ -48,6 +48,18 @@ class CrmCatalogRemoteDataSource {
   Future<List<CatalogOption>> fetchTeams() =>
       _fetch(ApiEndpoints.teams, 'team_id');
 
+  /// The org's follow-up types (Call / Email / Meeting / …), active only.
+  ///
+  /// These are org-editable, so the built-in list the app used to hard-code
+  /// could not match: an org that renames a type, or spells it differently
+  /// ("Site Visit" vs "Site visit"), produced a filter that matched nothing —
+  /// follow-ups join on the type **name**, exactly.
+  Future<List<CatalogOption>> fetchFollowupTypes() => _fetch(
+        ApiEndpoints.followUpTypes,
+        'follow_up_type_id',
+        query: {'is_active': true},
+      );
+
   Future<List<CatalogOption>> _fetch(
     String path,
     String idKey, {

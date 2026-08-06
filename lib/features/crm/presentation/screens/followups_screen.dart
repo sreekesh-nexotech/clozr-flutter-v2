@@ -17,6 +17,7 @@ import '../../../../core/widgets/tab_chip.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/followups_filter_spec.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../domain/entities/followup.dart';
 import '../components/followup_card.dart';
@@ -68,6 +69,10 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     final searchOpen = ref.watch(followupSearchOpenProvider);
     final query = ref.watch(followupSearchProvider);
     final filterCount = ref.watch(followupFiltersProvider).activeCount;
+    // Watched purely to start the type-catalog fetch at mount. Nothing else on
+    // this screen references it, so without this the drawer would snapshot an
+    // unloaded catalog and fall back to the built-in type list.
+    ref.watch(followupTypeOptionsProvider);
 
     return Column(
       children: [

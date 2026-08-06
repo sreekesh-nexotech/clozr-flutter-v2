@@ -9,6 +9,8 @@ import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/filters/followups_filter_spec.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead.dart';
@@ -29,8 +31,6 @@ Future<void> showAddFollowupSheet(BuildContext context, WidgetRef ref,
   );
 }
 
-const _fuKinds = ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site visit', 'Payment'];
-
 class _AddFollowupSheet extends StatefulWidget {
   const _AddFollowupSheet({required this.ref, this.lead});
   final WidgetRef ref;
@@ -50,6 +50,27 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
   final _note = TextEditingController();
   String _kind = 'Call';
   bool _showErrors = false;
+
+  /// The org's own follow-up types, falling back to the built-in vocabulary
+  /// before the catalog loads. `task_type` is submitted as the type **name**,
+  /// so offering a type this org does not have would be rejected on save.
+  ///
+  /// Read rather than watched so it is valid from the submit callback too; the
+  /// build below watches the catalog to keep the chips fresh.
+  List<String> get _kinds {
+    final catalog = widget.ref.read(followupTypeOptionsProvider);
+    return catalog.isNotEmpty
+        ? [for (final t in catalog) t.name]
+        : kBuiltinFollowupTypes;
+  }
+
+  /// The chosen type, corrected to one this org actually has — the default
+  /// ('Call') is a guess until the catalog says otherwise.
+  String get _selectedKind {
+    final kinds = _kinds;
+    if (kinds.isEmpty || kinds.contains(_kind)) return _kind;
+    return kinds.first;
+  }
 
   @override
   void initState() {
@@ -84,7 +105,7 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
       try {
         await widget.ref.read(followupsRepositoryProvider).createFollowup({
           'title': _contact.text.trim(),
-          'task_type': _kind,
+          'task_type': _selectedKind,
           'due_date': _date.text.trim(),
           'due_time': _time.text.trim(),
           'description': _note.text.trim(),
@@ -107,7 +128,7 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
     final company = _company.text.trim();
     final fu = Followup(
       id: genId('F'),
-      kind: _kind,
+      kind: _selectedKind,
       contact: contact,
       custId: null,
       leadId: lead?.id,
@@ -126,6 +147,9 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched here so the type chips swap from the built-in list to the org's
+    // own the moment the catalog resolves, even with the sheet already open.
+    widget.ref.watch(followupTypeOptionsProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -145,8 +169,8 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
                   spacing: 8.w,
                   runSpacing: 8.h,
                   children: [
-                    for (final k in _fuKinds)
-                      SelectChip(label: k, selected: _kind == k, onTap: () => setState(() => _kind = k)),
+                    for (final k in _kinds)
+                      SelectChip(label: k, selected: _selectedKind == k, onTap: () => setState(() => _kind = k)),
                   ],
                 ),
                 SizedBox(height: 16.h),
