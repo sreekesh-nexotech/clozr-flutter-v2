@@ -27,6 +27,10 @@ class ApiEndpoints {
   static const industries = '/crm/industries/';
   static const territories = '/crm/territories/';
 
+  // ── CRM: Exotel telephony (click-to-call) ──
+  static const exotelStatus = '/crm/exotel/status/';
+  static const exotelCall = '/crm/exotel/call/';
+
   // ── CRM: saved filters (the saved-view chips above a list) ──
   static const savedFilters = '/crm/saved-filters/';
   static String savedFilter(String id) => '/crm/saved-filters/$id/';

@@ -152,38 +152,36 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// dials fine but cannot be logged, and is told so rather than left to
   /// assume the call was recorded.
   Future<void> _callLead(Lead lead) async {
-    final toast = ref.read(toastProvider.notifier);
-    final to = lead.phone.trim();
-    if (to.isEmpty) {
-      toast.show('This lead has no phone number.');
-      return;
-    }
-
-    final dialled = await launchUrl(Uri(scheme: 'tel', path: to));
+    final outcome = await ref.read(leadCallServiceProvider).call(
+          leadId: lead.id,
+          toNumber: lead.phone,
+          status: ref.read(exotelStatusValueProvider),
+        );
     if (!mounted) return;
-    if (!dialled) {
-      toast.show('Could not open the dialler.');
-      return;
-    }
 
-    final from = ref.read(sessionControllerProvider).user?.phone.trim() ?? '';
-    if (from.isEmpty) {
-      toast.show('Call not logged — add your phone number to your profile.');
-      return;
-    }
-
-    try {
-      await ref.read(callLogsRepositoryProvider).logOutgoingCall(
-            leadId: lead.id,
-            fromNumber: from,
-            toNumber: to,
-          );
-      // The Call log tab and the lead's score both move on a logged call.
+    // Every route that reached the network leaves a call log behind — the
+    // server's own on the Exotel route, ours on the dialler route — and a
+    // logged call re-scores the lead.
+    if (outcome.result == LeadCallResult.ringingViaExotel ||
+        outcome.result == LeadCallResult.dialledAndLogged) {
       ref.invalidate(leadCallLogsProvider(lead.id));
       ref.invalidate(leadDetailProvider(lead.id));
-    } on Object catch (e) {
-      if (!mounted) return;
-      toast.show(e is AppError ? e.message : 'Could not log the call.');
+    }
+
+    final toast = ref.read(toastProvider.notifier);
+    if (outcome.message != null) toast.show(outcome.message!);
+    switch (outcome.result) {
+      case LeadCallResult.ringingViaExotel:
+        toast.show('Ringing your phone…');
+      case LeadCallResult.noNumber:
+        toast.show('This lead has no phone number.');
+      case LeadCallResult.diallerUnavailable:
+        toast.show('Could not open the dialler.');
+      case LeadCallResult.dialledNotLogged:
+        toast.show('Call not logged — add your phone number to your profile.');
+      case LeadCallResult.dialledAndLogged:
+      case LeadCallResult.dialledLogFailed:
+        break; // the dialler is on screen; a log failure already toasted
     }
   }
 
