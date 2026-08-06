@@ -69,7 +69,12 @@ final visibleLeadsProvider = Provider<List<Lead>>((ref) {
   final filters = ref.watch(leadFiltersProvider);
 
   Iterable<Lead> out = base;
-  if (tab != 'all') out = out.where((l) => l.stageKey == tab);
+  // A tab tapped before the status catalog resolved can name a stage the org
+  // does not have ("Quote sent" vs its own "Proposal Sent"). Ignore a tab that
+  // is no longer in the vocabulary instead of silently emptying the list.
+  if (tab != 'all' && ref.watch(leadTabsProvider).any((t) => t.id == tab)) {
+    out = out.where((l) => l.stageKey == tab);
+  }
   if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
   if (q.isNotEmpty) {
     out = out.where((l) =>
