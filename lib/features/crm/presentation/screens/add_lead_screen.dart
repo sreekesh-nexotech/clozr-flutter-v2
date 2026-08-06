@@ -80,7 +80,8 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
         'purpose': _project.text.trim(),
       });
       if (!mounted) return;
-      ref.invalidate(leadsProvider);
+      // Both ownership scopes can contain the new lead — refresh either view.
+      ref.invalidate(leadsScopedProvider);
       ref.read(toastProvider.notifier).show('Lead added');
       context.pop();
     } on AppError catch (e) {

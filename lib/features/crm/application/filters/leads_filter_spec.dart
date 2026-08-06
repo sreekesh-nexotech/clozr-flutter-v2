@@ -222,9 +222,10 @@ bool leadMatchesFilters(Lead l, FilterValues v) {
 /// The Leads drawer spec: the org's configured stages, sources and products
 /// when they have loaded, otherwise options derived from the loaded leads.
 final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
-  final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
+  // Derived options come from the rows in the current My/All scope, so the
+  // drawer never offers a value that cannot match anything on screen.
   return buildLeadsFilterSpec(
-    leads,
+    ref.watch(leadBaseProvider),
     roster: ref.watch(rosterProvider),
     statusCatalog: ref.watch(leadStatusesProvider),
     sourceCatalog: ref.watch(leadSourcesProvider),

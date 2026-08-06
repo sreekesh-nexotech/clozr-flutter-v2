@@ -24,9 +24,28 @@ final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
   );
 });
 
-/// Async source of all leads.
+/// Leads for one ownership scope. `true` = "My leads" (`?is_teams=true` — owned
+/// by or assigned to the signed-in user); `false` = everything the caller's role
+/// lets them see.
+///
+/// Keyed by scope so the two lists never overwrite each other. Switching scopes
+/// switches which instance is watched, which issues a request rather than
+/// re-filtering a list that is already on screen.
+final leadsScopedProvider = FutureProvider.family<List<Lead>, bool>(
+  (ref, mineOnly) => ref.watch(leadsRepositoryProvider).getLeads(mineOnly: mineOnly),
+);
+
+/// Org-wide leads — the cross-screen lookup source. Tasks, follow-ups and
+/// customers resolve a linked lead by id here, and reports aggregate over it,
+/// so this deliberately ignores the Leads list's My/All toggle: narrowing it
+/// would blank out links to a colleague's lead.
 final leadsProvider = FutureProvider<List<Lead>>(
-  (ref) => ref.watch(leadsRepositoryProvider).getLeads(),
+  (ref) => ref.watch(leadsScopedProvider(false).future),
+);
+
+/// The Leads list itself, scoped by the My/All toggle.
+final leadsListProvider = FutureProvider<List<Lead>>(
+  (ref) => ref.watch(leadsScopedProvider(!ref.watch(leadTeamAllProvider)).future),
 );
 
 /// Look up a single lead by id (used by the detail screen).
@@ -52,14 +71,17 @@ final leadSearchOpenProvider = StateProvider<bool>((ref) => false);
 
 /// Whether to show all leads (true) or only mine (false, the default) —
 /// the prototype's `teamAll` flag / "My leads" default view.
+///
+/// This is the scope [leadsListProvider] fetches with; flipping it is a
+/// refetch, not a client-side filter.
 final leadTeamAllProvider = StateProvider<bool>((ref) => false);
 
-/// The base list before the status tab is applied (respects the mine/all view).
-final leadBaseProvider = Provider<List<Lead>>((ref) {
-  final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
-  final all = ref.watch(leadTeamAllProvider);
-  return all ? leads : leads.where((l) => l.isMine).toList();
-});
+/// The base list before the status tab is applied. The mine/all scope is
+/// already applied by the source ([leadsScopedProvider]) — the server does it
+/// in API mode, the mock repository mirrors it — so nothing is re-filtered here.
+final leadBaseProvider = Provider<List<Lead>>(
+  (ref) => ref.watch(leadsListProvider).valueOrNull ?? const [],
+);
 
 /// Leads filtered by the active tab + search query + drawer filters.
 final visibleLeadsProvider = Provider<List<Lead>>((ref) {
@@ -152,6 +174,8 @@ final leadTabsProvider = Provider<List<LeadTab>>((ref) => [
       const LeadTab('all', 'All', null),
       ...leadStageVocabulary(
         ref.watch(leadStatusesProvider),
-        ref.watch(leadsProvider).valueOrNull ?? const [],
+        // The rows currently on screen — the fallback vocabulary (used when the
+        // catalog fetch failed) must describe the scope being displayed.
+        ref.watch(leadBaseProvider),
       ),
     ]);

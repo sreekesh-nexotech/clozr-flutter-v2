@@ -13,21 +13,31 @@ class LeadsApiRepository implements LeadsRepository {
   final LeadsRemoteDataSource _remote;
 
   static const String _cacheKey = 'leads';
+  static const String _mineCacheKey = 'leads_mine';
 
+  /// The two ownership scopes are different result sets, so they get separate
+  /// cache entries — an offline "My leads" must never be served the org-wide
+  /// list, or vice versa.
+  static String _keyFor(bool mineOnly) => mineOnly ? _mineCacheKey : _cacheKey;
+
+  /// Every call goes to the network first; the cache is an offline fallback
+  /// only, never a shortcut. Toggling My/All therefore always re-queries the
+  /// server (row shape is scope-dependent, so a stale list can't be reused).
   @override
-  Future<List<Lead>> getLeads() async {
+  Future<List<Lead>> getLeads({bool mineOnly = false}) async {
+    final key = _keyFor(mineOnly);
     // Started first so it overlaps the row fetch; never throws (empty on
     // failure), so it can be awaited on the offline path too.
     final types = _remote.statusTypes();
     try {
-      final rows = await _remote.fetchLeadRows();
-      await AppCache.put(AppCache.crmCache, _cacheKey, rows);
+      final rows = await _remote.fetchLeadRows(mineOnly: mineOnly);
+      await AppCache.put(AppCache.crmCache, key, rows);
       return LeadsRemoteDataSource.mapLeadRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
         rethrow;
       }
-      final cached = AppCache.get(AppCache.crmCache, _cacheKey)?.data;
+      final cached = AppCache.get(AppCache.crmCache, key)?.data;
       if (cached is List) {
         // Offline: the catalog call failed too, but a previously cached
         // catalog still applies — otherwise this degrades to name matching.
@@ -40,7 +50,9 @@ class LeadsApiRepository implements LeadsRepository {
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async {
     final lead = await _remote.createLead(fields);
+    // Both scopes can contain the new lead — drop each so either view refetches.
     await AppCache.remove(AppCache.crmCache, _cacheKey);
+    await AppCache.remove(AppCache.crmCache, _mineCacheKey);
     return lead;
   }
 }

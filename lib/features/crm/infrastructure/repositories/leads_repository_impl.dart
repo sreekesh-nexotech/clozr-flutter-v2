@@ -12,10 +12,13 @@ class LeadsRepositoryImpl implements LeadsRepository {
   final LeadsMockDataSource _local;
 
   @override
-  Future<List<Lead>> getLeads() async {
+  Future<List<Lead>> getLeads({bool mineOnly = false}) async {
     // Simulated latency so skeleton/loading states are exercised.
     await Future<void>.delayed(AppConstants.mockLatency);
-    return _local.fetchLeads();
+    final leads = _local.fetchLeads();
+    // Stands in for the server's `?is_teams=true`, so the toggle behaves the
+    // same in mock mode as it does against the API.
+    return mineOnly ? leads.where((l) => l.isMine).toList() : leads;
   }
 
   /// Local echo — mock mode has no backend, so the "created" lead is built

@@ -58,7 +58,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       AddAction(label: 'Add lead', run: (ctx) => ctx.push(Routes.addLead)),
     );
 
-    final async = ref.watch(leadsProvider);
+    final async = ref.watch(leadsListProvider);
     final tab = ref.watch(leadTabProvider);
     final searchOpen = ref.watch(leadSearchOpenProvider);
     final query = ref.watch(leadSearchProvider);
@@ -123,7 +123,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
         Expanded(
           child: AsyncStateView<List<Lead>>(
             value: async,
-            onRetry: () => ref.invalidate(leadsProvider),
+            onRetry: () => ref.invalidate(leadsScopedProvider),
             data: (_) {
               final visible = ref.watch(visibleLeadsProvider);
               if (visible.isEmpty) {
@@ -237,11 +237,20 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     ref.read(toastProvider.notifier).show('Filters cleared');
   }
 
+  /// Switches the ownership scope. The list is refetched for the scope being
+  /// entered rather than re-filtered locally — the row shape is scope-dependent,
+  /// so a previously loaded list is never reused. The stale entry for the target
+  /// scope is dropped first so the switch always hits the network.
+  void _setTeamAll(bool teamAll) {
+    ref.invalidate(leadsScopedProvider(!teamAll));
+    ref.read(leadTeamAllProvider.notifier).state = teamAll;
+  }
+
   Widget _teamChip(bool teamAll) {
     final active = !teamAll;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => ref.read(leadTeamAllProvider.notifier).state = !teamAll,
+      onTap: () => _setTeamAll(!teamAll),
       child: Container(
         height: 34.h,
         padding: EdgeInsets.symmetric(horizontal: 11.w),

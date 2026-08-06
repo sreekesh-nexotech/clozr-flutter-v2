@@ -22,19 +22,29 @@ class LeadsRemoteDataSource {
   /// guess from the name — which mis-files stages like "Disqualified".
   Map<String, String>? _statusTypeCache;
 
-  /// The UI keeps a full in-memory list, so follow `next` a bounded number of
-  /// pages instead of paging on scroll.
+  /// The UI keeps a full in-memory list (tab counts, drawer filters and search
+  /// all run over it), so follow DRF's `next` a bounded number of pages instead
+  /// of paging on scroll.
+  ///
+  /// [_pageSize] is the server's `max_page_size` — fewer round trips for the
+  /// same rows. `page_size` above the ceiling is clamped server-side, not
+  /// rejected, so this is safe even if the ceiling drops.
   static const int _maxPages = 50; // safety cap; loop still breaks when next == null
-  static const int _pageSize = 100;
+  static const int _pageSize = 200;
 
   /// Raw lead rows (up to [_maxPages] pages). Exposed separately from
   /// [fetchLeads] so the repository can cache the JSON before mapping.
-  Future<List<Map<String, dynamic>>> fetchLeadRows() async {
+  ///
+  /// [mineOnly] adds `is_teams=true` — the server-side "My leads" scope (leads
+  /// the caller owns OR is an assignee on). It is re-sent on every page so the
+  /// scope holds across the whole walk.
+  Future<List<Map<String, dynamic>>> fetchLeadRows({bool mineOnly = false}) async {
     final rows = <Map<String, dynamic>>[];
     int? page;
     for (var i = 0; i < _maxPages; i++) {
       final body = await _api.get(ApiEndpoints.leads, query: {
         'page_size': _pageSize,
+        if (mineOnly) 'is_teams': true,
         if (page != null) 'page': page,
       });
       final paged = Paginated.fromAny<Map<String, dynamic>>(body, (row) => row);
@@ -73,9 +83,9 @@ class LeadsRemoteDataSource {
   /// Drops the cached status catalog (org switch / sign-out).
   void resetStatusCache() => _statusTypeCache = null;
 
-  Future<List<Lead>> fetchLeads() async {
+  Future<List<Lead>> fetchLeads({bool mineOnly = false}) async {
     final types = statusTypes(); // starts concurrently with the row fetch
-    final rows = await fetchLeadRows();
+    final rows = await fetchLeadRows(mineOnly: mineOnly);
     return mapLeadRows(rows, statusTypes: await types);
   }
 
