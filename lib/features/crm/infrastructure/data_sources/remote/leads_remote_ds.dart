@@ -12,9 +12,15 @@ import '../../../domain/entities/lead.dart';
 ///
 /// Mappers are static so tests can feed fixture maps without any HTTP stack.
 class LeadsRemoteDataSource {
-  const LeadsRemoteDataSource(this._api);
+  LeadsRemoteDataSource(this._api);
 
   final ApiService _api;
+
+  /// Org lead-status catalog (`name` → `status_type`), fetched once per
+  /// data-source lifetime. The leads *list* serializer sends `status` as a
+  /// display name with no `status_type`, so without this the mapper can only
+  /// guess from the name — which mis-files stages like "Disqualified".
+  Map<String, String>? _statusTypeCache;
 
   /// The UI keeps a full in-memory list, so follow `next` a bounded number of
   /// pages instead of paging on scroll.
@@ -39,12 +45,47 @@ class LeadsRemoteDataSource {
     return rows;
   }
 
-  Future<List<Lead>> fetchLeads() async => mapLeadRows(await fetchLeadRows());
+  /// The org's lead statuses as `name` → `status_type`, cached after the first
+  /// successful fetch.
+  ///
+  /// Best-effort by design: any failure yields an empty map (and is **not**
+  /// cached, so a later call retries), leaving the mapper on its name-matching
+  /// path. Loading leads must never fail because this lookup did.
+  Future<Map<String, String>> statusTypes() async {
+    final cached = _statusTypeCache;
+    if (cached != null) return cached;
+    try {
+      final body =
+          await _api.get(ApiEndpoints.leadStatuses, query: {'page_size': 100});
+      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final out = <String, String>{};
+      for (final row in rows) {
+        final name = _lower(row['name']);
+        final type = _lower(row['status_type']);
+        if (name.isNotEmpty && type.isNotEmpty) out[name] = type;
+      }
+      return out.isEmpty ? out : (_statusTypeCache = out);
+    } on Object {
+      return const {};
+    }
+  }
+
+  /// Drops the cached status catalog (org switch / sign-out).
+  void resetStatusCache() => _statusTypeCache = null;
+
+  Future<List<Lead>> fetchLeads() async {
+    final types = statusTypes(); // starts concurrently with the row fetch
+    final rows = await fetchLeadRows();
+    return mapLeadRows(rows, statusTypes: await types);
+  }
 
   /// Detail fetch — same mapper; detail rows simply carry more contact fields.
   Future<Lead?> fetchLead(String id) async {
+    final types = statusTypes();
     final body = await _api.get(ApiEndpoints.lead(id));
-    return body is Map<String, dynamic> ? mapLead(body) : null;
+    return body is Map<String, dynamic>
+        ? mapLead(body, statusTypes: await types)
+        : null;
   }
 
   /// Creates a lead from API-shaped form fields; only non-empty values are
@@ -76,12 +117,15 @@ class LeadsRemoteDataSource {
 
   /// Maps a raw results list defensively: non-map entries and rows without a
   /// `lead_id` are skipped, never fatal.
-  static List<Lead> mapLeadRows(List<dynamic> rows) {
+  static List<Lead> mapLeadRows(
+    List<dynamic> rows, {
+    Map<String, String> statusTypes = const {},
+  }) {
     final out = <Lead>[];
     for (final row in rows) {
       if (row is! Map<String, dynamic>) continue;
       try {
-        final lead = mapLead(row);
+        final lead = mapLead(row, statusTypes: statusTypes);
         if (lead != null) out.add(lead);
       } on Object {
         // A malformed row is skipped, never fatal.
@@ -92,7 +136,10 @@ class LeadsRemoteDataSource {
 
   /// Maps one API lead row (list or detail shape) onto the UI entity.
   /// Returns null when the row has no `lead_id`.
-  static Lead? mapLead(Map<String, dynamic> row) {
+  static Lead? mapLead(
+    Map<String, dynamic> row, {
+    Map<String, String> statusTypes = const {},
+  }) {
     final id = _str(row, 'lead_id');
     if (id.isEmpty) return null;
 
@@ -127,17 +174,20 @@ class LeadsRemoteDataSource {
       project: _projectOf(row, source),
       value: formatInr(valueNum),
       valueNum: valueNum.toInt(),
-      // The list serializer sends `status` as a display NAME, not an id.
+      // The list serializer sends `status` as a display NAME, not an id, and
+      // carries no `status_type` — so fall back to the org catalog keyed by
+      // that name (empty map → name matching only, as before).
       status: leadStatusKey(
         name: _strOrNull(row, 'status'),
-        type: _strOrNull(row, 'status_type'),
+        type: _strOrNull(row, 'status_type') ??
+            statusTypes[_lower(row['status'])],
       ),
       statusDays: _daysSince(parseApiDate(row['stage_entered_at'])),
       score: (row['lead_score'] as num?)?.toInt() ?? 0,
       source: source,
       owner: owner,
       team: team,
-      phone: _str(row, 'phone'),
+      phone: _phoneOf(row),
       email: _str(row, 'email'),
       website: _str(row, 'website'),
       industry: industryName.isNotEmpty ? industryName : _refName(row['industry']),
@@ -163,6 +213,18 @@ class LeadsRemoteDataSource {
       }
     }
     return sourceName;
+  }
+
+  /// The lead's contact number. The API carries it as `mobile_no` (detail
+  /// serializer); `phone` is kept as a fallback for any alternate shape. The
+  /// separate `whatsapp_no` is deliberately NOT used here — it is a different
+  /// number and belongs to a WhatsApp action, not the Mobile/Call field.
+  static String _phoneOf(Map<String, dynamic> row) {
+    for (final key in const ['mobile_no', 'phone']) {
+      final v = _str(row, key);
+      if (v.isNotEmpty) return v;
+    }
+    return '';
   }
 
   /// "Call · 2d ago"-style label; empty when there is no follow-up timestamp.
@@ -203,6 +265,9 @@ class LeadsRemoteDataSource {
     final id = user['user_id'];
     return id is String ? id : null;
   }
+
+  /// Lower-cased, trimmed string — the key form used by the status catalog.
+  static String _lower(Object? v) => v is String ? v.toLowerCase().trim() : '';
 
   static String _str(Map<String, dynamic> row, String key) {
     final v = row[key];

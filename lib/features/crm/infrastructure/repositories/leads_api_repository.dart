@@ -16,16 +16,23 @@ class LeadsApiRepository implements LeadsRepository {
 
   @override
   Future<List<Lead>> getLeads() async {
+    // Started first so it overlaps the row fetch; never throws (empty on
+    // failure), so it can be awaited on the offline path too.
+    final types = _remote.statusTypes();
     try {
       final rows = await _remote.fetchLeadRows();
       await AppCache.put(AppCache.crmCache, _cacheKey, rows);
-      return LeadsRemoteDataSource.mapLeadRows(rows);
+      return LeadsRemoteDataSource.mapLeadRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
         rethrow;
       }
       final cached = AppCache.get(AppCache.crmCache, _cacheKey)?.data;
-      if (cached is List) return LeadsRemoteDataSource.mapLeadRows(cached);
+      if (cached is List) {
+        // Offline: the catalog call failed too, but a previously cached
+        // catalog still applies — otherwise this degrades to name matching.
+        return LeadsRemoteDataSource.mapLeadRows(cached, statusTypes: await types);
+      }
       rethrow;
     }
   }

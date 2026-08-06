@@ -70,6 +70,36 @@ void main() {
       expect(leadStatusKey(name: null, type: null), 'new');
     });
 
+    test('a terminal status_type wins over a misleading name', () {
+      // "Disqualified" contains "qualif" — the junk type must win, else the
+      // lead lands in the Qualified tab and inflates its count.
+      expect(leadStatusKey(name: 'Disqualified', type: 'junk'), 'archived');
+      // ...and the name alone is enough when the catalog is unavailable.
+      expect(leadStatusKey(name: 'Disqualified'), 'archived');
+      // in_progress must NOT override a specific stage name.
+      expect(leadStatusKey(name: 'Negotiation', type: 'in_progress'), 'negotiation');
+      expect(leadStatusKey(name: 'Qualified', type: 'in_progress'), 'qualified');
+    });
+
+    test('maps the default org lead pipeline end to end', () {
+      // The eight statuses a stock org ships with, as returned by
+      // /crm/lead-statuses/ (name + status_type).
+      const pipeline = <(String, String, String)>[
+        ('New', 'new', 'new'),
+        ('Contacted', 'in_progress', 'qualified'),
+        ('Qualified', 'in_progress', 'qualified'),
+        ('Proposal Sent', 'in_progress', 'quote'),
+        ('Negotiation', 'in_progress', 'negotiation'),
+        ('Won', 'won', 'won'),
+        ('Lost', 'lost', 'lost'),
+        ('Disqualified', 'junk', 'archived'),
+      ];
+      for (final (name, type, expected) in pipeline) {
+        expect(leadStatusKey(name: name, type: type), expected,
+            reason: '"$name" ($type) should map to $expected');
+      }
+    });
+
     test('customer types win over names', () {
       expect(customerStatusKey(type: 'upsell_in_progress'), 'upsell');
       expect(customerStatusKey(type: 'completed'), 'completed');

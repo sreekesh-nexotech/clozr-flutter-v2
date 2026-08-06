@@ -10,29 +10,42 @@ library;
 String _norm(String? s) => (s ?? '').toLowerCase().trim();
 
 /// Lead → `new | qualified | quote | negotiation | won | lost | archived`.
+///
+/// [type] is the org's `status_type` (`new | in_progress | won | lost | junk`).
+/// For the three **terminal** types it is authoritative and checked *before*
+/// the name, because a name match would otherwise win incorrectly — the real
+/// case being "Disqualified" (`junk`), whose name contains `qualif` and used to
+/// land in the Qualified bucket. `in_progress` says nothing about *which*
+/// stage, so for it the name still decides (Negotiation vs Qualified vs Quote).
 String leadStatusKey({String? name, String? type}) {
   final n = _norm(name);
-  if (n.contains('qualif')) return 'qualified';
-  if (n.contains('quote')) return 'quote';
-  if (n.contains('negoti')) return 'negotiation';
-  if (n.contains('won')) return 'won';
-  if (n.contains('lost')) return 'lost';
-  if (n.contains('junk') || n.contains('spam') || n.contains('archiv')) {
-    return 'archived';
-  }
-  if (n.contains('new')) return 'new';
-  switch (_norm(type)) {
+  final t = _norm(type);
+
+  // Terminal types: authoritative, name cannot override.
+  switch (t) {
     case 'won':
       return 'won';
     case 'lost':
       return 'lost';
     case 'junk':
       return 'archived';
-    case 'in_progress':
-      return 'qualified';
-    default:
-      return 'new';
   }
+
+  // Name matching for the stages `status_type` cannot distinguish. The junk
+  // names are tested first so "Disqualified" never trips the `qualif` check.
+  if (n.contains('junk') ||
+      n.contains('spam') ||
+      n.contains('archiv') ||
+      n.contains('disqualif')) {
+    return 'archived';
+  }
+  if (n.contains('qualif')) return 'qualified';
+  if (n.contains('quote') || n.contains('proposal')) return 'quote';
+  if (n.contains('negoti')) return 'negotiation';
+  if (n.contains('won')) return 'won';
+  if (n.contains('lost')) return 'lost';
+  if (n.contains('new')) return 'new';
+  return t == 'in_progress' ? 'qualified' : 'new';
 }
 
 /// Customer → `active | upsell | completed | lost`.

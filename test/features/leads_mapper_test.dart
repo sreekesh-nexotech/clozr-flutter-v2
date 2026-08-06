@@ -114,6 +114,53 @@ void main() {
       expect(LeadsRemoteDataSource.mapLead(row)!.status, 'won');
     });
 
+    test('the status catalog supplies the type the list row omits', () {
+      // The list serializer sends `status` as a name with no `status_type`;
+      // /crm/lead-statuses/ provides the type behind that name.
+      const catalog = {'disqualified': 'junk', 'contacted': 'in_progress'};
+      final row = fullRow()..['status'] = 'Disqualified';
+      expect(row.containsKey('status_type'), isFalse);
+
+      expect(LeadsRemoteDataSource.mapLead(row, statusTypes: catalog)!.status,
+          'archived');
+      expect(
+          LeadsRemoteDataSource.mapLead(fullRow()..['status'] = 'Contacted',
+              statusTypes: catalog)!.status,
+          'qualified');
+    });
+
+    test('an inline status_type outranks the catalog', () {
+      final row = fullRow()
+        ..['status'] = 'Disqualified'
+        ..['status_type'] = 'won';
+      expect(
+          LeadsRemoteDataSource.mapLead(row,
+              statusTypes: const {'disqualified': 'junk'})!.status,
+          'won');
+    });
+
+    test('an empty catalog leaves mapping on the name-matching path', () {
+      final row = fullRow()..['status'] = 'Disqualified';
+      expect(LeadsRemoteDataSource.mapLead(row)!.status, 'archived');
+    });
+
+    test('phone comes from mobile_no, with phone as a fallback', () {
+      expect(
+          LeadsRemoteDataSource.mapLead(
+              fullRow()..['mobile_no'] = '+9191423 34434')!.phone,
+          '+9191423 34434');
+      // whatsapp_no is a different number and must not fill the Mobile field.
+      expect(
+          LeadsRemoteDataSource.mapLead(fullRow()
+            ..remove('phone')
+            ..['whatsapp_no'] = '+919999999999')!.phone,
+          '');
+      expect(
+          LeadsRemoteDataSource.mapLead(fullRow()..['phone'] = '+91 80 1234')!
+              .phone,
+          '+91 80 1234');
+    });
+
     test('tolerates a row missing every optional field', () {
       final lead = LeadsRemoteDataSource.mapLead({'lead_id': 'only-id'});
 
