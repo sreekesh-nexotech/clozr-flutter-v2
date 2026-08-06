@@ -10,7 +10,7 @@ class FollowupsRepositoryImpl implements FollowupsRepository {
   final FollowupsMockDataSource _local;
 
   @override
-  Future<List<Followup>> getFollowups() async {
+  Future<List<Followup>> getFollowups({Map<String, dynamic> filters = const {}}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchFollowups();
   }

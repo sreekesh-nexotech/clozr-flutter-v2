@@ -8,6 +8,7 @@ import '../../../../data/api/roster.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../domain/entities/crm_catalog.dart';
+import '../../application/record_rows.dart';
 import '../../domain/entities/view_schema.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 import 'option_picker_sheet.dart';
@@ -143,7 +144,11 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
         case 'boolean':
           out[key] = _controller(c.name).text.trim().toLowerCase() == 'yes';
         default:
-          out[key] = _controller(c.name).text.trim();
+          // Typed coercion lives in `schemaWriteValue` — a number field's box
+          // has to be sent as a number, and an empty one as null rather than
+          // `""`, which the API rejects outright.
+          final value = schemaWriteValue(c.type, _controller(c.name).text);
+          if (!identical(value, absentValue)) out[key] = value;
       }
     }
     return out;
@@ -377,6 +382,23 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
           label: c.label,
           controller: _controller(c.name),
           hint: 'YYYY-MM-DD',
+        );
+
+      case 'time':
+        return AppTextField(
+          label: c.label,
+          controller: _controller(c.name),
+          hint: 'HH:MM',
+        );
+
+      // Long-form prose (a follow-up's description). A single-line box would
+      // hide most of what is already stored in it.
+      case 'text':
+        return AppTextField(
+          label: c.label,
+          controller: _controller(c.name),
+          multiline: true,
+          hint: 'Enter ${c.label.toLowerCase()}…',
         );
 
       default:

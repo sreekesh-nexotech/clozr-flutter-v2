@@ -129,6 +129,9 @@ final GoRouter appRouter = GoRouter(
         _push(Routes.customerDetail, const CustomerDetailScreen()),
         _r(Routes.followups, const FollowupsScreen()),
         _push(Routes.followupDetail, const FollowupDetailScreen()),
+        // A follow-up is a Task with `is_followup=true`, so the Task edit form
+        // serves both — only the schema and the labels differ.
+        _push(Routes.editFollowup, const EditCrmTaskScreen(isFollowup: true)),
         _r(Routes.tasks, const TasksScreen()),
         _push(Routes.taskDetail, const TaskDetailScreen()),
         _push(Routes.editCrmTask, const EditCrmTaskScreen()),

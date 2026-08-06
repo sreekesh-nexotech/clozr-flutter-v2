@@ -35,8 +35,6 @@ Followup _fu({required String kind, String status = 'due'}) => Followup(
 
 List<String> _typeOptions({List<CatalogOption> catalog = const []}) {
   final spec = buildFollowupsFilterSpec(
-    leads: const [],
-    customers: const [],
     followups: const [],
     typeCatalog: catalog,
   );
@@ -93,8 +91,6 @@ void main() {
 
   group('is / is not', () {
     FilterField fieldNamed(String id) => buildFollowupsFilterSpec(
-          leads: const [],
-          customers: const [],
           followups: const [],
           typeCatalog: _orgTypes,
         ).sections.expand((s) => s.fields).firstWhere((f) => f.id == id);

@@ -61,12 +61,38 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   bool _uploading = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
+  /// Drives [_focusNotes] — the page list has to be scrollable from code for
+  /// the notes card to be reachable before it has been built.
+  final ScrollController _notesScrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _notesScrollCtrl.dispose();
+    super.dispose();
+  }
+
   /// Scrolls the notes card into view and focuses the composer (#13).
-  void _focusNotes() {
+  /// Scrolls the notes card into view and focuses its composer.
+  ///
+  /// The page is a lazy [ListView], so when the notes card is below the fold it
+  /// has not been built and its key has no context — `ensureVisible` then does
+  /// nothing at all, which is why this action looked dead. Nudging the list
+  /// towards the end first forces the card to build, and the second pass lands
+  /// on it precisely.
+  Future<void> _focusNotes() async {
+    if (_notesKey.currentContext == null && _notesScrollCtrl.hasClients) {
+      await _notesScrollCtrl.animateTo(
+        _notesScrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+      );
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    if (!mounted) return;
     final ctx = _notesKey.currentContext;
     if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+      await Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 240), alignment: 0.05, curve: Curves.easeOut);
     }
     _notesKey.currentState?.focusComposer();
   }
@@ -251,6 +277,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           ),
           Expanded(
             child: ListView(
+              controller: _notesScrollCtrl,
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
               children: [
                 _titleCard(task, meta),
@@ -558,10 +585,18 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     if (_uploading) return;
     final toast = ref.read(toastProvider.notifier);
 
-    final picked = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: false, // paths only — a large file should not sit in memory
-    );
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: false, // paths only — a large file should not sit in memory
+      );
+    } on Object catch (e) {
+      // A native plugin added since the last full build is not registered on a
+      // hot restart, and every call throws. Report it rather than look inert.
+      if (mounted) toast.show('Could not open the file picker: $e');
+      return;
+    }
     if (picked == null || !mounted) return; // cancelled
 
     final files = [

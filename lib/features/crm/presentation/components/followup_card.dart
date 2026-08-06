@@ -6,14 +6,30 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/followup.dart';
+import '../../domain/entities/view_schema.dart';
 import 'crm_check_box.dart';
 
-/// The Follow-ups list card: checkbox + agenda title + meta line + status pill,
-/// then owner avatar / due time / kind below a hairline.
+/// The Follow-ups list card: checkbox + title + meta line + status pill, then
+/// owner avatar / due time / priority below a hairline.
+///
+/// The layout is **org-configurable**: [schema] says which of those slots the
+/// org put on its mobile card. An empty schema means "no opinion" and every
+/// slot renders, so mock mode and a failed fetch look exactly as before.
 class FollowupCard extends StatelessWidget {
-  const FollowupCard({super.key, required this.followup, required this.onTap, required this.onToggle});
+  const FollowupCard({
+    super.key,
+    required this.followup,
+    required this.onTap,
+    required this.onToggle,
+    this.schema = ViewSchema.empty,
+  });
 
   final Followup followup;
+
+  /// The org's configured card columns
+  /// (`/crm/tasks/schema/?view_type=mobile&is_followup=true`).
+  final ViewSchema schema;
+
   final VoidCallback onTap;
   final VoidCallback onToggle;
 
@@ -24,6 +40,12 @@ class FollowupCard extends StatelessWidget {
     final owner = MockUsers.of(followup.owner);
     final title = followup.agenda.isNotEmpty ? followup.agenda : '${followup.kind} — ${followup.company}';
     final timeLabel = '${followup.due.replaceAll(' 2026', '')} · ${followup.time}';
+    // The sub-line names the type and the record this follow-up hangs off, so
+    // it shows only when the org kept either of those columns on its card.
+    final subLine = [
+      if (schema.shows('task_type') && followup.kind.isNotEmpty) followup.kind,
+      if (schema.shows('related_to') && followup.contact.isNotEmpty) followup.contact,
+    ].join(' · ');
 
     return ClozrCard(
       radius: 16,
@@ -49,16 +71,20 @@ class FollowupCard extends StatelessWidget {
                           color: done ? AppColors.textPlaceholder : AppColors.textPrimary,
                           height: 1.35,
                         ).copyWith(decoration: done ? TextDecoration.lineThrough : null)),
-                    SizedBox(height: 3.h),
-                    Text('${followup.kind} · ${followup.company} · ${followup.contact}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    if (subLine.isNotEmpty) ...[
+                      SizedBox(height: 3.h),
+                      Text(subLine,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    ],
                   ],
                 ),
               ),
-              SizedBox(width: 8.w),
-              _statusPill(meta),
+              if (schema.shows('status')) ...[
+                SizedBox(width: 8.w),
+                _statusPill(meta),
+              ],
             ],
           ),
           Padding(
@@ -69,23 +95,32 @@ class FollowupCard extends StatelessWidget {
             padding: EdgeInsets.only(top: 11.h),
             child: Row(
               children: [
-                Container(
-                  width: 26.w,
-                  height: 26.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: owner.color, shape: BoxShape.circle),
-                  child: Text(owner.initials,
-                      style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.white)),
-                ),
-                SizedBox(width: 9.w),
-                Text(timeLabel,
-                    style: AppText.custom(
-                        size: 12,
-                        weight: FontWeight.w700,
-                        color: followup.status == 'overdue' ? AppColors.error : AppColors.textLabelAlt)),
+                if (schema.shows('assigned_to')) ...[
+                  Container(
+                    width: 26.w,
+                    height: 26.w,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: owner.color, shape: BoxShape.circle),
+                    child: Text(owner.initials,
+                        style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.white)),
+                  ),
+                  SizedBox(width: 9.w),
+                ],
+                if (schema.shows('due_date'))
+                  Text(timeLabel,
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w700,
+                          color: followup.status == 'overdue' ? AppColors.error : AppColors.textLabelAlt)),
                 const Spacer(),
-                Text(followup.kind,
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                // Priority is on the org's seeded mobile card but was never
+                // rendered; the type sits here when priority is not configured.
+                if (schema.shows('priority') && followup.priority.isNotEmpty)
+                  Text(followup.priority,
+                      style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder))
+                else if (schema.shows('task_type'))
+                  Text(followup.kind,
+                      style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
               ],
             ),
           ),

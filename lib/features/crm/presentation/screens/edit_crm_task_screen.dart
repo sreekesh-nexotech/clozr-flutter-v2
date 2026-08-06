@@ -12,6 +12,7 @@ import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
+import '../../application/providers/followups_providers.dart';
 import '../components/lead_schema_form.dart';
 
 /// Edit task — the org's own Task layout, rendered as a form.
@@ -21,8 +22,15 @@ import '../components/lead_schema_form.dart';
 /// record. Because the same config trims the serializer, that layout is also
 /// exactly the set the API will store — so there are no boxes here that accept
 /// input the backend discards.
+/// Also serves **Edit follow-up**: a follow-up is a Task with
+/// `is_followup=true`, so the record, the write and this whole form are the
+/// same. Only the schema differs — the two carry independent field configs —
+/// along with the labels and which lists go stale on save.
 class EditCrmTaskScreen extends ConsumerStatefulWidget {
-  const EditCrmTaskScreen({super.key});
+  const EditCrmTaskScreen({super.key, this.isFollowup = false});
+
+  /// Renders the org's Follow-up field set rather than its Task one.
+  final bool isFollowup;
 
   @override
   ConsumerState<EditCrmTaskScreen> createState() => _EditCrmTaskScreenState();
@@ -31,6 +39,8 @@ class EditCrmTaskScreen extends ConsumerStatefulWidget {
 class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
   final _formKey = GlobalKey<LeadSchemaFormState>();
   bool _saving = false;
+
+  String get _noun => widget.isFollowup ? 'follow-up' : 'task';
 
   Future<void> _save(String id) async {
     if (_saving) return;
@@ -44,12 +54,18 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
     try {
       await ref.read(crmTasksRepositoryProvider).updateTask(id, payload);
       if (!mounted) return;
-      // The record, the list and every lead's Tasks tab all now hold a stale
-      // copy. The activity log refreshes itself off the write tick.
+      // The record and every list holding a copy are now stale. The activity
+      // log refreshes itself off the write tick.
       ref.invalidate(taskRowProvider(id));
-      ref.invalidate(crmTasksProvider);
-      ref.invalidate(leadTasksProvider);
-      ref.read(toastProvider.notifier).show('Task updated');
+      if (widget.isFollowup) {
+        ref.invalidate(followupsProvider);
+        ref.invalidate(leadFollowupsProvider);
+      } else {
+        ref.invalidate(crmTasksProvider);
+        ref.invalidate(leadTasksProvider);
+      }
+      ref.read(toastProvider.notifier).show(
+          widget.isFollowup ? 'Follow-up updated' : 'Task updated');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
@@ -61,7 +77,11 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final schema = ref.watch(taskDetailSchemaProvider);
+    // Independent field configs — a follow-up's layout is not a task's.
+    final schema = widget.isFollowup
+        ? ref.watch(followupDetailSchemaProvider)
+        : ref.watch(taskDetailSchemaProvider);
+    // One record endpoint for both: a follow-up *is* a task.
     final row = ref.watch(taskRowProvider(id));
 
     // The pickers read these; watched here so they are loading by the time the
@@ -75,8 +95,8 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
       child: Column(
         children: [
           DetailAppBar(
-            section: 'Task',
-            name: 'Edit task',
+            section: widget.isFollowup ? 'Follow-up' : 'Task',
+            name: widget.isFollowup ? 'Edit follow-up' : 'Edit task',
             onBack: () => context.pop(),
           ),
           Expanded(
@@ -93,8 +113,8 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
                       Padding(
                         padding: EdgeInsets.symmetric(vertical: 32.h),
                         child: Text(
-                          'This workspace has not configured any editable task '
-                          'fields yet.',
+                          'This workspace has not configured any editable '
+                          '$_noun fields yet.',
                           textAlign: TextAlign.center,
                           style: AppText.body(color: AppColors.textMuted),
                         ),

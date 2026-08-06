@@ -4,13 +4,9 @@ import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../domain/entities/crm_catalog.dart';
-import '../../domain/entities/customer.dart';
 import '../../domain/entities/followup.dart';
-import '../../domain/entities/lead.dart';
 import '../providers/crm_catalog_providers.dart';
-import '../providers/customers_providers.dart';
 import '../providers/followups_providers.dart';
-import '../../application/providers/leads_providers.dart';
 import 'tasks_filter_spec.dart' show parseCrmDate;
 
 /// Follow-ups filter — spec-driven drawer (audit §4). Wired exactly like the
@@ -26,18 +22,14 @@ const List<String> kBuiltinFollowupTypes = [
   'Call', 'Email', 'Meeting', 'WhatsApp', 'Site visit', 'Payment',
 ];
 
-/// All companies across leads + customers + follow-ups (the audit's company
-/// universe), sorted and de-duplicated.
-List<String> _allCompanies(List<Lead> leads, List<Customer> customers, List<Followup> fus) {
+/// The records the loaded follow-ups hang off, sorted and de-duplicated.
+///
+/// Derived from the follow-ups themselves, not from lead/customer companies:
+/// a follow-up row carries no company, and `Followup.company` is really
+/// `related_to.label` — the linked lead or customer's own **name**. Offering
+/// company names against name values produced a filter that matched nothing.
+List<String> _relatedRecords(List<Followup> fus) {
   final seen = <String>{};
-  for (final l in leads) {
-    final c = l.company;
-    if (c != null && c.isNotEmpty) seen.add(c);
-  }
-  for (final c in customers) {
-    final name = c.company ?? c.name;
-    if (name.isNotEmpty) seen.add(name);
-  }
   for (final f in fus) {
     if (f.company.isNotEmpty) seen.add(f.company);
   }
@@ -47,16 +39,15 @@ List<String> _allCompanies(List<Lead> leads, List<Customer> customers, List<Foll
 
 /// Build the Follow-ups drawer spec (audit §4).
 FilterSpec buildFollowupsFilterSpec({
-  required List<Lead> leads,
-  required List<Customer> customers,
   required List<Followup> followups,
   List<AppUser> roster = MockUsers.reps,
   List<CatalogOption> typeCatalog = const [],
+  List<CatalogOption> statusCatalog = const [],
 }) {
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
-  final companies = _allCompanies(leads, customers, followups)
+  final companies = _relatedRecords(followups)
       .map((c) => FilterOption(id: c, label: c))
       .toList();
   // The org's own types when the catalog has loaded, otherwise the built-in
@@ -68,6 +59,15 @@ FilterSpec buildFollowupsFilterSpec({
   final types = [
     for (final t in typeNames) FilterOption(id: t, label: t),
   ];
+  // The org's own task statuses. The built-in trio is a fallback only: it
+  // cannot express "In Progress" or "Cancelled", which real orgs use.
+  final statuses = statusCatalog.isNotEmpty
+      ? [for (final st in statusCatalog) FilterOption(id: st.key, label: st.name)]
+      : const [
+          FilterOption(id: 'due', label: 'Upcoming'),
+          FilterOption(id: 'overdue', label: 'Overdue'),
+          FilterOption(id: 'done', label: 'Done'),
+        ];
 
   return FilterSpec(
     title: 'Follow-ups',
@@ -84,17 +84,13 @@ FilterSpec buildFollowupsFilterSpec({
             isNotToggle: true,
             twoCol: true,
             options: types),
-        const FilterField(
+        FilterField(
             id: 'statuses',
             label: 'Status',
             control: FilterControl.checkboxIsNot,
             isNotToggle: true,
             twoCol: true,
-            options: [
-              FilterOption(id: 'due', label: 'Upcoming'),
-              FilterOption(id: 'overdue', label: 'Overdue'),
-              FilterOption(id: 'done', label: 'Done'),
-            ]),
+            options: statuses),
       ]),
       FilterSection(title: 'People & company', fields: [
         FilterField(
@@ -105,13 +101,16 @@ FilterSpec buildFollowupsFilterSpec({
             isNotToggle: true,
             placeholder: 'Search user…',
             options: users),
+        // Labelled for what the value actually is. A follow-up row carries no
+        // company: this is `related_to.label`, the linked lead or customer's
+        // own name, so calling it "Company" named the wrong thing.
         FilterField(
             id: 'companies',
-            label: 'Company',
+            label: 'Related to',
             control: FilterControl.searchSelect,
             searchable: true,
             isNotToggle: true,
-            placeholder: 'Search company…',
+            placeholder: 'Search lead or customer…',
             options: companies),
       ]),
       FilterSection(title: 'Due date', fields: [
@@ -128,7 +127,7 @@ FilterSpec buildFollowupsFilterSpec({
 /// Evaluate a follow-up against applied filter values.
 bool followupMatchesFilters(Followup f, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('types'), [f.kind])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('statuses'), [f.status])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('statuses'), [f.statusKey])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('owners'), [f.owner])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('companies'), [f.company])) return false;
   if (!FilterMatch.matchDate(v.date('due'), parseCrmDate(f.due))) return false;
@@ -139,15 +138,11 @@ bool followupMatchesFilters(Followup f, FilterValues v) {
 
 /// The Follow-ups drawer spec, derived from the company universe.
 final followupsFilterSpecProvider = Provider<FilterSpec>((ref) {
-  final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
-  final customers = ref.watch(customersProvider).valueOrNull ?? const [];
-  final followups = ref.watch(followupsAllProvider);
   return buildFollowupsFilterSpec(
-    leads: leads,
-    customers: customers,
-    followups: followups,
+    followups: ref.watch(followupsAllProvider),
     roster: ref.watch(rosterProvider),
     typeCatalog: ref.watch(followupTypeOptionsProvider),
+    statusCatalog: ref.watch(taskStatusOptionsProvider),
   );
 });
 

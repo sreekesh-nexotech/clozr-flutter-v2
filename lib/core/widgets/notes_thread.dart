@@ -110,16 +110,29 @@ class NotesThreadState extends State<NotesThread> {
   /// Multi-select: the composer already renders a chip per pending file, and
   /// the upload loop posts them one at a time.
   Future<void> _pickFrom(FileType type) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: type,
-      allowMultiple: true,
-      withData: false, // paths only — a large file should not sit in memory
-      allowedExtensions: type == FileType.custom ? _allowedExtensions : null,
-    );
-    if (result == null || !mounted) return; // cancelled
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: type,
+        allowMultiple: true,
+        withData: false, // paths only — a large file should not sit in memory
+        allowedExtensions: type == FileType.custom ? _allowedExtensions : null,
+      );
+    } on Object catch (e) {
+      // The picker is a native plugin: on a hot restart after it was added, it
+      // is not registered yet and every call throws. Silence here reads as "the
+      // button does nothing", so say what actually happened.
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Could not open the file picker: $e')),
+      );
+      return;
+    }
+    final picked = result;
+    if (picked == null || !mounted) return; // cancelled
 
     setState(() {
-      for (final f in result.files) {
+      for (final f in picked.files) {
         final path = f.path;
         if (path == null) continue;
         _pending.add(NoteAttachment(

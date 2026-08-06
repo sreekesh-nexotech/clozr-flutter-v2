@@ -34,6 +34,15 @@ class FollowupSchemaRemoteDataSource {
     return mobile.isNotEmpty ? mobile : _fetch('list');
   }
 
+  /// The layout for the Edit follow-up form.
+  ///
+  /// No fallback to another view type: `detail` is the only layout that
+  /// describes this form, and it is also what the **record** endpoint trims
+  /// itself to (`GET /crm/tasks/{id}/` resolves `retrieve` → `detail`), so
+  /// layout and payload agree — every box the form renders is one the API will
+  /// actually store.
+  Future<ViewSchema> fetchDetailSchema() => _fetch('detail');
+
   Future<ViewSchema> _fetch(String viewType) async {
     try {
       final body = await _api.get(ApiEndpoints.crmTaskSchema, query: {

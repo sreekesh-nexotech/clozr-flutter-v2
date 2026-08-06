@@ -38,13 +38,47 @@ void main() {
       final mapped = CrmTasksRemoteDataSource.taskFromJson({
         'task_id': 'T1',
         'title': 'Prepare BOQ',
-        'status': 'Cancelled',
+        'status': 'Completed',
       })!;
 
-      expect(mapped.statusName, 'Cancelled');
+      expect(mapped.statusName, 'Completed');
       // Folded for colour and done-ness — which is exactly why the raw name
       // has to survive alongside it.
+      expect(mapped.status, 'done');
+    });
+
+    test('the catalog supplies the type the row omits — "Cancelled"', () {
+      // The list serializer sends `status` as a bare display name. "Cancelled"
+      // contains none of the keywords the name-matcher looks for, so without
+      // the catalog it lands on the `todo` default: a cancelled task renders
+      // as an open one, unticked and counted as overdue.
+      const row = {'task_id': 'T1', 'status': 'Cancelled'};
+
+      final guessed = CrmTasksRemoteDataSource.taskFromJson(row)!;
+      expect(guessed.status, 'todo', reason: 'the bug, with no catalog to help');
+
+      final resolved = CrmTasksRemoteDataSource.taskFromJson(
+        row,
+        statusTypes: const {'cancelled': 'cancelled'},
+      )!;
+      expect(resolved.status, 'blocked', reason: 'the fix');
+      expect(resolved.statusName, 'Cancelled');
+    });
+
+    test('the catalog lookup is case-insensitive on the lane name', () {
+      final mapped = CrmTasksRemoteDataSource.taskFromJson(
+        {'task_id': 'T1', 'status': 'CANCELLED'},
+        statusTypes: const {'cancelled': 'cancelled'},
+      )!;
       expect(mapped.status, 'blocked');
+    });
+
+    test('a lane the catalog does not know still maps, by name', () {
+      final mapped = CrmTasksRemoteDataSource.taskFromJson(
+        {'task_id': 'T1', 'status': 'In Progress'},
+        statusTypes: const {},
+      )!;
+      expect(mapped.status, 'inprogress');
     });
 
     test('a nested status object is read the same way', () {

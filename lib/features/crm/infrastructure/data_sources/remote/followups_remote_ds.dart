@@ -16,18 +16,29 @@ class FollowupsRemoteDataSource {
 
   List<Map<String, dynamic>>? _statusCache;
 
-  /// Raw list rows (followed up to 3 pages). The repository caches these.
-  Future<List<Map<String, dynamic>>> fetchFollowupRows() => _fetchRows();
+  /// Raw list rows. [filters] are `/crm/tasks/` query params from the drawer,
+  /// applied server-side.
+  Future<List<Map<String, dynamic>>> fetchFollowupRows({
+    Map<String, dynamic> filters = const {},
+  }) =>
+      _fetchRows(filters: filters);
 
   /// Raw rows for the follow-ups linked to one lead, scoped server-side with
   /// the shared generic-relation params rather than filtered after the fact.
   Future<List<Map<String, dynamic>>> fetchFollowupRowsForLead(String leadId) =>
       _fetchRows(leadId: leadId);
 
-  Future<List<Map<String, dynamic>>> _fetchRows({String? leadId}) async {
+  Future<List<Map<String, dynamic>>> _fetchRows({
+    String? leadId,
+    Map<String, dynamic> filters = const {},
+  }) async {
+    // Paging steers the walk; a stored filter can never own it.
+    final safe = {...filters}
+      ..removeWhere((k, _) => k == 'page' || k == 'page_size');
     final rows = <Map<String, dynamic>>[];
     for (var page = 1; page <= 50; page++) {
       final body = await _api.get(ApiEndpoints.crmTasks, query: {
+        ...safe,
         'is_followup': 'true',
         'page_size': 100,
         if (leadId != null) 'related_to': 'lead',
@@ -42,8 +53,10 @@ class FollowupsRemoteDataSource {
   }
 
   /// Mapped follow-up list (malformed rows are skipped, never fatal).
-  Future<List<Followup>> fetchFollowups() async =>
-      mapRows(await fetchFollowupRows());
+  Future<List<Followup>> fetchFollowups({
+    Map<String, dynamic> filters = const {},
+  }) async =>
+      mapRows(await fetchFollowupRows(filters: filters));
 
   /// Mapped follow-up list for one lead.
   Future<List<Followup>> fetchFollowupsForLead(String leadId) async =>

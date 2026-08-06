@@ -1,5 +1,7 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/utils/relative_time.dart';
 import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -20,13 +22,21 @@ import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/providers/attachments_providers.dart';
+import '../../application/providers/audit_log_providers.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
+import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/followup.dart';
+import '../../domain/entities/lead_file.dart';
 import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
+import '../components/option_picker_sheet.dart';
+import '../sheets/reschedule_sheet.dart';
 import 'crm_status_sheet.dart';
 
 /// Follow-up kind → Phosphor glyph (mirrors the prototype's FUKIND map).
@@ -48,6 +58,10 @@ class FollowupDetailScreen extends ConsumerStatefulWidget {
 
 class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   final _notesKey = GlobalKey<NotesThreadState>();
+
+  /// True while an upload is in flight, so the button reports progress and
+  /// refuses a second batch on top of the first.
+  bool _uploading = false;
 
   /// Scrolls the notes card into view and focuses the composer (#13).
   void _focusNotes() {
@@ -86,16 +100,155 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   }
 
   void _openFollowupMenu(Followup fu) {
-    final toast = ref.read(toastProvider.notifier);
     showActionMenu(
       context,
       actions: [
-        MenuAction(icon: PhosphorIconsRegular.pencilSimple, label: 'Edit follow-up', onTap: () => toast.show('Edit follow-up')),
-        MenuAction(icon: PhosphorIconsRegular.calendarPlus, label: 'Reschedule', onTap: () => toast.show('Reschedule follow-up')),
+        MenuAction(
+          icon: PhosphorIconsRegular.pencilSimple,
+          label: 'Edit follow-up',
+          onTap: () => context.push('${Routes.editFollowup}?id=${fu.id}'),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.calendarPlus,
+          label: 'Reschedule',
+          onTap: () => _reschedule(fu),
+        ),
         MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
-        MenuAction(icon: PhosphorIconsRegular.trash, label: 'Delete follow-up', destructive: true, onTap: () => toast.show('Follow-up deleted')),
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete follow-up',
+          destructive: true,
+          onTap: () => _delete(fu),
+        ),
       ],
     );
+  }
+
+  /// Moves the due date/time — `PATCH /crm/tasks/{id}/`.
+  ///
+  /// Its own action rather than a trip through the whole edit form: changing
+  /// when a follow-up happens is the single most common edit, and the form's
+  /// field set is the org's, which may not even surface the due date.
+  Future<void> _reschedule(Followup fu) async {
+    final picked = await showRescheduleSheet(
+      context: context,
+      ref: ref,
+      due: fu.due,
+      time: fu.time,
+    );
+    if (picked == null || !mounted) return;
+
+    try {
+      // A follow-up is a Task, so the task write serves it.
+      await ref.read(crmTasksRepositoryProvider).updateTask(fu.id, picked);
+    } on AppError catch (e) {
+      if (mounted) ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    if (!mounted) return;
+    _refreshAfterWrite(fu);
+    ref.read(toastProvider.notifier).show('Follow-up rescheduled');
+  }
+
+  /// Deletes the follow-up, behind a confirmation — it cannot be undone.
+  Future<void> _delete(Followup fu) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete follow-up?'),
+        content: Text(
+            '"${fu.agenda.isEmpty ? '${fu.kind} follow-up' : fu.agenda}" will be '
+            'removed. This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      await ref.read(crmTasksRepositoryProvider).deleteTask(fu.id);
+    } on AppError catch (e) {
+      if (mounted) ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    if (!mounted) return;
+    _refreshAfterWrite(fu);
+    ref.read(toastProvider.notifier).show('Follow-up deleted');
+    // The record this screen is showing no longer exists — leave rather than
+    // sit on a "not found".
+    context.pop();
+  }
+
+  /// Moves the follow-up to one of the org's own task lanes.
+  ///
+  /// Not the built-in overdue / due / done: those are **derived** display
+  /// states — `overdue` and `due` are computed from the due date, so neither is
+  /// something the server can be told. The real statuses are the org's task
+  /// lanes (a follow-up is a Task), written as `status_id`.
+  ///
+  /// Falls back to the old done/not-done sheet while the catalog is empty, so
+  /// mock mode and a failed catalog fetch still work.
+  Future<void> _pickStatus(Followup fu) async {
+    final lanes = ref.read(taskStatusOptionsProvider);
+    if (lanes.isEmpty) {
+      showCrmStatusSheet(
+        context: context,
+        ref: ref,
+        title: 'Update follow-up status',
+        options: const ['overdue', 'due', 'done'],
+        meta: StatusMeta$.followup,
+        current: fu.status,
+        onSelect: (k) => _setStatus(
+            ref, fu.id, k, 'Status set to ${StatusMeta$.followup[k]!.label}'),
+      );
+      return;
+    }
+
+    final current = fu.statusName.trim().toLowerCase();
+    final picked = await showOptionPicker(
+      context: context,
+      title: 'Update follow-up status',
+      options: lanes,
+      selected: {
+        for (final l in lanes)
+          if (l.name.trim().toLowerCase() == current) l.id,
+      },
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+
+    try {
+      await ref
+          .read(crmTasksRepositoryProvider)
+          .updateTask(fu.id, {'status_id': picked.first});
+    } on AppError catch (e) {
+      // An org can require a note before a follow-up may be completed; the
+      // server says so, and the status stays put.
+      if (mounted) ref.read(toastProvider.notifier).show(e.message);
+      return;
+    }
+    if (!mounted) return;
+    _refreshAfterWrite(fu);
+    final name = lanes.firstWhere((l) => l.id == picked.first).name;
+    ref.read(toastProvider.notifier).show('Status set to $name');
+  }
+
+  /// Drops every list holding a copy of this follow-up.
+  ///
+  /// The activity log is deliberately absent: it refetches off the API write
+  /// tick, so it picks up this change — and any other the app makes — without
+  /// being told about each one.
+  void _refreshAfterWrite(Followup fu) {
+    ref.invalidate(followupsProvider);
+    ref.invalidate(taskRowProvider(fu.id));
+    final leadId = fu.leadId;
+    if (leadId != null) ref.invalidate(leadFollowupsProvider(leadId));
   }
 
   /// Wraps a loading / error / not-found state under the section app bar so the
@@ -191,7 +344,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                 SizedBox(height: 14.h),
                 _detailsCard(fu, meta, owner),
                 SizedBox(height: 14.h),
-                _filesCard(ref),
+                _filesCard(fu),
                 SizedBox(height: 14.h),
                 NotesThread(
                   author: ref.watch(noteAuthorProvider),
@@ -203,7 +356,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                       ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
                 ),
                 SizedBox(height: 14.h),
-                _activityCard(meta, owner),
+                _activityCard(fu),
               ],
             ),
           ),
@@ -248,15 +401,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           ),
           SizedBox(height: 13.h),
           GestureDetector(
-            onTap: () => showCrmStatusSheet(
-              context: context,
-              ref: ref,
-              title: 'Update follow-up status',
-              options: const ['overdue', 'due', 'done'],
-              meta: StatusMeta$.followup,
-              current: fu.status,
-              onSelect: (k) => _setStatus(ref, fu.id, k, 'Status set to ${StatusMeta$.followup[k]!.label}'),
-            ),
+            onTap: () => _pickStatus(fu),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
               decoration: BoxDecoration(color: meta.color.withOpacity(0.09), borderRadius: BorderRadius.circular(9.r)),
@@ -339,7 +484,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     );
   }
 
-  Widget _filesCard(WidgetRef ref) {
+  /// The follow-up's attachments, from the shared polymorphic table. A
+  /// follow-up is a Task, so the link is `related_to=task`.
+  Widget _filesCard(Followup fu) {
+    final files = ref.watch(taskFilesProvider(fu.id)).valueOrNull ?? const <LeadFile>[];
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -352,7 +500,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               Text('Files', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
               const Spacer(),
               GestureDetector(
-                onTap: () => ref.read(toastProvider.notifier).show('Opening file picker…'),
+                onTap: _uploading ? null : () => _uploadFiles(fu),
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(9.r), border: Border.all(color: const Color(0xFFE6E7EA))),
@@ -361,7 +509,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                     children: [
                       Icon(PhosphorIconsRegular.uploadSimple, size: 13.sp, color: AppColors.textSecondary),
                       SizedBox(width: 6.w),
-                      Text('Upload', style: AppText.bodyStrong()),
+                      Text(_uploading ? 'Uploading…' : 'Upload', style: AppText.bodyStrong()),
                     ],
                   ),
                 ),
@@ -369,17 +517,124 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
             ],
           ),
           SizedBox(height: 10.h),
-          Text('No files attached yet.', style: AppText.caption(color: AppColors.textPlaceholder)),
+          if (files.isEmpty)
+            Text('No files attached yet.', style: AppText.caption(color: AppColors.textPlaceholder))
+          else
+            for (final f in files)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 6.h),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIconsRegular.paperclip, size: 15.sp, color: AppColors.textPlaceholder),
+                    SizedBox(width: 9.w),
+                    Expanded(
+                      child: Text(f.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(
+                              size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                    ),
+                    if (f.uploadedAt.isNotEmpty)
+                      Text(f.uploadedAt, style: AppText.caption(color: AppColors.textPlaceholder)),
+                  ],
+                ),
+              ),
         ],
       ),
     );
   }
 
-  Widget _activityCard(StatusMeta meta, dynamic owner) {
-    final items = <ActivityItem>[
-      ActivityItem(icon: PhosphorIconsRegular.arrowsClockwise, tone: AppColors.blueBright, bg: AppColors.tintBlue, title: 'Status set to ${meta.label}', sub: '${owner.name} · 2 hours ago'),
-      const ActivityItem(icon: PhosphorIconsRegular.calendarPlus, tone: AppColors.success, bg: AppColors.tintGreen, title: 'Follow-up scheduled', sub: 'Manoj Varma · 3 days ago'),
+  /// Picks files off the device and uploads each against this follow-up.
+  ///
+  /// Uploads run one at a time and stop at the first rejection — pushing the
+  /// rest after a failure usually just repeats it.
+  Future<void> _uploadFiles(Followup fu) async {
+    if (_uploading) return;
+    final toast = ref.read(toastProvider.notifier);
+
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: false, // paths only — a large file should not sit in memory
+      );
+    } on Object catch (e) {
+      // A native plugin added since the last full build is not registered on a
+      // hot restart, and every call throws. Report it rather than look inert.
+      if (mounted) toast.show('Could not open the file picker: $e');
+      return;
+    }
+    if (picked == null || !mounted) return; // cancelled
+
+    final files = [
+      for (final f in picked.files)
+        if (f.path != null) (path: f.path!, name: f.name),
     ];
+    if (files.isEmpty) return;
+
+    if (!ApiConfig.apiEnabled) {
+      toast.show('Files upload once the app is connected to the API.');
+      return;
+    }
+
+    setState(() => _uploading = true);
+    final repo = ref.read(attachmentsRepositoryProvider);
+    var stored = 0;
+    String? failure;
+    for (final f in files) {
+      try {
+        final saved = await repo.uploadFile(
+          relatedTo: 'task',
+          relatedToId: fu.id,
+          path: f.path,
+          name: f.name,
+        );
+        if (saved != null) stored++;
+      } on AppError catch (e) {
+        failure = e.message;
+        break;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _uploading = false);
+
+    if (stored > 0) ref.invalidate(taskFilesProvider(fu.id));
+    if (failure != null) {
+      // Say what did land before what didn't, so a partial batch is not read
+      // as a total failure.
+      toast.show(stored == 0 ? failure : '$stored uploaded · $failure');
+    } else {
+      toast.show(stored == 1 ? 'File uploaded' : '$stored files uploaded');
+    }
+  }
+
+  /// The row styling for one kind of audit event.
+  static ActivityItem _activityRow(AuditEntry e) {
+    final (icon, tone, bg) = switch (e.kind) {
+      AuditEventKind.created =>
+        (PhosphorIconsRegular.calendarPlus, AppColors.success, AppColors.tintGreen),
+      AuditEventKind.statusChanged =>
+        (PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.tintBlue),
+      AuditEventKind.noteAdded =>
+        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
+      AuditEventKind.childAdded =>
+        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
+      AuditEventKind.deleted =>
+        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
+      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+    };
+    return ActivityItem(
+        icon: icon, tone: tone, bg: bg, title: e.title, sub: e.subtitle, time: relativeTime(e.at));
+  }
+
+  Widget _activityCard(Followup fu) {
+    // The follow-up's real audit trail — it is a Task record, so the task log
+    // serves it. It refetches off the API write tick, so an edit, a status
+    // change, a reschedule, a note or an upload all land here without this card
+    // being told about any of them.
+    final entries = ref.watch(taskActivityLogProvider(fu.id)).valueOrNull ?? const [];
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final items = [for (final e in entries) _activityRow(e)];
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),

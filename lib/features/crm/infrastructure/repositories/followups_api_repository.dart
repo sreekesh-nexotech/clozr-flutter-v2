@@ -15,9 +15,9 @@ class FollowupsApiRepository implements FollowupsRepository {
   static const _cacheKey = 'followups_rows';
 
   @override
-  Future<List<Followup>> getFollowups() async {
+  Future<List<Followup>> getFollowups({Map<String, dynamic> filters = const {}}) async {
     try {
-      final rows = await _remote.fetchFollowupRows();
+      final rows = await _remote.fetchFollowupRows(filters: filters);
       await AppCache.put(AppCache.crmCache, _cacheKey, rows);
       return FollowupsRemoteDataSource.mapRows(rows);
     } on AppError catch (e) {

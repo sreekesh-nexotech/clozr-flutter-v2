@@ -36,13 +36,6 @@ class FollowupsScreen extends ConsumerStatefulWidget {
 class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
   final _searchCtrl = TextEditingController();
 
-  static const _tabDefs = <(String, String)>[
-    ('all', 'All'),
-    ('overdue', 'Overdue'),
-    ('due', 'Upcoming'),
-    ('done', 'Done'),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -73,6 +66,10 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     // this screen references it, so without this the drawer would snapshot an
     // unloaded catalog and fall back to the built-in type list.
     ref.watch(followupTypeOptionsProvider);
+    // Same reason: the status tabs and the card layout both need their fetch
+    // started here, not when something first reads them.
+    ref.watch(taskStatusOptionsProvider);
+    final schema = ref.watch(followupCardSchemaProvider);
 
     return Column(
       children: [
@@ -107,11 +104,11 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
               height: 40.h,
               child: TabChipRow(
                 children: [
-                  for (final (k, lbl) in _tabDefs)
+                  for (final t in ref.watch(followupTabsProvider))
                     TabChip(
-                      label: '$lbl (${followupTabCount(all, k)})',
-                      active: tab == k,
-                      onTap: () => ref.read(followupTabProvider.notifier).state = k,
+                      label: '${t.label} (${followupTabCount(all, t.id)})',
+                      active: tab == t.id,
+                      onTap: () => ref.read(followupTabProvider.notifier).state = t.id,
                     ),
                 ],
               ),
@@ -149,6 +146,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                   final f = visible[i];
                   return FollowupCard(
                     followup: f,
+                    schema: schema,
                     onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
                     onToggle: () => _toggleFollowup(f),
                   );
@@ -208,12 +206,22 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     );
     if (result == null) return;
 
-    ref.read(followupFiltersProvider.notifier).state = result;
+    _applyFilters(result);
     final views = ref.read(followupSavedViewsProvider);
     if (views.active != null && views.active!.values != result) {
       ref.read(followupSavedViewsProvider.notifier).deactivate();
     }
     ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  /// Applies a filter set. The query it is about to watch is dropped first, so
+  /// re-applying a combination fetched earlier really re-queries instead of
+  /// serving the list as it looked then.
+  void _applyFilters(FilterValues values) {
+    final params = followupFilterParamsFor(
+        values, ref.read(followupFilterCodecProvider));
+    ref.invalidate(followupsScopedProvider(FollowupQuery(filters: params)));
+    ref.read(followupFiltersProvider.notifier).state = values;
   }
 
   // ── Saved-view row: saved bookmark chips + Clear ──
@@ -235,7 +243,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     final saved = ref.read(followupSavedViewsProvider);
     if (saved.activeId == id) {
       ref.read(followupSavedViewsProvider.notifier).deactivate();
-      ref.read(followupFiltersProvider.notifier).state = FilterValues();
+      _applyFilters(FilterValues());
       return;
     }
     final view = saved.views.firstWhere((v) => v.id == id);
@@ -246,7 +254,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
 
   void _clearFilters() {
     ref.read(followupSavedViewsProvider.notifier).clearActive();
-    ref.read(followupFiltersProvider.notifier).state = FilterValues();
+    _applyFilters(FilterValues());
     ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

@@ -130,3 +130,44 @@ String _plain(Object? value) {
   final text = '$value'.trim();
   return text.isEmpty ? _dash : text;
 }
+
+/// The value to send for a text-entered schema field, by its column type.
+///
+/// Pure so it can be tested without pumping a form — and because getting it
+/// wrong is a whole-form failure, not a cosmetic one: sending a number field's
+/// box as text meant an untouched `duration` arrived as `""` and the API
+/// rejected the entire save with
+/// `{"duration": ["A valid integer is required."]}`.
+///
+/// Returns [absentValue] when the key should be **omitted** — distinct from
+/// `null`, which clears the field.
+Object? schemaWriteValue(String type, String text) {
+  final trimmed = text.trim();
+  switch (type) {
+    case 'integer':
+    case 'decimal':
+    case 'number':
+      if (trimmed.isEmpty) return null; // emptied on purpose → clear it
+      final n = type == 'integer' ? int.tryParse(trimmed) : num.tryParse(trimmed);
+      // Unparseable is not an instruction to clear; leave the stored value be
+      // rather than 400 or wipe it.
+      return n ?? absentValue;
+    case 'time':
+      if (trimmed.isEmpty) return null;
+      // The record and the picker both carry `HH:MM:SS`; the seconds are noise
+      // the user never chose.
+      final m = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(trimmed);
+      if (m == null) return absentValue;
+      final h = int.parse(m.group(1)!), min = int.parse(m.group(2)!);
+      if (h > 23 || min > 59) return absentValue;
+      return '${h.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
+    case 'date':
+    case 'datetime':
+      return trimmed.isEmpty ? null : trimmed;
+    default:
+      return trimmed;
+  }
+}
+
+/// Sentinel meaning "do not send this key at all".
+const Object absentValue = Object();
