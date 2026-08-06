@@ -22,6 +22,16 @@ class Lead extends Equatable {
   final String source;
   final String owner; // user id
   final List<String> team; // user ids
+
+  /// The team assigned to this lead (`assigned_team`), as name and id.
+  ///
+  /// Both are empty unless the org's **list** field config marks
+  /// `assigned_team` visible — the payload omits hidden columns entirely — and
+  /// always in mock mode. Which of the two is populated depends on whether the
+  /// serializer nests the team object or sends a bare id, so [teamValues]
+  /// offers both to the matcher.
+  final String assignedTeam;
+  final String assignedTeamId;
   final String phone;
   final String email;
   final String website;
@@ -33,6 +43,16 @@ class Lead extends Equatable {
   final int notif;
   final bool upsell;
   final String? fromCustomerId;
+
+  /// The org's custom-field values for this lead, keyed by field slug
+  /// (`{'budget': 1800000}`). The API sends every field visible in the current
+  /// view, using `null` for one that has no value — so a key being present says
+  /// nothing about it having content. Always empty in mock mode.
+  ///
+  /// Held raw rather than typed: which fields exist is org configuration, and
+  /// the schema (`/crm/leads/schema/`) is what says how to label and format
+  /// them.
+  final Map<String, Object?> customFields;
 
   const Lead({
     required this.id,
@@ -49,6 +69,8 @@ class Lead extends Equatable {
     required this.source,
     required this.owner,
     required this.team,
+    this.assignedTeam = '',
+    this.assignedTeamId = '',
     required this.phone,
     required this.email,
     required this.website,
@@ -60,6 +82,7 @@ class Lead extends Equatable {
     required this.notif,
     this.upsell = false,
     this.fromCustomerId,
+    this.customFields = const {},
   });
 
   bool get isMine => owner == 'me' || team.contains('me');
@@ -73,6 +96,14 @@ class Lead extends Equatable {
   /// Callers keep the vocabularies aligned via `leadStageVocabulary`.
   String get stageKey =>
       statusName.trim().isNotEmpty ? statusName.toLowerCase().trim() : status;
+
+  /// The values the Team filter joins on — the assigned team's name and id,
+  /// whichever the payload carried. Empty when the API did not send a team,
+  /// which is the signal to fall back to deriving one from the lead's people.
+  Set<String> get teamValues => {
+        if (assignedTeam.trim().isNotEmpty) assignedTeam.trim(),
+        if (assignedTeamId.trim().isNotEmpty) assignedTeamId.trim(),
+      };
 
   @override
   List<Object?> get props => [id];

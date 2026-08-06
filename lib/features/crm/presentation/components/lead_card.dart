@@ -8,11 +8,18 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../application/leads_columns.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/lead_schema.dart';
 
 /// The Leads list card — avatar (+ notif badge), name/company/project on the
 /// left, status pill / value / time on the right, then a team-avatar row and a
 /// call button below a hairline.
+///
+/// The layout is **org-configurable**: [schema] says which of those slots the
+/// org kept, what to call them, and which extra fields (including its own
+/// custom fields) to show as chips. An empty schema means "no opinion", and the
+/// card renders its built-in layout unchanged.
 class LeadCard extends StatelessWidget {
   const LeadCard({
     super.key,
@@ -20,6 +27,7 @@ class LeadCard extends StatelessWidget {
     required this.onTap,
     required this.onCall,
     this.status,
+    this.schema = LeadListSchema.empty,
   });
 
   final Lead lead;
@@ -27,6 +35,11 @@ class LeadCard extends StatelessWidget {
   /// The status pill to render. Pass the org's own stage (name + colour from
   /// `/crm/lead-statuses/`); omit it to fall back to the built-in vocabulary.
   final StatusMeta? status;
+
+  /// The org's configured column set (`/crm/leads/schema/`). Resolved by the
+  /// screen rather than watched here so every card in one list is laid out
+  /// identically, the same way the status pill is resolved above the card.
+  final LeadListSchema schema;
 
   final VoidCallback onTap;
   final VoidCallback onCall;
@@ -36,6 +49,9 @@ class LeadCard extends StatelessWidget {
     final meta = status ?? StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
     final teamIds = lead.team.take(2).toList();
     final more = lead.team.length - teamIds.length;
+    // Everything the org made visible that the fixed layout below doesn't
+    // already cover — its own custom fields included.
+    final extras = leadExtraColumns(lead, schema);
 
     return ClozrCard(
       radius: 18,
@@ -58,20 +74,28 @@ class LeadCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // `lead_name` is a protected column — it can never
+                            // be configured away, so it is never gated.
                             Text(lead.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                            SizedBox(height: 4.h),
-                            Text(lead.company ?? '—',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppText.body(color: AppColors.textMuted2)),
-                            SizedBox(height: 3.h),
-                            Text(lead.project,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                            if (schema.shows('organization_name')) ...[
+                              SizedBox(height: 4.h),
+                              Text(lead.company ?? '—',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.body(color: AppColors.textMuted2)),
+                            ],
+                            // The sub-title reads the product, falling back to
+                            // the source — so it survives either column.
+                            if (schema.showsAny(const ['products', 'product', 'lead_source'])) ...[
+                              SizedBox(height: 3.h),
+                              Text(lead.project,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                            ],
                           ],
                         ),
                       ),
@@ -80,12 +104,16 @@ class LeadCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           StatusPill.meta(meta),
-                          SizedBox(height: 5.h),
-                          Text(lead.value,
-                              style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                          SizedBox(height: 5.h),
-                          Text(lead.time,
-                              style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                          if (schema.shows('lead_value')) ...[
+                            SizedBox(height: 5.h),
+                            Text(lead.value,
+                                style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                          ],
+                          if (schema.shows('activity')) ...[
+                            SizedBox(height: 5.h),
+                            Text(lead.time,
+                                style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                          ],
                         ],
                       ),
                     ],
@@ -94,16 +122,26 @@ class LeadCard extends StatelessWidget {
               ],
             ),
           ),
+          if (extras.isNotEmpty) ...[
+            SizedBox(height: 12.h),
+            Wrap(
+              spacing: 6.w,
+              runSpacing: 6.h,
+              children: [for (final e in extras) _chip(e.label, e.value)],
+            ),
+          ],
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
           Row(
             children: [
-              AvatarStack(
-                size: 26,
-                items: [for (final id in teamIds) (MockUsers.of(id).initials, MockUsers.of(id).color)],
-              ),
-              SizedBox(width: 9.w),
-              Text(more > 0 ? '+$more more' : 'Team',
-                  style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+              if (schema.shows('assignees')) ...[
+                AvatarStack(
+                  size: 26,
+                  items: [for (final id in teamIds) (MockUsers.of(id).initials, MockUsers.of(id).color)],
+                ),
+                SizedBox(width: 9.w),
+                Text(more > 0 ? '+$more more' : 'Team',
+                    style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+              ],
               const Spacer(),
               // Compact fixed-size Call button — standardised to the smallest
               // width so it renders identically across every lead-card state
@@ -121,6 +159,31 @@ class LeadCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// One extra column: the org's label, then the value. Labelled because these
+  /// are whatever the org chose to add — unlike the fixed slots above, the
+  /// value alone would not say what it is.
+  Widget _chip(String label, String value) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
+      decoration: BoxDecoration(
+        color: AppColors.bgChipGrey,
+        borderRadius: BorderRadius.circular(8.r),
+      ),
+      child: RichText(
+        text: TextSpan(children: [
+          TextSpan(
+            text: '$label ',
+            style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textMuted),
+          ),
+          TextSpan(
+            text: value,
+            style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textPrimary),
+          ),
+        ]),
       ),
     );
   }

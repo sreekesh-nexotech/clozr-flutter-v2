@@ -200,6 +200,12 @@ class LeadsRemoteDataSource {
       source: source,
       owner: owner,
       team: team,
+      // Present only when the org's list field config makes `assigned_team`
+      // visible; both forms are mapped since the payload may nest the team
+      // object or send a bare id.
+      assignedTeam:
+          row['assigned_team'] is Map ? _refName(row['assigned_team']) : '',
+      assignedTeamId: _refId(row['assigned_team'], 'team_id'),
       phone: _phoneOf(row),
       email: _str(row, 'email'),
       website: _str(row, 'website'),
@@ -211,7 +217,24 @@ class LeadsRemoteDataSource {
       notif: 0,
       upsell: row['is_upsell'] == true,
       fromCustomerId: _parentCustomerOf(row['parent_customer']),
+      customFields: _customFieldsOf(row['custom_fields']),
     );
+  }
+
+  /// The row's `custom_fields` object, kept verbatim.
+  ///
+  /// Values stay untyped on purpose — the org decides what fields exist and of
+  /// what type, and `/crm/leads/schema/` is what tells the UI how to render
+  /// them. Anything that is not an object (absent, or an unexpected shape)
+  /// becomes an empty map, never an error.
+  static Map<String, Object?> _customFieldsOf(Object? value) {
+    if (value is! Map) return const {};
+    final out = <String, Object?>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is String && key.isNotEmpty) out[key] = entry.value;
+    }
+    return out;
   }
 
   /// First product name when a products list is present, else the lead-source
@@ -261,6 +284,14 @@ class LeadsRemoteDataSource {
   /// display string.
   static String _refName(Object? value) {
     if (value is Map) return (value['name'] ?? '').toString();
+    if (value is String) return value;
+    return '';
+  }
+
+  /// The id out of an FK that may arrive as an object (`{team_id: …}`) or as a
+  /// bare id string.
+  static String _refId(Object? value, String idKey) {
+    if (value is Map) return (value[idKey] ?? '').toString();
     if (value is String) return value;
     return '';
   }

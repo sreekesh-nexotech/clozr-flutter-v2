@@ -18,7 +18,9 @@ import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/leads_filter_spec.dart';
 import '../../application/providers/crm_catalog_providers.dart';
+import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../application/providers/saved_filters_providers.dart';
 import '../../domain/entities/lead.dart';
 import '../components/lead_card.dart';
 import '../components/saved_chip_row.dart' as chips;
@@ -71,6 +73,10 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // the catalog, so the row looks unchanged but reads the org's stages.
     final tabDefs = ref.watch(leadTabsProvider);
     final statuses = ref.watch(leadStatusesProvider);
+    // The org's own card layout. Empty until it loads (and in mock mode), which
+    // the card reads as "use the built-in layout" — so the list never waits on
+    // this call.
+    final schema = ref.watch(leadListSchemaProvider);
 
     return Column(
       children: [
@@ -151,6 +157,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
                     // Resolved here rather than inside the card so the pill and
                     // the tab dot above it always agree on name and colour.
                     status: leadStatusMeta(lead, statuses),
+                    schema: schema,
                     onTap: () => context.push('${Routes.leadDetail}?id=${lead.id}'),
                     onCall: () => ref.read(toastProvider.notifier).show('Calling ${lead.name.split(' ').first}…'),
                   );
@@ -168,7 +175,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     final spec = ref.read(leadsFilterSpecProvider);
     final current = ref.read(leadFiltersProvider);
     final base = ref.read(leadBaseProvider);
-    final activeView = ref.read(leadSavedViewsProvider).active;
+    final activeView = ref.read(leadSavedFiltersProvider).active;
 
     final result = await showFilterSheet(
       context: context,
@@ -176,26 +183,38 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       initial: current,
       previewCount: (draft) => base.where((l) => leadMatchesFilters(l, draft)).length,
       activeViewName: activeView?.name,
-      onSaveView: (name, draft) {
-        ref.read(leadSavedViewsProvider.notifier).upsert(name, draft);
-        ref.read(toastProvider.notifier).show('View "$name" saved');
-      },
+      onSaveView: _saveView,
     );
     if (result == null) return;
 
     ref.read(leadFiltersProvider.notifier).state = result;
     // A manual Apply deactivates the active saved view unless the draft still
-    // matches it exactly (prototype `deactivateViews` parity).
-    final views = ref.read(leadSavedViewsProvider);
-    if (views.active != null && views.active!.values != result) {
-      ref.read(leadSavedViewsProvider.notifier).deactivate();
+    // means the same thing (prototype `deactivateViews` parity). Compared as
+    // encoded definitions, since that is what the view actually stores.
+    final active = ref.read(leadSavedFiltersProvider).active;
+    if (active != null) {
+      final encoded = ref.read(leadFilterCodecProvider).encode(result);
+      if (!sameFilterDefinition(encoded, active.definition)) {
+        ref.read(leadSavedFiltersProvider.notifier).deactivate();
+      }
     }
     ref.read(toastProvider.notifier).show('Filters applied');
   }
 
+  /// Persists the drawer draft as a saved filter. The API stores the backend's
+  /// own param dict, so the draft is encoded before it is sent; server-side
+  /// rejections (duplicate name, 5-per-module limit) come back as user-safe
+  /// text and are shown as-is.
+  Future<void> _saveView(String name, FilterValues draft) async {
+    final definition = ref.read(leadFilterCodecProvider).encode(draft);
+    final error = await ref.read(leadSavedFiltersProvider.notifier).save(name, definition);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).show(error ?? 'View "$name" saved');
+  }
+
   // ── Saved-view row: My/All toggle + saved bookmark chips + Clear ──
   Widget _savedViewRow(bool teamAll, int filterCount) {
-    final saved = ref.watch(leadSavedViewsProvider);
+    final saved = ref.watch(leadSavedFiltersProvider);
     return SizedBox(
       height: 34.h,
       child: Row(
@@ -204,7 +223,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
           SizedBox(width: 8.w),
           Expanded(
             child: chips.SavedChipRow(
-              views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name)],
               active: {if (saved.activeId != null) saved.activeId!},
               showClearAlways: filterCount > 0,
               onToggle: _toggleView,
@@ -217,22 +236,34 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   }
 
   void _toggleView(String id) {
-    final saved = ref.read(leadSavedViewsProvider);
+    final saved = ref.read(leadSavedFiltersProvider);
     if (saved.activeId == id) {
       // Tapping the active view deactivates it and clears the applied filters.
-      ref.read(leadSavedViewsProvider.notifier).deactivate();
+      ref.read(leadSavedFiltersProvider.notifier).deactivate();
       ref.read(leadFiltersProvider.notifier).state = FilterValues();
       return;
     }
-    final view = saved.views.firstWhere((v) => v.id == id);
-    ref.read(leadSavedViewsProvider.notifier).apply(id);
-    // Applying a view loads its values as the current (editable) filter state.
-    ref.read(leadFiltersProvider.notifier).state = view.values.copy();
+    final view = saved.filters.firstWhere((f) => f.id == id);
+    // A filter the server marked invalid (it references a purged custom field)
+    // fails inert by contract — never run it, say why instead.
+    if (!view.isValid) {
+      ref.read(toastProvider.notifier).show(
+            'View "${view.name}" refers to a field that no longer exists.',
+          );
+      return;
+    }
+    // Decoded now rather than at load time: the org catalogs that map stored
+    // ids back to drawer options arrive asynchronously.
+    final values = ref
+        .read(leadFilterCodecProvider)
+        .decode(view.definition, ref.read(leadsFilterSpecProvider));
+    ref.read(leadSavedFiltersProvider.notifier).apply(id);
+    ref.read(leadFiltersProvider.notifier).state = values;
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
   void _clearFilters() {
-    ref.read(leadSavedViewsProvider.notifier).clearActive();
+    ref.read(leadSavedFiltersProvider.notifier).deactivate();
     ref.read(leadFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('Filters cleared');
   }

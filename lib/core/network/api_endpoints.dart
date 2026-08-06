@@ -27,6 +27,10 @@ class ApiEndpoints {
   static const industries = '/crm/industries/';
   static const territories = '/crm/territories/';
 
+  // ── CRM: saved filters (the saved-view chips above a list) ──
+  static const savedFilters = '/crm/saved-filters/';
+  static String savedFilter(String id) => '/crm/saved-filters/$id/';
+
   // ── CRM: customers ──
   static const customers = '/crm/customers/';
   static String customer(String id) => '/crm/customers/$id/';

@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
-import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../domain/entities/crm_catalog.dart';
@@ -25,7 +24,8 @@ List<String> _allTeams() {
   return list;
 }
 
-/// Team names a lead touches (owner + assigned members).
+/// Team names a lead touches (owner + assigned members). The mock vocabulary —
+/// prototype users carry their team in a `"role · team"` string.
 Set<String> teamNamesOfLead(Lead l) {
   final ids = <String>{l.owner, ...l.team};
   final teams = <String>{};
@@ -34,6 +34,17 @@ Set<String> teamNamesOfLead(Lead l) {
     if (t.isNotEmpty && t != 'You') teams.add(t);
   }
   return teams;
+}
+
+/// The values the Team filter joins on.
+///
+/// Prefers the lead's own `assigned_team` — the field the backend actually
+/// models and that `assigned_team__in` filters on. Falls back to deriving a
+/// team from the lead's people, which is all mock data can offer (and all the
+/// API can offer while `assigned_team` is hidden by the org's field config).
+Iterable<String> leadTeamValues(Lead l) {
+  final assigned = l.teamValues;
+  return assigned.isNotEmpty ? assigned : teamNamesOfLead(l);
 }
 
 const _months = {
@@ -57,17 +68,18 @@ DateTime? parseLeadDate(String s) {
 /// [roster] supplies the owner/assignee picker options (the real workspace
 /// members in API mode, the prototype reps in mock mode).
 ///
-/// [statusCatalog], [sourceCatalog] and [productCatalog] are the org's
-/// configured lists. Each falls back to deriving options from the loaded leads
-/// when empty (mock mode, or a catalog fetch that failed) — deriving can only
-/// ever offer values already present on screen, so an org's unused source or
-/// product is invisible until the catalog loads.
+/// [statusCatalog], [sourceCatalog], [productCatalog] and [teamCatalog] are the
+/// org's configured lists. Each falls back to deriving options from the loaded
+/// leads when empty (mock mode, or a catalog fetch that failed) — deriving can
+/// only ever offer values already present on screen, so an org's unused source
+/// or product is invisible until the catalog loads.
 FilterSpec buildLeadsFilterSpec(
   List<Lead> leads, {
   List<AppUser> roster = MockUsers.reps,
   List<CatalogOption> statusCatalog = const [],
   List<CatalogOption> sourceCatalog = const [],
   List<CatalogOption> productCatalog = const [],
+  List<CatalogOption> teamCatalog = const [],
 }) {
   final sourceNames = sourceCatalog.isNotEmpty
       ? [for (final s in sourceCatalog) s.name]
@@ -85,7 +97,12 @@ FilterSpec buildLeadsFilterSpec(
     for (final s in leadStageVocabulary(statusCatalog, leads))
       FilterOption(id: s.id, label: s.label),
   ];
-  final teams = _allTeams().map((t) => FilterOption(id: t, label: t)).toList();
+  // Option ids are `team_id` when the catalog loaded — `Lead.teamValues` offers
+  // the id as well as the name, so the join holds whichever form the lead row
+  // carried. Mock mode keeps deriving team names from the prototype roster.
+  final teams = teamCatalog.isNotEmpty
+      ? [for (final t in teamCatalog) FilterOption(id: t.id, label: t.name)]
+      : _allTeams().map((t) => FilterOption(id: t, label: t)).toList();
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
@@ -197,7 +214,7 @@ bool leadMatchesFilters(Lead l, FilterValues v) {
   }
 
   if (!FilterMatch.matchAnyOf(v.choice('owners'), [l.owner])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('teams'), teamNamesOfLead(l))) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('teams'), leadTeamValues(l))) return false;
 
   if (!FilterMatch.matchDate(v.date('created'), parseLeadDate(l.createdOn))) return false;
   if (!FilterMatch.matchRange(v.range('value'), l.valueNum, scale: 100000)) return false;
@@ -230,12 +247,13 @@ final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
     statusCatalog: ref.watch(leadStatusesProvider),
     sourceCatalog: ref.watch(leadSourcesProvider),
     productCatalog: ref.watch(productOptionsProvider),
+    teamCatalog: ref.watch(teamOptionsProvider),
   );
 });
 
 /// Applied drawer filters for the Leads list (the source of the badge count).
 final leadFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
 
-/// Saved views for the Leads list (bookmark chips).
-final leadSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+// Leads' saved views live in `saved_filters_providers.dart` — they persist to
+// `/crm/saved-filters/` rather than sitting in memory like the other modules'
+// `SavedViewsController` presets.

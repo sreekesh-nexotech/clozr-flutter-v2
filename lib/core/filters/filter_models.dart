@@ -9,6 +9,8 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+import '../config/api_config.dart';
+
 /// The seven control patterns from the audit (§1). Every drawer filter in the
 /// app is one of these.
 enum FilterControl {
@@ -342,10 +344,28 @@ class FilterValues {
 // Deterministic "today" + canonical quick-range chips
 // ─────────────────────────────────────────────────────────────────────────
 
-/// The prototype's fixed clock (`FTODAY = '2026-07-09'`). Used everywhere a
-/// relative date range is computed so filter results are deterministic. Never
-/// call [DateTime.now] in filter code.
-final DateTime kFilterToday = DateTime(2026, 7, 9);
+/// The prototype's fixed clock (`FTODAY = '2026-07-09'`), which the bundled
+/// seed data is built around.
+final DateTime kMockFilterToday = DateTime(2026, 7, 9);
+
+/// Resolves "now" for every relative date filter.
+///
+/// Real time against a real backend; the frozen prototype clock in mock mode,
+/// where the seed records are dated relative to [kMockFilterToday] and would
+/// otherwise fall out of every quick range as real time moves on.
+///
+/// Exposed as a mutable seam so tests can pin it — nothing else should call
+/// [DateTime.now] in filter code, or ranges stop being reproducible mid-frame.
+DateTime Function() filterNow = defaultFilterNow;
+
+DateTime defaultFilterNow() =>
+    ApiConfig.apiEnabled ? DateTime.now() : kMockFilterToday;
+
+/// Today, truncated to a date. Every quick-range chip resolves against this.
+DateTime get kFilterToday {
+  final t = filterNow();
+  return DateTime(t.year, t.month, t.day);
+}
 
 /// Canonical quick-range chip labels (the audit's full set). A field exposes
 /// only the subset listed in [FilterField.dateChips].

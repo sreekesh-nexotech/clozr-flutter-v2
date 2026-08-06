@@ -43,6 +43,12 @@ final productCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
   return ds == null ? const <CatalogOption>[] : ds.fetchProducts();
 });
 
+/// `GET /management/teams/` — the org's teams, as filter options.
+final teamCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
+  return ds == null ? const <CatalogOption>[] : ds.fetchTeams();
+});
+
 /// Synchronous view of [leadStatusCatalogProvider] — empty while in flight, so
 /// the tabs render immediately from `StatusMeta$` and swap to the org's stages
 /// when the catalog arrives, instead of blocking the list behind a spinner.
@@ -60,6 +66,12 @@ final leadSourcesProvider = Provider<List<CatalogOption>>(
 /// contract as [leadStatusesProvider].
 final productOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(productCatalogProvider).valueOrNull ?? const [],
+);
+
+/// Synchronous view of [teamCatalogProvider]. Same empty-while-loading
+/// contract as [leadStatusesProvider].
+final teamOptionsProvider = Provider<List<CatalogOption>>(
+  (ref) => ref.watch(teamCatalogProvider).valueOrNull ?? const [],
 );
 
 /// The dot/pill colour for an org stage: the admin's own `color` when set,

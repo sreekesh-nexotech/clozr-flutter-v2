@@ -42,6 +42,12 @@ class CrmCatalogRemoteDataSource {
   Future<List<CatalogOption>> fetchProducts() =>
       _fetch(ApiEndpoints.products, 'product_id', nameKey: 'product_name');
 
+  /// Org teams, for the Team filter. Needs the `view_team` permission — a role
+  /// without it gets a 403, which surfaces here as an empty list (the section
+  /// then falls back rather than the drawer failing).
+  Future<List<CatalogOption>> fetchTeams() =>
+      _fetch(ApiEndpoints.teams, 'team_id');
+
   Future<List<CatalogOption>> _fetch(
     String path,
     String idKey, {

@@ -29,8 +29,16 @@ List<CatalogOption> statusCatalog() => [
         CrmCatalogRemoteDataSource.mapCatalogRow(r, 'lead_status_id', withType: true)!,
     ];
 
-Lead leadWith({required String status, String statusName = ''}) => Lead(
-      id: 'l-$status-$statusName',
+Lead leadWith({
+  required String status,
+  String statusName = '',
+  String assignedTeam = '',
+  String assignedTeamId = '',
+}) =>
+    Lead(
+      assignedTeam: assignedTeam,
+      assignedTeamId: assignedTeamId,
+      id: 'l-$status-$statusName-$assignedTeam$assignedTeamId',
       name: 'Test Lead',
       initials: 'TL',
       company: null,
@@ -247,6 +255,67 @@ void main() {
       expect(spec.fieldById('sources')!.options.map((o) => o.label), ['Website']);
       // The lead's empty `project` must not become a blank option row.
       expect(spec.fieldById('products')!.options, isEmpty);
+    });
+  });
+
+  group('Team filter', () {
+    final teams = [
+      const CatalogOption(id: 'tm-north', name: 'Team North'),
+      const CatalogOption(id: 'tm-south', name: 'Team South'),
+    ];
+
+    test('options are keyed by team_id when the catalog loaded', () {
+      final f = buildLeadsFilterSpec(const [], teamCatalog: teams).fieldById('teams')!;
+      expect(f.options.map((o) => o.id).toList(), ['tm-north', 'tm-south']);
+      expect(f.options.map((o) => o.label).toList(), ['Team North', 'Team South']);
+    });
+
+    test('a lead joins on either the assigned team id or its name', () {
+      expect(leadTeamValues(leadWith(status: 'new', assignedTeamId: 'tm-north')),
+          contains('tm-north'));
+      expect(leadTeamValues(leadWith(status: 'new', assignedTeam: 'Team North')),
+          contains('Team North'));
+    });
+
+    test('filters on assigned_team, not on who the lead is assigned to', () {
+      final spec = buildLeadsFilterSpec(const [], teamCatalog: teams);
+      final v = spec.defaults();
+      v['teams'] = ChoiceValue(ids: {'tm-north'});
+      final north = leadWith(status: 'new', assignedTeam: 'Team North', assignedTeamId: 'tm-north');
+      final south = leadWith(status: 'new', assignedTeam: 'Team South', assignedTeamId: 'tm-south');
+      expect(leadMatchesFilters(north, v), isTrue);
+      expect(leadMatchesFilters(south, v), isFalse);
+    });
+
+    test('falls back to the people-derived team when the API sent none', () {
+      // Mock leads carry no assigned_team; the prototype path must still work.
+      expect(leadWith(status: 'new').teamValues, isEmpty);
+      expect(leadTeamValues(leadWith(status: 'new')), teamNamesOfLead(leadWith(status: 'new')));
+    });
+  });
+
+  group('filter clock', () {
+    tearDown(() => filterNow = defaultFilterNow);
+
+    test('quick ranges resolve against the injected now, not a frozen date', () {
+      filterNow = () => DateTime(2026, 8, 6, 14, 30);
+      expect(kFilterToday, DateTime(2026, 8, 6)); // truncated to a date
+      final (from, to) = FilterMatch.chipRange('last30');
+      expect(from, DateTime(2026, 7, 7));
+      expect(to, DateTime(2026, 8, 6));
+    });
+
+    test('a lead created 20 days ago now matches "Last 30 days"', () {
+      // The exact case that failed against the live org: created 2026-07-17
+      // matched nothing while the clock was pinned to 2026-07-09.
+      filterNow = () => DateTime(2026, 8, 6);
+      const created = DateValue(chip: 'last30');
+      expect(FilterMatch.matchDate(created, DateTime(2026, 7, 17)), isTrue);
+      expect(FilterMatch.matchDate(created, DateTime(2026, 6, 1)), isFalse);
+    });
+
+    test('mock mode stays pinned to the prototype clock the seed data uses', () {
+      expect(kMockFilterToday, DateTime(2026, 7, 9));
     });
   });
 
