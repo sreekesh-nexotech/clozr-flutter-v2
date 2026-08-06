@@ -22,6 +22,7 @@ import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
+import '../../application/record_rows.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/crm_task.dart';
@@ -320,15 +321,44 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     );
   }
 
+  /// The icon for a schema column, by field name. Anything unrecognised — an
+  /// org's custom field, or a built-in we have no icon for — gets the neutral
+  /// one rather than being dropped.
+  static IconData _rowIcon(String name) => switch (name) {
+        'task_type' => PhosphorIconsRegular.tag,
+        'priority' => PhosphorIconsRegular.flag,
+        'due_date' || 'due_time' => PhosphorIconsRegular.calendarBlank,
+        'duration' => PhosphorIconsRegular.timer,
+        'assigned_to' || 'assignees' => PhosphorIconsRegular.userCircle,
+        'assigned_team' => PhosphorIconsRegular.usersThree,
+        'related_to' => PhosphorIconsRegular.link,
+        'description' => PhosphorIconsRegular.textAlignLeft,
+        'status' => PhosphorIconsRegular.circleDashed,
+        _ => PhosphorIconsRegular.info,
+      };
+
+  /// The built-in rows, used when the org's detail layout has not loaded (and
+  /// in mock mode) — the panel as it was before the layout became configurable.
+  List<(IconData, String, String)> _fallbackRows(CrmTask task, dynamic assignee) => [
+        (PhosphorIconsRegular.tag, 'Type', task.type),
+        (PhosphorIconsRegular.flag, 'Priority', task.priority),
+        (PhosphorIconsRegular.calendarBlank, 'Due date', task.due),
+        (PhosphorIconsRegular.userCircle, 'Assigned to', assignee.name),
+        (PhosphorIconsRegular.hash, 'Task ID', task.id),
+      ];
+
   Widget _infoCard(CrmTask task, dynamic assignee) {
-    final rows = <(IconData, String, String)>[
-      (PhosphorIconsRegular.tag, 'Type', task.type),
-      (PhosphorIconsRegular.flag, 'Priority', task.priority),
-      (PhosphorIconsRegular.calendarBlank, 'Due date', task.due),
-      (PhosphorIconsRegular.userCircle, 'Assigned to', assignee.name),
-      (PhosphorIconsRegular.hash, 'Task ID', task.id),
-      (PhosphorIconsRegular.clockCounterClockwise, 'Created', '3 days ago'),
-    ];
+    // The org's own layout over the raw record. Both must be present: the
+    // schema says which rows, the record supplies their values.
+    final schema = ref.watch(taskDetailSchemaProvider);
+    final row = ref.watch(taskRowProvider(task.id)).valueOrNull;
+    final rows = (schema.isEmpty || row == null)
+        ? _fallbackRows(task, assignee)
+        : [
+            // `title` is the page header, so it is never repeated as a row.
+            for (final r in recordRows(row, schema, skip: const {'title', 'description'}))
+              (_rowIcon(r.name), r.label, r.value),
+          ];
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(18.r),
@@ -360,9 +390,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   }
 
   Widget _descFilesCard(CrmTask task, dynamic lead) {
-    final desc = lead != null
-        ? 'A ${task.priority.toLowerCase()}-priority ${task.type.toLowerCase()} task linked to lead ${lead.company} (#${lead.id}). Due ${task.due}.'
-        : 'A ${task.priority.toLowerCase()}-priority ${task.type.toLowerCase()} task. Due ${task.due}.';
+    // The task's own description, from the record. This used to be a sentence
+    // assembled from the task's other fields — which read as a description the
+    // user had written, and was not.
+    final row = ref.watch(taskRowProvider(task.id)).valueOrNull;
+    final written = (row?['description'] ?? '').toString().trim();
+    final desc = written.isNotEmpty ? written : 'No description added yet.';
     return ClozrCard(
       radius: 18,
       child: Column(

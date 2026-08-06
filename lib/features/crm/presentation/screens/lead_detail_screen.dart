@@ -72,6 +72,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   bool _uploading = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
+  /// Drives the body list, so "Add note" can run to the notes card even when
+  /// the lazy list has not built it yet.
+  final _scroll = ScrollController();
+
   static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Quotes', 'Files'];
 
   /// Information rows shown before "Show more". An org with a long detail
@@ -79,14 +83,47 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// toggle entirely.
   static const _infoRowsCollapsed = 7;
 
-  /// Scrolls the notes card into view and focuses the composer — wired to the
-  /// sticky-bar note-pencil affordance (#13).
-  void _focusNotes() {
-    final ctx = _notesKey.currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Scrolls the notes card into view and focuses its composer — the overflow
+  /// menu's "Add note".
+  ///
+  /// Two things make this less trivial than it looks:
+  ///
+  /// * The card is the fifth item in a **lazy** list, well below the fold, so
+  ///   on a freshly-opened lead it has not been built and its key has no
+  ///   context to scroll to. Running to the end of the list first forces it
+  ///   into existence; `ensureVisible` then lands on it precisely.
+  /// * The menu pops the route and calls this synchronously. Requesting focus
+  ///   mid-pop loses it — focus reverts to the underlying route as the pop
+  ///   completes. Awaiting the scroll first puts the request comfortably after
+  ///   that, which is why the focus call is last rather than first.
+  Future<void> _focusNotes() async {
+    if (_notesKey.currentContext == null && _scroll.hasClients) {
+      await _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
     }
+    if (!mounted) return;
+
+    final ctx = _notesKey.currentContext;
+    if (ctx != null && ctx.mounted) {
+      await Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 260),
+        // Card top just below the viewport top — the composer is the first
+        // thing inside it, so this puts it clear of the keyboard.
+        alignment: 0.05,
+        curve: Curves.easeOut,
+      );
+    }
+    if (!mounted) return;
     _notesKey.currentState?.focusComposer();
   }
 
@@ -375,6 +412,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           ),
           Expanded(
             child: ListView(
+              controller: _scroll,
               padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
               children: [
                 _profileCard(lead, meta, statuses),

@@ -1,6 +1,7 @@
 import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/app_cache.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../data_sources/remote/crm_tasks_remote_ds.dart';
 
@@ -53,6 +54,26 @@ class CrmTasksApiRepository implements CrmTasksRepository {
         }
       }
       rethrow;
+    }
+  }
+
+  @override
+  Future<ViewSchema> getTaskDetailSchema() => _remote.fetchTaskDetailSchema();
+
+  /// The record endpoint, cached per id so an opened task still reads offline.
+  @override
+  Future<Map<String, dynamic>?> getTaskRow(String id) async {
+    final key = 'crm_task_$id';
+    try {
+      final row = await _remote.fetchTaskRow(id);
+      if (row != null) await AppCache.put(AppCache.crmCache, key, row);
+      return row;
+    } on AppError catch (e) {
+      if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
+        rethrow;
+      }
+      final cached = AppCache.get(AppCache.crmCache, key)?.data;
+      return cached is Map<String, dynamic> ? cached : null;
     }
   }
 

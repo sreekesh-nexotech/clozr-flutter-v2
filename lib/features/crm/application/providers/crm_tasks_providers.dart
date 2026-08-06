@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../../infrastructure/data_sources/local/crm_tasks_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/crm_tasks_remote_ds.dart';
@@ -31,6 +32,32 @@ final leadTasksProvider =
     FutureProvider.family<List<CrmTask>, String>((ref, leadId) {
   if (leadId.isEmpty) return Future.value(const <CrmTask>[]);
   return ref.watch(crmTasksRepositoryProvider).getTasksForLead(leadId);
+});
+
+/// The org's Task **detail** layout, driving the "Task information" panel.
+///
+/// Fetched once per session — the layout changes when an admin edits it, not
+/// when tasks change. Empty while in flight, in mock mode, and on failure, so
+/// the panel renders its built-in rows rather than waiting.
+final taskDetailSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
+  final repo = ref.watch(crmTasksRepositoryProvider);
+  return repo.getTaskDetailSchema();
+});
+
+/// Synchronous view of [taskDetailSchemaFutureProvider].
+final taskDetailSchemaProvider = Provider<ViewSchema>(
+  (ref) => ref.watch(taskDetailSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+);
+
+/// The raw record row for one task — the values the schema-driven panel renders.
+///
+/// The mapped [CrmTask] cannot serve this: it drops `description`, `due_time`,
+/// `duration`, `assigned_team` and `assignees`, all of which the org's detail
+/// layout shows by default.
+final taskRowProvider =
+    FutureProvider.family<Map<String, dynamic>?, String>((ref, id) {
+  if (id.isEmpty) return Future.value(null);
+  return ref.watch(crmTasksRepositoryProvider).getTaskRow(id);
 });
 
 /// Look up a single task by id (used by the detail screen). Reads the merged

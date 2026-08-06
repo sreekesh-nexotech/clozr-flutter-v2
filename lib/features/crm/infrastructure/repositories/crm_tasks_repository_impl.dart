@@ -1,5 +1,6 @@
 import '../../../../app/config/constants.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../data_sources/local/crm_tasks_mock_ds.dart';
 
@@ -25,6 +26,15 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
 
   /// Local echo — builds the task the way the Add-task sheet does. Mock mode
   /// keeps its session-draft flow; this exists so the contract is honoured.
+  /// No org config without a backend; the panel keeps its built-in rows.
+  @override
+  Future<ViewSchema> getTaskDetailSchema() async => ViewSchema.empty;
+
+  /// Mock mode has no record endpoint — null keeps the detail panel on its
+  /// built-in row set rather than showing an empty schema-driven one.
+  @override
+  Future<Map<String, dynamic>?> getTaskRow(String id) async => null;
+
   @override
   Future<CrmTask?> createTask(Map<String, dynamic> fields) async {
     final due = (fields['due_date'] as String?)?.trim() ?? '';

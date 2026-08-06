@@ -7,6 +7,7 @@ import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../domain/entities/crm_task.dart';
+import '../../../domain/entities/view_schema.dart';
 
 /// Remote CRM tasks (`/crm/tasks/` with `is_followup=false`). HTTP + JSON →
 /// [CrmTask] mapping only — caching lives in the API repository.
@@ -42,6 +43,25 @@ class CrmTasksRemoteDataSource {
       if (chunk.next == null) break;
     }
     return rows;
+  }
+
+  /// The org's Task detail layout: `GET /crm/tasks/schema/?view_type=detail`.
+  ///
+  /// This is also what the record endpoint trims itself to, so layout and
+  /// payload agree — a visible column with no value means the task has none.
+  ///
+  /// Best-effort: any failure yields the empty schema, which the panel reads as
+  /// "use the built-in rows".
+  Future<ViewSchema> fetchTaskDetailSchema() async {
+    try {
+      final body = await _api.get(
+        ApiEndpoints.crmTaskSchema,
+        query: {'view_type': 'detail'},
+      );
+      return ViewSchema.fromResponse(body);
+    } on Object {
+      return ViewSchema.empty;
+    }
   }
 
   /// The raw record row for one task: `GET /crm/tasks/{id}/`.
