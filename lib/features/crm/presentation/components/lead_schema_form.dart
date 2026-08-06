@@ -170,6 +170,10 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     switch (c.relatedModel) {
       case 'LeadStatus':
         return ref.read(leadStatusesProvider);
+      case 'CRMTaskStatus':
+        return ref.read(taskStatusOptionsProvider);
+      case 'TaskPriority':
+        return ref.read(taskPriorityOptionsProvider);
       case 'LeadSource':
         return ref.read(leadSourcesProvider);
       case 'Territory':

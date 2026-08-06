@@ -43,3 +43,22 @@ final leadActivityLogProvider =
     statusNames: {for (final s in statuses) s.id: s.name},
   );
 });
+
+/// The activity log for one task: `?model_name=Task&record_id=<task_id>`.
+///
+/// Same write-tick dependency as the lead log — every successful POST/PUT/
+/// PATCH/DELETE the app makes refetches it, so an edit, a status change, a note
+/// or an upload all show up without each call site having to remember.
+final taskActivityLogProvider =
+    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, taskId) async {
+  final ds = ref.watch(auditLogRemoteDataSourceProvider);
+  if (ds == null) return const [];
+  ref.watch(apiWriteTickProvider);
+  // Task statuses resolve a `status_id` in the diff to its display name.
+  final statuses = ref.watch(taskStatusOptionsProvider);
+  return ds.fetchFor(
+    modelName: 'Task',
+    recordId: taskId,
+    statusNames: {for (final s in statuses) s.id: s.name},
+  );
+});

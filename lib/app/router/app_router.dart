@@ -18,6 +18,7 @@ import '../../features/crm/presentation/screens/customer_detail_screen.dart';
 import '../../features/crm/presentation/screens/followups_screen.dart';
 import '../../features/crm/presentation/screens/followup_detail_screen.dart';
 import '../../features/crm/presentation/screens/tasks_screen.dart';
+import '../../features/crm/presentation/screens/edit_crm_task_screen.dart';
 import '../../features/crm/presentation/screens/task_detail_screen.dart';
 import '../../features/crm/presentation/screens/quotes_screen.dart';
 import '../../features/crm/presentation/screens/quote_detail_screen.dart';
@@ -130,6 +131,7 @@ final GoRouter appRouter = GoRouter(
         _push(Routes.followupDetail, const FollowupDetailScreen()),
         _r(Routes.tasks, const TasksScreen()),
         _push(Routes.taskDetail, const TaskDetailScreen()),
+        _push(Routes.editCrmTask, const EditCrmTaskScreen()),
         _r(Routes.quotes, const QuotesScreen()),
         _push(Routes.quoteDetail, const QuoteDetailScreen()),
         _push(Routes.addQuote, const AddQuoteScreen()),

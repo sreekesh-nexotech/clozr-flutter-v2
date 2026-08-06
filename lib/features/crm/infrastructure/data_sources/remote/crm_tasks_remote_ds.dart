@@ -45,6 +45,35 @@ class CrmTasksRemoteDataSource {
     return rows;
   }
 
+  /// The org's Task layout for the mobile list card.
+  ///
+  /// `mobile` is the view type meant for this screen — the org-view-settings
+  /// engine documents it as "mobile list-row card", standalone from `list`
+  /// (no `both` merge). Orgs seeded before that view type existed have no
+  /// `mobile` rows, so fall back to `list` when it comes back with nothing.
+  ///
+  /// Caveat worth knowing: the **payload** is trimmed to the org's `list`
+  /// config, because the data endpoints resolve their view type from the
+  /// request action rather than a query param. A column visible on the card but
+  /// hidden on the list therefore arrives with no value — which renders as
+  /// absent, since the card skips empty values.
+  Future<ViewSchema> fetchListSchema() async {
+    final mobile = await _schema('mobile');
+    return mobile.isNotEmpty ? mobile : _schema('list');
+  }
+
+  Future<ViewSchema> _schema(String viewType) async {
+    try {
+      final body = await _api.get(
+        ApiEndpoints.crmTaskSchema,
+        query: {'view_type': viewType},
+      );
+      return ViewSchema.fromResponse(body);
+    } on Object {
+      return ViewSchema.empty;
+    }
+  }
+
   /// The org's Task detail layout: `GET /crm/tasks/schema/?view_type=detail`.
   ///
   /// This is also what the record endpoint trims itself to, so layout and
@@ -79,6 +108,23 @@ class CrmTasksRemoteDataSource {
     final body = await _api.get(ApiEndpoints.crmTask(id));
     return body is Map<String, dynamic> ? body : null;
   }
+
+  /// `PATCH /crm/tasks/{id}/` — saves an edit.
+  ///
+  /// [fields] is sent as-is: the caller built it from the org's own schema, so
+  /// the key names are already the API's.
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields) async {
+    final body = await _api.patch(ApiEndpoints.crmTask(id), body: fields);
+    if (body is! Map<String, dynamic>) return null;
+    try {
+      return taskFromJson(body);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// `DELETE /crm/tasks/{id}/`.
+  Future<void> deleteTask(String id) => _api.delete(ApiEndpoints.crmTask(id));
 
   /// Mapped task list (malformed rows are skipped, never fatal).
   Future<List<CrmTask>> fetchTasks() async => mapRows(await fetchTaskRows());
@@ -183,6 +229,10 @@ class CrmTasksRemoteDataSource {
       status: crmTaskStatusKey(
         name: statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw),
       ),
+      // Kept verbatim beside the folded key so the tabs and the card pill can
+      // show the org's own lane name (see [CrmTask.statusName]).
+      statusName:
+          (statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw)) ?? '',
       priority: priorityKey(priority is Map ? _str(priority['name']) : null),
       assignee: UserDirectory.mapUserId(
           assigned is Map ? _str(assigned['user_id']) : null),

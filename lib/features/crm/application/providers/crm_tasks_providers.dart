@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../data/api/status_keys.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
+import 'crm_catalog_providers.dart';
 import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../../infrastructure/data_sources/local/crm_tasks_mock_ds.dart';
@@ -49,6 +52,19 @@ final taskDetailSchemaProvider = Provider<ViewSchema>(
   (ref) => ref.watch(taskDetailSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
 );
 
+/// The org's Task layout for the mobile list card
+/// (`?view_type=mobile`, falling back to `list`).
+final taskListSchemaFutureProvider = FutureProvider<ViewSchema>(
+  (ref) => ref.watch(crmTasksRepositoryProvider).getTaskListSchema(),
+);
+
+/// Synchronous view of [taskListSchemaFutureProvider] — empty while in flight,
+/// so the list paints immediately with the built-in card and adopts the org's
+/// column set when it arrives rather than waiting behind a spinner.
+final taskListSchemaProvider = Provider<ViewSchema>(
+  (ref) => ref.watch(taskListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+);
+
 /// The raw record row for one task — the values the schema-driven panel renders.
 ///
 /// The mapped [CrmTask] cannot serve this: it drops `description`, `due_time`,
@@ -91,26 +107,48 @@ final crmTasksAllProvider = Provider<List<CrmTask>>((ref) {
   final overrides = ref.watch(crmTaskStatusOverrideProvider);
   final merged = [...drafts, ...repo];
   if (overrides.isEmpty) return merged;
+  // The org catalog is needed to move `statusName` along with the folded key —
+  // without it an optimistically-ticked task would keep its old lane name and
+  // so stay under its old tab.
+  final catalog = ref.watch(taskStatusOptionsProvider);
   return [
     for (final t in merged)
       (overrides[t.id] != null && overrides[t.id] != t.status)
-          ? _crmTaskWithStatus(t, overrides[t.id]!)
+          ? _crmTaskWithStatus(t, overrides[t.id]!, catalog)
           : t,
   ];
 });
 
 /// Rebuilds a [CrmTask] with a new status (the entity has no `copyWith`).
-CrmTask _crmTaskWithStatus(CrmTask t, String status) => CrmTask(
-      id: t.id,
-      title: t.title,
-      type: t.type,
-      leadId: t.leadId,
-      status: status,
-      priority: t.priority,
-      assignee: t.assignee,
-      due: t.due,
-      dueNote: t.dueNote,
-    );
+///
+/// [statusName] moves with it: the tabs match on the org's lane name, so
+/// leaving the old name behind would file the task under the wrong tab until
+/// the next refetch.
+CrmTask _crmTaskWithStatus(
+  CrmTask t,
+  String status,
+  List<CatalogOption> catalog,
+) {
+  var name = t.statusName;
+  for (final s in catalog) {
+    if (crmTaskStatusKey(name: s.name, type: s.statusType) == status) {
+      name = s.name;
+      break;
+    }
+  }
+  return CrmTask(
+    id: t.id,
+    title: t.title,
+    type: t.type,
+    leadId: t.leadId,
+    status: status,
+    statusName: name,
+    priority: t.priority,
+    assignee: t.assignee,
+    due: t.due,
+    dueNote: t.dueNote,
+  );
+}
 
 /// Active tab on the Tasks list (all / mine / overdue / status keys).
 final crmTaskTabProvider = StateProvider<String>((ref) => 'all');
@@ -134,7 +172,7 @@ final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
   } else if (tab == 'overdue') {
     out = out.where((t) => t.isOverdue);
   } else if (tab != 'all') {
-    out = out.where((t) => t.status == tab);
+    out = out.where((t) => crmTaskInTab(t, tab));
   }
   if (!filters.isEmpty) out = out.where((t) => crmTaskMatchesFilters(t, filters));
   if (q.isNotEmpty) {

@@ -26,3 +26,12 @@ final leadFilesProvider =
   if (leadId.isEmpty) return Future.value(const <LeadFile>[]);
   return ref.watch(attachmentsRepositoryProvider).getFilesForLead(leadId);
 });
+
+/// The files attached to one task — the Files tab on the task detail screen.
+///
+/// Same polymorphic table as the lead's, tagged `related_to=task`.
+final taskFilesProvider =
+    FutureProvider.family<List<LeadFile>, String>((ref, taskId) {
+  if (taskId.isEmpty) return Future.value(const <LeadFile>[]);
+  return ref.watch(attachmentsRepositoryProvider).getFiles('task', taskId);
+});

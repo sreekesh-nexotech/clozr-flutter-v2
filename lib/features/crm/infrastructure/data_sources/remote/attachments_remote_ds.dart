@@ -18,13 +18,17 @@ class AttachmentsRemoteDataSource {
 
   final ApiService _api;
 
-  /// Raw rows for one lead, following `next` up to a sane page cap.
-  Future<List<Map<String, dynamic>>> fetchFileRowsForLead(String leadId) async {
+  /// Raw rows for one record, following `next` up to a sane page cap.
+  ///
+  /// The table is polymorphic, so the same call serves a lead, a task, a quote
+  /// — only the `related_to` pair changes.
+  Future<List<Map<String, dynamic>>> fetchFileRows(
+      String relatedTo, String relatedToId) async {
     final rows = <Map<String, dynamic>>[];
     for (var page = 1; page <= 50; page++) {
       final body = await _api.get(ApiEndpoints.attachments, query: {
-        'related_to': 'lead',
-        'related_to_id': leadId,
+        'related_to': relatedTo,
+        'related_to_id': relatedToId,
         'page_size': ApiConfig.defaultPageSize,
         if (page > 1) 'page': page,
       });
@@ -35,22 +39,30 @@ class AttachmentsRemoteDataSource {
     return rows;
   }
 
-  /// Mapped file list for one lead (malformed rows are skipped, never fatal).
-  Future<List<LeadFile>> fetchFilesForLead(String leadId) async =>
-      mapRows(await fetchFileRowsForLead(leadId));
+  /// Mapped file list for one record (malformed rows are skipped, never fatal).
+  Future<List<LeadFile>> fetchFiles(String relatedTo, String relatedToId) async =>
+      mapRows(await fetchFileRows(relatedTo, relatedToId));
+
+  /// Lead-scoped wrappers, kept so the lead screens read as before.
+  Future<List<Map<String, dynamic>>> fetchFileRowsForLead(String leadId) =>
+      fetchFileRows('lead', leadId);
+
+  Future<List<LeadFile>> fetchFilesForLead(String leadId) =>
+      fetchFiles('lead', leadId);
 
   /// `POST /crm/attachments/` (multipart) — uploads one picked file against a
-  /// lead. `related_to`/`related_to_id` are **required** here (unlike on call
+  /// record. `related_to`/`related_to_id` are **required** here (unlike on call
   /// logs, where the link is optional).
-  Future<LeadFile?> uploadFileForLead({
-    required String leadId,
+  Future<LeadFile?> uploadFile({
+    required String relatedTo,
+    required String relatedToId,
     required String path,
     required String name,
     String description = '',
   }) async {
     final form = FormData.fromMap({
-      'related_to': 'lead',
-      'related_to_id': leadId,
+      'related_to': relatedTo,
+      'related_to_id': relatedToId,
       'name': name,
       if (description.isNotEmpty) 'description': description,
       'file_upload': await MultipartFile.fromFile(path, filename: name),
@@ -58,6 +70,21 @@ class AttachmentsRemoteDataSource {
     final res = await _api.postForm(ApiEndpoints.attachments, form);
     return res is Map<String, dynamic> ? fileFromJson(res) : null;
   }
+
+  /// Lead-scoped wrapper.
+  Future<LeadFile?> uploadFileForLead({
+    required String leadId,
+    required String path,
+    required String name,
+    String description = '',
+  }) =>
+      uploadFile(
+        relatedTo: 'lead',
+        relatedToId: leadId,
+        path: path,
+        name: name,
+        description: description,
+      );
 
   // ── mapping (static so the repository and tests reuse it) ──
 

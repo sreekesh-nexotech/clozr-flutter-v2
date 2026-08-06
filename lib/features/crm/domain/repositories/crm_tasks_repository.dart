@@ -26,6 +26,19 @@ abstract class CrmTasksRepository {
   /// task, or null when the response shape was unexpected.
   Future<CrmTask?> createTask(Map<String, dynamic> fields);
 
+  /// The org's Task layout for the mobile list card
+  /// (`GET /crm/tasks/schema/?view_type=mobile`, falling back to `list`).
+  ///
+  /// Empty means "no opinion" — mock mode, a failed fetch, or an org with no
+  /// config — and the card then renders its built-in field set.
+  Future<ViewSchema> getTaskListSchema();
+
+  /// `PATCH /crm/tasks/{id}/` — saves an edit built from the org's schema.
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields);
+
+  /// `DELETE /crm/tasks/{id}/`.
+  Future<void> deleteTask(String id);
+
   /// Moves a task to the status matching the UI key
   /// (`todo | inprogress | blocked | done`).
   Future<void> setTaskStatusByKey(String taskId, String uiStatusKey);

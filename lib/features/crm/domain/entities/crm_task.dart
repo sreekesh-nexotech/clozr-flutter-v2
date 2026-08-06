@@ -8,6 +8,17 @@ class CrmTask extends Equatable {
   final String type; // key into TASKTYPES — Call / Email / Meeting / …
   final String? leadId;
   final String status; // key into StatusMeta$.task — todo / inprogress / blocked / done
+
+  /// The org's own name for the status ("Open", "Cancelled"), kept verbatim
+  /// alongside the folded [status] key.
+  ///
+  /// [status] folds every org lane into four built-in buckets, which is fine
+  /// for colour and done-ness but wrong for anything the user reads: an org
+  /// whose lanes are Open / In Progress / Completed / Cancelled would see them
+  /// labelled "To do" / "Blocked" / "Done". The tabs and the card pill use this
+  /// so they speak the org's vocabulary. Empty for mock rows, which have none.
+  final String statusName;
+
   final String priority; // High / Medium / Low
   final String assignee; // user id
   final String due; // "16 Jun 2026"
@@ -23,6 +34,7 @@ class CrmTask extends Equatable {
     required this.assignee,
     required this.due,
     required this.dueNote,
+    this.statusName = '',
   });
 
   bool get isMine => assignee == 'me';

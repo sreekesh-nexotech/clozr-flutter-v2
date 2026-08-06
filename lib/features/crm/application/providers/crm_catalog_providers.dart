@@ -6,6 +6,7 @@ import '../../../../core/network/network_providers.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_catalog.dart';
+import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/lead.dart';
 import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart';
 
@@ -164,6 +165,36 @@ final leadFilterCatalogsProvider = FutureProvider<void>((ref) async {
     ref.watch(teamCatalogProvider.future),
   ]);
 });
+
+/// The dot/pill colour for an org task lane, on the same terms as
+/// [leadStatusColor]: the admin's own colour when set, else the built-in
+/// colour of the bucket the lane folds into.
+Color crmTaskStatusColor(CatalogOption status) =>
+    status.color ??
+    StatusMeta$.task[crmTaskStatusKey(name: status.name, type: status.statusType)]!
+        .color;
+
+/// The pill a task's status should render as — the twin of [leadStatusMeta].
+///
+/// Shows the org's **own** lane name whenever the API sent one, so a task in
+/// "Open" reads "Open" rather than being folded into the built-in "To do", and
+/// always agrees with the tab it sits under. Mock rows carry no status name and
+/// keep the built-in vocabulary.
+StatusMeta crmTaskStatusMeta(CrmTask task, List<CatalogOption> statuses) {
+  final name = task.statusName.trim();
+  if (name.isEmpty) return StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
+
+  final key = name.toLowerCase();
+  for (final s in statuses) {
+    if (s.name.trim().toLowerCase() == key) {
+      return StatusMeta(s.name, crmTaskStatusColor(s));
+    }
+  }
+  // Catalog still loading, fetch failed, or the lane was removed since this
+  // task was written: keep the org's own name, colour it by its bucket.
+  final fallback = StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
+  return StatusMeta(name, fallback.color);
+}
 
 /// The dot/pill colour for an org stage: the admin's own `color` when set,
 /// else the built-in colour of the bucket the stage maps into — so a stage

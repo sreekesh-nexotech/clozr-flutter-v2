@@ -30,6 +30,10 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
   @override
   Future<ViewSchema> getTaskDetailSchema() async => ViewSchema.empty;
 
+  /// Mock mode has no org config — empty keeps the card on its built-in fields.
+  @override
+  Future<ViewSchema> getTaskListSchema() async => ViewSchema.empty;
+
   /// Mock mode has no record endpoint — null keeps the detail panel on its
   /// built-in row set rather than showing an empty schema-driven one.
   @override
@@ -52,6 +56,14 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
   }
 
   /// No-op — mock mode persists status flips via the session override provider.
+  /// Mock mode has no backend, so an edit cannot persist; null keeps the
+  /// caller on its optimistic path rather than claiming a save.
+  @override
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields) async => null;
+
+  @override
+  Future<void> deleteTask(String id) async {}
+
   @override
   Future<void> setTaskStatusByKey(String taskId, String uiStatusKey) async {}
 }

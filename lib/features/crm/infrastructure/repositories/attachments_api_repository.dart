@@ -11,13 +11,14 @@ class AttachmentsApiRepository implements AttachmentsRepository {
 
   final AttachmentsRemoteDataSource _remote;
 
-  static String _cacheKey(String leadId) => 'attachments_rows_lead_$leadId';
+  static String _cacheKey(String relatedTo, String relatedToId) =>
+      'attachments_rows_${relatedTo}_$relatedToId';
 
   @override
-  Future<List<LeadFile>> getFilesForLead(String leadId) async {
-    final key = _cacheKey(leadId);
+  Future<List<LeadFile>> getFiles(String relatedTo, String relatedToId) async {
+    final key = _cacheKey(relatedTo, relatedToId);
     try {
-      final rows = await _remote.fetchFileRowsForLead(leadId);
+      final rows = await _remote.fetchFileRows(relatedTo, relatedToId);
       await AppCache.put(AppCache.crmCache, key, rows);
       return AttachmentsRemoteDataSource.mapRows(rows);
     } on AppError catch (e) {
@@ -35,20 +36,43 @@ class AttachmentsApiRepository implements AttachmentsRepository {
   }
 
   @override
+  Future<LeadFile?> uploadFile({
+    required String relatedTo,
+    required String relatedToId,
+    required String path,
+    required String name,
+    String description = '',
+  }) async {
+    final file = await _remote.uploadFile(
+      relatedTo: relatedTo,
+      relatedToId: relatedToId,
+      path: path,
+      name: name,
+      description: description,
+    );
+    // The record's file list is now stale; drop it so the next read refetches.
+    await AppCache.remove(AppCache.crmCache, _cacheKey(relatedTo, relatedToId));
+    return file;
+  }
+
+  // ── lead-scoped wrappers, so the lead screens read as before ──
+
+  @override
+  Future<List<LeadFile>> getFilesForLead(String leadId) =>
+      getFiles('lead', leadId);
+
+  @override
   Future<LeadFile?> uploadFileForLead({
     required String leadId,
     required String path,
     required String name,
     String description = '',
-  }) async {
-    final file = await _remote.uploadFileForLead(
-      leadId: leadId,
-      path: path,
-      name: name,
-      description: description,
-    );
-    // The lead's file list is now stale; drop it so the next read refetches.
-    await AppCache.remove(AppCache.crmCache, _cacheKey(leadId));
-    return file;
-  }
+  }) =>
+      uploadFile(
+        relatedTo: 'lead',
+        relatedToId: leadId,
+        path: path,
+        name: name,
+        description: description,
+      );
 }

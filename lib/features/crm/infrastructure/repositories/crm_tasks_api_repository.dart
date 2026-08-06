@@ -60,6 +60,9 @@ class CrmTasksApiRepository implements CrmTasksRepository {
   @override
   Future<ViewSchema> getTaskDetailSchema() => _remote.fetchTaskDetailSchema();
 
+  @override
+  Future<ViewSchema> getTaskListSchema() => _remote.fetchListSchema();
+
   /// The record endpoint, cached per id so an opened task still reads offline.
   @override
   Future<Map<String, dynamic>?> getTaskRow(String id) async {
@@ -82,6 +85,26 @@ class CrmTasksApiRepository implements CrmTasksRepository {
     final created = await _remote.createTask(fields);
     await AppCache.remove(AppCache.crmCache, _cacheKey);
     return created;
+  }
+
+  @override
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields) async {
+    final task = await _remote.updateTask(id, fields);
+    await _dropCaches(id);
+    return task;
+  }
+
+  @override
+  Future<void> deleteTask(String id) async {
+    await _remote.deleteTask(id);
+    await _dropCaches(id);
+  }
+
+  /// Every cached copy of a task is stale after a write to it — the list rows,
+  /// the per-lead lists, and the record itself.
+  Future<void> _dropCaches(String id) async {
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+    await AppCache.remove(AppCache.crmCache, 'crm_task_$id');
   }
 
   @override

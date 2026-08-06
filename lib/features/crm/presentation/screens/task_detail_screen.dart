@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/api/roster.dart';
@@ -21,11 +22,16 @@ import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/utils/relative_time.dart';
+import '../../application/providers/attachments_providers.dart';
+import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/record_rows.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/lead_file.dart';
 import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
 import 'crm_status_sheet.dart';
@@ -52,6 +58,7 @@ class TaskDetailScreen extends ConsumerStatefulWidget {
 
 class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   int _tab = 0; // 0 = Description, 1 = Files
+  bool _uploading = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
   /// Scrolls the notes card into view and focuses the composer (#13).
@@ -86,12 +93,79 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         ref.read(toastProvider.notifier).show(e.message);
         return;
       }
+      // The info panel reads the raw record, so the optimistic override alone
+      // would leave its Status row showing the old value until a refetch. This
+      // is what made a status change look like it had not applied.
+      ref.invalidate(taskRowProvider(id));
+      ref.invalidate(crmTasksProvider);
     }
     ref.read(toastProvider.notifier).show(successMessage);
   }
 
-  void _openTaskMenu(CrmTask task, bool done) {
+  /// Copies a task: the same record, re-posted as a new one.
+  ///
+  /// Built from the **record**, not the mapped entity, so fields the entity
+  /// drops (description, due time, duration, team) come along too.
+  Future<void> _duplicate(CrmTask task) async {
     final toast = ref.read(toastProvider.notifier);
+    final row = ref.read(taskRowProvider(task.id)).valueOrNull;
+    if (row == null) {
+      toast.show('Still loading this task — try again in a moment');
+      return;
+    }
+    final related = row['related_to'];
+    try {
+      await ref.read(crmTasksRepositoryProvider).createTask({
+        'title': '${row['title'] ?? task.title} (copy)',
+        'task_type': row['task_type'] ?? task.type,
+        'description': row['description'] ?? '',
+        'due_date': row['due_date'] ?? '',
+        'due_time': row['due_time'] ?? '',
+        // Carry the link so the copy sits beside the original.
+        if (related is Map && related['model'] != null) 'related_to': related['model'],
+        if (related is Map && related['id'] != null) 'related_to_id': related['id'],
+      });
+    } on AppError catch (e) {
+      toast.show(e.message);
+      return;
+    }
+    ref.invalidate(crmTasksProvider);
+    ref.invalidate(leadTasksProvider);
+    toast.show('Task duplicated');
+  }
+
+  /// Deleting is irreversible, so it asks first.
+  Future<void> _confirmDelete(CrmTask task) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('"${task.titleClean}" will be removed. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final toast = ref.read(toastProvider.notifier);
+    try {
+      await ref.read(crmTasksRepositoryProvider).deleteTask(task.id);
+    } on AppError catch (e) {
+      toast.show(e.message);
+      return;
+    }
+    ref.invalidate(crmTasksProvider);
+    ref.invalidate(leadTasksProvider);
+    toast.show('Task deleted');
+    if (mounted) context.pop();
+  }
+
+  void _openTaskMenu(CrmTask task, bool done) {
     showActionMenu(
       context,
       actions: [
@@ -100,11 +174,18 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           label: 'Edit task',
           enabled: !done,
           sublabel: done ? 'Task is done' : null,
-          onTap: () => toast.show('Edit task'),
+          onTap: () => context.push('${Routes.editCrmTask}?id=${task.id}'),
         ),
-        MenuAction(icon: PhosphorIconsRegular.copy, label: 'Duplicate task', onTap: () => toast.show('Duplicate task — coming soon')),
+        MenuAction(
+            icon: PhosphorIconsRegular.copy,
+            label: 'Duplicate task',
+            onTap: () => _duplicate(task)),
         MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
-        MenuAction(icon: PhosphorIconsRegular.trash, label: 'Delete task', destructive: true, onTap: () => toast.show('Task deleted')),
+        MenuAction(
+            icon: PhosphorIconsRegular.trash,
+            label: 'Delete task',
+            destructive: true,
+            onTap: () => _confirmDelete(task)),
       ],
     );
   }
@@ -408,39 +489,149 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               child: Text(desc, style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt).copyWith(height: 1.6)),
             )
           else
-            DetailTabEmpty(
-              icon: PhosphorIconsRegular.paperclip,
-              title: 'No files attached',
-              body: 'Files attached to this task will appear here.',
-              cta: GestureDetector(
-                onTap: () => ref.read(toastProvider.notifier).show('Opening file picker…'),
-                child: Container(
-                  height: 40.h,
-                  padding: EdgeInsets.symmetric(horizontal: 16.w),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(10.r), border: Border.all(color: AppColors.borderInput)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(PhosphorIconsRegular.uploadSimple, size: 15.sp, color: AppColors.navy),
-                      SizedBox(width: 7.w),
-                      Text('Upload file', style: AppText.bodyStrong()),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            _filesTab(task),
         ],
       ),
     );
   }
 
-  Widget _activityCard(CrmTask task, StatusMeta meta, dynamic assignee) {
-    final items = <ActivityItem>[
-      ActivityItem(icon: PhosphorIconsRegular.arrowsClockwise, tone: AppColors.blueBright, bg: AppColors.tintBlue, title: 'Status set to ${meta.label}', sub: '${assignee.name} · 2 hours ago'),
-      ActivityItem(icon: PhosphorIconsRegular.userPlus, tone: AppColors.success, bg: AppColors.tintGreen, title: 'Assigned to ${assignee.name}', sub: 'Manoj Varma · 3 days ago'),
-      const ActivityItem(icon: PhosphorIconsRegular.plusCircle, tone: AppColors.textMuted2, bg: AppColors.bgChipGrey, title: 'Task created', sub: 'Manoj Varma · 3 days ago'),
+  /// The task's attachments, from the shared polymorphic table.
+  Widget _filesTab(CrmTask task) {
+    final files = ref.watch(taskFilesProvider(task.id)).valueOrNull ?? const <LeadFile>[];
+    return Padding(
+      padding: EdgeInsets.only(top: 12.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (files.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 10.h),
+              child: Text('No files attached yet.',
+                  style: AppText.custom(
+                      size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            )
+          else
+            for (final f in files)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 7.h),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIconsRegular.paperclip, size: 15.sp, color: AppColors.textPlaceholder),
+                    SizedBox(width: 9.w),
+                    Expanded(
+                      child: Text(f.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(
+                              size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                    ),
+                  ],
+                ),
+              ),
+          SizedBox(height: 10.h),
+          GestureDetector(
+            onTap: _uploading ? null : () => _uploadFiles(task),
+            child: Container(
+              height: 40.h,
+              padding: EdgeInsets.symmetric(horizontal: 16.w),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10.r),
+                  border: Border.all(color: AppColors.borderInput)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIconsRegular.uploadSimple, size: 15.sp, color: AppColors.navy),
+                  SizedBox(width: 7.w),
+                  Text(_uploading ? 'Uploading…' : 'Upload file', style: AppText.bodyStrong()),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Picks files off the device and uploads each against this task.
+  Future<void> _uploadFiles(CrmTask task) async {
+    if (_uploading) return;
+    final toast = ref.read(toastProvider.notifier);
+
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: false, // paths only — a large file should not sit in memory
+    );
+    if (picked == null || !mounted) return; // cancelled
+
+    final files = [
+      for (final f in picked.files)
+        if (f.path != null) (path: f.path!, name: f.name),
     ];
+    if (files.isEmpty) return;
+
+    if (!ApiConfig.apiEnabled) {
+      toast.show('Files upload once the app is connected to the API.');
+      return;
+    }
+
+    setState(() => _uploading = true);
+    final repo = ref.read(attachmentsRepositoryProvider);
+    var stored = 0;
+    String? failure;
+    for (final f in files) {
+      try {
+        final saved = await repo.uploadFile(
+          relatedTo: 'task',
+          relatedToId: task.id,
+          path: f.path,
+          name: f.name,
+        );
+        if (saved != null) stored++;
+      } on AppError catch (e) {
+        failure = e.message;
+        break;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _uploading = false);
+
+    if (stored > 0) ref.invalidate(taskFilesProvider(task.id));
+    if (failure != null) {
+      // Say what did land before what didn't, so a partial batch is not read
+      // as a total failure.
+      toast.show(stored == 0 ? failure : '$stored uploaded · $failure');
+    } else {
+      toast.show(stored == 1 ? 'File uploaded' : '$stored files uploaded');
+    }
+  }
+
+  /// The row styling for one kind of audit event.
+  static ActivityItem _activityRow(AuditEntry e) {
+    final (icon, tone, bg) = switch (e.kind) {
+      AuditEventKind.created =>
+        (PhosphorIconsRegular.plusCircle, AppColors.textMuted2, AppColors.bgChipGrey),
+      AuditEventKind.statusChanged =>
+        (PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.tintBlue),
+      AuditEventKind.noteAdded =>
+        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
+      AuditEventKind.childAdded =>
+        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
+      AuditEventKind.deleted =>
+        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
+      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+    };
+    return ActivityItem(
+        icon: icon, tone: tone, bg: bg, title: e.title, sub: e.subtitle, time: relativeTime(e.at));
+  }
+
+  Widget _activityCard(CrmTask task, StatusMeta meta, dynamic assignee) {
+    // The task's real audit trail. It refetches off the API write tick, so an
+    // edit, a status change, a note or an upload all land here without this
+    // card being told about each one.
+    final entries = ref.watch(taskActivityLogProvider(task.id)).valueOrNull ?? const [];
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final items = [for (final e in entries) _activityRow(e)];
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),
@@ -470,14 +661,16 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       ),
       child: Row(
         children: [
+          // The pencil beside Mark complete opens the same edit screen as the
+          // menu's "Edit task" — it read as an edit affordance either way.
           GestureDetector(
-            onTap: _focusNotes,
+            onTap: () => context.push('${Routes.editCrmTask}?id=${task.id}'),
             child: Container(
               width: 48.w,
               height: 48.w,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(12.r), border: Border.all(color: AppColors.borderInput)),
-              child: Icon(PhosphorIconsRegular.notePencil, size: 21.sp, color: AppColors.navy),
+              child: Icon(PhosphorIconsRegular.pencilSimple, size: 21.sp, color: AppColors.navy),
             ),
           ),
           SizedBox(width: 10.w),
