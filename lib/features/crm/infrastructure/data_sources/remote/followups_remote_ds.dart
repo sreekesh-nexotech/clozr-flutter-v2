@@ -137,7 +137,18 @@ class FollowupsRemoteDataSource {
       owner: UserDirectory.mapUserId(
           assigned is Map ? _str(assigned['user_id']) : null),
       agenda: (desc != null && desc.isNotEmpty) ? desc : title,
+      // Kept verbatim beside the folded bucket so the tabs can offer the org's
+      // real statuses (see [Followup.statusName]).
+      statusName: statusName ?? '',
+      priority: _refName(json['priority']),
     );
+  }
+
+  /// A name out of an FK that may arrive as an object or a bare string.
+  static String _refName(Object? value) {
+    if (value is Map) return (value['name'] ?? '').toString();
+    if (value is String) return value;
+    return '';
   }
 
   /// `"11:00:00"` → `"11:00"`; null/junk → `''`.

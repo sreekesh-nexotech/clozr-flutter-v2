@@ -15,6 +15,18 @@ class Followup extends Equatable {
   final String owner; // user id
   final String agenda;
 
+  /// The org's own task status as the API sent it ("Open", "In Progress",
+  /// "Cancelled"). Empty in mock mode.
+  ///
+  /// [status] folds this together with the due date into the three-way
+  /// overdue/due/done bucket the card colours by — which cannot express
+  /// "In Progress" or "Cancelled" at all. The raw name is what the status tabs
+  /// and the Status filter join on.
+  final String statusName;
+
+  /// The org's priority name ("High", "Medium"). Empty when unset.
+  final String priority;
+
   const Followup({
     required this.id,
     required this.kind,
@@ -27,9 +39,17 @@ class Followup extends Equatable {
     required this.status,
     required this.owner,
     required this.agenda,
+    this.statusName = '',
+    this.priority = '',
   });
 
   bool get isMine => owner == 'me';
+
+  /// The value the status tabs and the Status filter join on: the org's own
+  /// status name when the API sent one, else the derived bucket. One
+  /// vocabulary at a time, for the same reason `Lead.stageKey` is.
+  String get statusKey =>
+      statusName.trim().isNotEmpty ? statusName.toLowerCase().trim() : status;
 
   @override
   List<Object?> get props => [id];

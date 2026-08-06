@@ -185,6 +185,33 @@ class CrmTasksRemoteDataSource {
     await _api.patch(ApiEndpoints.crmTask(taskId), body: {'status_id': statusId});
   }
 
+  /// The org's task lanes as `name` → `status_type`, for folding.
+  ///
+  /// The list serializer sends `status` as a **display name with no
+  /// `status_type`**, so without this the mapper can only guess from the name —
+  /// and the guess is wrong for any lane whose name does not contain a keyword
+  /// it looks for. "Cancelled" is the live example: it falls through to the
+  /// `todo` default, so a cancelled task renders as an open one, unticked and
+  /// counted as overdue.
+  ///
+  /// Best-effort: any failure yields an empty map, leaving the mapper on its
+  /// name-matching path. Loading tasks must never fail because this did.
+  Future<Map<String, String>> statusTypes() async {
+    try {
+      final out = <String, String>{};
+      for (final row in await statuses()) {
+        final name = _str(row['name'])?.trim().toLowerCase();
+        final type = _str(row['status_type'])?.trim();
+        if (name != null && name.isNotEmpty && type != null && type.isNotEmpty) {
+          out[name] = type;
+        }
+      }
+      return out;
+    } on Object {
+      return const {};
+    }
+  }
+
   /// The org's `crm-task-statuses` rows (cached in-memory after first fetch).
   Future<List<Map<String, dynamic>>> statuses() async {
     final cached = _statusCache;
@@ -198,10 +225,10 @@ class CrmTasksRemoteDataSource {
   // ── mapping (static so tests + sibling data sources can reuse) ──
 
   static List<CrmTask> mapRows(List<Map<String, dynamic>> rows,
-      {DateTime? now}) {
+      {DateTime? now, Map<String, String> statusTypes = const {}}) {
     final out = <CrmTask>[];
     for (final row in rows) {
-      final task = taskFromJson(row, now: now);
+      final task = taskFromJson(row, now: now, statusTypes: statusTypes);
       if (task != null) out.add(task);
     }
     return out;
@@ -209,7 +236,8 @@ class CrmTasksRemoteDataSource {
 
   /// One list row → [CrmTask]. Defensive on every field; a row without a
   /// `task_id` returns null (caller skips it).
-  static CrmTask? taskFromJson(Map<String, dynamic> json, {DateTime? now}) {
+  static CrmTask? taskFromJson(Map<String, dynamic> json,
+      {DateTime? now, Map<String, String> statusTypes = const {}}) {
     final id = _str(json['task_id']);
     if (id == null || id.isEmpty) return null;
 
@@ -219,6 +247,8 @@ class CrmTasksRemoteDataSource {
     UserDirectory.registerJson(assigned);
     final priority = json['priority'];
     final statusRaw = json['status'];
+    final statusLabel =
+        (statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw)) ?? '';
     final due = parseApiDate(json['due_date']);
 
     return CrmTask(
@@ -227,12 +257,16 @@ class CrmTasksRemoteDataSource {
       type: _str(json['task_type']) ?? '',
       leadId: relatedMap?['model'] == 'lead' ? _str(relatedMap?['id']) : null,
       status: crmTaskStatusKey(
-        name: statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw),
+        name: statusLabel,
+        // The row carries no `status_type`, so the catalog supplies it. Without
+        // it "Cancelled" folds to the `todo` default and a cancelled task reads
+        // as an open one.
+        type: statusTypes[statusLabel.toLowerCase()] ??
+            (statusRaw is Map ? _str(statusRaw['status_type']) : null),
       ),
       // Kept verbatim beside the folded key so the tabs and the card pill can
       // show the org's own lane name (see [CrmTask.statusName]).
-      statusName:
-          (statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw)) ?? '',
+      statusName: statusLabel,
       priority: priorityKey(priority is Map ? _str(priority['name']) : null),
       assignee: UserDirectory.mapUserId(
           assigned is Map ? _str(assigned['user_id']) : null),

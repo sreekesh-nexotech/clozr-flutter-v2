@@ -1,3 +1,5 @@
+import '../../infrastructure/data_sources/remote/followup_schema_remote_ds.dart';
+import '../../domain/entities/view_schema.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
@@ -126,3 +128,26 @@ int followupTabCount(List<Followup> all, String key) {
   if (key == 'all') return all.length;
   return all.where((f) => f.status == key).length;
 }
+
+/// Null in mock mode, which is what makes the schema resolve empty there.
+final followupSchemaRemoteDataSourceProvider =
+    Provider<FollowupSchemaRemoteDataSource?>((ref) {
+  if (!ApiConfig.apiEnabled) return null;
+  return FollowupSchemaRemoteDataSource(ref.watch(apiServiceProvider));
+});
+
+/// `GET /crm/tasks/schema/?view_type=mobile&is_followup=true` — the org's own
+/// card layout. Fetched once per org: it changes when an admin edits it, not
+/// when follow-ups change.
+final followupCardSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
+  final ds = ref.watch(followupSchemaRemoteDataSourceProvider);
+  return ds == null ? ViewSchema.empty : ds.fetchCardSchema();
+});
+
+/// Synchronous view — empty while in flight, so the list renders immediately
+/// with the built-in layout and adopts the org's one when it arrives rather
+/// than holding the rows behind a spinner.
+final followupCardSchemaProvider = Provider<ViewSchema>(
+  (ref) =>
+      ref.watch(followupCardSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+);

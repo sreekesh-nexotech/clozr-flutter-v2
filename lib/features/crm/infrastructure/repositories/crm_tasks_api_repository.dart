@@ -17,10 +17,13 @@ class CrmTasksApiRepository implements CrmTasksRepository {
 
   @override
   Future<List<CrmTask>> getTasks() async {
+    // Started first so it overlaps the row fetch; never throws (empty on
+    // failure), so it can be awaited on the offline path too.
+    final types = _remote.statusTypes();
     try {
       final rows = await _remote.fetchTaskRows();
       await AppCache.put(AppCache.crmCache, _cacheKey, rows);
-      return CrmTasksRemoteDataSource.mapRows(rows);
+      return CrmTasksRemoteDataSource.mapRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
         final cached = AppCache.get(AppCache.crmCache, _cacheKey);
@@ -29,7 +32,7 @@ class CrmTasksApiRepository implements CrmTasksRepository {
           return CrmTasksRemoteDataSource.mapRows([
             for (final row in data)
               if (row is Map) Map<String, dynamic>.from(row),
-          ]);
+          ], statusTypes: await types);
         }
       }
       rethrow;
@@ -39,10 +42,11 @@ class CrmTasksApiRepository implements CrmTasksRepository {
   @override
   Future<List<CrmTask>> getTasksForLead(String leadId) async {
     final key = '${_cacheKey}_lead_$leadId';
+    final types = _remote.statusTypes();
     try {
       final rows = await _remote.fetchTaskRowsForLead(leadId);
       await AppCache.put(AppCache.crmCache, key, rows);
-      return CrmTasksRemoteDataSource.mapRows(rows);
+      return CrmTasksRemoteDataSource.mapRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
         final data = AppCache.get(AppCache.crmCache, key)?.data;
@@ -50,7 +54,7 @@ class CrmTasksApiRepository implements CrmTasksRepository {
           return CrmTasksRemoteDataSource.mapRows([
             for (final row in data)
               if (row is Map) Map<String, dynamic>.from(row),
-          ]);
+          ], statusTypes: await types);
         }
       }
       rethrow;
