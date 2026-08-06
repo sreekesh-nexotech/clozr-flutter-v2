@@ -7,4 +7,15 @@ import '../entities/lead_file.dart';
 abstract class AttachmentsRepository {
   /// Files attached to [leadId], newest first.
   Future<List<LeadFile>> getFilesForLead(String leadId);
+
+  /// Uploads one picked file against [leadId] (`multipart/form-data`).
+  ///
+  /// Returns the stored attachment, or null when the response carries no
+  /// usable row (mock mode always returns null — nothing is persisted).
+  Future<LeadFile?> uploadFileForLead({
+    required String leadId,
+    required String path,
+    required String name,
+    String description,
+  });
 }

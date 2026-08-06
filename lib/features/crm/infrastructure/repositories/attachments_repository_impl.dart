@@ -14,4 +14,17 @@ class AttachmentsRepositoryImpl implements AttachmentsRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchFilesForLead(leadId);
   }
+
+  /// Mock mode has no CDN to upload to. Returning null keeps the caller honest
+  /// — it reports "nothing was stored" rather than claiming a file landed.
+  @override
+  Future<LeadFile?> uploadFileForLead({
+    required String leadId,
+    required String path,
+    required String name,
+    String description = '',
+  }) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return null;
+  }
 }

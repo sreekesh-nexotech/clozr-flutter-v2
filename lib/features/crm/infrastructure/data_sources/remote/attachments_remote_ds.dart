@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../../../core/config/api_config.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
@@ -36,6 +38,26 @@ class AttachmentsRemoteDataSource {
   /// Mapped file list for one lead (malformed rows are skipped, never fatal).
   Future<List<LeadFile>> fetchFilesForLead(String leadId) async =>
       mapRows(await fetchFileRowsForLead(leadId));
+
+  /// `POST /crm/attachments/` (multipart) — uploads one picked file against a
+  /// lead. `related_to`/`related_to_id` are **required** here (unlike on call
+  /// logs, where the link is optional).
+  Future<LeadFile?> uploadFileForLead({
+    required String leadId,
+    required String path,
+    required String name,
+    String description = '',
+  }) async {
+    final form = FormData.fromMap({
+      'related_to': 'lead',
+      'related_to_id': leadId,
+      'name': name,
+      if (description.isNotEmpty) 'description': description,
+      'file_upload': await MultipartFile.fromFile(path, filename: name),
+    });
+    final res = await _api.postForm(ApiEndpoints.attachments, form);
+    return res is Map<String, dynamic> ? fileFromJson(res) : null;
+  }
 
   // ── mapping (static so the repository and tests reuse it) ──
 

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/config/api_config.dart';
+import '../../core/models/note.dart';
 import '../mock/mock_users.dart';
 
 /// The list of workspace users offered in owner/assignee filters and pickers.
@@ -23,4 +24,17 @@ final rosterProvider = Provider<List<AppUser>>((ref) {
           ? 1
           : a.name.compareTo(b.name));
   return users;
+});
+
+/// The signed-in user as a notes byline — the composer avatar, and the author
+/// on a note you just wrote.
+///
+/// Reads `MockUsers['me']`, which the auth session overwrites with the real
+/// account on sign-in (`UserDirectory.register` from `_adoptUser`). That
+/// happens before any screen opens and does not depend on the roster fetch
+/// succeeding, so it holds even for a user who cannot list org members.
+/// In mock mode it stays the prototype user, which is correct there.
+final noteAuthorProvider = Provider<NoteAuthor>((ref) {
+  final me = MockUsers.of('me');
+  return NoteAuthor(initials: me.initials, name: me.name, color: me.color);
 });

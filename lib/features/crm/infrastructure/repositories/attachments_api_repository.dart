@@ -33,4 +33,22 @@ class AttachmentsApiRepository implements AttachmentsRepository {
       rethrow;
     }
   }
+
+  @override
+  Future<LeadFile?> uploadFileForLead({
+    required String leadId,
+    required String path,
+    required String name,
+    String description = '',
+  }) async {
+    final file = await _remote.uploadFileForLead(
+      leadId: leadId,
+      path: path,
+      name: name,
+      description: description,
+    );
+    // The lead's file list is now stale; drop it so the next read refetches.
+    await AppCache.remove(AppCache.crmCache, _cacheKey(leadId));
+    return file;
+  }
 }

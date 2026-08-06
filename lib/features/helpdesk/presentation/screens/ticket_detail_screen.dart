@@ -541,6 +541,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     final notes = ref.watch(ticketNotesProvider(t.id));
     final ctrl = ref.read(ticketNotesProvider(t.id).notifier);
     return NotesThread(
+      author: ref.watch(noteAuthorProvider),
       notes: notes,
       onAddNote: (body, atts) {
         ctrl.addNote(body, atts);

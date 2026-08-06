@@ -54,6 +54,10 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   /// The lead this quote is for — the API's one required field.
   Lead? _lead;
 
+  /// Whether the `?leadId=` prefill has been resolved. One-shot, so re-picking
+  /// the lead by hand is not undone on the next rebuild.
+  bool _prefilled = false;
+
   /// True while the create request is in flight, so the button can't be
   /// double-tapped into two quotes.
   bool _saving = false;
@@ -191,8 +195,32 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     return '$buf,$tail';
   }
 
+  /// Adopts the lead named in `?leadId=` (set when the form is opened from a
+  /// lead's Quotes tab) as the quote's lead.
+  ///
+  /// Runs in build rather than initState because the lead has to be resolved
+  /// from a provider that may still be loading — [_prefilled] makes it a
+  /// one-shot, so a later manual pick is never overwritten by a late arrival.
+  void _adoptRouteLead() {
+    if (_prefilled) return;
+    final leadId = GoRouterState.of(context).uri.queryParameters['leadId'] ?? '';
+    if (leadId.isEmpty) {
+      _prefilled = true; // nothing to wait for
+      return;
+    }
+    final lead = ref.watch(leadDetailProvider(leadId)).valueOrNull ??
+        ref.watch(leadByIdProvider(leadId));
+    if (lead == null) return; // still loading — try again next build
+    _prefilled = true;
+    // The first build is already under way; defer the state write past it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _lead = lead);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _adoptRouteLead();
     final products = ref.watch(productsProvider).valueOrNull ?? const <Product>[];
     final active = products.where((p) => p.active).toList();
     // The org's Quote layout. Empty until it loads (and in mock mode), which

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -101,6 +102,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                       _depsCard(task, waitingOn, allTasks, locked),
                     ],
                     NotesThread(
+                      author: ref.watch(noteAuthorProvider),
                       key: _notesKey,
                       notes: ref.watch(opsNotesProvider(task.id)),
                       onAddNote: (body, atts) => ref.read(opsNotesProvider(task.id).notifier).addNote(body, atts),

@@ -19,10 +19,11 @@ class NotesThread extends StatefulWidget {
     required this.notes,
     required this.onAddNote,
     required this.onAddReply,
-    this.author = const NoteAuthor(),
+    required this.author,
   });
 
   final List<NoteEntry> notes;
+  /// Who the composer is writing as — supply from `noteAuthorProvider`.
   final NoteAuthor author;
 
   /// Called when the user posts a new note with any pending attachments.

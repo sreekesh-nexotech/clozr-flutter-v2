@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../app/theme/app_colors.dart';
 
 /// A photo/file attached to a note (#13).
 ///
@@ -95,8 +94,20 @@ String _initials(String name) {
 
 /// The signed-in user, used as the note/reply author. Matches the prototype's
 /// "MV" Manoj Varma default.
+/// Who is writing — the composer avatar, and the byline on a note until the
+/// thread refetches and the server's `created_by` takes over.
+///
+/// Deliberately has **no defaults**. It used to default to a prototype user, so
+/// every notes thread in the app showed the same fake person's avatar and
+/// attributed everyone's notes to them. Requiring the fields means a caller
+/// cannot forget to say who is writing.
 class NoteAuthor {
-  const NoteAuthor({this.initials = 'MV', this.name = 'Manoj Varma', this.color = AppColors.navy});
+  const NoteAuthor({
+    required this.initials,
+    required this.name,
+    required this.color,
+  });
+
   final String initials;
   final String name;
   final Color color;

@@ -61,6 +61,9 @@ class FollowupsRemoteDataSource {
     if (desc != null && desc.isNotEmpty) body['description'] = desc;
     final iso = CrmTasksRemoteDataSource.isoDateOrNull(_str(fields['due_date']));
     if (iso != null) body['due_date'] = iso;
+    final time = CrmTasksRemoteDataSource.apiTimeOrNull(_str(fields['due_time']));
+    if (time != null) body['due_time'] = time;
+    body.addAll(CrmTasksRemoteDataSource.relatedTo(fields));
     final res = await _api.post(ApiEndpoints.crmTasks, body: body);
     return res is Map<String, dynamic> ? followupFromJson(res) : null;
   }

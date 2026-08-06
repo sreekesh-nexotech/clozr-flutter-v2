@@ -11,23 +11,32 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../domain/entities/followup.dart';
+import '../../domain/entities/lead.dart';
 import 'add_sheet_kit.dart';
 
 /// Add follow-up — a focused-but-faithful port of the prototype's `addFollowup`
 /// sheet. On submit the new follow-up is prepended to [followupDraftsProvider]
 /// so it appears immediately in the list, then a toast confirms.
-Future<void> showAddFollowupSheet(BuildContext context, WidgetRef ref) {
+///
+/// Pass [lead] when opening from a lead's Follow-ups tab: company and contact
+/// are prefilled from it, and the created follow-up carries `related_to=lead`
+/// so it comes back in that lead's scoped fetch.
+Future<void> showAddFollowupSheet(BuildContext context, WidgetRef ref,
+    {Lead? lead}) {
   return showClozrSheet<void>(
     context: context,
-    builder: (_) => _AddFollowupSheet(ref: ref),
+    builder: (_) => _AddFollowupSheet(ref: ref, lead: lead),
   );
 }
 
 const _fuKinds = ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site visit', 'Payment'];
 
 class _AddFollowupSheet extends StatefulWidget {
-  const _AddFollowupSheet({required this.ref});
+  const _AddFollowupSheet({required this.ref, this.lead});
   final WidgetRef ref;
+
+  /// The lead this follow-up is being scheduled against, when opened from one.
+  final Lead? lead;
 
   @override
   State<_AddFollowupSheet> createState() => _AddFollowupSheetState();
@@ -41,6 +50,18 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
   final _note = TextEditingController();
   String _kind = 'Call';
   bool _showErrors = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Prefilled, not locked — the lead's name is the likely contact, but the
+    // person you are actually following up with may be someone else there.
+    final lead = widget.lead;
+    if (lead != null) {
+      _contact.text = lead.name;
+      _company.text = lead.company ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -58,13 +79,17 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
       widget.ref.read(toastProvider.notifier).show('Enter a contact name');
       return;
     }
+    final lead = widget.lead;
     if (ApiConfig.apiEnabled) {
       try {
         await widget.ref.read(followupsRepositoryProvider).createFollowup({
           'title': _contact.text.trim(),
           'task_type': _kind,
           'due_date': _date.text.trim(),
+          'due_time': _time.text.trim(),
           'description': _note.text.trim(),
+          if (lead != null) 'related_to': 'lead',
+          if (lead != null) 'related_to_id': lead.id,
         });
       } on AppError catch (e) {
         widget.ref.read(toastProvider.notifier).show(e.message);
@@ -85,7 +110,7 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
       kind: _kind,
       contact: contact,
       custId: null,
-      leadId: null,
+      leadId: lead?.id,
       company: company.isEmpty ? contact : company,
       due: _date.text.trim().isEmpty ? '09 Jul 2026' : _date.text.trim(),
       time: _time.text.trim().isEmpty ? '10:00' : _time.text.trim(),
@@ -111,6 +136,10 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (widget.lead != null) ...[
+                  LinkedLeadField(lead: widget.lead!),
+                  SizedBox(height: 16.h),
+                ],
                 const SheetFieldLabel('Type'),
                 Wrap(
                   spacing: 8.w,

@@ -103,6 +103,9 @@ class ApiEndpoints {
   static const issueTypes = '/crm/issue-types/';
   static String issueReplies(String id) => '/crm/issues/$id/replies/';
 
+  // ── Access control: the audit trail behind every record's activity log ──
+  static const auditLogs = '/access-control/audit-logs/';
+
   // ── Management: members / roles / teams ──
   static const users = '/management/users/';
   static String user(String id) => '/management/users/$id/';

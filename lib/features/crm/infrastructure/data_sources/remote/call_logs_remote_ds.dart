@@ -63,6 +63,43 @@ class CallLogsRemoteDataSource {
         'related_to_id': leadId,
       });
 
+  /// `POST /crm/call-logs/` — records a call the user is logging by hand.
+  ///
+  /// `end_time` is derived from `start_time + duration` rather than collected:
+  /// the API rejects an `end_time` before its `start_time`, and two free-text
+  /// times are two chances to produce exactly that.
+  Future<void> createManualCall({
+    required String leadId,
+    required String fromNumber,
+    required String toNumber,
+    required bool incoming,
+    required bool isMissed,
+    Duration? duration,
+    DateTime? startTime,
+  }) {
+    final start = (startTime ?? DateTime.now()).toUtc();
+    final length = duration ?? Duration.zero;
+    return _api.post(ApiEndpoints.callLogs, body: {
+      'from_number': fromNumber,
+      'to_number': toNumber,
+      'type': incoming ? 'Incoming' : 'Outgoing',
+      'telephony_medium': 'Manual',
+      'is_missed': isMissed,
+      'duration': hhmmss(length),
+      'start_time': start.toIso8601String(),
+      'end_time': start.add(length).toIso8601String(),
+      'related_to': 'lead',
+      'related_to_id': leadId,
+    });
+  }
+
+  /// [Duration] → the `"HH:MM:SS"` text Django's `DurationField` expects.
+  static String hhmmss(Duration d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(d.inHours)}:${two(d.inMinutes.remainder(60))}:'
+        '${two(d.inSeconds.remainder(60))}';
+  }
+
   // ── mapping (static so the repository and tests reuse it) ──
 
   /// Maps rows and sorts them newest-first.

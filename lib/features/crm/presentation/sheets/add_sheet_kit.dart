@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../domain/entities/lead.dart';
 
 /// Shared building blocks for the CRM add sheets (Add customer / follow-up /
 /// task). Keeps the three focused-but-faithful forms consistent with the
@@ -21,6 +22,72 @@ String initialsOf(String name) {
 /// A short, session-unique id with the given [prefix] (e.g. `C`, `TL-`, `F`).
 String genId(String prefix) =>
     '$prefix${DateTime.now().millisecondsSinceEpoch.remainder(100000)}';
+
+/// The read-only "this is being raised against X" row shown at the top of a
+/// sheet opened from a lead's detail screen.
+///
+/// Deliberately not editable: the link comes from the screen you opened the
+/// sheet on, and letting it be changed here would invite creating a record
+/// against a lead you are not looking at.
+class LinkedLeadField extends StatelessWidget {
+  const LinkedLeadField({super.key, required this.lead});
+
+  final Lead lead;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = lead.company ?? lead.project;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SheetFieldLabel('Linked lead'),
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
+          decoration: BoxDecoration(
+            color: AppColors.bgChipGrey,
+            borderRadius: BorderRadius.circular(11.r),
+            border: Border.all(color: AppColors.borderCardSoft),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32.w,
+                height: 32.w,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(9.r)),
+                child: Text(lead.initials,
+                    style: AppText.custom(
+                        size: 11.5, weight: FontWeight.w700, color: AppColors.navy)),
+              ),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(lead.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(
+                            size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    if (subtitle.isNotEmpty) ...[
+                      SizedBox(height: 2.h),
+                      Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(
+                              size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// A field label (matches the add-sheet label style in the prototype).
 class SheetFieldLabel extends StatelessWidget {

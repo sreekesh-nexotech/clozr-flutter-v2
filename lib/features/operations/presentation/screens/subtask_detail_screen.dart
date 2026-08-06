@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -113,6 +114,7 @@ class SubtaskDetailScreen extends ConsumerWidget {
                     SizedBox(height: 14.h),
                     _partOfRow(context, task.subject),
                     NotesThread(
+                      author: ref.watch(noteAuthorProvider),
                       notes: ref.watch(subtaskNotesProvider(notesKey)),
                       onAddNote: (body, atts) => ref.read(subtaskNotesProvider(notesKey).notifier).addNote(body, atts),
                       onAddReply: (noteId, body) => ref.read(subtaskNotesProvider(notesKey).notifier).addReply(noteId, body),

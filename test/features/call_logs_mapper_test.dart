@@ -252,4 +252,110 @@ void main() {
       });
     });
   });
+
+  group('logging a call by hand (the Log call sheet)', () {
+    CallLogsRemoteDataSource dsWith(_CaptureAdapter adapter) {
+      final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
+        ..httpClientAdapter = adapter;
+      return CallLogsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+    }
+
+    test('sends direction, missed flag and duration', () async {
+      final adapter = _CaptureAdapter();
+      final start = DateTime.utc(2026, 8, 6, 9, 32);
+
+      await dsWith(adapter).createManualCall(
+        leadId: leadId,
+        fromNumber: '+911111111111',
+        toNumber: '+919999999999',
+        incoming: true,
+        isMissed: false,
+        duration: const Duration(minutes: 4, seconds: 12),
+        startTime: start,
+      );
+
+      final body = adapter.requests.single.data as Map<String, dynamic>;
+      expect(body['type'], 'Incoming');
+      expect(body['is_missed'], isFalse);
+      expect(body['duration'], '00:04:12');
+      expect(body['telephony_medium'], 'Manual');
+      expect(body['related_to'], 'lead');
+      expect(body['related_to_id'], leadId);
+    });
+
+    test('derives end_time from start + duration, never before start', () async {
+      final adapter = _CaptureAdapter();
+      final start = DateTime.utc(2026, 8, 6, 9, 32);
+
+      await dsWith(adapter).createManualCall(
+        leadId: leadId,
+        fromNumber: '+911111111111',
+        toNumber: '+919999999999',
+        incoming: false,
+        isMissed: false,
+        duration: const Duration(minutes: 4, seconds: 12),
+        startTime: start,
+      );
+
+      final body = adapter.requests.single.data as Map<String, dynamic>;
+      final startSent = DateTime.parse(body['start_time'] as String);
+      final endSent = DateTime.parse(body['end_time'] as String);
+      expect(endSent.isBefore(startSent), isFalse); // the API 400s on this
+      expect(endSent.difference(startSent), const Duration(minutes: 4, seconds: 12));
+    });
+
+    test('a missed call sends a zero duration', () async {
+      final adapter = _CaptureAdapter();
+
+      await dsWith(adapter).createManualCall(
+        leadId: leadId,
+        fromNumber: '+911111111111',
+        toNumber: '+919999999999',
+        incoming: true,
+        isMissed: true,
+        duration: Duration.zero,
+        startTime: DateTime.utc(2026, 8, 6, 9),
+      );
+
+      final body = adapter.requests.single.data as Map<String, dynamic>;
+      expect(body['is_missed'], isTrue);
+      expect(body['duration'], '00:00:00');
+    });
+
+    test('never sends call_summary — the API drops it silently', () async {
+      final adapter = _CaptureAdapter();
+
+      await dsWith(adapter).createManualCall(
+        leadId: leadId,
+        fromNumber: '+911111111111',
+        toNumber: '+919999999999',
+        incoming: false,
+        isMissed: false,
+      );
+
+      final body = adapter.requests.single.data as Map<String, dynamic>;
+      expect(body.containsKey('call_summary'), isFalse);
+    });
+  });
+
+  group('hhmmss', () {
+    test('pads every component to two digits', () {
+      expect(CallLogsRemoteDataSource.hhmmss(Duration.zero), '00:00:00');
+      expect(CallLogsRemoteDataSource.hhmmss(const Duration(seconds: 5)), '00:00:05');
+      expect(CallLogsRemoteDataSource.hhmmss(const Duration(minutes: 4, seconds: 12)),
+          '00:04:12');
+      expect(
+          CallLogsRemoteDataSource.hhmmss(
+              const Duration(hours: 1, minutes: 2, seconds: 3)),
+          '01:02:03');
+    });
+
+    test('round-trips through parseDuration', () {
+      const d = Duration(hours: 2, minutes: 7, seconds: 33);
+      expect(
+        CallLogsRemoteDataSource.parseDuration(CallLogsRemoteDataSource.hhmmss(d)),
+        d,
+      );
+    });
+  });
 }

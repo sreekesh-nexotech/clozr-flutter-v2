@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/models/note.dart';
 import 'ops_tasks_providers.dart';
@@ -8,9 +9,10 @@ import 'ops_tasks_providers.dart';
 /// append. Seeded once from the record's mock notes and kept in memory for the
 /// session (a real API-backed store slots in behind the same interface).
 class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
-  OpsNotesNotifier(super.seed);
+  OpsNotesNotifier(super.seed, this._me);
 
-  static const _me = NoteAuthor();
+  /// The signed-in user, so a note is bylined with whoever actually wrote it.
+  final NoteAuthor _me;
 
   void addNote(String body, List<NoteAttachment> attachments) {
     final entry = NoteEntry(
@@ -55,11 +57,11 @@ final opsNotesProvider =
       seed.add(_fromOpsNote(id, i, task.notes[i]));
     }
   }
-  return OpsNotesNotifier(seed);
+  return OpsNotesNotifier(seed, ref.watch(noteAuthorProvider));
 });
 
 /// Subtask-local notes, keyed by `"<taskId>#<index>"`. In-memory only.
 final subtaskNotesProvider =
     StateNotifierProvider.family<OpsNotesNotifier, List<NoteEntry>, String>((ref, key) {
-  return OpsNotesNotifier(<NoteEntry>[]);
+  return OpsNotesNotifier(<NoteEntry>[], ref.watch(noteAuthorProvider));
 });

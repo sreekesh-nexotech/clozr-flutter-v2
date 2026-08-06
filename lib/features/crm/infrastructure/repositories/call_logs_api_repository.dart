@@ -49,4 +49,26 @@ class CallLogsApiRepository implements CallLogsRepository {
     // offline does not show a history missing the call just placed.
     await AppCache.remove(AppCache.crmCache, _cacheKey(leadId));
   }
+
+  @override
+  Future<void> logManualCall({
+    required String leadId,
+    required String fromNumber,
+    required String toNumber,
+    required bool incoming,
+    required bool isMissed,
+    Duration? duration,
+    DateTime? startTime,
+  }) async {
+    await _remote.createManualCall(
+      leadId: leadId,
+      fromNumber: fromNumber,
+      toNumber: toNumber,
+      incoming: incoming,
+      isMissed: isMissed,
+      duration: duration,
+      startTime: startTime,
+    );
+    await AppCache.remove(AppCache.crmCache, _cacheKey(leadId));
+  }
 }

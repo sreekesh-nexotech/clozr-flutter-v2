@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../data/api/roster.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
@@ -19,12 +20,12 @@ import '../../../notes/domain/repositories/notes_repository.dart';
 /// live on the same `/crm/notes/` endpoint, tagged `related_to=issue`.
 class TicketNotesController extends StateNotifier<List<NoteEntry>> {
   /// Mock-mode: seed the prototype's fixed sample notes.
-  TicketNotesController(this.ticketId)
+  TicketNotesController(this.ticketId, this._me)
       : _repo = null,
         super(_seed(ticketId));
 
   /// API-mode: start empty, then load the ticket's real notes.
-  TicketNotesController.remote(NotesRepository repo, this.ticketId)
+  TicketNotesController.remote(NotesRepository repo, this.ticketId, this._me)
       : _repo = repo,
         super(const []) {
     _load();
@@ -33,8 +34,8 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
   final String ticketId;
   final NotesRepository? _repo;
 
-  /// The signed-in author — mirrors [NotesThread]'s default "MV" Manoj Varma.
-  static const _me = NoteAuthor();
+  /// The signed-in user, so a note is bylined with whoever actually wrote it.
+  final NoteAuthor _me;
 
   int _seq = 0;
 
@@ -161,9 +162,10 @@ final ticketNotesProvider =
     StateNotifierProvider.family<TicketNotesController, List<NoteEntry>, String>(
   (ref, ticketId) {
     if (ApiConfig.apiEnabled) {
-      return TicketNotesController.remote(ref.read(notesRepositoryProvider), ticketId);
+      return TicketNotesController.remote(
+          ref.read(notesRepositoryProvider), ticketId, ref.watch(noteAuthorProvider));
     }
-    return TicketNotesController(ticketId);
+    return TicketNotesController(ticketId, ref.watch(noteAuthorProvider));
   },
 );
 

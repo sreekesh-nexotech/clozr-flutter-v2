@@ -64,6 +64,17 @@ class _RecordingLogs implements CallLogsRepository {
   Future<List<CallLog>> getCallLogsForLead(String leadId) async => const [];
 
   @override
+  Future<void> logManualCall({
+    required String leadId,
+    required String fromNumber,
+    required String toNumber,
+    required bool incoming,
+    required bool isMissed,
+    Duration? duration,
+    DateTime? startTime,
+  }) async {}
+
+  @override
   Future<void> logOutgoingCall({
     required String leadId,
     required String fromNumber,

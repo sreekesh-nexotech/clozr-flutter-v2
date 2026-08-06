@@ -14,23 +14,31 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../domain/entities/lead.dart';
 import 'add_sheet_kit.dart';
 
 /// Add task — a focused-but-faithful port of the prototype's `addTask` sheet. On
 /// submit the new task is prepended to [crmTaskDraftsProvider] so it appears
 /// immediately in the list, then a toast confirms.
-Future<void> showAddTaskSheet(BuildContext context, WidgetRef ref) {
+///
+/// Pass [lead] when opening from a lead's Tasks tab: the sheet then shows the
+/// link, and the created task carries `related_to=lead` so it comes back in
+/// that lead's scoped fetch instead of floating unattached.
+Future<void> showAddTaskSheet(BuildContext context, WidgetRef ref, {Lead? lead}) {
   return showClozrSheet<void>(
     context: context,
-    builder: (_) => _AddTaskSheet(ref: ref),
+    builder: (_) => _AddTaskSheet(ref: ref, lead: lead),
   );
 }
 
 const _taskTypes = ['Task', 'Call', 'Meeting', 'Email', 'Deadline'];
 
 class _AddTaskSheet extends StatefulWidget {
-  const _AddTaskSheet({required this.ref});
+  const _AddTaskSheet({required this.ref, this.lead});
   final WidgetRef ref;
+
+  /// The lead this task is being raised against, when opened from one.
+  final Lead? lead;
 
   @override
   State<_AddTaskSheet> createState() => _AddTaskSheetState();
@@ -63,13 +71,17 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
       widget.ref.read(toastProvider.notifier).show('Enter a task title');
       return;
     }
+    final lead = widget.lead;
     if (ApiConfig.apiEnabled) {
       try {
         await widget.ref.read(crmTasksRepositoryProvider).createTask({
           'title': _title.text.trim(),
           'task_type': _type,
           'due_date': _due.text.trim(),
+          'due_time': _dueTime.text.trim(),
           'description': _desc.text.trim(),
+          if (lead != null) 'related_to': 'lead',
+          if (lead != null) 'related_to_id': lead.id,
         });
       } on AppError catch (e) {
         widget.ref.read(toastProvider.notifier).show(e.message);
@@ -92,7 +104,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
       id: genId('TL-'),
       title: _title.text.trim(),
       type: _type,
-      leadId: null,
+      leadId: lead?.id,
       status: _status,
       priority: _priority,
       assignee: _assignee,
@@ -175,6 +187,10 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (widget.lead != null) ...[
+                  LinkedLeadField(lead: widget.lead!),
+                  SizedBox(height: 14.h),
+                ],
                 AppTextField(
                   label: 'Task title',
                   required: true,

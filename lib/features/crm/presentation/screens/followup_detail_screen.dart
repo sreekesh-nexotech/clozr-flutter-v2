@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -193,12 +194,13 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                 _filesCard(ref),
                 SizedBox(height: 14.h),
                 NotesThread(
+                  author: ref.watch(noteAuthorProvider),
                   key: _notesKey,
                   notes: notes,
                   onAddNote: (body, atts) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, const NoteAuthor()),
+                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
                   onAddReply: (noteId, body) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, const NoteAuthor()),
+                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
                 ),
                 SizedBox(height: 14.h),
                 _activityCard(meta, owner),

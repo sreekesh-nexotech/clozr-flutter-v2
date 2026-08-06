@@ -62,8 +62,37 @@ class CrmTasksRemoteDataSource {
     if (desc != null && desc.isNotEmpty) body['description'] = desc;
     final iso = isoDateOrNull(_str(fields['due_date']));
     if (iso != null) body['due_date'] = iso;
+    final time = apiTimeOrNull(_str(fields['due_time']));
+    if (time != null) body['due_time'] = time;
+    body.addAll(relatedTo(fields));
     final res = await _api.post(ApiEndpoints.crmTasks, body: body);
     return res is Map<String, dynamic> ? taskFromJson(res) : null;
+  }
+
+  /// The generic-relation pair, or nothing.
+  ///
+  /// `related_to` and `related_to_id` are **both-or-neither** by contract, so a
+  /// half-populated pair is dropped rather than sent and rejected.
+  static Map<String, dynamic> relatedTo(Map<String, dynamic> fields) {
+    final model = _str(fields['related_to'])?.trim();
+    final id = _str(fields['related_to_id'])?.trim();
+    if (model == null || model.isEmpty || id == null || id.isEmpty) {
+      return const {};
+    }
+    return {'related_to': model, 'related_to_id': id};
+  }
+
+  /// Sheet time text → the `HH:MM` the API accepts. Unparseable → null (field
+  /// omitted on write rather than sent as junk).
+  static String? apiTimeOrNull(String? raw) {
+    final s = raw?.trim() ?? '';
+    if (s.isEmpty) return null;
+    final m = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(s);
+    if (m == null) return null;
+    final h = int.parse(m.group(1)!);
+    final min = int.parse(m.group(2)!);
+    if (h > 23 || min > 59) return null;
+    return '${h.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
   }
 
   /// Moves a task to the org status whose mapped UI key equals [uiStatusKey]

@@ -1,5 +1,8 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -24,7 +27,9 @@ import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/lead_call_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
+import '../../../../core/utils/relative_time.dart';
 import '../../application/leads_columns.dart';
+import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
@@ -33,12 +38,16 @@ import '../../domain/entities/call_log.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/followup.dart';
+import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_file.dart';
 import '../../domain/entities/quote.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
+import '../sheets/add_followup_sheet.dart';
+import '../sheets/add_task_sheet.dart';
+import '../sheets/log_call_sheet.dart';
 import 'crm_status_sheet.dart';
 
 /// Lead detail — profile card, lead-score/AI card, information card with
@@ -55,6 +64,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   int _tab = 0;
   bool _infoMore = false;
   bool _scoreInfo = false;
+
+  /// True while a file upload is in flight, so the CTA can report progress and
+  /// refuse a second batch on top of the first.
+  bool _uploading = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
   static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Quotes', 'Files'];
@@ -302,12 +315,13 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 _activityCard(lead),
                 SizedBox(height: 14.h),
                 NotesThread(
+                  author: ref.watch(noteAuthorProvider),
                   key: _notesKey,
                   notes: notes,
                   onAddNote: (body, atts) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, const NoteAuthor()),
+                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
                   onAddReply: (noteId, body) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, const NoteAuthor()),
+                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
                 ),
                 SizedBox(height: 14.h),
                 _activityLogCard(lead),
@@ -690,9 +704,83 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// The activity card's CTA — one create path per tab, each carrying the lead
+  /// so the new record comes back in this screen's own scoped fetch.
+  Future<void> _activityCta(Lead lead) async {
+    switch (_tab) {
+      case 0:
+        await showAddTaskSheet(context, ref, lead: lead);
+      case 1:
+        await showLogCallSheet(context, ref, lead: lead);
+      case 2:
+        await showAddFollowupSheet(context, ref, lead: lead);
+      case 3:
+        if (mounted) context.push('${Routes.addQuote}?leadId=${lead.id}');
+      default:
+        await _uploadFiles(lead);
+    }
+  }
+
+  /// Picks files off the device and posts them to this lead.
+  ///
+  /// Uploads run one at a time and stop at the first rejection — pushing the
+  /// remainder after a failure usually just repeats it, and a half-finished
+  /// batch is easier to reason about when the count is reported.
+  Future<void> _uploadFiles(Lead lead) async {
+    if (_uploading) return;
+    final toast = ref.read(toastProvider.notifier);
+
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: false, // paths only — a large file should not sit in memory
+    );
+    if (picked == null || !mounted) return; // cancelled
+
+    final files = [
+      for (final f in picked.files)
+        if (f.path != null) (path: f.path!, name: f.name),
+    ];
+    if (files.isEmpty) return;
+
+    if (!ApiConfig.apiEnabled) {
+      toast.show('Files upload once the app is connected to the API.');
+      return;
+    }
+
+    setState(() => _uploading = true);
+    final repo = ref.read(attachmentsRepositoryProvider);
+    var stored = 0;
+    String? failure;
+    for (final f in files) {
+      try {
+        final saved = await repo.uploadFileForLead(
+          leadId: lead.id,
+          path: f.path,
+          name: f.name,
+        );
+        if (saved != null) stored++;
+      } on AppError catch (e) {
+        failure = e.message;
+        break;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _uploading = false);
+
+    if (stored > 0) ref.invalidate(leadFilesProvider(lead.id));
+    if (failure != null) {
+      // Say what did land before what didn't, so a partial batch is not read
+      // as a total failure.
+      toast.show(stored == 0 ? failure : '$stored uploaded · $failure');
+    } else {
+      toast.show(stored == 1 ? 'File uploaded' : '$stored files uploaded');
+    }
+  }
+
   // ── Activity card (tabs) ──
   Widget _activityCard(Lead lead) {
-    final ctaLabels = ['Add task', 'Log call', 'Add follow-up', 'Create quote', 'Upload file'];
+    const ctaLabels = ['Add task', 'Log call', 'Add follow-up', 'Create quote', 'Upload file'];
+    final ctaLabel = _uploading && _tab == 4 ? 'Uploading…' : ctaLabels[_tab];
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -702,13 +790,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             children: [
               Expanded(child: Text('Lead activity', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
               GestureDetector(
-                onTap: () {
-                  if (_tab == 3) {
-                    context.push(Routes.addQuote);
-                  } else {
-                    ref.read(toastProvider.notifier).show(ctaLabels[_tab]);
-                  }
-                },
+                onTap: () => _activityCta(lead),
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(9.r), border: Border.all(color: const Color(0xFFE6E7EA))),
@@ -717,7 +799,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     children: [
                       Icon(_tab >= 3 ? (_tab == 3 ? PhosphorIconsRegular.fileText : PhosphorIconsRegular.uploadSimple) : PhosphorIconsBold.plus, size: 13.sp, color: AppColors.textSecondary),
                       SizedBox(width: 6.w),
-                      Text(ctaLabels[_tab], style: AppText.bodyStrong()),
+                      Text(ctaLabel, style: AppText.bodyStrong()),
                     ],
                   ),
                 ),
@@ -1071,14 +1153,38 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// The row styling for one kind of audit event.
+  static ActivityItem _activityRow(AuditEntry e) {
+    final (icon, tone, bg) = switch (e.kind) {
+      AuditEventKind.created =>
+        (PhosphorIconsRegular.userPlus, AppColors.textMuted2, AppColors.bgChipGrey),
+      AuditEventKind.statusChanged =>
+        (PhosphorIconsRegular.flag, AppColors.blueBright, AppColors.tintBlue),
+      AuditEventKind.noteAdded =>
+        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
+      AuditEventKind.childAdded =>
+        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
+      AuditEventKind.deleted =>
+        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
+      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+    };
+    return ActivityItem(
+      icon: icon,
+      tone: tone,
+      bg: bg,
+      title: e.title,
+      sub: e.subtitle,
+      time: relativeTime(e.at),
+    );
+  }
+
   Widget _activityLogCard(Lead lead) {
-    final owner = MockUsers.of(lead.owner);
-    final items = <ActivityItem>[
-      ActivityItem(icon: PhosphorIconsRegular.phone, tone: AppColors.success, bg: AppColors.tintGreen, title: 'Call logged', sub: 'Discussed scope and timeline with ${lead.name.split(' ').first}', time: 'Today · 9:32 AM'),
-      ActivityItem(icon: PhosphorIconsRegular.paperPlaneTilt, tone: AppColors.blueBright, bg: AppColors.tintBlue, title: 'Quotation sent', sub: 'Shared estimate for ${lead.project}', time: 'Yesterday · 4:15 PM'),
-      const ActivityItem(icon: PhosphorIconsRegular.mapPin, tone: AppColors.warningDeep, bg: AppColors.tintAmber, title: 'Site visit scheduled', sub: 'Measurement visit planned by Anjana Menon', time: '2 days ago'),
-      ActivityItem(icon: PhosphorIconsRegular.userPlus, tone: AppColors.textMuted2, bg: AppColors.bgChipGrey, title: 'Lead created', sub: 'Source: ${lead.source} · assigned to ${owner.name}', time: '5 days ago'),
-    ];
+    // The record's real audit trail. Empty in mock mode, on failure, and for a
+    // user without `view_audit_log` — in which case the card is not rendered at
+    // all rather than showing an invented history.
+    final entries = ref.watch(leadActivityLogProvider(lead.id)).valueOrNull ?? const [];
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final items = [for (final e in entries) _activityRow(e)];
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),

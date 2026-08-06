@@ -22,4 +22,19 @@ class CallLogsRepositoryImpl implements CallLogsRepository {
     required String fromNumber,
     required String toNumber,
   }) async {}
+
+  /// Likewise a no-op — the Log call sheet still closes and confirms, it just
+  /// has nowhere to persist to.
+  @override
+  Future<void> logManualCall({
+    required String leadId,
+    required String fromNumber,
+    required String toNumber,
+    required bool incoming,
+    required bool isMissed,
+    Duration? duration,
+    DateTime? startTime,
+  }) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+  }
 }

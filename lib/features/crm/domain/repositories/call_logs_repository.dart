@@ -22,4 +22,21 @@ abstract class CallLogsRepository {
     required String fromNumber,
     required String toNumber,
   });
+
+  /// Records a call that already took place, from the Log call sheet — the
+  /// manual counterpart to [logOutgoingCall], which logs a call the app just
+  /// placed.
+  ///
+  /// There is deliberately no summary/notes parameter: `call_summary` is
+  /// server-set from transcription, and the API **silently drops** it on
+  /// create rather than rejecting it. Notes about a call belong on a note.
+  Future<void> logManualCall({
+    required String leadId,
+    required String fromNumber,
+    required String toNumber,
+    required bool incoming,
+    required bool isMissed,
+    Duration? duration,
+    DateTime? startTime,
+  });
 }
