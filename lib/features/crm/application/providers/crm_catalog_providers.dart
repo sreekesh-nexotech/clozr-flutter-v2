@@ -74,6 +74,27 @@ final teamOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(teamCatalogProvider).valueOrNull ?? const [],
 );
 
+/// Completes once **every** option catalog the Leads filter drawer needs has
+/// resolved.
+///
+/// Two jobs. Watching it from the Leads screen starts all four fetches when the
+/// screen mounts rather than when the drawer opens — the catalogs are only
+/// referenced by the filter spec, so without this they would not even begin
+/// loading until the user taps Filter. And awaiting it before building the
+/// drawer spec removes the ambiguity in an empty catalog: once this completes,
+/// empty means *the org has none*, never *it has not arrived*.
+///
+/// Never fails: the catalog fetches turn errors into empty lists by design, so
+/// this resolves even with the backend down.
+final leadFilterCatalogsProvider = FutureProvider<void>((ref) async {
+  await Future.wait([
+    ref.watch(leadStatusCatalogProvider.future),
+    ref.watch(leadSourceCatalogProvider.future),
+    ref.watch(productCatalogProvider.future),
+    ref.watch(teamCatalogProvider.future),
+  ]);
+});
+
 /// The dot/pill colour for an org stage: the admin's own `color` when set,
 /// else the built-in colour of the bucket the stage maps into — so a stage
 /// created without a colour still reads as won/lost/junk rather than blank.

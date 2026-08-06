@@ -80,6 +80,7 @@ FilterSpec buildLeadsFilterSpec(
   List<CatalogOption> sourceCatalog = const [],
   List<CatalogOption> productCatalog = const [],
   List<CatalogOption> teamCatalog = const [],
+  List<String> fallbackTeams = const [],
 }) {
   final sourceNames = sourceCatalog.isNotEmpty
       ? [for (final s in sourceCatalog) s.name]
@@ -99,10 +100,12 @@ FilterSpec buildLeadsFilterSpec(
   ];
   // Option ids are `team_id` when the catalog loaded — `Lead.teamValues` offers
   // the id as well as the name, so the join holds whichever form the lead row
-  // carried. Mock mode keeps deriving team names from the prototype roster.
+  // carried. [fallbackTeams] is the prototype roster's teams, and is supplied
+  // in mock mode only: an org with no teams must show an empty section, never
+  // invented ones.
   final teams = teamCatalog.isNotEmpty
       ? [for (final t in teamCatalog) FilterOption(id: t.id, label: t.name)]
-      : _allTeams().map((t) => FilterOption(id: t, label: t)).toList();
+      : [for (final t in fallbackTeams) FilterOption(id: t, label: t)];
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];

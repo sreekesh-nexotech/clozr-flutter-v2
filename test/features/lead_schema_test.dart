@@ -186,7 +186,7 @@ void main() {
           ),
         );
 
-      test('booleans, dates, lists and whole decimals', () {
+    test('booleans, dates, lists and whole decimals', () {
       expect(textFor(true, 'boolean'), 'Yes');
       expect(textFor(false, 'boolean'), 'No');
       expect(textFor('2026-03-15T10:00:00Z', 'date'), '15 Mar 2026');
