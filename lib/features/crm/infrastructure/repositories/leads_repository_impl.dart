@@ -27,6 +27,17 @@ class LeadsRepositoryImpl implements LeadsRepository {
     return mineOnly ? leads.where((l) => l.isMine).toList() : leads;
   }
 
+  /// Mock mode has one seed list and no per-view trimming, so the "record" is
+  /// simply the matching seed row — already as complete as it gets.
+  @override
+  Future<Lead?> getLead(String id) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    for (final lead in _local.fetchLeads()) {
+      if (lead.id == id) return lead;
+    }
+    return null;
+  }
+
   /// Local echo — mock mode has no backend, so the "created" lead is built
   /// from the submitted fields (never persisted; mock behavior unchanged).
   @override

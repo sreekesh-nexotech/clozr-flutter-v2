@@ -124,9 +124,26 @@ final leadsUnfilteredQueryProvider = Provider<LeadListQuery>(
   (ref) => LeadListQuery(mineOnly: !ref.watch(leadTeamAllProvider)),
 );
 
-/// Look up a single lead by id (used by the detail screen).
+/// One lead from the **record** endpoint — the detail screen's source.
+///
+/// A lead found in the list is not good enough here: the list and record
+/// endpoints are trimmed to different field configs, so the list row has no
+/// `lead_owner`, `email`, `mobile_no`, `whatsapp_no` or `territory` at all. Only
+/// this call returns them.
+final leadDetailProvider = FutureProvider.family<Lead?, String>(
+  (ref, id) => ref.watch(leadsRepositoryProvider).getLead(id),
+);
+
+/// The already-loaded list row for a lead, if there is one — the seed the
+/// detail screen shows while [leadDetailProvider] is in flight, so opening a
+/// lead paints instantly instead of flashing a skeleton.
+///
+/// Reads the **currently displayed** scope rather than the org-wide list on
+/// purpose: that is the list the user just tapped through, so it is already in
+/// memory. Watching the org-wide one would fire a second full list fetch just
+/// to populate a placeholder.
 final leadByIdProvider = Provider.family<Lead?, String>((ref, id) {
-  final leads = ref.watch(leadsProvider).valueOrNull;
+  final leads = ref.watch(leadsListProvider).valueOrNull;
   if (leads == null) return null;
   for (final l in leads) {
     if (l.id == id) return l;

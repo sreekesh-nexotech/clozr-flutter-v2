@@ -57,6 +57,29 @@ class LeadsApiRepository implements LeadsRepository {
     }
   }
 
+  /// `GET /crm/leads/{id}/` — the record, trimmed to the org's **detail** field
+  /// config. Cached per id so an opened lead still reads offline.
+  @override
+  Future<Lead?> getLead(String id) async {
+    final key = 'lead_$id';
+    final types = _remote.statusTypes();
+    try {
+      final row = await _remote.fetchLeadRow(id);
+      if (row == null) return null;
+      await AppCache.put(AppCache.crmCache, key, row);
+      return LeadsRemoteDataSource.mapLead(row, statusTypes: await types);
+    } on AppError catch (e) {
+      if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
+        rethrow;
+      }
+      final cached = AppCache.get(AppCache.crmCache, key)?.data;
+      if (cached is Map<String, dynamic>) {
+        return LeadsRemoteDataSource.mapLead(cached, statusTypes: await types);
+      }
+      rethrow;
+    }
+  }
+
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async {
     final lead = await _remote.createLead(fields);

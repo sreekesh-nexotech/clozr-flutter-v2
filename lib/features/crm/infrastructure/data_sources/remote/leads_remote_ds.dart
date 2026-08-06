@@ -114,13 +114,23 @@ class LeadsRemoteDataSource {
     return mapLeadRows(rows, statusTypes: await types);
   }
 
+  /// The raw record row for one lead. Exposed separately from [fetchLead] so
+  /// the repository can cache the JSON before mapping, as it does for the list.
+  ///
+  /// `GET /crm/leads/{id}/` resolves to the org's **detail** field config, so
+  /// this row carries fields the list rows do not have at all — `lead_owner`,
+  /// `email`, `mobile_no`, `whatsapp_no`, `territory`, `meta_qa`. That is the
+  /// whole reason the detail screen cannot just reuse a row from the list.
+  Future<Map<String, dynamic>?> fetchLeadRow(String id) async {
+    final body = await _api.get(ApiEndpoints.lead(id));
+    return body is Map<String, dynamic> ? body : null;
+  }
+
   /// Detail fetch — same mapper; detail rows simply carry more contact fields.
   Future<Lead?> fetchLead(String id) async {
     final types = statusTypes();
-    final body = await _api.get(ApiEndpoints.lead(id));
-    return body is Map<String, dynamic>
-        ? mapLead(body, statusTypes: await types)
-        : null;
+    final row = await fetchLeadRow(id);
+    return row == null ? null : mapLead(row, statusTypes: await types);
   }
 
   /// Creates a lead from API-shaped form fields; only non-empty values are

@@ -106,25 +106,30 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final async = ref.watch(leadsProvider);
-    return async.when(
-      loading: () => _stateScaffold(const DetailSkeleton()),
-      error: (e, _) => _stateScaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(leadsProvider)),
-      ),
-      data: (_) => _buildLead(context, id),
-    );
-  }
+    final record = ref.watch(leadDetailProvider(id));
 
-  Widget _buildLead(BuildContext context, String id) {
-    final lead = ref.watch(leadByIdProvider(id));
-    if (lead == null) {
-      return _stateScaffold(const EmptyState(
-        icon: PhosphorIconsRegular.magnifyingGlass,
-        title: 'Lead not found',
-        body: 'This lead may have been removed or you no longer have access to it.',
+    // The record is authoritative — it is the only source carrying the owner,
+    // email, mobile, WhatsApp and territory. The list row stands in until it
+    // lands so the page paints straight away rather than flashing a skeleton.
+    final lead = record.valueOrNull ?? ref.watch(leadByIdProvider(id));
+    if (lead != null) return _buildLead(context, lead);
+
+    if (record.isLoading) return _stateScaffold(const DetailSkeleton());
+    if (record.hasError) {
+      return _stateScaffold(ErrorState.forError(
+        crmAppError(record.error!),
+        onRetry: () => ref.invalidate(leadDetailProvider(id)),
       ));
     }
+    // Loaded, and the server has no such lead for this caller.
+    return _stateScaffold(const EmptyState(
+      icon: PhosphorIconsRegular.magnifyingGlass,
+      title: 'Lead not found',
+      body: 'This lead may have been removed or you no longer have access to it.',
+    ));
+  }
+
+  Widget _buildLead(BuildContext context, Lead lead) {
 
     final meta = StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
     // "Converted" is derived from the lead itself (won deals are locked from

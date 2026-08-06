@@ -17,6 +17,16 @@ abstract class LeadsRepository {
     Map<String, dynamic> filters = const {},
   });
 
+  /// One lead by id, from the **record** endpoint.
+  ///
+  /// Not the same data as finding the lead in [getLeads]: the two endpoints are
+  /// trimmed to different field configs, so the record carries fields the list
+  /// omits entirely (`lead_owner`, `email`, `mobile_no`, `whatsapp_no`,
+  /// `territory`). The detail screen needs this one.
+  ///
+  /// Returns null when no such lead is visible to the caller.
+  Future<Lead?> getLead(String id);
+
   /// Creates a lead from API-shaped form fields (`lead_name`,
   /// `organization_name`, `email`, `phone`, `purpose`). Returns the created
   /// lead, or null when the backend response shape is unexpected.
