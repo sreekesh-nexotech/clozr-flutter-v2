@@ -6,6 +6,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:clozrapp/features/crm/application/providers/crm_catalog_providers.dart';
+import 'package:clozrapp/features/crm/application/providers/followups_providers.dart';
 import 'package:clozrapp/features/crm/domain/entities/crm_catalog.dart';
 import 'package:clozrapp/features/crm/domain/entities/followup.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/followups_remote_ds.dart';
@@ -95,6 +96,62 @@ void main() {
       });
 
       expect(fu!.statusName, isEmpty);
+    });
+  });
+
+  group('an optimistic status change keeps what the screen renders', () {
+    test('carries the org name, so the pill does not drop to a bucket', () {
+      const o = FollowupStatusOverride(key: 'done', name: 'Completed');
+      final updated = followupWithStatusForTest(
+          _fu(statusName: 'In Progress', status: 'due'), o);
+
+      expect(updated.statusName, 'Completed');
+      expect(updated.status, 'done');
+      expect(followupStatusMeta(updated, _statuses).label, 'Completed');
+    });
+
+    test('preserves priority — the card shows it and it is not being changed',
+        () {
+      const o = FollowupStatusOverride(key: 'done', name: 'Completed');
+      final before = Followup(
+        id: 'F1',
+        kind: 'Call',
+        contact: 'Ishaan',
+        custId: null,
+        leadId: 'L1',
+        company: 'DataForge',
+        due: '09 Jul 2026',
+        time: '10:00',
+        status: 'due',
+        statusName: 'Open',
+        priority: 'high',
+        owner: 'me',
+        agenda: 'Follow-up',
+      );
+
+      expect(followupWithStatusForTest(before, o).priority, 'high');
+    });
+
+    test('an empty name leaves the row’s own name alone (mock mode)', () {
+      const o = FollowupStatusOverride(key: 'done');
+      final updated = followupWithStatusForTest(_fu(statusName: 'Open'), o);
+
+      expect(updated.statusName, 'Open');
+      expect(updated.status, 'done');
+    });
+  });
+
+  group('resolving the lane an optimistic change lands on', () {
+    test('done picks the completed lane, not the first one', () {
+      expect(followupLaneNameFor(_statuses, 'done'), 'Completed');
+    });
+
+    test('reopening picks an open lane', () {
+      expect(followupLaneNameFor(_statuses, 'due'), 'Open');
+    });
+
+    test('no catalog yields no name, so the row keeps its own', () {
+      expect(followupLaneNameFor(const [], 'done'), isEmpty);
     });
   });
 }

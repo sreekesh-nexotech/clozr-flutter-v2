@@ -10,6 +10,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../core/models/note.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
@@ -80,7 +81,14 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// lands. Mock mode is unchanged (optimistic + success toast).
   Future<void> _setStatus(WidgetRef ref, String id, String status, String successMessage) async {
     final prev = ref.read(followupStatusOverrideProvider);
-    ref.read(followupStatusOverrideProvider.notifier).state = {...prev, id: status};
+    final lanes = ref.read(taskStatusOptionsProvider);
+    ref.read(followupStatusOverrideProvider.notifier).state = {
+      ...prev,
+      id: FollowupStatusOverride(
+        key: status,
+        name: followupLaneNameFor(lanes, status),
+      ),
+    };
     if (ApiConfig.apiEnabled) {
       try {
         await ref.read(followupsRepositoryProvider).setFollowupDone(id, status == 'done');
@@ -236,11 +244,36 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     );
     if (picked == null || picked.isEmpty || !mounted) return;
 
+    final lane = lanes.firstWhere((l) => l.id == picked.first);
+    // Show the change now. The write is awaited below and rolled back if it
+    // fails; without this the page sat on the old status until a refetch of the
+    // whole follow-up list came back — which is what made an update look like
+    // it had not applied.
+    final prev = ref.read(followupStatusOverrideProvider);
+    ref.read(followupStatusOverrideProvider.notifier).state = {
+      ...prev,
+      fu.id: FollowupStatusOverride(
+        key: crmTaskStatusKey(name: lane.name, type: lane.statusType) == 'done'
+            ? 'done'
+            // Completing does not change the due date, so a reopened follow-up
+            // returns to whichever side of today it was already on.
+            : (fu.status == 'overdue' ? 'overdue' : 'due'),
+        name: lane.name,
+      ),
+    };
+
     try {
       await ref
           .read(crmTasksRepositoryProvider)
           .updateTask(fu.id, {'status_id': picked.first});
     } on AppError catch (e) {
+      final rolled = {...ref.read(followupStatusOverrideProvider)};
+      if (prev.containsKey(fu.id)) {
+        rolled[fu.id] = prev[fu.id]!;
+      } else {
+        rolled.remove(fu.id);
+      }
+      ref.read(followupStatusOverrideProvider.notifier).state = rolled;
       // An org can require a note before a follow-up may be completed; the
       // server says so, and the status stays put.
       if (mounted) ref.read(toastProvider.notifier).show(e.message);
@@ -248,8 +281,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     }
     if (!mounted) return;
     _refreshAfterWrite(fu);
-    final name = lanes.firstWhere((l) => l.id == picked.first).name;
-    ref.read(toastProvider.notifier).show('Status set to $name');
+    ref.read(toastProvider.notifier).show('Status set to ${lane.name}');
   }
 
   /// Drops every list holding a copy of this follow-up.
@@ -258,7 +290,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// tick, so it picks up this change — and any other the app makes — without
   /// being told about each one.
   void _refreshAfterWrite(Followup fu) {
-    ref.invalidate(followupsProvider);
+    refreshFollowups(ref);
     ref.invalidate(taskRowProvider(fu.id));
     final leadId = fu.leadId;
     if (leadId != null) ref.invalidate(leadFollowupsProvider(leadId));
@@ -283,7 +315,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     return async.when(
       loading: () => _stateScaffold(const DetailSkeleton()),
       error: (e, _) => _stateScaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(followupsProvider)),
+        ErrorState.forError(crmAppError(e), onRetry: () => refreshFollowups(ref)),
       ),
       data: (_) => _buildFollowup(context, id),
     );

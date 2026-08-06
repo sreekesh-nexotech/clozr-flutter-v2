@@ -58,7 +58,7 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
       // log refreshes itself off the write tick.
       ref.invalidate(taskRowProvider(id));
       if (widget.isFollowup) {
-        ref.invalidate(followupsProvider);
+        refreshFollowups(ref);
         ref.invalidate(leadFollowupsProvider);
       } else {
         ref.invalidate(crmTasksProvider);

@@ -116,7 +116,7 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
         widget.ref.read(toastProvider.notifier).show(e.message);
         return;
       }
-      widget.ref.invalidate(followupsProvider);
+      refreshFollowups(widget.ref);
       // Every lead's Follow-ups tab reads its own scoped fetch, so the org-wide
       // list alone going stale is not enough to refresh them.
       widget.ref.invalidate(leadFollowupsProvider);

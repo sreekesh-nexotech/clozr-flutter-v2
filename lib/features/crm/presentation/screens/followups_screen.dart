@@ -125,7 +125,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
         Expanded(
           child: AsyncStateView<List<Followup>>(
             value: async,
-            onRetry: () => ref.invalidate(followupsProvider),
+            onRetry: () => refreshFollowups(ref),
             data: (_) {
               final visible = ref.watch(visibleFollowupsProvider);
               if (visible.isEmpty) {
@@ -174,7 +174,16 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     final done = f.status == 'done';
     final newStatus = done ? 'due' : 'done';
     final prev = ref.read(followupStatusOverrideProvider);
-    ref.read(followupStatusOverrideProvider.notifier).state = {...prev, f.id: newStatus};
+    // Carry the org's own status name alongside the bucket, so the pill keeps
+    // reading "Completed" rather than dropping to a built-in word.
+    final lanes = ref.read(taskStatusOptionsProvider);
+    ref.read(followupStatusOverrideProvider.notifier).state = {
+      ...prev,
+      f.id: FollowupStatusOverride(
+        key: newStatus,
+        name: followupLaneNameFor(lanes, newStatus),
+      ),
+    };
     if (ApiConfig.apiEnabled) {
       try {
         await ref.read(followupsRepositoryProvider).setFollowupDone(f.id, !done);

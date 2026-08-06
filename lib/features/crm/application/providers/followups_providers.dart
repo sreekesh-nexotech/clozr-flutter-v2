@@ -5,6 +5,8 @@ import '../../../../data/api/user_directory.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../data/api/status_keys.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/followups_repository.dart';
@@ -89,6 +91,19 @@ final followupsProvider = FutureProvider<List<Followup>>(
   ),
 );
 
+/// Refetches the follow-ups list. **Use this after any write.**
+///
+/// Invalidating [followupsProvider] on its own does nothing: it is a thin
+/// wrapper that awaits `followupsScopedProvider(query).future`, and that family
+/// entry stays cached — the wrapper re-runs, reads the same already-completed
+/// future, and no request is made. The scoped family is what has to be dropped,
+/// which is easy to miss because the wrapper is the provider every screen
+/// watches.
+void refreshFollowups(WidgetRef ref) {
+  ref.invalidate(followupsScopedProvider);
+  ref.invalidate(followupsProvider);
+}
+
 /// The follow-ups linked to one lead — the Follow-ups tab on the lead detail
 /// screen. Keyed by lead id: `GET /crm/tasks/?related_to=lead&
 /// related_to_id=<lead_id>&is_followup=true`.
@@ -118,8 +133,33 @@ final followupDraftsProvider = StateProvider<List<Followup>>((ref) => const []);
 /// Existing records come from a read-only [followupsProvider], so a status
 /// change (e.g. → done) has nowhere else to persist; it is layered on here and
 /// picked up by both the list and the detail via [followupsAllProvider].
+/// A status change applied locally while its write is in flight.
+///
+/// Carries **both** halves because the screen groups by one and shows the
+/// other: [key] is the folded bucket the tabs and the date logic use, [name] is
+/// the org's own status ("In Progress") that the pill renders. Storing only the
+/// bucket — as this used to — meant an optimistic change lost the org name and
+/// the pill fell back to "Upcoming".
+@immutable
+class FollowupStatusOverride {
+  const FollowupStatusOverride({required this.key, this.name = ''});
+
+  /// `overdue` | `due` | `done`.
+  final String key;
+
+  /// The org's status name, empty in mock mode (which has no catalog).
+  final String name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FollowupStatusOverride && other.key == key && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(key, name);
+}
+
 final followupStatusOverrideProvider =
-    StateProvider<Map<String, String>>((ref) => const {});
+    StateProvider<Map<String, FollowupStatusOverride>>((ref) => const {});
 
 /// The full follow-up set: session-added drafts first, then the repo list, with
 /// any session status overrides applied.
@@ -131,14 +171,43 @@ final followupsAllProvider = Provider<List<Followup>>((ref) {
   if (overrides.isEmpty) return merged;
   return [
     for (final f in merged)
-      (overrides[f.id] != null && overrides[f.id] != f.status)
+      _overrideApplies(overrides[f.id], f)
           ? _followupWithStatus(f, overrides[f.id]!)
           : f,
   ];
 });
 
+/// The org lane whose folded bucket is [bucket], by name.
+///
+/// An optimistic change knows which bucket it wants (`done`, `due`) but the
+/// pill needs the org's word for it. Empty when no lane folds that way — mock
+/// mode, or a catalog that has not loaded — which the override treats as "keep
+/// whatever name the row already had".
+String followupLaneNameFor(List<CatalogOption> lanes, String bucket) {
+  for (final l in lanes) {
+    final folded = crmTaskStatusKey(name: l.name, type: l.statusType);
+    if (bucket == 'done' ? folded == 'done' : folded != 'done') return l.name;
+  }
+  return '';
+}
+
+/// Whether [o] would actually change [f] — no point rebuilding otherwise.
+bool _overrideApplies(FollowupStatusOverride? o, Followup f) =>
+    o != null && (o.key != f.status || (o.name.isNotEmpty && o.name != f.statusName));
+
+/// [_followupWithStatus], exposed for tests — the rebuild is where an
+/// optimistic change silently lost fields, so it is worth pinning directly.
+@visibleForTesting
+Followup followupWithStatusForTest(Followup f, FollowupStatusOverride o) =>
+    _followupWithStatus(f, o);
+
 /// Rebuilds a [Followup] with a new status (the entity has no `copyWith`).
-Followup _followupWithStatus(Followup f, String status) => Followup(
+///
+/// [Followup.statusName] and [Followup.priority] move with it. Dropping them —
+/// as this used to — meant an optimistically-changed follow-up lost the org's
+/// status name (so its pill fell back to a built-in bucket and its tab misfiled
+/// it) and lost its priority from the card.
+Followup _followupWithStatus(Followup f, FollowupStatusOverride o) => Followup(
       id: f.id,
       kind: f.kind,
       contact: f.contact,
@@ -147,7 +216,9 @@ Followup _followupWithStatus(Followup f, String status) => Followup(
       company: f.company,
       due: f.due,
       time: f.time,
-      status: status,
+      status: o.key,
+      statusName: o.name.isNotEmpty ? o.name : f.statusName,
+      priority: f.priority,
       owner: f.owner,
       agenda: f.agenda,
     );
