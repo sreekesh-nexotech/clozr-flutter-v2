@@ -14,10 +14,10 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
-import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/leads_filter_spec.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
 import '../components/lead_card.dart';
@@ -66,10 +66,11 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     final filterCount = ref.watch(leadFiltersProvider).activeCount;
 
     final tabBase = ref.watch(leadBaseProvider);
-    final tabDefs = <(String, String?)>[
-      ('all', null),
-      for (final k in StatusMeta$.leadAll) (k, k),
-    ];
+    // The org's own pipeline stages when `/crm/lead-statuses/` has loaded,
+    // otherwise the built-in vocabulary. Name and dot colour both come from
+    // the catalog, so the row looks unchanged but reads the org's stages.
+    final tabDefs = ref.watch(leadTabsProvider);
+    final statuses = ref.watch(leadStatusesProvider);
 
     return Column(
       children: [
@@ -104,12 +105,12 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
               height: 40.h,
               child: TabChipRow(
                 children: [
-                  for (final (k, dotKey) in tabDefs)
+                  for (final t in tabDefs)
                     TabChip(
-                      label: '${_label(k)} (${leadTabCount(tabBase, k)})',
-                      active: tab == k,
-                      dotColor: dotKey == null ? null : StatusMeta$.lead[dotKey]!.color,
-                      onTap: () => ref.read(leadTabProvider.notifier).state = k,
+                      label: '${t.label} (${leadTabCount(tabBase, t.id)})',
+                      active: tab == t.id,
+                      dotColor: t.color,
+                      onTap: () => ref.read(leadTabProvider.notifier).state = t.id,
                     ),
                 ],
               ),
@@ -147,6 +148,9 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
                   final lead = visible[i];
                   return LeadCard(
                     lead: lead,
+                    // Resolved here rather than inside the card so the pill and
+                    // the tab dot above it always agree on name and colour.
+                    status: leadStatusMeta(lead, statuses),
                     onTap: () => context.push('${Routes.leadDetail}?id=${lead.id}'),
                     onCall: () => ref.read(toastProvider.notifier).show('Calling ${lead.name.split(' ').first}…'),
                   );
@@ -158,8 +162,6 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       ],
     );
   }
-
-  String _label(String key) => key == 'all' ? 'All' : StatusMeta$.lead[key]!.label;
 
   // ── Filter drawer ──
   Future<void> _openFilters() async {

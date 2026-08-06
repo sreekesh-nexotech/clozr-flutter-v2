@@ -14,15 +14,26 @@ import '../../domain/entities/lead.dart';
 /// left, status pill / value / time on the right, then a team-avatar row and a
 /// call button below a hairline.
 class LeadCard extends StatelessWidget {
-  const LeadCard({super.key, required this.lead, required this.onTap, required this.onCall});
+  const LeadCard({
+    super.key,
+    required this.lead,
+    required this.onTap,
+    required this.onCall,
+    this.status,
+  });
 
   final Lead lead;
+
+  /// The status pill to render. Pass the org's own stage (name + colour from
+  /// `/crm/lead-statuses/`); omit it to fall back to the built-in vocabulary.
+  final StatusMeta? status;
+
   final VoidCallback onTap;
   final VoidCallback onCall;
 
   @override
   Widget build(BuildContext context) {
-    final meta = StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
+    final meta = status ?? StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
     final teamIds = lead.team.take(2).toList();
     final more = lead.team.length - teamIds.length;
 

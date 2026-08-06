@@ -1,6 +1,10 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../data/api/status_keys.dart';
+import '../../../../data/mock/status_meta.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../../infrastructure/data_sources/local/leads_mock_ds.dart';
@@ -8,6 +12,7 @@ import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 import '../../infrastructure/repositories/leads_api_repository.dart';
 import '../../infrastructure/repositories/leads_repository_impl.dart';
 import '../filters/leads_filter_spec.dart';
+import 'crm_catalog_providers.dart';
 
 /// DI seam: mock-backed by default; API-backed when a base URL is configured.
 final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
@@ -64,7 +69,7 @@ final visibleLeadsProvider = Provider<List<Lead>>((ref) {
   final filters = ref.watch(leadFiltersProvider);
 
   Iterable<Lead> out = base;
-  if (tab != 'all') out = out.where((l) => l.status == tab);
+  if (tab != 'all') out = out.where((l) => l.stageKey == tab);
   if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
   if (q.isNotEmpty) {
     out = out.where((l) =>
@@ -79,5 +84,69 @@ final visibleLeadsProvider = Provider<List<Lead>>((ref) {
 /// Count of leads for a given tab key within [base].
 int leadTabCount(List<Lead> base, String key) {
   if (key == 'all') return base.length;
-  return base.where((l) => l.status == key).length;
+  return base.where((l) => l.stageKey == key).length;
 }
+
+/// One status tab on the Leads list — also the shape of a Stage filter option,
+/// so the tab row and the drawer can never drift apart.
+class LeadTab {
+  const LeadTab(this.id, this.label, this.color);
+
+  /// The value the list filters by — matched against [Lead.stageKey].
+  final String id;
+  final String label;
+  final Color? color;
+}
+
+/// The stage vocabulary to render, resolved once so the tabs and the Stage
+/// filter always agree with what [Lead.stageKey] reports.
+///
+/// Three tiers, in order:
+/// 1. the org's `/crm/lead-statuses/` catalog — names, colours and server order;
+/// 2. the distinct stage names the loaded leads carry, when the catalog fetch
+///    failed but the rows still name their stage. Only stages that have leads
+///    get a tab, which is a real loss, but far better than tier 3's tabs that
+///    would match nothing at all;
+/// 3. the built-in `StatusMeta$` vocabulary — mock mode, where leads carry no
+///    status name.
+List<LeadTab> leadStageVocabulary(List<CatalogOption> catalog, List<Lead> leads) {
+  if (catalog.isNotEmpty) {
+    return [for (final s in catalog) LeadTab(s.key, s.name, leadStatusColor(s))];
+  }
+
+  // First spelling of each name wins; the key is what rows join on.
+  final names = <String, String>{};
+  for (final l in leads) {
+    final n = l.statusName.trim();
+    if (n.isNotEmpty) names.putIfAbsent(n.toLowerCase(), () => n);
+  }
+  if (names.isEmpty) {
+    return [
+      for (final k in StatusMeta$.leadAll)
+        LeadTab(k, StatusMeta$.lead[k]!.label, StatusMeta$.lead[k]!.color),
+    ];
+  }
+
+  // No server `position` to sort by here, so order by the bucket each name
+  // folds into — close enough to pipeline order to read correctly.
+  final entries = names.entries.toList()
+    ..sort((a, b) {
+      final ia = StatusMeta$.leadAll.indexOf(leadStatusKey(name: a.value));
+      final ib = StatusMeta$.leadAll.indexOf(leadStatusKey(name: b.value));
+      return ia != ib ? ia.compareTo(ib) : a.value.compareTo(b.value);
+    });
+  return [
+    for (final e in entries)
+      LeadTab(e.key, e.value, StatusMeta$.lead[leadStatusKey(name: e.value)]!.color),
+  ];
+}
+
+/// The status tab row: `All`, then the org's own pipeline stages with their
+/// names and colours straight from `/crm/lead-statuses/`.
+final leadTabsProvider = Provider<List<LeadTab>>((ref) => [
+      const LeadTab('all', 'All', null),
+      ...leadStageVocabulary(
+        ref.watch(leadStatusesProvider),
+        ref.watch(leadsProvider).valueOrNull ?? const [],
+      ),
+    ]);

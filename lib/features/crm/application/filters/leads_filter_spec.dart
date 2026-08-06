@@ -3,8 +3,9 @@ import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
-import '../../../../data/mock/status_meta.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/lead.dart';
+import '../providers/crm_catalog_providers.dart';
 import '../providers/leads_providers.dart';
 
 /// Leads filter — the reference wiring of the spec-driven engine (audit §2).
@@ -51,18 +52,38 @@ DateTime? parseLeadDate(String s) {
   return DateTime(year, month, day);
 }
 
-/// Build the Leads drawer spec from the current lead set. [roster] supplies the
-/// owner/assignee picker options (the real workspace members in API mode, the
-/// prototype reps in mock mode).
-FilterSpec buildLeadsFilterSpec(List<Lead> leads, {List<AppUser> roster = MockUsers.reps}) {
-  final sources = (leads.map((l) => l.source).toSet().toList()..sort())
-      .map((s) => FilterOption(id: s, label: s))
-      .toList();
-  final products = (leads.map((l) => l.project).toSet().toList()..sort())
-      .map((p) => FilterOption(id: p, label: p))
-      .toList();
+/// Build the Leads drawer spec from the current lead set.
+///
+/// [roster] supplies the owner/assignee picker options (the real workspace
+/// members in API mode, the prototype reps in mock mode).
+///
+/// [statusCatalog], [sourceCatalog] and [productCatalog] are the org's
+/// configured lists. Each falls back to deriving options from the loaded leads
+/// when empty (mock mode, or a catalog fetch that failed) — deriving can only
+/// ever offer values already present on screen, so an org's unused source or
+/// product is invisible until the catalog loads.
+FilterSpec buildLeadsFilterSpec(
+  List<Lead> leads, {
+  List<AppUser> roster = MockUsers.reps,
+  List<CatalogOption> statusCatalog = const [],
+  List<CatalogOption> sourceCatalog = const [],
+  List<CatalogOption> productCatalog = const [],
+}) {
+  final sourceNames = sourceCatalog.isNotEmpty
+      ? [for (final s in sourceCatalog) s.name]
+      : (leads.map((l) => l.source).where((s) => s.isNotEmpty).toSet().toList()..sort());
+  final sources = [for (final s in sourceNames) FilterOption(id: s, label: s)];
+
+  final productNames = productCatalog.isNotEmpty
+      ? [for (final p in productCatalog) p.name]
+      : (leads.map((l) => l.project).where((p) => p.isNotEmpty).toSet().toList()..sort());
+  final products = [for (final p in productNames) FilterOption(id: p, label: p)];
+
+  // Resolved by the same helper the tab row uses, so a Stage option and a tab
+  // always mean the same thing and both match `Lead.stageKey`.
   final stages = [
-    for (final k in StatusMeta$.leadAll) FilterOption(id: k, label: StatusMeta$.lead[k]!.label),
+    for (final s in leadStageVocabulary(statusCatalog, leads))
+      FilterOption(id: s.id, label: s.label),
   ];
   final teams = _allTeams().map((t) => FilterOption(id: t, label: t)).toList();
   final users = [
@@ -161,7 +182,7 @@ FilterSpec buildLeadsFilterSpec(List<Lead> leads, {List<AppUser> roster = MockUs
 bool leadMatchesFilters(Lead l, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('sources'), [l.source])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('products'), [l.project])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('stages'), [l.status])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('stages'), [l.stageKey])) return false;
 
   final aging = v.radio('aging');
   if (aging != null && aging.isActive) {
@@ -198,10 +219,17 @@ bool leadMatchesFilters(Lead l, FilterValues v) {
 
 // ── Providers ──
 
-/// The Leads drawer spec, derived from the loaded lead catalog.
+/// The Leads drawer spec: the org's configured stages, sources and products
+/// when they have loaded, otherwise options derived from the loaded leads.
 final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
   final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
-  return buildLeadsFilterSpec(leads, roster: ref.watch(rosterProvider));
+  return buildLeadsFilterSpec(
+    leads,
+    roster: ref.watch(rosterProvider),
+    statusCatalog: ref.watch(leadStatusesProvider),
+    sourceCatalog: ref.watch(leadSourcesProvider),
+    productCatalog: ref.watch(productOptionsProvider),
+  );
 });
 
 /// Applied drawer filters for the Leads list (the source of the badge count).

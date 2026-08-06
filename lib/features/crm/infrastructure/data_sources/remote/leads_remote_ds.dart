@@ -182,6 +182,9 @@ class LeadsRemoteDataSource {
         type: _strOrNull(row, 'status_type') ??
             statusTypes[_lower(row['status'])],
       ),
+      // Kept verbatim alongside the folded key so the tabs and Stage filter can
+      // show the org's real stage list (see [Lead.statusName]).
+      statusName: _str(row, 'status'),
       statusDays: _daysSince(parseApiDate(row['stage_entered_at'])),
       score: (row['lead_score'] as num?)?.toInt() ?? 0,
       source: source,
