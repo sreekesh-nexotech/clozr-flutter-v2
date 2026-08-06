@@ -7,8 +7,19 @@ plugins {
 
 android {
     namespace = "com.example.clozrapp"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+
+    // Pinned above Flutter's defaults because the plugins pinned in
+    // `pubspec.lock` demand it. Both are backward compatible, so the rule is
+    // "the highest any plugin asks for":
+    //   * `flutter_plugin_android_lifecycle` 2.0.35 and `url_launcher_android`
+    //     6.3.32 are compiled against SDK 36; a project on 34 cannot consume
+    //     them.
+    //   * `file_picker`, `flutter_secure_storage`, `path_provider_android` and
+    //     the two above all want NDK 27, against Flutter's default 23.
+    // An older checkout may only be told it needs 35 — that is a stale lock,
+    // not a different answer. Revisit when Flutter's own defaults catch up.
+    compileSdk = 36
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
