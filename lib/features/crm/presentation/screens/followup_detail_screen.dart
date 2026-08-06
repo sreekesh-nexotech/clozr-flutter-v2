@@ -196,7 +196,19 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// Falls back to the old done/not-done sheet while the catalog is empty, so
   /// mock mode and a failed catalog fetch still work.
   Future<void> _pickStatus(Followup fu) async {
-    final lanes = ref.read(taskStatusOptionsProvider);
+    var lanes = ref.read(taskStatusOptionsProvider);
+    if (lanes.isEmpty && ApiConfig.apiEnabled) {
+      // The synchronous view is empty both while the fetch is in flight and
+      // when it failed, and those need opposite answers. Awaiting the future
+      // settles it: a tap that beats the catalog still gets the real lanes
+      // rather than dropping to the built-in list.
+      try {
+        lanes = await ref.read(taskStatusCatalogProvider.future);
+      } on Object {
+        lanes = const [];
+      }
+      if (!mounted) return;
+    }
     if (lanes.isEmpty) {
       showCrmStatusSheet(
         context: context,
@@ -285,6 +297,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         body: 'This follow-up may have been removed or you no longer have access to it.',
       ));
     }
+
+    // Watched here so the org's task lanes are loading from the moment the
+    // screen opens, rather than starting on the first tap of the status pill —
+    // a tap that beat the fetch used to land on the built-in fallback list.
+    ref.watch(taskStatusCatalogProvider);
 
     final meta = StatusMeta$.followup[fu.status] ?? StatusMeta$.followup['due']!;
     final owner = MockUsers.of(fu.owner);
