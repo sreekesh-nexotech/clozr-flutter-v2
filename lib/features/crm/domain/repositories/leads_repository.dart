@@ -7,7 +7,15 @@ abstract class LeadsRepository {
   /// [mineOnly] scopes the list to leads the signed-in user owns **or** is
   /// assigned to — the "My leads" view. API mode sends this to the server as
   /// `?is_teams=true`; mock mode applies the same rule locally.
-  Future<List<Lead>> getLeads({bool mineOnly = false});
+  ///
+  /// [filters] are `LeadFilter` query params (`status__not`, `lead_source__in`,
+  /// …) evaluated **by the server**, so a negation is resolved against the
+  /// whole org rather than the rows that happen to be loaded. Always empty in
+  /// mock mode, which has no query engine — there the caller matches locally.
+  Future<List<Lead>> getLeads({
+    bool mineOnly = false,
+    Map<String, dynamic> filters = const {},
+  });
 
   /// Creates a lead from API-shaped form fields (`lead_name`,
   /// `organization_name`, `email`, `phone`, `purpose`). Returns the created

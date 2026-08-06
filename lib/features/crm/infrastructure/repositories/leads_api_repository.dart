@@ -24,20 +24,30 @@ class LeadsApiRepository implements LeadsRepository {
   /// only, never a shortcut. Toggling My/All therefore always re-queries the
   /// server (row shape is scope-dependent, so a stale list can't be reused).
   @override
-  Future<List<Lead>> getLeads({bool mineOnly = false}) async {
+  Future<List<Lead>> getLeads({
+    bool mineOnly = false,
+    Map<String, dynamic> filters = const {},
+  }) async {
     final key = _keyFor(mineOnly);
+    // Only the unfiltered list is cached. A filtered result is one of countless
+    // combinations, so caching it would churn the store for a fallback the user
+    // is unlikely to hit again — and serving the wrong combination offline
+    // would be worse than serving nothing.
+    final cacheable = filters.isEmpty;
     // Started first so it overlaps the row fetch; never throws (empty on
     // failure), so it can be awaited on the offline path too.
     final types = _remote.statusTypes();
     try {
-      final rows = await _remote.fetchLeadRows(mineOnly: mineOnly);
-      await AppCache.put(AppCache.crmCache, key, rows);
+      final rows = await _remote.fetchLeadRows(mineOnly: mineOnly, filters: filters);
+      if (cacheable) await AppCache.put(AppCache.crmCache, key, rows);
       return LeadsRemoteDataSource.mapLeadRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
         rethrow;
       }
-      final cached = AppCache.get(AppCache.crmCache, key)?.data;
+      // A filtered query has no cached counterpart; surface the outage rather
+      // than quietly showing an unfiltered list as if it were the result.
+      final cached = cacheable ? AppCache.get(AppCache.crmCache, key)?.data : null;
       if (cached is List) {
         // Offline: the catalog call failed too, but a previously cached
         // catalog still applies — otherwise this degrades to name matching.

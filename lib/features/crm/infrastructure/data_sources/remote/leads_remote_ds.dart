@@ -43,11 +43,17 @@ class LeadsRemoteDataSource {
   /// [mineOnly] adds `is_teams=true` — the server-side "My leads" scope (leads
   /// the caller owns OR is an assignee on). It is re-sent on every page so the
   /// scope holds across the whole walk.
-  Future<List<Map<String, dynamic>>> fetchLeadRows({bool mineOnly = false}) async {
+  Future<List<Map<String, dynamic>>> fetchLeadRows({
+    bool mineOnly = false,
+    Map<String, dynamic> filters = const {},
+  }) async {
     final rows = <Map<String, dynamic>>[];
     int? page;
     for (var i = 0; i < _maxPages; i++) {
       final body = await _api.get(ApiEndpoints.leads, query: {
+        // Drawer filters first, so paging and scope keys below always win —
+        // a stray `page` in a stored filter must not derail the walk.
+        ...filters,
         'page_size': _pageSize,
         if (mineOnly) 'is_teams': true,
         if (page != null) 'page': page,

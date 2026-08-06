@@ -183,16 +183,31 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     await ref.read(leadFilterCatalogsProvider.future);
     if (!mounted) return;
 
+    // Counted against the scope with the drawer filters dropped: the draft
+    // usually widens the current selection, and counting inside the already
+    // filtered list could only ever count down. Free when nothing is applied —
+    // it is the same query the list is showing. Falls back to the visible rows
+    // if that fetch fails; the preview is an estimate, never a blocker.
+    List<Lead> previewBase;
+    try {
+      previewBase = await ref
+          .read(leadsScopedProvider(ref.read(leadsUnfilteredQueryProvider)).future);
+    } on Object {
+      previewBase = ref.read(leadBaseProvider);
+    }
+    if (!mounted) return;
+
     final spec = ref.read(leadsFilterSpecProvider);
     final current = ref.read(leadFiltersProvider);
-    final base = ref.read(leadBaseProvider);
     final activeView = ref.read(leadSavedFiltersProvider).active;
 
     final result = await showFilterSheet(
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((l) => leadMatchesFilters(l, draft)).length,
+      // Still the local matcher: a live count per keystroke cannot be a round
+      // trip. Apply is authoritative — that is what re-queries the server.
+      previewCount: (draft) => previewBase.where((l) => leadMatchesFilters(l, draft)).length,
       activeViewName: activeView?.name,
       onSaveView: _saveView,
     );
@@ -288,7 +303,10 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   /// so a previously loaded list is never reused. The stale entry for the target
   /// scope is dropped first so the switch always hits the network.
   void _setTeamAll(bool teamAll) {
-    ref.invalidate(leadsScopedProvider(!teamAll));
+    ref.invalidate(leadsScopedProvider(LeadListQuery(
+      mineOnly: !teamAll,
+      filters: ref.read(leadFilterParamsProvider),
+    )));
     ref.read(leadTeamAllProvider.notifier).state = teamAll;
   }
 

@@ -13,6 +13,7 @@ import '../../infrastructure/repositories/leads_api_repository.dart';
 import '../../infrastructure/repositories/leads_repository_impl.dart';
 import '../filters/leads_filter_spec.dart';
 import 'crm_catalog_providers.dart';
+import 'saved_filters_providers.dart';
 
 /// DI seam: mock-backed by default; API-backed when a base URL is configured.
 final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
@@ -37,28 +38,80 @@ final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
   );
 });
 
-/// Leads for one ownership scope. `true` = "My leads" (`?is_teams=true` — owned
-/// by or assigned to the signed-in user); `false` = everything the caller's role
-/// lets them see.
+/// One server-side lead query: the ownership scope plus the drawer's filters
+/// as `LeadFilter` params.
 ///
-/// Keyed by scope so the two lists never overwrite each other. Switching scopes
-/// switches which instance is watched, which issues a request rather than
-/// re-filtering a list that is already on screen.
-final leadsScopedProvider = FutureProvider.family<List<Lead>, bool>(
-  (ref, mineOnly) => ref.watch(leadsRepositoryProvider).getLeads(mineOnly: mineOnly),
+/// Value-equal by content so it can key a provider family — two identical
+/// queries share one request and one cached result, and changing any part of
+/// the filter is a different key, which is what makes an edit refetch.
+@immutable
+class LeadListQuery {
+  const LeadListQuery({this.mineOnly = false, this.filters = const {}});
+
+  final bool mineOnly;
+  final Map<String, dynamic> filters;
+
+  /// Order-independent identity — `{a,b}` and `{b,a}` are the same query.
+  String get signature {
+    final parts = [for (final e in filters.entries) '${e.key}=${e.value}']..sort();
+    return 'mine=$mineOnly|${parts.join('&')}';
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is LeadListQuery && other.signature == signature;
+
+  @override
+  int get hashCode => signature.hashCode;
+}
+
+/// Leads for one query. Switching scope or editing a filter switches which
+/// instance is watched, which issues a request rather than re-filtering a list
+/// that is already on screen.
+final leadsScopedProvider = FutureProvider.family<List<Lead>, LeadListQuery>(
+  (ref, q) => ref
+      .watch(leadsRepositoryProvider)
+      .getLeads(mineOnly: q.mineOnly, filters: q.filters),
 );
+
+/// The drawer's filters as server params — the payload that makes `is not`
+/// mean "not, anywhere in the org" instead of "not, among the rows we loaded".
+///
+/// Empty in mock mode: the seed source cannot execute query params, so there
+/// [visibleLeadsProvider] keeps matching locally instead.
+final leadFilterParamsProvider = Provider<Map<String, dynamic>>((ref) {
+  if (!ApiConfig.apiEnabled) return const {};
+  final values = ref.watch(leadFiltersProvider);
+  if (values.isEmpty) return const {};
+  return ref.watch(leadFilterCodecProvider).encode(values);
+});
 
 /// Org-wide leads — the cross-screen lookup source. Tasks, follow-ups and
 /// customers resolve a linked lead by id here, and reports aggregate over it,
-/// so this deliberately ignores the Leads list's My/All toggle: narrowing it
-/// would blank out links to a colleague's lead.
+/// so this deliberately ignores the Leads list's My/All toggle and its drawer
+/// filters: narrowing it would blank out links to a colleague's lead.
 final leadsProvider = FutureProvider<List<Lead>>(
-  (ref) => ref.watch(leadsScopedProvider(false).future),
+  (ref) => ref.watch(leadsScopedProvider(const LeadListQuery()).future),
 );
 
-/// The Leads list itself, scoped by the My/All toggle.
+/// The Leads list itself: the My/All scope **and** the drawer filters, both
+/// resolved by the server.
 final leadsListProvider = FutureProvider<List<Lead>>(
-  (ref) => ref.watch(leadsScopedProvider(!ref.watch(leadTeamAllProvider)).future),
+  (ref) => ref.watch(
+    leadsScopedProvider(LeadListQuery(
+      mineOnly: !ref.watch(leadTeamAllProvider),
+      filters: ref.watch(leadFilterParamsProvider),
+    )).future,
+  ),
+);
+
+/// The same scope with the drawer filters dropped.
+///
+/// Backs the drawer's live result preview, which must count against the whole
+/// scope: a draft usually *widens* the current selection, and counting inside
+/// an already-filtered list could only ever count down.
+final leadsUnfilteredQueryProvider = Provider<LeadListQuery>(
+  (ref) => LeadListQuery(mineOnly: !ref.watch(leadTeamAllProvider)),
 );
 
 /// Look up a single lead by id (used by the detail screen).
@@ -89,19 +142,27 @@ final leadSearchOpenProvider = StateProvider<bool>((ref) => false);
 /// refetch, not a client-side filter.
 final leadTeamAllProvider = StateProvider<bool>((ref) => false);
 
-/// The base list before the status tab is applied. The mine/all scope is
-/// already applied by the source ([leadsScopedProvider]) — the server does it
-/// in API mode, the mock repository mirrors it — so nothing is re-filtered here.
+/// The base list before the status tab is applied. The mine/all scope and the
+/// drawer filters are already applied by the source ([leadsScopedProvider]) —
+/// the server does both in API mode — so nothing is re-filtered here.
+///
+/// Note this means the tab counts reflect the active drawer filters, since
+/// they count over this list. That follows from filtering server-side, and
+/// matches how the backend's own Kanban board reports its lane counts.
 final leadBaseProvider = Provider<List<Lead>>(
   (ref) => ref.watch(leadsListProvider).valueOrNull ?? const [],
 );
 
-/// Leads filtered by the active tab + search query + drawer filters.
+/// The rows on screen: the base list narrowed by the active tab and the search
+/// box.
+///
+/// The drawer filters are **not** applied here in API mode — the server already
+/// ran them, so [leadBaseProvider] *is* the matching set. Tab and search stay
+/// local because they run over that complete result, not over a partial page.
 final visibleLeadsProvider = Provider<List<Lead>>((ref) {
   final base = ref.watch(leadBaseProvider);
   final tab = ref.watch(leadTabProvider);
   final q = ref.watch(leadSearchProvider).trim().toLowerCase();
-  final filters = ref.watch(leadFiltersProvider);
 
   Iterable<Lead> out = base;
   // A tab tapped before the status catalog resolved can name a stage the org
@@ -110,7 +171,11 @@ final visibleLeadsProvider = Provider<List<Lead>>((ref) {
   if (tab != 'all' && ref.watch(leadTabsProvider).any((t) => t.id == tab)) {
     out = out.where((l) => l.stageKey == tab);
   }
-  if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
+  // Mock mode has no query engine behind it, so the drawer is matched here.
+  if (!ApiConfig.apiEnabled) {
+    final filters = ref.watch(leadFiltersProvider);
+    if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
+  }
   if (q.isNotEmpty) {
     out = out.where((l) =>
         l.name.toLowerCase().contains(q) ||

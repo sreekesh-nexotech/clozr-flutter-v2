@@ -64,9 +64,16 @@ ApiService _apiWith(_PagingAdapter adapter) {
 class _RecordingRepo implements LeadsRepository {
   final List<bool> calls = [];
 
+  /// The server-side filter params each call carried.
+  final List<Map<String, dynamic>> filterCalls = [];
+
   @override
-  Future<List<Lead>> getLeads({bool mineOnly = false}) async {
+  Future<List<Lead>> getLeads({
+    bool mineOnly = false,
+    Map<String, dynamic> filters = const {},
+  }) async {
     calls.add(mineOnly);
+    filterCalls.add(filters);
     return [
       Lead(
         id: mineOnly ? 'MINE' : 'ALL',
@@ -165,14 +172,14 @@ void main() {
       expect(container.read(leadBaseProvider).single.id, 'MINE');
 
       // Switching to "All leads" issues a request rather than re-filtering.
-      container.invalidate(leadsScopedProvider(false));
+      container.invalidate(leadsScopedProvider(const LeadListQuery()));
       container.read(leadTeamAllProvider.notifier).state = true;
       await _settle();
       expect(repo.calls, [true, false]);
       expect(container.read(leadBaseProvider).single.id, 'ALL');
 
       // Switching back re-queries too — no reuse of the earlier "mine" list.
-      container.invalidate(leadsScopedProvider(true));
+      container.invalidate(leadsScopedProvider(const LeadListQuery(mineOnly: true)));
       container.read(leadTeamAllProvider.notifier).state = false;
       await _settle();
       expect(repo.calls, [true, false, true]);

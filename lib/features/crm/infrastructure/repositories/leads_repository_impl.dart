@@ -11,8 +11,14 @@ class LeadsRepositoryImpl implements LeadsRepository {
 
   final LeadsMockDataSource _local;
 
+  /// [filters] is accepted for interface parity and ignored: the seed source is
+  /// a plain list with nothing to run query params against. Callers keep the
+  /// client-side matcher for mock mode, so the drawer still filters there.
   @override
-  Future<List<Lead>> getLeads({bool mineOnly = false}) async {
+  Future<List<Lead>> getLeads({
+    bool mineOnly = false,
+    Map<String, dynamic> filters = const {},
+  }) async {
     // Simulated latency so skeleton/loading states are exercised.
     await Future<void>.delayed(AppConstants.mockLatency);
     final leads = _local.fetchLeads();
