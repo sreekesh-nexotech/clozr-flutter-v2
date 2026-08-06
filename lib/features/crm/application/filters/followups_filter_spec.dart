@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/mock_users.dart';
+import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/followup.dart';
 import '../providers/crm_catalog_providers.dart';
@@ -43,6 +45,7 @@ FilterSpec buildFollowupsFilterSpec({
   List<AppUser> roster = MockUsers.reps,
   List<CatalogOption> typeCatalog = const [],
   List<CatalogOption> statusCatalog = const [],
+  List<CatalogOption> priorityCatalog = const [],
 }) {
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
@@ -69,6 +72,21 @@ FilterSpec buildFollowupsFilterSpec({
           FilterOption(id: 'done', label: 'Done'),
         ];
 
+  // Priorities are offered under the org's **own** spelling, unmatched.
+  //
+  // Deliberately unlike the Tasks drawer, which folds them to the built-in
+  // Urgent/High/Medium/Low display vocabulary: `CrmTask.priority` is folded on
+  // the way in, but `Followup.priority` keeps the raw name the API sent. Folding
+  // here would offer "High" against rows carrying "high" and match nothing.
+  final priorities = [
+    for (final p in priorityCatalog)
+      FilterOption(
+        id: p.name,
+        label: p.name,
+        dot: StatusMeta$.priorityTone[priorityKey(p.name)]?.fg,
+      ),
+  ];
+
   return FilterSpec(
     title: 'Follow-ups',
     sections: [
@@ -92,6 +110,18 @@ FilterSpec buildFollowupsFilterSpec({
             twoCol: true,
             options: statuses),
       ]),
+      // Omitted entirely when the catalog has not loaded: an empty checkbox
+      // group is a section that cannot do anything, and there is no built-in
+      // priority vocabulary a follow-up row would match.
+      if (priorities.isNotEmpty)
+        FilterSection(title: 'Priority', fields: [
+          FilterField(
+              id: 'priorities',
+              label: 'Priority',
+              control: FilterControl.checkboxIsNot,
+              isNotToggle: true,
+              options: priorities),
+        ]),
       FilterSection(title: 'People & company', fields: [
         FilterField(
             id: 'owners',
@@ -128,6 +158,7 @@ FilterSpec buildFollowupsFilterSpec({
 bool followupMatchesFilters(Followup f, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('types'), [f.kind])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('statuses'), [f.statusKey])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('priorities'), [f.priority])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('owners'), [f.owner])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('companies'), [f.company])) return false;
   if (!FilterMatch.matchDate(v.date('due'), parseCrmDate(f.due))) return false;
@@ -143,6 +174,7 @@ final followupsFilterSpecProvider = Provider<FilterSpec>((ref) {
     roster: ref.watch(rosterProvider),
     typeCatalog: ref.watch(followupTypeOptionsProvider),
     statusCatalog: ref.watch(taskStatusOptionsProvider),
+    priorityCatalog: ref.watch(taskPriorityOptionsProvider),
   );
 });
 

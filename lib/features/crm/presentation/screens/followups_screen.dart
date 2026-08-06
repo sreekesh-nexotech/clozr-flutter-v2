@@ -69,6 +69,9 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     // Same reason: the status tabs and the card layout both need their fetch
     // started here, not when something first reads them.
     ref.watch(taskStatusOptionsProvider);
+    // The drawer's Priority section; without this it would snapshot an unloaded
+    // catalog and omit the section entirely.
+    ref.watch(taskPriorityOptionsProvider);
     final schema = ref.watch(followupCardSchemaProvider);
 
     return Column(

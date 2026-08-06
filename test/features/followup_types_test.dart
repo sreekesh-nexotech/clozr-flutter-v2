@@ -10,6 +10,14 @@ import 'package:clozrapp/features/crm/domain/entities/crm_catalog.dart';
 import 'package:clozrapp/features/crm/domain/entities/followup.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/crm_catalog_remote_ds.dart';
 
+/// The org's real task priorities — lower-case, as the API sends them.
+const _orgPriorities = [
+  CatalogOption(id: 'p1', name: 'low'),
+  CatalogOption(id: 'p2', name: 'medium'),
+  CatalogOption(id: 'p3', name: 'high'),
+  CatalogOption(id: 'p4', name: 'critical'),
+];
+
 /// Acme's real follow-up types — note "Site Visit" and no "Payment".
 const _orgTypes = [
   CatalogOption(id: 't1', name: 'Call'),
@@ -19,7 +27,13 @@ const _orgTypes = [
   CatalogOption(id: 't5', name: 'Site Visit'),
 ];
 
-Followup _fu({required String kind, String status = 'due'}) => Followup(
+Followup _fu({
+  required String kind,
+  String status = 'due',
+  String priority = '',
+}) =>
+    Followup(
+      priority: priority,
       id: 'F1',
       kind: kind,
       contact: 'Ishaan',
@@ -44,7 +58,47 @@ List<String> _typeOptions({List<CatalogOption> catalog = const []}) {
   return [for (final o in field.options) o.id];
 }
 
+List<String> _priorityOptions({List<CatalogOption> catalog = const []}) {
+  final spec = buildFollowupsFilterSpec(
+    followups: const [],
+    priorityCatalog: catalog,
+  );
+  final fields = spec.sections.expand((s) => s.fields).where((f) => f.id == 'priorities');
+  return fields.isEmpty ? const [] : [for (final o in fields.first.options) o.id];
+}
+
 void main() {
+  group('priority', () {
+    test('offers the org spelling, unfolded', () {
+      // `Followup.priority` keeps the raw API name, unlike `CrmTask.priority`
+      // which is folded to the built-in display vocabulary. Offering "High"
+      // here would match nothing on a row carrying "high".
+      expect(_priorityOptions(catalog: _orgPriorities),
+          ['low', 'medium', 'high', 'critical']);
+    });
+
+    test('filters rows by that spelling', () {
+      final values = FilterValues()..['priorities'] = ChoiceValue(ids: {'high'});
+
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), values), isTrue);
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), values), isFalse);
+    });
+
+    test('is negatable like the rest of the drawer', () {
+      final values = FilterValues()
+        ..['priorities'] = ChoiceValue(ids: {'low'}, isNot: true);
+
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), values), isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'critical'), values), isTrue);
+    });
+
+    test('the section is omitted when the catalog has not loaded', () {
+      // An empty checkbox group is a section that can do nothing, and there is
+      // no built-in priority vocabulary a follow-up row would match.
+      expect(_priorityOptions(), isEmpty);
+    });
+  });
+
   group('the drawer offers the org’s types', () {
     test('uses the catalog when it has loaded', () {
       expect(_typeOptions(catalog: _orgTypes),
