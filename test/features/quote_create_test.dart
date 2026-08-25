@@ -10,8 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:clozrapp/core/network/api_service.dart';
 import 'package:clozrapp/core/storage/token_storage.dart';
+import 'package:clozrapp/core/utils/inr_format.dart';
 import 'package:clozrapp/features/crm/application/quote_draft.dart';
+import 'package:clozrapp/features/crm/domain/entities/product.dart';
 import 'package:clozrapp/features/crm/domain/entities/view_schema.dart';
+import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/products_remote_ds.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/quotes_remote_ds.dart';
 
 Map<String, dynamic> _col(String name, String label, int order,
@@ -89,6 +92,60 @@ const _line = QuoteDraftLine(
 
 void main() {
   final schema = ViewSchema.fromResponse(_quoteSchemaBody);
+
+  // The unit price used to be recovered by stripping non-digits out of the
+  // catalog's **display** price, which `formatInr` abbreviates. Every product
+  // over ₹999 was therefore quoted at a fraction of its value, silently.
+  group('a line item carries the catalog price, not its display string', () {
+    Product priced(double price) => Product(
+          id: 'P1',
+          name: 'NexoCRM Pro',
+          kind: 'product',
+          cat: '',
+          hsn: '',
+          unit: '',
+          price: formatInr(price),
+          priceNum: price,
+          gst: 18,
+          gstAmt: '',
+          gross: '',
+          deals: 0,
+          revenue: '₹0',
+          revNum: 0,
+          avg: '—',
+          active: true,
+        );
+
+    test('the abbreviated display string is not the number sent', () {
+      final p = priced(4999);
+      // What the old code parsed out of the display string, for the record.
+      expect(p.price, '₹5K');
+      expect(int.parse(p.price.replaceAll(RegExp(r'[^\d]'), '')), 5);
+      // What the API must actually receive.
+      expect(p.priceNum.toStringAsFixed(2), '4999.00');
+    });
+
+    test('lakh and crore prices survive too', () {
+      expect(priced(184991).priceNum.toStringAsFixed(2), '184991.00');
+      expect(priced(12900000).priceNum.toStringAsFixed(2), '12900000.00');
+    });
+
+    test('paise are kept — the API takes decimal strings', () {
+      expect(priced(1234.50).priceNum.toStringAsFixed(2), '1234.50');
+    });
+
+    test('the mapper fills priceNum from the raw row', () {
+      final mapped = productFromApi({
+        'product_id': 'P1',
+        'product_name': 'NexoCRM Pro',
+        // The live shape: a decimal string, not a number.
+        'price': '4999.000000',
+      })!;
+
+      expect(mapped.priceNum, 4999);
+      expect(mapped.price, '₹5K', reason: 'display is still abbreviated');
+    });
+  });
 
   group('the create payload matches the documented contract', () {
     test('a minimal draft sends the lead, currency and line items', () {
@@ -191,6 +248,79 @@ void main() {
       expect(json['quotation_title'], 'Revamp');
       expect(json['notes'], 'n');
       expect(json['terms_and_conditions'], 't');
+    });
+  });
+
+  group('the schema-driven field set', () {
+    test('drops the columns the form renders itself', () {
+      final form = quoteFormSchema(schema);
+      final names = [for (final c in form.columns) c.name];
+
+      // Pickers, interdependent fields and server-owned values stay with the
+      // screen — a second box for any of them would write a different shape.
+      expect(names, isNot(contains('payment_type')));
+      expect(names, isNot(contains('currency')));
+      expect(names, isNot(contains('billing_period_days')));
+      expect(names, isNot(contains('quotation_number')));
+      expect(names, isNot(contains('status')));
+      expect(names, isNot(contains('total_amount')));
+      // Everything else the org configured visible is the form's to render.
+      expect(names, containsAll(['quotation_title', 'valid_until', 'notes']));
+    });
+
+    test('an org-added field survives into the form with no code change', () {
+      final withCustom = ViewSchema.fromResponse({
+        'has_org_config': true,
+        'all_fields': {
+          'columns': [_col('site_contact', 'Site contact', 1), _col('lead', 'Lead', 2)],
+        },
+      });
+
+      final names = [for (final c in quoteFormSchema(withCustom).columns) c.name];
+
+      expect(names, ['site_contact']);
+    });
+
+    test('an org with no layout yields no schema section', () {
+      expect(quoteFormSchema(ViewSchema.empty).editableColumns, isEmpty);
+    });
+  });
+
+  group('the schema section folds into the create body', () {
+    final base = const QuoteDraft(leadId: 'l', lines: [_line]).toCreateJson();
+
+    test('its values ride on top of the draft body', () {
+      final json = withSchemaFields(base, {
+        'quotation_title': 'Revamp',
+        'valid_until': '2026-09-04',
+      });
+
+      expect(json['quotation_title'], 'Revamp');
+      expect(json['valid_until'], '2026-09-04');
+      // The parts the draft owns are untouched.
+      expect(json['lead'], 'l');
+      expect(json['line_items'], isNotEmpty);
+    });
+
+    test('untouched boxes are omitted, not sent blank', () {
+      final json = withSchemaFields(base, {
+        'quotation_title': '   ',
+        'valid_until': null,
+        'assignees': <String>[],
+        'notes': 'Kept',
+      });
+
+      // A create has nothing to clear, and "" overrides an org default.
+      expect(json.containsKey('quotation_title'), isFalse);
+      expect(json.containsKey('valid_until'), isFalse);
+      expect(json.containsKey('assignees'), isFalse);
+      expect(json['notes'], 'Kept');
+    });
+
+    test('a false boolean is a real answer and survives', () {
+      final json = withSchemaFields(base, {'is_negotiable': false});
+
+      expect(json['is_negotiable'], isFalse);
     });
   });
 

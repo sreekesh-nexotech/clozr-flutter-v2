@@ -15,4 +15,8 @@ class InvoicesRepositoryImpl implements InvoicesRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchInvoices();
   }
+
+  /// No backend to ask; the screen keeps its derived figures.
+  @override
+  Future<InvoiceSummary?> getInvoiceSummary(String paymentId) async => null;
 }

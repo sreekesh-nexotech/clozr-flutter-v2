@@ -9,6 +9,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -18,6 +19,8 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/payments_filter_spec.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
+import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../../domain/entities/invoice.dart';
@@ -149,17 +152,36 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   }
 
   // ── Filter drawer (Payments mode) ──
+  /// Pull-to-refresh, covering **both** segments rather than the visible one:
+  /// the Payments/Invoices toggle switches without refetching, so refreshing
+  /// only one would leave the other showing rows from before the pull.
+  Future<void> _refresh() async {
+    ref.invalidate(paymentsProvider);
+    ref.invalidate(invoicesProvider);
+    ref.invalidate(paymentListSchemaFutureProvider);
+    await settle([
+      ref.read(paymentsProvider.future),
+      ref.read(invoicesProvider.future),
+      ref.read(paymentListSchemaFutureProvider.future),
+    ]);
+  }
+
   Future<void> _openFilters() async {
     final spec = ref.read(paymentsFilterSpecProvider);
     final current = ref.read(paymentFiltersProvider);
     final base = ref.read(allPaymentsProvider);
     final activeView = ref.read(paymentSavedViewsProvider).active;
+    // The same API-backed lookup the drawer's Customer options were built from,
+    // so the preview count and the applied filter agree on what a payment's
+    // company is.
+    final lookup = ref.read(crmPartyLookupProvider);
 
     final result = await showFilterSheet(
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((p) => paymentMatchesFilters(p, draft)).length,
+      previewCount: (draft) =>
+          base.where((p) => paymentMatchesFilters(p, draft, lookup)).length,
       activeViewName: activeView?.name,
       onSaveView: (name, draft) {
         ref.read(paymentSavedViewsProvider.notifier).upsert(name, draft);
@@ -211,10 +233,12 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     return AsyncStateView<List<Payment>>(
       value: async,
       onRetry: () => ref.invalidate(paymentsProvider),
+      onRefresh: _refresh,
       data: (_) {
         final visible = ref.watch(visiblePaymentsProvider);
         if (visible.isEmpty) {
           return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
             children: [
               EmptyState(
                 icon: PhosphorIconsRegular.wallet,
@@ -228,6 +252,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           );
         }
         return ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
           itemCount: visible.length,
           separatorBuilder: (_, __) => SizedBox(height: 10.h),
@@ -248,9 +273,11 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     return AsyncStateView<List<Invoice>>(
       value: async,
       onRetry: () => ref.invalidate(invoicesProvider),
+      onRefresh: _refresh,
       data: (_) {
         final visible = ref.watch(visibleInvoicesProvider);
         return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
           children: [
             _invoiceBanner(),
@@ -266,6 +293,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                 if (i > 0) SizedBox(height: 10.h),
                 InvoiceCard(
                   invoice: visible[i],
+                  schema: ref.watch(paymentListSchemaProvider),
                   onTap: () => context.push('${Routes.invoiceDetail}?id=${visible[i].id}'),
                 ),
               ],

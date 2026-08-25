@@ -9,6 +9,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -135,10 +136,13 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
           child: AsyncStateView<List<Lead>>(
             value: async,
             onRetry: () => ref.invalidate(leadsScopedProvider),
+            onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(visibleLeadsProvider);
               if (visible.isEmpty) {
                 return ListView(
+                  // So the gesture still works with nothing to scroll.
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.magnifyingGlass,
@@ -152,6 +156,11 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
                 );
               }
               return ListView.separated(
+                // Scrolling the results puts the search keyboard away. Without
+                // it the only exit is the search field's own × chip, so the
+                // keyboard covered the rows the user had just searched for.
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 itemCount: visible.length,
                 separatorBuilder: (_, __) => SizedBox(height: 14.h),
@@ -173,6 +182,32 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
         ),
       ],
     );
+  }
+
+  /// Pull-to-refresh. Takes the rows, the org's vocabularies, the card layout
+  /// and the saved views together.
+  ///
+  /// The catalogs and the schema matter as much as the rows here: both are
+  /// fetched once per session and nothing invalidates them, so before this an
+  /// admin's change to the pipeline stages or the card layout needed an app
+  /// restart to show up.
+  Future<void> _refresh() async {
+    ref.invalidate(leadsScopedProvider);
+    ref.invalidate(leadStatusCatalogProvider);
+    ref.invalidate(leadSourceCatalogProvider);
+    ref.invalidate(leadListSchemaFutureProvider);
+    // The drawer snapshots this once; without dropping it too, a refreshed
+    // catalog would not reach the filter options.
+    ref.invalidate(leadFilterCatalogsProvider);
+    await settle([
+      ref.read(leadsListProvider.future),
+      ref.read(leadListSchemaFutureProvider.future),
+      ref.read(leadStatusCatalogProvider.future),
+      // Reloaded through the controller rather than invalidated: the provider
+      // also holds which view is active, and that is the user's selection, not
+      // server state to be thrown away.
+      ref.read(leadSavedFiltersProvider.notifier).load(),
+    ]);
   }
 
   // ── Filter drawer ──

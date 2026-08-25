@@ -41,6 +41,37 @@ fvm flutter run             # device / emulator
 fvm flutter build web --web-renderer canvaskit --no-web-resources-cdn
 ```
 
+## Crash reporting (Sentry)
+Wired in `lib/core/monitoring/` and initialized from `app/bootstrap`. The DSN
+ships in `sentry_config.dart` (a DSN is a public write-only ingest key), and
+every knob is a `--dart-define`:
+
+| Define | Default | Purpose |
+| --- | --- | --- |
+| `SENTRY_DSN` | the `clozr` project DSN | **Empty value turns reporting off** — the SDK still initializes and starts the app, it just drops every event |
+| `SENTRY_ENVIRONMENT` | `production` / `profile` / `development` by build mode | Segregates the issue stream |
+| `SENTRY_RELEASE` | derived from package metadata | Groups issues by build, e.g. `clozr@1.0.0+1`. CI should pass whatever it uploads debug symbols under |
+| `SENTRY_TRACES_SAMPLE_PCT` | `20` in release, `100` otherwise | Share of performance transactions kept |
+
+```bash
+fvm flutter run --dart-define=SENTRY_DSN=          # reporting off
+fvm flutter build apk --release --dart-define=SENTRY_RELEASE=clozr@1.0.0+1
+```
+
+What is captured: uncaught Dart/Flutter errors, 5xx responses from the
+`ApiService` Dio, navigation and HTTP breadcrumbs, and screen-load transactions.
+What is **not**: request/response bodies, headers, screenshots, the widget tree,
+or any name/email — `sendDefaultPii` is off and only the user + org **ids** are
+attached to an event. Expected failures (offline, timeout, 401/403/404,
+validation) are filtered out so they don't bury real defects. Feature code should
+call `AppMonitoring`, never `Sentry` directly.
+
+> **Held at `sentry_flutter` 8.x**, and `package_info_plus` at 8.x with it —
+> both because of the 3.24.5 toolchain pin, not preference. `pubspec.yaml`
+> carries the full reasoning next to each constraint; `android/build.gradle.kts`
+> carries the one Gradle workaround 8.x needs. All three notes come down
+> together when the Flutter pin is lifted.
+
 ## Architecture (feature-first, 4 layers)
 Per `docs-flutter/Folder structure - structure.csv`:
 ```

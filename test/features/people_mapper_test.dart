@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:clozrapp/core/filters/filter_models.dart';
 import 'package:clozrapp/data/api/user_directory.dart';
+import 'package:clozrapp/features/people/application/filters/members_filter_spec.dart';
 import 'package:clozrapp/data/mock/mock_users.dart';
 import 'package:clozrapp/features/people/domain/entities/member.dart';
 import 'package:clozrapp/features/people/infrastructure/data_sources/remote/people_remote_ds.dart';
@@ -79,11 +81,49 @@ void main() {
       });
 
       expect(m, isNotNull);
-      expect(m!.status, 'invited'); // is_active=false → Invited
+      expect(m!.status, 'invited'); // is_active=false, never logged in
       expect(m.role, 'Viewer'); // null role fallback
       expect(m.reportsTo, '— (exempt)'); // null manager sentinel
       expect(m.team, '—');
       expect(m.phone, '');
+    });
+
+    // There is no status field on the backend: `is_active=false` covers both a
+    // deactivated account and an unaccepted invitation, told apart by whether
+    // the user has ever logged in (members.md §Status). The mapper used to
+    // answer "invited" for both, so a member an admin switched off displayed as
+    // Invited — and the drawer's third chip matched nothing, because the value
+    // was never produced.
+    group('status splits deactivated from invited', () {
+      String statusOf({required bool active, Object? lastLogin}) =>
+          PeopleRemoteDataSource.memberStatusKey({
+            'user_id': 'u-1',
+            'is_active': active,
+            if (lastLogin != null) 'last_login': lastLogin,
+          });
+
+      test('active regardless of last login', () {
+        expect(statusOf(active: true), 'active');
+        expect(statusOf(active: true, lastLogin: '2026-08-01T10:00:00Z'), 'active');
+      });
+
+      test('disabled after having logged in is deactivated', () {
+        expect(statusOf(active: false, lastLogin: '2026-08-01T10:00:00Z'),
+            'inactive');
+      });
+
+      test('never logged in is still invited', () {
+        expect(statusOf(active: false), 'invited');
+        expect(statusOf(active: false, lastLogin: ''), 'invited');
+      });
+
+      test('an explicit null last_login reads as invited, not deactivated', () {
+        expect(
+          PeopleRemoteDataSource.memberStatusKey(
+              {'user_id': 'u-1', 'is_active': false, 'last_login': null}),
+          'invited',
+        );
+      });
     });
 
     test('phone falls back to profile.mobile and scope.label is used', () {
@@ -139,6 +179,121 @@ void main() {
       expect(m.perfWon, 0);
       expect(m.perfWonVal, '₹0L');
       expect(m.perfConv, '—');
+    });
+  });
+
+  // §4.1's retrieve-only fields. The detail screen read the *list* row, so
+  // Designation showed the role name, Role & scope always ended in "—", and
+  // Territory and Timezone were literals ("Kerala", "Asia/Kolkata (IST)").
+  group('retrieve-only fields', () {
+    test('a detail row fills designation, timezone, territories, protected', () {
+      final m = PeopleRemoteDataSource.memberFromJson({
+        'user_id': 'u-1',
+        'full_name': 'Admin Acme',
+        'is_active': true,
+        'is_protected': true,
+        'scope': {'code': 'all', 'label': 'Organization-wide'},
+        'territories': [
+          {'territory_id': 't-1', 'name': 'All India'},
+          {'territory_id': 't-2', 'name': 'South'},
+        ],
+        'profile': {
+          'designation': 'Business Owner',
+          'timezone': 'Asia/Kolkata',
+        },
+      })!;
+
+      expect(m.designation, 'Business Owner');
+      expect(m.timezone, 'Asia/Kolkata');
+      expect(m.territories, ['All India', 'South']);
+      expect(m.isProtected, isTrue);
+      expect(m.scope, 'Organization-wide');
+    });
+
+    test('a list row leaves them at their defaults, never guessed', () {
+      final m = PeopleRemoteDataSource.memberFromJson({
+        'user_id': 'u-2',
+        'full_name': 'Priya Pandey',
+        'is_active': true,
+        'role': {'name': 'Admin'},
+      })!;
+
+      expect(m.designation, '');
+      expect(m.timezone, '');
+      expect(m.territories, isEmpty);
+      // Was inferred from the role name containing "admin".
+      expect(m.isProtected, isFalse);
+      expect(m.scope, '—');
+    });
+
+    test('a nameless territory is dropped rather than rendered blank', () {
+      final m = PeopleRemoteDataSource.memberFromJson({
+        'user_id': 'u-3',
+        'is_active': true,
+        'territories': [
+          {'territory_id': 't-1'},
+          {'territory_id': 't-2', 'name': '  '},
+          {'territory_id': 't-3', 'name': 'Kerala'},
+        ],
+      })!;
+
+      expect(m.territories, ['Kerala']);
+    });
+
+    test('applyPerformance keeps them — the overlay must not blank the detail', () {
+      final base = PeopleRemoteDataSource.memberFromJson({
+        'user_id': 'u-1',
+        'full_name': 'Admin Acme',
+        'is_active': true,
+        'is_protected': true,
+        'profile': {'designation': 'Business Owner', 'timezone': 'Asia/Kolkata'},
+      })!;
+
+      final withPerf = PeopleRemoteDataSource.applyPerformance(base, {
+        'owned_leads': {'open': 3, 'closed': 1},
+        'deals_won': 1,
+        'conversion_rate': 100.0,
+      });
+
+      expect(withPerf.perfOpen, 3);
+      expect(withPerf.designation, 'Business Owner');
+      expect(withPerf.timezone, 'Asia/Kolkata');
+      expect(withPerf.isProtected, isTrue);
+    });
+  });
+
+  // §4.3's feed, which the card used to fake: a "Today · 09:14" sign-in, a role
+  // change attributed to the seed name "Manoj Varma", and a fixed joining date.
+  group('activity mapping', () {
+    test('maps a row, keeping the server-humanised label', () {
+      final a = PeopleRemoteDataSource.activityFromJson({
+        'type': 'role_assign',
+        'label': 'Role updated',
+        'actor': 'Admin Acme',
+        'timestamp': '2026-08-10T08:22:52Z',
+      })!;
+
+      expect(a.type, 'role_assign');
+      expect(a.label, 'Role updated');
+      expect(a.actor, 'Admin Acme');
+      expect(a.at, isNotNull);
+      expect(a.at!.year, 2026);
+    });
+
+    test('a row with no label is skipped — nothing to render', () {
+      expect(
+        PeopleRemoteDataSource.activityFromJson(
+            {'type': 'login', 'timestamp': '2026-08-10T08:22:52Z'}),
+        isNull,
+      );
+    });
+
+    test('a missing actor or timestamp degrades, never throws', () {
+      final a = PeopleRemoteDataSource.activityFromJson(
+          {'type': 'joined', 'label': 'Joined the workspace'})!;
+
+      expect(a.actor, '');
+      expect(a.at, isNull);
     });
   });
 
@@ -287,6 +442,84 @@ void main() {
         PeopleRemoteDataSource.roleFromJson(<String, dynamic>{}),
         isNull, // missing role_id → skipped
       );
+    });
+  });
+
+  // The drawer's "Reports to" facet (`members.md` Part 1, "Any manager").
+  group('members filter — reporting manager', () {
+    // [managerId] is the identity the facet is keyed by; [manager] is only the
+    // label. Two managers can share a name, which is why the uuid decides.
+    Member withManager(String id, String manager, {String managerId = ''}) => Member(
+          id: id,
+          name: 'M-$id',
+          email: '$id@acme.com',
+          phone: '',
+          role: 'Viewer',
+          scope: '—',
+          reportsTo: manager,
+          managerId: managerId,
+          team: '—',
+          status: 'active',
+        );
+
+    const uLakshmi = 'u-lakshmi';
+    const uArjun = 'u-arjun';
+    final roster = [
+      withManager('a', 'Lakshmi Pillai', managerId: uLakshmi),
+      withManager('b', 'Lakshmi Pillai', managerId: uLakshmi),
+      withManager('c', 'Arjun Nair', managerId: uArjun),
+      // The System Admin: `manager` is null, which maps to this sentinel.
+      withManager('d', '— (exempt)'),
+    ];
+
+    FilterField managerField(FilterSpec spec) => spec.sections
+        .expand((s) => s.fields)
+        .firstWhere((f) => f.id == 'managers');
+
+    test('options are the managers actually named, deduped and sorted', () {
+      final spec = buildMembersFilterSpec(const [], members: roster);
+
+      expect(managerField(spec).options.map((o) => o.label).toList(),
+          ['Arjun Nair', 'Lakshmi Pillai']);
+    });
+
+    test('the exempt sentinel is not offered as a manager', () {
+      final spec = buildMembersFilterSpec(const [], members: roster);
+
+      expect(managerField(spec).options.any((o) => o.label.startsWith('—')), isFalse);
+      expect(managerField(spec).options.map((o) => o.id).toList(),
+          [uArjun, uLakshmi]);
+    });
+
+    test('two managers sharing a name stay separate options', () {
+      // Keyed by name, both collapsed into one option that matched both.
+      final spec = buildMembersFilterSpec(const [], members: [
+        withManager('a', 'Priya Nair', managerId: 'u-priya-1'),
+        withManager('b', 'Priya Nair', managerId: 'u-priya-2'),
+      ]);
+
+      expect(managerField(spec).options.length, 2);
+    });
+
+    test('the section is dropped when nobody reports to anyone', () {
+      final spec = buildMembersFilterSpec(const [],
+          members: [withManager('d', '— (exempt)')]);
+
+      expect(spec.sections.expand((s) => s.fields).any((f) => f.id == 'managers'),
+          isFalse);
+    });
+
+    test("filtering matches on the manager's uuid, not the display name", () {
+      final values = FilterValues()..['managers'] = ChoiceValue(ids: {uLakshmi});
+
+      expect(memberMatchesFilters(roster[0], values), isTrue);
+      expect(memberMatchesFilters(roster[2], values), isFalse);
+      // A member with no manager matches nothing, not everything.
+      expect(memberMatchesFilters(roster[3], values), isFalse);
+    });
+
+    test('an unset facet leaves every member matching', () {
+      expect(memberMatchesFilters(roster[3], FilterValues()), isTrue);
     });
   });
 

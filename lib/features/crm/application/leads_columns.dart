@@ -1,7 +1,9 @@
 import '../../../core/utils/relative_time.dart';
 import '../../../data/mock/mock_users.dart';
+import 'record_rows.dart';
 import '../domain/entities/lead.dart';
 import '../domain/entities/lead_schema.dart';
+import 'schema_columns.dart';
 
 /// Turning the org's configured columns into text the Leads list card can show.
 
@@ -19,45 +21,53 @@ const Set<String> kLeadCardFrameColumns = {
   'assignees',
 };
 
-/// Columns the lead **detail** page renders in its own chrome rather than as an
-/// information row: the profile card (name, company, value, status), the score
-/// card, and the Owner & Assignees block. Excluded from [leadDetailRows] so a
-/// field is never shown twice on one screen.
-const Set<String> kLeadDetailFrameColumns = {
-  'lead_name',
-  'organization_name',
-  'lead_value',
-  'status',
-  'lead_score',
-  'lead_owner',
-  'assignees',
-  'assigned_team',
-};
-
-/// The information rows for the lead detail page: every column the org made
-/// visible on its `detail` layout that the page's chrome does not already show,
-/// in the org's order and under the org's labels.
+/// The information rows for the lead detail page: **every** column the org made
+/// visible on its `detail` layout, in the org's order and under the org's
+/// labels.
 ///
-/// Unlike the list card, layout and payload agree here — the record endpoint
-/// trims itself to this same `detail` config — so a visible column having no
-/// value means the lead genuinely has none. Those rows are kept and rendered
-/// as `—`, because on a detail page "we have no phone number for this lead" is
-/// information; a silently missing row is not.
-List<({String label, String value})> leadDetailRows(
+/// Deliberately exhaustive on both axes:
+///
+/// * **Nothing is excluded for being shown elsewhere.** Name, company, value,
+///   status, score, owner and assignees also appear in the page's own chrome
+///   (profile card, score card, Owner & Assignees block). They are repeated
+///   here anyway, so this card is a complete readout of the org's detail
+///   layout rather than "the leftovers". The chrome is unaffected.
+/// * **Nothing is dropped for being empty.** A visible column with no value
+///   renders as `—`, because on a detail page "we have no phone number for
+///   this lead" is information; a silently missing row is not. The record
+///   endpoint trims itself to this same `detail` config, so a visible column
+///   with no value means the lead genuinely has none.
+///
+/// One caveat this cannot paper over: [leadColumnText] answers null for a
+/// column the [Lead] entity has no field for (`annual_revenue`,
+/// `no_of_employees`, `salutation`, …). Those now render as `—` rather than
+/// vanishing — the row is present and correctly labelled, but the value would
+/// need the raw record row to fill in.
+/// Rows carry their [LeadColumn] so the detail screen can offer to edit one:
+/// the column is what names the API field, its type and whether it is writable
+/// at all.
+List<({String label, String value, LeadColumn? column})> leadDetailRows(
   Lead lead,
   LeadListSchema schema,
 ) {
-  final out = <({String label, String value})>[];
+  final out = <({String label, String value, LeadColumn? column})>[];
   for (final column in schema.columns) {
-    if (kLeadDetailFrameColumns.contains(column.name)) continue;
     final value = leadColumnText(lead, column);
-    // A column the entity cannot supply at all (null) is skipped; one it can
-    // supply but that is empty for this lead shows as an em dash.
-    if (value == null) continue;
-    out.add((label: column.label, value: value.isEmpty ? '—' : value));
+    out.add((
+      label: column.label,
+      value: (value == null || value.isEmpty) ? '—' : value,
+      column: column,
+    ));
   }
   return out;
 }
+
+/// Whether long-pressing a Lead-information row turns it into a text box.
+bool leadFieldEditsInline(LeadColumn column) => fieldEditsInline(column);
+
+/// Why a long press on a Lead row did not open a box; null when it did.
+String? leadInlineEditHint(LeadColumn? column) =>
+    inlineEditHint(column, editForm: 'Edit lead');
 
 /// The extra columns to render as chips: everything the org made visible that
 /// the card's fixed layout does not already show, in the org's order.
@@ -139,9 +149,10 @@ String? leadColumnText(Lead lead, LeadColumn column) {
     case 'is_upsell':
       return lead.upsell ? 'Upsell' : null;
     default:
-      // A column the entity does not carry (territory, annual_revenue, …).
-      // Skipped rather than guessed at.
-      return null;
+      // Nothing typed matched, so read it straight off the row by name. A
+      // built-in the entity has no field for (`territory`, `annual_revenue`,
+      // `no_of_employees`, …) used to answer null and render as nothing.
+      return rawColumnText(lead.raw, column);
   }
 }
 

@@ -5,4 +5,9 @@ import '../entities/invoice.dart';
 /// infrastructure detail.
 abstract class InvoicesRepository {
   Future<List<Invoice>> getInvoices();
+
+  /// The server's own totals and schedule counts for one invoice, by
+  /// `payment_id`. Null means "no server figures" — mock mode, an invoice with
+  /// no uuid, or a failed call — and callers fall back to their own arithmetic.
+  Future<InvoiceSummary?> getInvoiceSummary(String paymentId);
 }

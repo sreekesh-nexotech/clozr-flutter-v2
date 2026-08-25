@@ -5,6 +5,7 @@ import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/entities/lms_activity.dart';
+import '../../domain/entities/lms_stats.dart';
 import '../../domain/repositories/lms_repository.dart';
 import '../../infrastructure/data_sources/local/lms_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/lms_remote_ds.dart';
@@ -62,6 +63,7 @@ LmsStatus lmsCombine(List<LmsData> parts) {
 /// the ErrorState Retry CTAs; reloading a source that has already succeeded or
 /// is admin-gated is harmless.
 void reloadLms(WidgetRef ref) {
+  ref.invalidate(lmsStatsProvider);
   ref.read(lmsCoursesControllerProvider.notifier).reload();
   ref.read(lmsRecordsControllerProvider.notifier).reload();
   ref.read(lmsActivityControllerProvider.notifier).reload();
@@ -121,6 +123,15 @@ final lmsCoursesControllerProvider =
 /// All courses. Same name/exposed type as before the API wiring.
 final lmsCoursesProvider = Provider<List<Course>>(
   (ref) => ref.watch(lmsCoursesControllerProvider).items,
+);
+
+/// The Overview's headline figures (`GET /lms/dashboard/stats/`).
+///
+/// Null in mock mode and for a role the dashboard `403`s, which the screen
+/// reads as "count what is loaded instead" — the behaviour it had before this
+/// endpoint was wired.
+final lmsStatsProvider = FutureProvider<LmsStats?>(
+  (ref) => ref.watch(lmsRepositoryProvider).getStats(),
 );
 
 /// Single course lookup by id.

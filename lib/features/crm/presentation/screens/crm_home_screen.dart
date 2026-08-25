@@ -11,6 +11,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/utils/inr_format.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/kpi_card.dart';
 import '../../../../core/widgets/list_skeleton.dart';
@@ -45,9 +46,27 @@ class CrmHomeScreen extends ConsumerWidget {
     );
   }
 
+  /// Pull-to-refresh: the dashboard aggregate plus the three lists its cards
+  /// link into, so the counts and the lists they open cannot disagree.
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(crmHomeProvider);
+    ref.invalidate(leadsScopedProvider);
+    ref.invalidate(crmTasksProvider);
+    refreshFollowups(ref);
+    await settle([
+      ref.read(crmHomeProvider.future),
+      ref.read(leadsProvider.future),
+      ref.read(crmTasksProvider.future),
+      ref.read(followupsProvider.future),
+    ]);
+  }
+
   // ── Mock body (byte-identical to the presentation build) ──
   Widget _mockList(BuildContext context, WidgetRef ref) {
-    return ListView(
+    return AppRefresh(
+      onRefresh: () => _refresh(ref),
+      child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
       children: [
         _kpiGrid(context, ref),
@@ -64,6 +83,7 @@ class CrmHomeScreen extends ConsumerWidget {
         SizedBox(height: 16.h),
         _overdueCard(context, ref, data: crmOverdueData),
       ],
+      ),
     );
   }
 
@@ -83,7 +103,10 @@ class CrmHomeScreen extends ConsumerWidget {
           ],
         );
       },
-      data: (d) => ListView(
+      data: (d) => AppRefresh(
+        onRefresh: () => _refresh(ref),
+        child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
         children: [
           _apiKpiGrid(context, ref, d.kpis),
@@ -105,6 +128,7 @@ class CrmHomeScreen extends ConsumerWidget {
           SizedBox(height: 16.h),
           _overdueCard(context, ref, data: d.overdue),
         ],
+        ),
       ),
     );
   }

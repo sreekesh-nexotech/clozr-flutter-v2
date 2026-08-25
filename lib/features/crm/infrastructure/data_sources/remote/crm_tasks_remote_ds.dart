@@ -26,16 +26,39 @@ class CrmTasksRemoteDataSource {
   /// Raw rows for the tasks linked to one lead, scoped server-side with the
   /// shared generic-relation params rather than filtered after the fact.
   Future<List<Map<String, dynamic>>> fetchTaskRowsForLead(String leadId) =>
-      _fetchRows(leadId: leadId);
+      fetchTaskRowsFor(relatedTo: 'lead', relatedToId: leadId);
 
-  Future<List<Map<String, dynamic>>> _fetchRows({String? leadId}) async {
+  /// Raw rows for the tasks linked to **any** record — `related_to` is the
+  /// lowercased model name (`lead`, `customer`).
+  ///
+  /// Generic because client-side filtering cannot do this job: the mapped
+  /// [CrmTask] only carries `leadId`, populated when the relation happens to be
+  /// a lead, so a customer's tasks are indistinguishable from unrelated ones in
+  /// the org-wide list.
+  Future<List<Map<String, dynamic>>> fetchTaskRowsFor({
+    required String relatedTo,
+    required String relatedToId,
+  }) =>
+      _fetchRows(relatedTo: relatedTo, relatedToId: relatedToId);
+
+  Future<List<Map<String, dynamic>>> _fetchRows({
+    String? relatedTo,
+    String? relatedToId,
+  }) async {
+    final scoped = relatedTo != null && relatedToId != null;
     final rows = <Map<String, dynamic>>[];
     for (var page = 1; page <= 50; page++) {
       final body = await _api.get(ApiEndpoints.crmTasks, query: {
         'is_followup': 'false',
+        // Trims each row to the org's **mobile** card config, which is where
+        // the card's layout comes from. Verified on this resource: the default
+        // payload has no `description`, so the column the org put on its card
+        // had nothing to render.
+        'view_type': 'mobile',
         'page_size': 100,
-        if (leadId != null) 'related_to': 'lead',
-        if (leadId != null) 'related_to_id': leadId,
+        // Both-or-neither by contract; one alone is a 400.
+        if (scoped) 'related_to': relatedTo,
+        if (scoped) 'related_to_id': relatedToId,
         if (page > 1) 'page': page,
       });
       final chunk = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
@@ -273,8 +296,10 @@ class CrmTasksRemoteDataSource {
     final due = parseApiDate(json['due_date']);
 
     return CrmTask(
+      raw: json,
       id: id,
       title: _str(json['title']) ?? '',
+      description: _str(json['description'])?.trim() ?? '',
       type: _str(json['task_type']) ?? '',
       leadId: relatedMap?['model'] == 'lead' ? _str(relatedMap?['id']) : null,
       status: crmTaskStatusKey(

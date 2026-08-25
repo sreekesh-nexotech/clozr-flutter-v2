@@ -59,12 +59,15 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
 
     final membersAsync = ref.watch(membersProvider);
     final all = membersAsync.valueOrNull ?? const [];
-    final role = ref.watch(memberRoleProvider);
+    final role = ref.watch(effectiveMemberRoleProvider);
     final searchOpen = ref.watch(memberSearchOpenProvider);
     final query = ref.watch(memberSearchProvider);
     final filterCount = ref.watch(memberFiltersProvider).activeCount;
 
-    final tabKeys = <String>['all', ...memberRoleOrder];
+    // The org's own roles when `/management/roles/` has loaded, the built-in
+    // five otherwise. Counted client-side — the members list is already fully
+    // in memory, and there is no per-role facet endpoint.
+    final tabKeys = <String>['all', ...ref.watch(memberRoleTabsProvider)];
 
     return Column(
       children: [

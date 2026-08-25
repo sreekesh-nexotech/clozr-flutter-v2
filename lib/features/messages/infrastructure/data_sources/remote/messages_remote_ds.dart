@@ -122,6 +122,97 @@ ChatMessage? chatMessageFromJson(Map<String, dynamic> row) {
   );
 }
 
+/// One message row → a "Medias" tab entry, or null when the row carries no
+/// file.
+///
+/// The rows already say everything the tab needs (`media_url`,
+/// `media_mime_type`, `message_type`), so the tab is a second reading of the
+/// thread rather than another endpoint. It used to be filled only by the
+/// prototype seed, which meant every real conversation reported "No media
+/// shared" however many files had been exchanged.
+ChatMedia? chatMediaFromJson(Map<String, dynamic> row, {DateTime? now}) {
+  final url = _str(row['media_url']);
+  if (url == null) return null;
+  final type = _str(row['message_type'])?.toLowerCase() ?? '';
+  final mime = _str(row['media_mime_type']) ?? '';
+  final sent = parseApiDate(row['timestamp'] ?? row['created_at']);
+
+  // The caption is the human name when WhatsApp sends one; otherwise the file
+  // name off the URL; otherwise the kind of thing it is.
+  final name = _str(row['caption']) ??
+      _str(row['file_name']) ??
+      _fileNameOf(url) ??
+      (type.isEmpty ? 'Attachment' : '${type[0].toUpperCase()}${type.substring(1)}');
+
+  final kind = mime.isNotEmpty
+      ? mime.split('/').last.toUpperCase()
+      : (type.isEmpty ? 'FILE' : type.toUpperCase());
+
+  return ChatMedia(
+    kind: mediaKind(type, mime),
+    name: name,
+    meta: [kind, relativeTime(sent, now: now)].where((s) => s.isNotEmpty).join(' · '),
+  );
+}
+
+/// The file name in a media URL, ignoring any query string.
+String? _fileNameOf(String url) {
+  final clean = url.split('?').first;
+  final seg = clean.substring(clean.lastIndexOf('/') + 1);
+  return seg.isEmpty ? null : seg;
+}
+
+/// The [ChatMedia.kind] for a row, by WhatsApp's own message type first and its
+/// mime second — the same two fields the send path uses.
+///
+/// A string rather than an icon on purpose: the icon set lives in the
+/// presentation layer, and reaching for it here would drag its package into
+/// every consumer of this mapper.
+String mediaKind(String type, String mime) {
+  final m = mime.toLowerCase();
+  if (type == 'image' || m.startsWith('image/')) return 'image';
+  if (type == 'video' || m.startsWith('video/')) return 'video';
+  if (type == 'audio' || type == 'voice' || m.startsWith('audio/')) return 'audio';
+  if (m.contains('pdf')) return 'pdf';
+  if (m.contains('sheet') || m.contains('excel') || m.contains('csv')) return 'sheet';
+  if (m.contains('word') || m.contains('document')) return 'doc';
+  return 'file';
+}
+
+/// URLs shared in a message body → "Links" tab entries.
+///
+/// A body can carry more than one, so this answers a list. Bare `www.` links
+/// count: people paste them, and the tab is about what was shared rather than
+/// what happens to be clickable.
+List<ChatLink> chatLinksFromJson(Map<String, dynamic> row, {DateTime? now}) {
+  final body = _str(row['body']) ?? _str(row['text']);
+  if (body == null) return const [];
+  final sent = relativeTime(parseApiDate(row['timestamp'] ?? row['created_at']), now: now);
+
+  final out = <ChatLink>[];
+  for (final match in _urlPattern.allMatches(body)) {
+    final raw = match.group(0)!;
+    // Trailing sentence punctuation is not part of the address.
+    final url = raw.replaceAll(RegExp(r'[.,;:!?)\]]+$'), '');
+    if (url.isEmpty) continue;
+    out.add(ChatLink(title: _linkTitle(url), url: url, meta: sent));
+  }
+  return out;
+}
+
+final _urlPattern =
+    RegExp(r'(https?://[^\s]+|www\.[^\s]+)', caseSensitive: false);
+
+/// The row's bold line: the host, plus the first path segment when there is
+/// one — "kairali.in/work" reads better than the whole query string.
+String _linkTitle(String url) {
+  var clean = url.replaceFirst(RegExp(r'^https?://', caseSensitive: false), '');
+  clean = clean.split('?').first;
+  final parts = clean.split('/').where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return clean;
+  return parts.length == 1 ? parts.first : '${parts[0]}/${parts[1]}';
+}
+
 /// One `/whatsapp/templates/` row → [WhatsappTemplate]. The body is the BODY
 /// component's text with Meta's first numbered slot (`{{1}}`) rewritten to the
 /// UI's `{name}` placeholder so the picker preview personalises.
@@ -259,6 +350,25 @@ class MessagesRemoteDataSource {
       if (msg != null) out.add(msg);
     }
     return out;
+  }
+
+  /// One fetch, three views: the thread, the files in it and the links in it.
+  /// Newest first on both derived tabs — the useful end of a long thread.
+  ChatThread mapThreadRows(List rows) {
+    final media = <ChatMedia>[];
+    final links = <ChatLink>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final map = Map<String, dynamic>.from(row);
+      final file = chatMediaFromJson(map);
+      if (file != null) media.add(file);
+      links.addAll(chatLinksFromJson(map));
+    }
+    return ChatThread(
+      messages: mapMessageRows(rows),
+      media: media.reversed.toList(),
+      links: links.reversed.toList(),
+    );
   }
 
   Future<void> markRead(String conversationId) =>

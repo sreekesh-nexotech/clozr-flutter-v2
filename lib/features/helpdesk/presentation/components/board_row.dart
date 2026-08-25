@@ -19,7 +19,9 @@ class BoardRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pill = boardPill(ticket);
-    final rep = MockUsers.of(ticket.assignees.isNotEmpty ? ticket.assignees.first : 'me');
+    // Null when nobody is on the ticket. It used to fall back to `'me'`, so an
+    // unassigned ticket wore the signed-in user's initials and read as theirs.
+    final rep = ticket.assignees.isEmpty ? null : MockUsers.of(ticket.assignees.first);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -28,7 +30,20 @@ class BoardRow extends StatelessWidget {
         decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
         child: Row(
           children: [
-            Text(ticket.id, style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+            // `displayRef` ("TKT-0025"), never `id` — that is the `issue_id`
+            // uuid, and 36 characters of it pushed the rest of the row off the
+            // right edge. Every other ticket surface already uses this.
+            //
+            // Capped as well: `displayRef` falls back to the uuid when a row
+            // carries no `reference`, and this Text sits outside the Expanded,
+            // so anything long would overflow rather than truncate.
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 92.w),
+              child: Text(ticket.displayRef,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+            ),
             SizedBox(width: 8.w),
             Expanded(
               child: Text(ticket.subject,
@@ -53,8 +68,16 @@ class BoardRow extends StatelessWidget {
               width: 19.w,
               height: 19.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: rep.color, shape: BoxShape.circle),
-              child: Text(rep.initials, style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
+              decoration: BoxDecoration(
+                color: rep?.color ?? AppColors.bgChipGrey,
+                shape: BoxShape.circle,
+              ),
+              child: rep == null
+                  // An empty slot keeps the row's alignment while saying, truthfully,
+                  // that nobody is on it.
+                  ? Icon(PhosphorIconsRegular.user, size: 10.sp, color: AppColors.textPlaceholder)
+                  : Text(rep.initials,
+                      style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
             ),
           ],
         ),

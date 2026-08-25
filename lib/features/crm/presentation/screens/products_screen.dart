@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -15,6 +16,7 @@ import '../../../../core/widgets/tab_chip.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/products_filter_spec.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
 import '../../domain/entities/product.dart';
 import '../components/add_product_sheet.dart';
@@ -64,7 +66,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final query = ref.watch(prodSearchProvider);
     final filterCount = ref.watch(productFiltersProvider).activeCount;
 
-    final catKeys = ['all', ...productCategoryOrder];
+    // The org's own categories (`/crm/product-types/`) when it has any; the
+    // built-in list otherwise. The fixed list is the prototype's fit-out
+    // vocabulary, so against a live catalog every chip read "(0)" and the real
+    // categories had no chip at all.
+    final catKeys = ['all', ...ref.watch(productCategoriesProvider)];
 
     return Column(
       children: [
@@ -113,7 +119,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 children: [
                   for (final k in catKeys)
                     TabChip(
-                      label: '${k == 'all' ? 'All' : k} (${prodCatCount(all, k)})',
+                      label: '${k == 'all' ? 'All' : k} (${prodCatCount(all, k, mode: mode)})',
                       active: cat == k,
                       onTap: () => ref.read(prodCatProvider.notifier).state = k,
                     ),
@@ -129,10 +135,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           child: AsyncStateView<List<Product>>(
             value: async,
             onRetry: () => ref.invalidate(productsProvider),
+            onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(visibleProductsProvider);
               if (visible.isEmpty) {
                 return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.package,
@@ -146,12 +154,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 );
               }
               return ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 itemCount: visible.length,
                 separatorBuilder: (_, __) => SizedBox(height: 10.h),
                 itemBuilder: (context, i) {
                   final product = visible[i];
                   return ProductCard(
+                    schema: ref.watch(productListSchemaProvider),
                     product: product,
                     onTap: () => context.push('${Routes.productDetail}?id=${product.id}'),
                   );
@@ -165,6 +175,24 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   }
 
   // ── Filter drawer ──
+  /// Pull-to-refresh: the product rows.
+  Future<void> _refresh() async {
+    ref.invalidate(productsProvider);
+    // The chips come from their own call, so a pull that reloaded only the rows
+    // left a stale category strip above fresh data.
+    ref.invalidate(productTypeCatalogProvider);
+    // The card's layout comes from its own call too. Without this a pull
+    // refetched the rows but kept the layout fetched at first build, so an
+    // admin's edit to the mobile card never appeared — and the org's config
+    // does change under a running app.
+    ref.invalidate(productListSchemaFutureProvider);
+    await settle([
+      ref.read(productsProvider.future),
+      ref.read(productTypeCatalogProvider.future),
+      ref.read(productListSchemaFutureProvider.future),
+    ]);
+  }
+
   Future<void> _openFilters() async {
     final spec = ref.read(productsFilterSpecProvider);
     final current = ref.read(productFiltersProvider);

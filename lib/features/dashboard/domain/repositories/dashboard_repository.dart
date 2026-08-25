@@ -6,5 +6,6 @@ import '../entities/dashboard_models.dart';
 /// [period] is the API period value (`month`, `last_month`, `ytd`, …) and
 /// [teamId] the selected team uuid (`'all'` / null → org-wide).
 abstract class DashboardRepository {
-  Future<DashboardData> getDashboard({String period = 'month', String? teamId});
+  Future<DashboardData> getDashboard(
+      {String period = 'month', String? teamId, String? userId});
 }

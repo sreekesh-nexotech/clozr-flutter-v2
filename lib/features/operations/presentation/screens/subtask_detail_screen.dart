@@ -13,6 +13,7 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
+import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/ops_notes_providers.dart';
 import '../../application/providers/ops_subtasks_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
@@ -58,8 +59,10 @@ class SubtaskDetailScreen extends ConsumerWidget {
                   );
                 }
                 final s = subtasks[index];
-                final assignee = MockUsers.of(s.who);
-                final notesKey = 'sub-$taskId#$index';
+                final assignee = s.who.isEmpty ? null : MockUsers.of(s.who);
+                // The subtask's own `task_id`: its comment thread hangs off the
+                // record, not off its position in the parent's list.
+                final notesKey = s.id;
 
                 return ListView(
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
@@ -83,20 +86,28 @@ class SubtaskDetailScreen extends ConsumerWidget {
                           _metaRow(
                             icon: PhosphorIconsRegular.user,
                             label: 'Assignee',
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 26.w,
-                                  height: 26.w,
-                                  alignment: Alignment.center,
-                                  decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                                  child: Text(assignee.initials, style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
-                                ),
-                                SizedBox(width: 8.w),
-                                Text(assignee.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                              ],
-                            ),
+                            // An unassigned subtask says so, rather than
+                            // drawing an "Unknown" avatar for an empty id.
+                            child: assignee == null
+                                ? Text('Unassigned',
+                                    style: AppText.custom(
+                                        size: 14,
+                                        weight: FontWeight.w700,
+                                        color: AppColors.textPlaceholder))
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 26.w,
+                                        height: 26.w,
+                                        alignment: Alignment.center,
+                                        decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                                        child: Text(assignee.initials, style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                                      ),
+                                      SizedBox(width: 8.w),
+                                      Text(assignee.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                                    ],
+                                  ),
                           ),
                           SizedBox(height: 4.h),
                           _metaRow(
@@ -143,10 +154,19 @@ class SubtaskDetailScreen extends ConsumerWidget {
     );
   }
 
+  /// `PATCH /projects/tasks/{subtask_id}/ {"status": …}` — the same write the
+  /// checkbox on the parent's detail page makes, through the same notifier, so
+  /// the two surfaces cannot disagree. A refusal (the parent's completion gate)
+  /// surfaces as the server's own message.
+  Future<void> _toggle(WidgetRef ref, String taskId, int index) async {
+    final err = await ref.read(opsSubtasksProvider(taskId).notifier).toggle(index);
+    if (err != null) ref.read(toastProvider.notifier).showError(err);
+  }
+
   Widget _doneToggle(BuildContext context, WidgetRef ref, String taskId, int index, bool done) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => ref.read(opsSubtasksProvider(taskId).notifier).toggle(index),
+      onTap: () => _toggle(ref, taskId, index),
       child: Container(
         height: 48.h,
         padding: EdgeInsets.symmetric(horizontal: 14.w),

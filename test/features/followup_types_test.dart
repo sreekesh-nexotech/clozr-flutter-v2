@@ -44,7 +44,7 @@ Followup _fu({
       time: '10:00',
       status: status,
       owner: 'me',
-      agenda: 'Follow-up',
+      title: 'Follow-up',
     );
 
 List<String> _typeOptions({List<CatalogOption> catalog = const []}) {

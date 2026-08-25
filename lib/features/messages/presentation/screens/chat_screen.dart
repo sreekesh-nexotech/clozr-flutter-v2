@@ -456,7 +456,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       children: [
         for (final f in chat.media)
           _fileRow(
-            icon: f.icon,
+            // The seed carries its own icon; an API row carries the kind and
+            // picks from the same set here, so both render identically.
+            icon: f.icon ?? _mediaIcon(f.kind),
             iconBg: AppColors.tintBlue,
             iconColor: AppColors.blueBright,
             title: f.name,
@@ -466,6 +468,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
       ],
     );
+  }
+
+  /// [ChatMedia.kind] → the row's icon. The kinds come from the message's
+  /// WhatsApp type and mime (see `mediaKind`).
+  IconData _mediaIcon(String kind) {
+    switch (kind) {
+      case 'image':
+        return PhosphorIconsRegular.image;
+      case 'video':
+        return PhosphorIconsRegular.videoCamera;
+      case 'audio':
+        return PhosphorIconsRegular.musicNote;
+      case 'pdf':
+        return PhosphorIconsRegular.filePdf;
+      case 'sheet':
+        return PhosphorIconsRegular.fileXls;
+      case 'doc':
+        return PhosphorIconsRegular.fileDoc;
+    }
+    return PhosphorIconsRegular.file;
   }
 
   // ── Links ──

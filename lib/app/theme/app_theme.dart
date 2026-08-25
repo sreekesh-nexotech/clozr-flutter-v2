@@ -1,3 +1,7 @@
+// `CupertinoPageTransitionsBuilder` is exported from `cupertino.dart`, not
+// `material.dart` — the iOS entry in `pageTransitionsTheme` below does not
+// resolve without this (Flutter 3.44).
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 

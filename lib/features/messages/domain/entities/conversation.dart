@@ -38,16 +38,45 @@ class ChatMessage extends Equatable {
   List<Object?> get props => [mine, text, time, status, tpl, localId];
 }
 
+/// One conversation's thread as the API serves it: the messages, plus the two
+/// derived views the chat screen's other tabs render.
+///
+/// Media and links are not separate endpoints — they are the same message rows
+/// read differently (a row with a `media_url`, a URL inside a body), so they
+/// come back from the one fetch rather than costing two more.
+class ChatThread {
+  const ChatThread({
+    this.messages = const [],
+    this.media = const [],
+    this.links = const [],
+  });
+
+  final List<ChatMessage> messages;
+  final List<ChatMedia> media;
+  final List<ChatLink> links;
+}
+
 /// A shared file in the conversation's "Medias" tab.
 class ChatMedia extends Equatable {
-  const ChatMedia({required this.icon, required this.name, required this.meta});
+  const ChatMedia({
+    this.icon,
+    this.kind = 'file',
+    required this.name,
+    required this.meta,
+  });
 
-  final IconData icon;
+  /// An explicit icon, as the prototype seed carries. Null on API rows — the
+  /// pane resolves one from [kind] instead, which keeps the icon set (and its
+  /// package) out of the data source.
+  final IconData? icon;
+
+  /// `image` | `video` | `audio` | `pdf` | `sheet` | `doc` | `file`.
+  final String kind;
   final String name;
   final String meta;
 
   @override
-  List<Object?> get props => [name, meta];
+  List<Object?> get props => [name, meta, kind];
 }
 
 /// A shared link in the conversation's "Links" tab.
@@ -108,6 +137,8 @@ class Conversation extends Equatable {
     String? windowLeft,
     String? lastTime,
     List<ChatMessage>? messages,
+    List<ChatMedia>? media,
+    List<ChatLink>? links,
   }) {
     return Conversation(
       id: id,
@@ -120,8 +151,8 @@ class Conversation extends Equatable {
       windowLeft: windowLeft ?? this.windowLeft,
       lastTime: lastTime ?? this.lastTime,
       messages: messages ?? this.messages,
-      media: media,
-      links: links,
+      media: media ?? this.media,
+      links: links ?? this.links,
     );
   }
 

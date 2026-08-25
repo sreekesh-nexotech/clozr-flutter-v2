@@ -11,18 +11,26 @@ import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/api/roster.dart';
+import '../../../../data/api/user_directory.dart';
+import '../../../../core/utils/relative_time.dart';
+import '../../../crm/domain/entities/audit_entry.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/ticket_notes_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
+import '../../domain/entities/ticket_task.dart';
 import '../util/ticket_sla.dart';
 
 /// Ticket detail — summary + status/assignee, SLA banner (paused when Pending),
@@ -44,7 +52,12 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     final id = uri.queryParameters['id'] ?? '';
     final fromBoard = uri.queryParameters['from'] == 'board';
     final ticketsAsync = ref.watch(ticketsProvider);
-    final base = ref.watch(ticketByIdProvider(id));
+    // The ticket's own row wins over the list's copy: it is one call, so an edit
+    // shows here as soon as the write returns instead of after the whole list
+    // has been walked again. Null in mock mode and on failure — then the list
+    // row stands, exactly as before.
+    final base =
+        ref.watch(ticketDetailProvider(id)).valueOrNull ?? ref.watch(ticketByIdProvider(id));
     final headerTicket = base?.copyWith(status: _status, assignees: _assignees);
 
     return Container(
@@ -55,7 +68,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           Expanded(
             child: AsyncStateView<List<Ticket>>(
               value: ticketsAsync,
-              onRetry: () => ref.invalidate(ticketsProvider),
+              onRetry: () => refreshTickets(ref),
+              onRefresh: () => _refresh(id),
               loading: () => const DetailSkeleton(),
               data: (_) {
                 if (base == null) {
@@ -160,7 +174,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                     SizedBox(height: 5.h),
                     Row(
                       children: [
-                        Text(t.id, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+                        // The org's ticket number ("TKT-0025"), not the
+                        // `issue_id` uuid the row is keyed by.
+                        Text(t.displayRef,
+                            style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
                         if (t.status == 'resolved') ...[
                           SizedBox(width: 8.w),
                           Flexible(
@@ -230,25 +247,66 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
+  /// Overlapping assignee avatars.
+  ///
+  /// Laid out with a [Stack] rather than a negative margin: `Container`
+  /// asserts on one (`margin.isNonNegative`), so the old version threw the
+  /// moment a ticket had a **second** assignee — the first sat at margin 0 and
+  /// never tripped it, which is why it only showed up on reassignment.
+  /// Pull-to-refresh: the ticket itself and the two panels that fetch on their
+  /// own — the audit trail and the notes thread.
+  Future<void> _refresh(String id) async {
+    refreshTickets(ref);
+    ref.invalidate(ticketDetailProvider(id));
+    ref.invalidate(ticketActivityProvider(id));
+    ref.invalidate(ticketLinkedTasksProvider(id));
+    await settle([
+      ref.read(ticketsProvider.future),
+      ref.read(ticketDetailProvider(id).future),
+      ref.read(ticketActivityProvider(id).future),
+      ref.read(ticketLinkedTasksProvider(id).future),
+      // The notes thread is a StateNotifier, not a provider that invalidation
+      // reaches — without this a pull-to-refresh left the notes (and their
+      // attachments) exactly as they were.
+      ref.read(ticketNotesProvider(id).notifier).reload(),
+    ]);
+  }
+
   Widget _avatarStack(List<String> ids, double size) {
     final shown = ids.take(2).toList();
     final more = ids.length - shown.length;
+    // Each avatar after the first sits 7px into the one before it.
+    final step = size.w - 7.w;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (int i = 0; i < shown.length; i++)
-          Container(
-            width: size.w,
+        if (shown.isNotEmpty)
+          SizedBox(
+            width: step * (shown.length - 1) + size.w,
             height: size.w,
-            alignment: Alignment.center,
-            margin: EdgeInsets.only(left: i == 0 ? 0 : -7.w),
-            decoration: BoxDecoration(
-              color: MockUsers.of(shown[i]).color,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.white, width: 2),
+            child: Stack(
+              children: [
+                for (int i = 0; i < shown.length; i++)
+                  Positioned(
+                    left: step * i,
+                    child: Container(
+                      width: size.w,
+                      height: size.w,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: MockUsers.of(shown[i]).color,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.white, width: 2),
+                      ),
+                      child: Text(MockUsers.of(shown[i]).initials,
+                          style: AppText.custom(
+                              size: size * 0.36,
+                              weight: FontWeight.w700,
+                              color: AppColors.white)),
+                    ),
+                  ),
+              ],
             ),
-            child: Text(MockUsers.of(shown[i]).initials,
-                style: AppText.custom(size: size * 0.36, weight: FontWeight.w700, color: AppColors.white)),
           ),
         if (more > 0) ...[
           SizedBox(width: 5.w),
@@ -378,7 +436,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       ('Channel', t.channel),
       ('Category', t.cat),
       ('Product / service', t.product ?? '—'),
-      ('Related project', proj?.name ?? t.projId ?? '—'),
+      // `project_name` as the row carries it wins: resolving the uuid against
+      // the projects list only works once that list has loaded, and printing a
+      // raw uuid is worse than printing nothing.
+      ('Related project', t.projName ?? proj?.name ?? '—'),
       ('Created', t.created),
       ('First responded', t.responded ?? 'Awaiting'),
       ('Resolved', t.resolved ?? '—'),
@@ -444,7 +505,14 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
   // ── Linked tasks ──
   Widget _linkedTasksCard(Ticket t) {
-    final taskIds = [if (t.taskId != null) t.taskId!];
+    // The ticket's own linked-task feed (`helpdesk.md` §10). Empty in mock mode
+    // and on failure, where the card falls back to the row's `taskId` — which
+    // is all the list payload carries.
+    final live = ref.watch(ticketLinkedTasksProvider(t.id)).valueOrNull ?? const [];
+    final tasks = live.isNotEmpty
+        ? live
+        : [if (t.taskId != null) TicketTask(id: t.taskId!, subject: '')];
+    final dir = ref.watch(ticketDirectoryProvider);
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -457,42 +525,50 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
               Text('Linked tasks', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
             ],
           ),
-          if (taskIds.isNotEmpty) ...[
+          if (tasks.isNotEmpty) ...[
             SizedBox(height: 12.h),
-            for (final tid in taskIds)
-              Container(
-                margin: EdgeInsets.only(bottom: 8.h),
-                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: AppColors.borderCardSoft),
-                ),
-                child: Row(
-                  children: [
-                    Icon(PhosphorIconsRegular.listChecks, size: 17.sp, color: AppColors.navy),
-                    SizedBox(width: 10.w),
-                    Expanded(
-                      child: Text(tid,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
-                    ),
-                    if (t.projId != null) ...[
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                        decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(7.r)),
-                        child: Text(t.projId!, style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.navy)),
+            for (final task in tasks)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // A linked task *is* a projects task, so the caret opens the
+                // Operations detail screen.
+                onTap: task.id.isEmpty
+                    ? null
+                    : () => context.push('${Routes.opsTaskDetail}?id=${task.id}'),
+                child: Container(
+                  margin: EdgeInsets.only(bottom: 8.h),
+                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12.r),
+                    border: Border.all(color: AppColors.borderCardSoft),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIconsRegular.listChecks, size: 17.sp, color: AppColors.navy),
+                      SizedBox(width: 10.w),
+                      Expanded(
+                        child: Text(task.display,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
                       ),
-                      SizedBox(width: 8.w),
+                      if (_taskChip(dir, task, t) case final chip?) ...[
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                          decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(7.r)),
+                          child: Text(chip, style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.navy)),
+                        ),
+                        SizedBox(width: 8.w),
+                      ],
+                      Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
                     ],
-                    Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
-                  ],
+                  ),
                 ),
               ),
           ],
           if (!t.isLocked)
             GestureDetector(
-              onTap: () => ref.read(toastProvider.notifier).show('Create task from ticket'),
+              onTap: () => _openCreateTaskSheet(t),
               child: Container(
                 margin: EdgeInsets.only(top: 12.h),
                 height: 44.h,
@@ -532,6 +608,82 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
+  /// The project badge on a linked-task row: the task's own project when it has
+  /// one, else the ticket's. Null when it would only print a uuid, which says
+  /// nothing to a user.
+  String? _taskChip(TicketLookups dir, TicketTask task, Ticket t) {
+    final pid = task.projectId ?? t.projId;
+    if (pid == null || pid.isEmpty) return null;
+    final name = task.projectId == null ? t.projName : null;
+    if (name != null && name.isNotEmpty) return name;
+    final resolved = dir.project(pid)?.name;
+    if (resolved != null && resolved.isNotEmpty) return resolved;
+    return UserDirectory.isUuid(pid) ? null : pid;
+  }
+
+  /// Raises an Operations task against this ticket
+  /// (`POST /issues/{id}/tasks/`). `subject` is the only field the backend
+  /// requires, so the sheet asks for exactly that.
+  void _openCreateTaskSheet(Ticket t) {
+    final ctrl = TextEditingController();
+    var saving = false;
+    showClozrSheet<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 24.h),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SheetHeader(title: 'Create task from ticket'),
+              AppTextField(
+                label: 'Task',
+                required: true,
+                controller: ctrl,
+                hint: 'What needs doing?',
+              ),
+              SizedBox(height: 16.h),
+              PrimaryButton(
+                label: saving ? 'Creating…' : 'Create task',
+                onTap: saving
+                    ? null
+                    : () async {
+                        final subject = ctrl.text.trim();
+                        if (subject.isEmpty) return;
+                        setSheet(() => saving = true);
+                        final ok = await _createTask(t, subject);
+                        if (!ok) {
+                          setSheet(() => saving = false);
+                          return;
+                        }
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                      },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _createTask(Ticket t, String subject) async {
+    try {
+      await ref
+          .read(ticketsRepositoryProvider)
+          .createLinkedTask(t.id, subject: subject, priority: t.pri);
+      if (!mounted) return true;
+      ref.read(toastProvider.notifier).show('Task created');
+      ref.invalidate(ticketLinkedTasksProvider(t.id));
+      await _refresh(t.id);
+      return true;
+    } on AppError catch (e) {
+      if (!mounted) return false;
+      ref.read(toastProvider.notifier).showError(e.message);
+      return false;
+    }
+  }
+
   // ── Notes ──
   //
   // Migrated to the shared [NotesThread] (#13). The thread's main composer posts
@@ -556,7 +708,12 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
   // ── Audit log ──
   Widget _auditCard(Ticket t) {
-    final entries = _buildAudit(t);
+    // The server's own trail in API mode — SLA breaches, status moves, edits,
+    // with the real actor. The derived list below it is the prototype's and
+    // names a user who did nothing, so it is mock-mode only.
+    final logged = ref.watch(ticketActivityProvider(t.id)).valueOrNull ?? const [];
+    final entries = ApiConfig.apiEnabled ? _fromLog(logged) : _buildAudit(t);
+    if (ApiConfig.apiEnabled && entries.isEmpty) return const SizedBox.shrink();
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 6.h),
@@ -611,6 +768,60 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
+  /// The shared audit entries → this card's rows. Icon and tone come from the
+  /// event kind, so a breach still reads red and a create still reads navy.
+  List<_Audit> _fromLog(List<AuditEntry> entries) => [
+        for (final e in entries)
+          _Audit(
+            _logIcon(e),
+            _logTone(e).$1,
+            _logTone(e).$2,
+            e.title,
+            [
+              if (e.subtitle.isNotEmpty) e.subtitle,
+              if (e.at != null) relativeTime(e.at),
+            ].where((s) => s.isNotEmpty).join(' · '),
+          ),
+      ];
+
+  IconData _logIcon(AuditEntry e) {
+    switch (e.kind) {
+      case AuditEventKind.created:
+        return PhosphorIconsRegular.plusCircle;
+      case AuditEventKind.statusChanged:
+        return PhosphorIconsRegular.arrowsClockwise;
+      case AuditEventKind.noteAdded:
+        return PhosphorIconsRegular.chatCircleText;
+      case AuditEventKind.childAdded:
+        return PhosphorIconsRegular.paperclip;
+      case AuditEventKind.deleted:
+        return PhosphorIconsRegular.trash;
+      case AuditEventKind.fieldChanged:
+        return PhosphorIconsRegular.pencilSimple;
+      case AuditEventKind.other:
+        return PhosphorIconsRegular.warningCircle;
+    }
+  }
+
+  (Color, Color) _logTone(AuditEntry e) {
+    switch (e.kind) {
+      case AuditEventKind.created:
+        return (AppColors.navy, AppColors.tintNavy);
+      case AuditEventKind.statusChanged:
+        return (AppColors.blueBright, AppColors.tintBlue);
+      case AuditEventKind.noteAdded:
+        return (AppColors.success, AppColors.tintGreen);
+      case AuditEventKind.deleted:
+      case AuditEventKind.other:
+        return (AppColors.error, AppColors.tintRed);
+      case AuditEventKind.childAdded:
+      case AuditEventKind.fieldChanged:
+        return (AppColors.pending, AppColors.tintPurple);
+    }
+  }
+
+  /// The prototype's derived trail — **mock mode only**. Every entry is
+  /// inferred from the ticket's own fields, and two of them name a fixed user.
   List<_Audit> _buildAudit(Ticket t) {
     final now = kNowList.millisecondsSinceEpoch;
     final resMs = t.resolveByISO != null ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch - now : null;
@@ -662,7 +873,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           label: 'Create task from ticket',
           enabled: !locked,
           sublabel: locked ? 'Closed — reopen to create tasks' : null,
-          onTap: () => ref.read(toastProvider.notifier).show('Create task from ticket'),
+          onTap: () => _openCreateTaskSheet(t),
         ),
         if (locked)
           MenuAction(
@@ -687,7 +898,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   /// write is awaited: success toast only on success; on an [AppError] the local
   /// override rolls back and the error message is shown (audit — no more
   /// fire-and-forget "success" that never reached the backend).
-  Future<void> _changeStatus(Ticket t, String key, String successMsg) async {
+  Future<void> _changeStatus(Ticket t, String key, String successMsg,
+      {String? statusId}) async {
     final prevOverride = _status;
     setState(() => _status = key);
     if (!ApiConfig.apiEnabled) {
@@ -695,19 +907,45 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       return;
     }
     try {
-      await ref.read(ticketsRepositoryProvider).setTicketStatusByKey(t.id, key);
+      final repo = ref.read(ticketsRepositoryProvider);
+      // By id when the sheet knows it — folding to a built-in key first would
+      // lose any status the vocabulary has no name for.
+      if (statusId != null && statusId.isNotEmpty) {
+        await repo.updateTicket(t.id, {'status': statusId});
+      } else {
+        await repo.setTicketStatusByKey(t.id, key);
+      }
       if (!mounted) return;
       ref.read(toastProvider.notifier).show(successMsg);
+      // Re-read rather than trust the optimistic value. A ticket already in a
+      // read-only status (Closed, Resolved) takes the PATCH with a `200` and
+      // silently keeps its old status — without this the screen would go on
+      // showing a change the server never made.
+      refreshTickets(ref);
+      ref.invalidate(ticketDetailProvider(t.id));
+      await ref.read(ticketDetailProvider(t.id).future);
+      if (!mounted) return;
+      setState(() => _status = null);
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _status = prevOverride);
-      ref.read(toastProvider.notifier).show(e.message);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 
   // ── Status sheet ──
-  void _openStatusSheet(Ticket t) {
-    showClozrSheet<void>(
+  /// The org's own statuses from `/crm/issue-statuses/`.
+  ///
+  /// This listed a hardcoded new/open/pending/resolved/closed. Two of those
+  /// ("new", "pending") are not statuses this backend has, and four that it
+  /// does — In Progress, On Hold, Duplicate, Overdue — could not be picked at
+  /// all. The built-ins remain the fallback for mock mode.
+  Future<void> _openStatusSheet(Ticket t) async {
+    await ref.read(ticketStatusCatalogProvider.future);
+    if (!mounted) return;
+    final catalog = ref.read(ticketStatusOptionsProvider);
+
+    await showClozrSheet<void>(
       context: context,
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(bottom: 24.h),
@@ -715,22 +953,34 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SheetHeader(title: 'Update status'),
-            for (final key in const ['new', 'open', 'pending', 'resolved', 'closed'])
-              _statusOption(ctx, t, key),
+            if (catalog.isEmpty)
+              for (final key in const ['new', 'open', 'pending', 'resolved', 'closed'])
+                _statusOption(ctx, t, key: key, label: StatusMeta$.ticket[key]!.label)
+            else
+              for (final s in catalog)
+                _statusOption(ctx, t, key: ticketStatusKey(s.name), label: s.name, id: s.id),
           ],
         ),
       ),
     );
   }
 
-  Widget _statusOption(BuildContext ctx, Ticket t, String key) {
-    final meta = StatusMeta$.ticket[key]!;
-    final active = t.status == key;
+  /// [id] is the org's `issue_status_id` — sent as-is when present, so a status
+  /// with no built-in equivalent still writes correctly. [key] only picks the
+  /// pill colour and marks the current row.
+  Widget _statusOption(BuildContext ctx, Ticket t,
+      {required String key, required String label, String? id}) {
+    final meta = StatusMeta$.ticket[key] ?? StatusMeta$.ticket['open']!;
+    // Matched on the org's own name where we have it: two statuses can fold to
+    // the same built-in key, and then both rows would read as active.
+    final active = id != null && t.statusName.isNotEmpty
+        ? t.statusName.trim().toLowerCase() == label.trim().toLowerCase()
+        : t.status == key;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
         Navigator.of(ctx).pop();
-        _changeStatus(t, key, 'Status → ${meta.label}');
+        _changeStatus(t, key, 'Status → $label', statusId: id);
       },
       child: Container(
         margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),
@@ -744,7 +994,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           children: [
             Container(width: 10.w, height: 10.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
             SizedBox(width: 11.w),
-            Expanded(child: Text(meta.label, style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary))),
+            Expanded(child: Text(label, style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary))),
             if (active) Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.blueBright),
           ],
         ),
@@ -752,7 +1002,46 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
+  /// Assigns the ticket, with the same optimistic-then-verify contract as
+  /// [_changeStatus]: the avatar updates immediately, and in API mode a
+  /// rejected write rolls it back rather than leaving the UI claiming an
+  /// assignment the server never took.
+  ///
+  /// The backend stores **one** `assigned_to` per ticket, so [mappedId] null
+  /// means unassign.
+  Future<void> _changeAssignee(Ticket t, String? mappedId) async {
+    final prevOverride = _assignees;
+    final next = mappedId == null ? <String>[] : <String>[mappedId];
+    setState(() => _assignees = next);
+    final name = mappedId == null ? 'Unassigned' : MockUsers.of(mappedId).name;
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Assignee → $name');
+      return;
+    }
+    // Pickers deal in the mapped id ('me'); the server needs its own uuid.
+    final userId = mappedId == null ? null : UserDirectory.realUserId(mappedId);
+    if (mappedId != null && userId == null) {
+      setState(() => _assignees = prevOverride);
+      ref.read(toastProvider.notifier).showError('That user is not on the server');
+      return;
+    }
+    try {
+      await ref.read(ticketsRepositoryProvider).setAssignee(t.id, userId);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('Assignee → $name');
+      await _refresh(t.id);
+    } on AppError catch (e) {
+      if (!mounted) return;
+      setState(() => _assignees = prevOverride);
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
   // ── Assignee sheet ──
+  //
+  // Single-choice: an issue carries one `assigned_to` (`helpdesk.md` §8), so
+  // tapping a person assigns them and tapping the current assignee clears the
+  // ticket. The rows keep their checkbox — only one is ever ticked.
   void _openAssigneeSheet(Ticket t) {
     final selected = List<String>.from(t.assignees);
     final roster = ref.read(rosterProvider);
@@ -764,7 +1053,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SheetHeader(title: 'Assignees'),
+              SheetHeader(title: 'Assignee'),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
@@ -774,14 +1063,13 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
-                          setSheet(() {
-                            if (selected.contains(r.id)) {
-                              selected.remove(r.id);
-                            } else {
-                              selected.add(r.id);
-                            }
-                          });
-                          setState(() => _assignees = List<String>.from(selected));
+                          // Closing first keeps one source of truth: the write
+                          // is optimistic on the screen and rolls back there if
+                          // the server refuses it, so a sheet left open would
+                          // be the only thing still showing the failed choice.
+                          final clearing = selected.contains(r.id);
+                          Navigator.of(ctx).pop();
+                          _changeAssignee(t, clearing ? null : r.id);
                         },
                         child: Padding(
                           padding: EdgeInsets.symmetric(vertical: 8.h),

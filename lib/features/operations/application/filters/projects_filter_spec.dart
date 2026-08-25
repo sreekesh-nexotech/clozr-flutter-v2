@@ -4,6 +4,8 @@ import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/application/providers/customers_providers.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/project.dart';
 import '../../presentation/components/ops_widgets.dart';
 import '../providers/projects_providers.dart';
@@ -52,22 +54,44 @@ DateTime? projectEndDate(Project p) =>
 /// Build the Projects drawer spec from the current project set. [roster] supplies
 /// the manager/assignee/team options (real members in API mode, prototype reps
 /// in mock mode); null defaults to the mock reps.
-FilterSpec buildProjectsFilterSpec(List<Project> projects, {List<AppUser>? roster}) {
+FilterSpec buildProjectsFilterSpec(
+  List<Project> projects, {
+  List<AppUser>? roster,
+  List<CatalogOption> statusCatalog = const [],
+  List<CatalogOption> typeCatalog = const [],
+  List<CatalogOption> customerCatalog = const [],
+}) {
   final r = roster ?? MockUsers.reps;
-  final types = (projects.map((p) => p.type).where((t) => t.isNotEmpty).toSet().toList()..sort())
-      .map((t) => FilterOption(id: t, label: t))
-      .toList();
-  final statuses = [
-    for (final k in StatusMeta$.project.keys) FilterOption(id: k, label: StatusMeta$.project[k]!.label),
-  ];
-  final companies = (projects
-          .where((p) => !p.internal && (p.company ?? '').isNotEmpty)
-          .map((p) => p.company!)
-          .toSet()
-          .toList()
-        ..sort())
-      .map((c) => FilterOption(id: c, label: c))
-      .toList();
+  // Types and statuses from their own facet endpoints (`operations.md` §3, §4).
+  // Derived from the loaded rows they could only offer values some already
+  // visible project has, so you could not filter *to* anything absent from the
+  // current page — and statuses were the built-in vocabulary regardless of what
+  // the org actually named its own.
+  final types = typeCatalog.isNotEmpty
+      ? [for (final t in typeCatalog) FilterOption(id: t.name, label: t.name)]
+      : (projects.map((p) => p.type).where((t) => t.isNotEmpty).toSet().toList()..sort())
+          .map((t) => FilterOption(id: t, label: t))
+          .toList();
+  final statuses = statusCatalog.isNotEmpty
+      ? [for (final s in statusCatalog) FilterOption(id: s.name, label: s.name)]
+      : [
+          for (final k in StatusMeta$.project.keys)
+            FilterOption(id: k, label: StatusMeta$.project[k]!.label),
+        ];
+  // The org's customers from `/crm/customers/`, falling back to the names on
+  // loaded rows. Derived alone, the facet could only offer a customer some
+  // already-visible project has — so you could not filter *to* one whose
+  // projects were off the current page, which is the whole point of filtering.
+  final companies = customerCatalog.isNotEmpty
+      ? [for (final c in customerCatalog) FilterOption(id: c.name, label: c.name)]
+      : (projects
+              .where((p) => !p.internal && (p.company ?? '').isNotEmpty)
+              .map((p) => p.company!)
+              .toSet()
+              .toList()
+            ..sort())
+          .map((c) => FilterOption(id: c, label: c))
+          .toList();
   final customerOpts = <FilterOption>[
     const FilterOption(id: '__internal', label: 'Internal project'),
     ...companies,
@@ -170,15 +194,27 @@ FilterSpec buildProjectsFilterSpec(List<Project> projects, {List<AppUser>? roste
 }
 
 /// Evaluate a project against applied filter values.
-bool projectMatchesFilters(Project p, FilterValues v) {
-  if (!FilterMatch.matchAnyOf(v.choice('types'), [p.type])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('statuses'), [p.status])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('pri'), [p.pri])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('customer'), [p.internal ? '__internal' : (p.company ?? '')])) {
-    return false;
+bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = false}) {
+  // Skipped when the server already ran them. Re-applying is not merely
+  // redundant: the server matched on ids, while these match on the display
+  // values a row carries — so a status the org renamed, or a customer matched by
+  // name, would be filtered out a second time and wrongly.
+  if (!serverApplied) {
+    if (!FilterMatch.matchAnyOf(v.choice('types'), [p.type])) return false;
+    if (!FilterMatch.matchAnyOf(
+        v.choice('statuses'), [p.status, if (p.statusName.isNotEmpty) p.statusName])) {
+      return false;
+    }
+    if (!FilterMatch.matchAnyOf(v.choice('pri'), [p.pri])) return false;
+    if (!FilterMatch.matchAnyOf(v.choice('customer'),
+        [p.internal ? '__internal' : (p.company ?? '')])) {
+      return false;
+    }
+    if (!FilterMatch.matchAnyOf(v.choice('managers'), [p.manager])) return false;
   }
 
-  if (!FilterMatch.matchAnyOf(v.choice('managers'), [p.manager])) return false;
+  // Always local — `operations.md` §1 documents no param for these; see
+  // [ProjectFilterCodec.localOnlyFields].
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), p.assignees)) return false;
   if (!FilterMatch.matchAnyOf(v.choice('teams'), teamNamesOfProject(p))) return false;
 
@@ -213,8 +249,21 @@ bool projectMatchesFilters(Project p, FilterValues v) {
 /// The Projects drawer spec, derived from the loaded project catalog.
 final projectsFilterSpecProvider = Provider<FilterSpec>((ref) {
   return buildProjectsFilterSpec(
-    ref.watch(projectsListProvider),
+    ref.watch(allProjectsProvider),
     roster: ref.watch(rosterProvider),
+    // These three were accepted by the builder and never passed, so the drawer
+    // silently took every fallback: Status showed the built-in vocabulary
+    // instead of the org's own — while the tab strip directly above it showed
+    // the real one — and Type and Customer were scraped off loaded rows.
+    statusCatalog: ref.watch(projectStatusOptionsProvider),
+    typeCatalog: ref.watch(projectTypeOptionsProvider),
+    customerCatalog: [
+      for (final c in ref.watch(customersProvider).valueOrNull ?? const [])
+        CatalogOption(
+          id: c.id,
+          name: (c.company?.trim().isNotEmpty ?? false) ? c.company! : c.name,
+        ),
+    ],
   );
 });
 

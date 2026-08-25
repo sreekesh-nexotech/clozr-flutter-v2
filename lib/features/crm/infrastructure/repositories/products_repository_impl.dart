@@ -1,5 +1,6 @@
 import '../../../../app/config/constants.dart';
 import '../../../../core/utils/inr_format.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/repositories/products_repository.dart';
 import '../data_sources/local/products_mock_ds.dart';
@@ -17,6 +18,23 @@ class ProductsRepositoryImpl implements ProductsRepository {
     return _local.fetchProducts();
   }
 
+  /// No per-product endpoint in mock mode; null keeps the screen on the seed
+  /// row.
+  @override
+  Future<Product?> getProduct(String id) async => null;
+
+  /// No category catalog in mock mode; empty keeps the built-in chip list.
+  @override
+  Future<List<CatalogOption>> getProductTypes() async => const [];
+
+  /// Mock write: no-op — the catalog seed is immutable here.
+  @override
+  Future<Product?> updateProduct(String id, Map<String, dynamic> fields) async => null;
+
+  /// Mock write: no-op — the catalog seed is immutable here.
+  @override
+  Future<void> deleteProduct(String id) async {}
+
   @override
   Future<Product?> createProduct(Map<String, dynamic> fields) async {
     // Mock mode: echo a local entity — the sheet inserts via its own
@@ -33,6 +51,7 @@ class ProductsRepositoryImpl implements ProductsRepository {
       hsn: fields['hsn_code'] as String? ?? '',
       unit: '',
       price: formatInr(price),
+      priceNum: price,
       gst: 18,
       gstAmt: formatInr(price * 0.18),
       gross: formatInr(price * 1.18),

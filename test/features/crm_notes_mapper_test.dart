@@ -34,7 +34,7 @@ void main() {
       expect(n.body, 'Client wants the quote split into two phases.');
       expect(n.via, 'Call');
       expect(n.time, isNotEmpty); // relativeTime of created_at
-      expect(n.replies, isEmpty); // replies load lazily
+      expect(n.replies, isEmpty); // the row carries none; fetchNotes hydrates
       expect(n.attachments, isEmpty);
     });
 
@@ -104,6 +104,18 @@ void main() {
       expect(r.author, 'Priya Nair');
       expect(r.time, 'Just now');
       expect(r.body, 'Keep phase 1 under 25L.');
+    });
+
+    test('a stored reply is timed from created_at, not "Just now"', () {
+      final r = NotesRemoteDataSource.replyFromJson({
+        'note_id': 'n-uuid-2',
+        'content': 'Keep phase 1 under 25L.',
+        'parent_note': 'n-uuid-1',
+        'created_by': {'user_id': 'u-priya', 'full_name': 'Priya Nair'},
+        'created_at': '2026-06-29T10:00:00Z',
+      }, now: now);
+      expect(r.time, isNot('Just now'));
+      expect(r.time, isNotEmpty);
     });
 
     test('falls back to the posted body and "You" on shape surprises', () {

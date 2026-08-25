@@ -122,7 +122,14 @@ class StatusMeta$ {
   };
 
   /// Project priority dot colours (this.PROJPRI).
+  ///
+  /// `Urgent` is one of the four [priorityKey] folds and one the org's own
+  /// catalog uses; without it every urgent task and project drew the neutral
+  /// grey fallback, reading as *less* pressing than a High one.
+  /// Urgent shares High's red, as [priorityTone] already does on the CRM side —
+  /// matching it rather than restyling the three existing levels.
   static const Map<String, Color> projectPriority = {
+    'Urgent': AppColors.error,
     'High': AppColors.error,
     'Medium': AppColors.warningDeep,
     'Low': AppColors.success,

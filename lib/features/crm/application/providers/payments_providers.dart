@@ -141,7 +141,9 @@ final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
 
   Iterable<Payment> out = payments;
   if (tab != 'all') out = out.where((x) => x.status == tab);
-  if (!filters.isEmpty) out = out.where((x) => paymentMatchesFilters(x, filters));
+  if (!filters.isEmpty) {
+    out = out.where((x) => paymentMatchesFilters(x, filters, lookup));
+  }
   if (q.isNotEmpty) {
     out = out.where((x) =>
         ('${x.id} ${paymentTitle(x, lookup)} ${x.invId ?? ''}').toLowerCase().contains(q));

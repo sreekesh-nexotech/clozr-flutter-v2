@@ -30,6 +30,29 @@ class UserDirectory {
   /// rejects them outright (`"dr" is not a valid UUID`).
   static final Set<String> _apiIds = {};
 
+  /// Bumped whenever the directory changes, so derived state can recompute.
+  ///
+  /// [_apiIds] and `MockUsers.byId` are plain mutable globals, which nothing
+  /// downstream can watch. `rosterProvider` listens to this instead; without it
+  /// the roster was computed once — against whatever the directory happened to
+  /// hold at the first read — and cached for the rest of the session.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  /// A server user id, which is always a UUID.
+  ///
+  /// The prototype ids are two-letter codes (`am`, `rk`, `dr`), so shape alone
+  /// separates them. Checked at the boundary in [register] and again in
+  /// [realUserId]: one leak anywhere into [_apiIds] would otherwise make a
+  /// prototype id look like a real user to every picker and every write, and a
+  /// PATCH carrying `"assignees": ["dr"]` has been observed in the wild.
+  static final RegExp _uuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+    r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  /// Whether [id] has the shape of a server user id.
+  static bool isUuid(String? id) => id != null && _uuid.hasMatch(id);
+
   /// Whether [mappedId] refers to a user the server actually knows.
   static bool isApiUser(String? mappedId) {
     if (mappedId == null || mappedId.isEmpty) return false;
@@ -60,6 +83,10 @@ class UserDirectory {
     if (mappedId == null || mappedId.isEmpty) return null;
     final id = mappedId == 'me' ? currentUserId : mappedId;
     if (id == null || id.isEmpty) return null;
+    // Shape as well as membership. Belt and braces on the write path: the set
+    // is filled from a dozen mappers, and a single one registering something
+    // that is not a server id would otherwise put it on the wire.
+    if (!isUuid(id)) return null;
     return (id == currentUserId || _apiIds.contains(id)) ? id : null;
   }
 
@@ -77,6 +104,11 @@ class UserDirectory {
     String role = '',
   }) {
     if (userId.isEmpty || fullName.isEmpty) return;
+    // Only a real server id may enter the set. A dozen mappers call in here
+    // with whatever their row happened to hold, and everything downstream —
+    // every picker's option list, every write that resolves an id — trusts
+    // membership as proof the server knows the user.
+    if (!isUuid(userId)) return;
     _apiIds.add(userId);
     final user = AppUser(
       id: mapUserId(userId),
@@ -95,6 +127,7 @@ class UserDirectory {
         role: role.isEmpty ? 'You' : '$role · You',
       );
     }
+    revision.value++;
   }
 
   /// Registers an embedded API user object (`{user_id, full_name, ...}`).
@@ -154,5 +187,8 @@ class UserDirectory {
   static void reset() {
     currentUserId = null;
     _apiIds.clear();
+    // Drops the previous tenant's roster from every derived list, rather than
+    // leaving their names on screen until something else happens to rebuild.
+    revision.value++;
   }
 }

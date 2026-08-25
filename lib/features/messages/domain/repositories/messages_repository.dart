@@ -7,8 +7,9 @@ import '../entities/whatsapp_template.dart';
 abstract class MessagesRepository {
   Future<List<Conversation>> getConversations();
 
-  /// The latest page of the conversation's thread, oldest-first.
-  Future<List<ChatMessage>> getMessages(String conversationId);
+  /// The latest page of the conversation's thread, oldest-first — with the
+  /// files and links it contains, which the Medias and Links tabs render.
+  Future<ChatThread> getThread(String conversationId);
 
   /// Clears the conversation's unread count server-side. Best-effort.
   Future<void> markRead(String conversationId);

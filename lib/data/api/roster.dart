@@ -20,6 +20,15 @@ import 'user_directory.dart';
 /// "Divya Rao" against a live backend, and choosing one sent the prototype id
 /// `dr` to the API — which rejects it (`"dr" is not a valid UUID`).
 final rosterProvider = Provider<List<AppUser>>((ref) {
+  // The directory is mutable global state, so there is nothing here to watch.
+  // Without this the roster was computed on first read — often before the
+  // members fetch had landed — and then cached for the whole session, since
+  // nothing invalidates this provider. Every picker and filter downstream was
+  // stuck with that first snapshot.
+  void refresh() => ref.invalidateSelf();
+  UserDirectory.revision.addListener(refresh);
+  ref.onDispose(() => UserDirectory.revision.removeListener(refresh));
+
   if (!ApiConfig.apiEnabled) return MockUsers.reps;
   final users = MockUsers.byId.values
       .where((u) =>

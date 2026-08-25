@@ -1,4 +1,3 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../domain/entities/conversation.dart';
 
 /// Static conversation seed — a 1:1 port of the prototype's `chats` array
@@ -25,8 +24,8 @@ class MessagesMockDataSource {
             ChatMessage(mine: true, text: 'Sending the quote PDF and the schedule now.', time: '10:33 AM', status: 'read'),
           ],
           media: [
-            ChatMedia(icon: PhosphorIconsRegular.filePdf, name: 'Fit-out quote v2.pdf', meta: 'PDF · 1.2 MB · Today'),
-            ChatMedia(icon: PhosphorIconsRegular.fileXls, name: 'Site schedule — 6 weeks.xlsx', meta: 'XLSX · 84 KB · Today'),
+            ChatMedia(kind: 'pdf', name: 'Fit-out quote v2.pdf', meta: 'PDF · 1.2 MB · Today'),
+            ChatMedia(kind: 'sheet', name: 'Site schedule — 6 weeks.xlsx', meta: 'XLSX · 84 KB · Today'),
           ],
           links: [
             ChatLink(title: 'Kairali portfolio — retail showrooms', url: 'kairali.in/work/showrooms', meta: '2d ago'),

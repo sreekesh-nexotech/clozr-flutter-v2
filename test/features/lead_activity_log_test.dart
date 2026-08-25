@@ -164,4 +164,61 @@ void main() {
       expect(e.at!.year, 2026);
     });
   });
+
+  // The helpdesk ticket trail was derived client-side — invented rows naming a
+  // prototype user. It now reads the same audit endpoint (`model_name=Issue`,
+  // 71 real rows on the dev backend), which raises lifecycle events of its own.
+  group('issue events', () {
+    AuditEntry map(Map<String, dynamic> changes) =>
+        AuditLogRemoteDataSource.mapEntry(
+          {
+            'audit_log_id': 'a1',
+            'action': 'update',
+            'timestamp': '2026-08-12T17:45:00Z',
+            'changes': changes,
+          },
+          recordLabel: 'Ticket',
+        )!;
+
+    test('an SLA breach reads as one, and as the system', () {
+      // The live shape: `{"issue_event": {"data": {}, "type": "sla_breached"}}`.
+      final e = map({
+        'issue_event': {'data': <String, dynamic>{}, 'type': 'sla_breached'}
+      });
+
+      expect(e.title, 'SLA breached');
+      expect(e.subtitle, 'System');
+      expect(e.kind, AuditEventKind.other); // red, like a breach should read
+    });
+
+    test('lifecycle events read as status moves', () {
+      expect(map({'issue_event': {'type': 'reopened'}}).title, 'Ticket reopened');
+      expect(map({'issue_event': {'type': 'resolved'}}).kind,
+          AuditEventKind.statusChanged);
+    });
+
+    test('an unknown event is humanised rather than swallowed', () {
+      expect(map({'issue_event': {'type': 'merged_into_parent'}}).title,
+          'Merged into parent');
+    });
+  });
+
+  group('the record label', () {
+    test('a create names the record it belongs to', () {
+      Map<String, dynamic> createRow() => {
+            'audit_log_id': 'c1',
+            'action': 'create',
+            'timestamp': '2026-08-12T17:45:00Z',
+          };
+
+      // Every feed used to say "Lead created", a quote's and a ticket's too.
+      expect(
+          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Ticket')!.title,
+          'Ticket created');
+      expect(
+          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Quote')!.title,
+          'Quote created');
+      expect(AuditLogRemoteDataSource.mapEntry(createRow())!.title, 'Lead created');
+    });
+  });
 }

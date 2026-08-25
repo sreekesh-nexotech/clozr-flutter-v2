@@ -6,6 +6,7 @@ import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/payment.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
+import '../providers/crm_party_providers.dart';
 import '../providers/payments_providers.dart';
 
 /// Payments filter — spec-driven drawer wired like the Leads reference (audit §7).
@@ -29,12 +30,28 @@ DateTime? parsePaymentDate(String s) {
   return DateTime(year, month, day);
 }
 
-/// The company label a payment resolves to.
-String? paymentCompany(Payment p) =>
-    CrmPartyDirectory.customer(p.custId)?.company ?? CrmPartyDirectory.customer(p.custId)?.name;
+/// The company label a payment resolves to, falling back to the person's name
+/// for a customer recorded without one.
+///
+/// Takes the lookup rather than calling [CrmPartyDirectory] directly. That
+/// static map is the **prototype seed** — Kalyan Silks, Lulu Fashion Store and
+/// the rest — keyed by ids like `C2001`. Against a live org nothing matches its
+/// real customer UUIDs, so every payment resolved to null and the Customer
+/// section listed nothing at all; a colliding id would have been worse, naming
+/// a company that does not exist in the tenant. [crmPartyLookupProvider] is
+/// already API-backed, and the cards use it.
+String? paymentCompany(Payment p, CrmPartyLookup lookup) {
+  final party = lookup(custId: p.custId);
+  if (party == null) return null;
+  return party.company.trim().isNotEmpty ? party.company : party.name;
+}
 
 /// Build the Payments drawer spec from the current payment set.
-FilterSpec buildPaymentsFilterSpec(List<Payment> payments, {List<AppUser> roster = MockUsers.reps}) {
+FilterSpec buildPaymentsFilterSpec(
+  List<Payment> payments, {
+  List<AppUser> roster = MockUsers.reps,
+  required CrmPartyLookup lookup,
+}) {
   // Canonical method vocabulary (audit §7).
   const methodValues = ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque'];
   final methods = [for (final m in methodValues) FilterOption(id: m, label: m)];
@@ -48,7 +65,7 @@ FilterSpec buildPaymentsFilterSpec(List<Payment> payments, {List<AppUser> roster
       if (ownerIds.contains(u.id)) FilterOption(id: u.id, label: u.name),
   ];
   final companies = (payments
-          .map(paymentCompany)
+          .map((p) => paymentCompany(p, lookup))
           .whereType<String>()
           .toSet()
           .toList()
@@ -107,11 +124,11 @@ FilterSpec buildPaymentsFilterSpec(List<Payment> payments, {List<AppUser> roster
 }
 
 /// Evaluate a payment against applied filter values.
-bool paymentMatchesFilters(Payment p, FilterValues v) {
+bool paymentMatchesFilters(Payment p, FilterValues v, CrmPartyLookup lookup) {
   if (!FilterMatch.matchAnyOf(v.choice('method'), [p.method])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('status'), [p.status])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('recordedBy'), [p.owner])) return false;
-  final company = paymentCompany(p);
+  final company = paymentCompany(p, lookup);
   if (!FilterMatch.matchAnyOf(v.choice('company'), company == null ? const [] : [company])) {
     return false;
   }
@@ -125,7 +142,11 @@ bool paymentMatchesFilters(Payment p, FilterValues v) {
 /// The Payments drawer spec, derived from the loaded payments.
 final paymentsFilterSpecProvider = Provider<FilterSpec>((ref) {
   final payments = ref.watch(allPaymentsProvider);
-  return buildPaymentsFilterSpec(payments, roster: ref.watch(rosterProvider));
+  return buildPaymentsFilterSpec(
+    payments,
+    roster: ref.watch(rosterProvider),
+    lookup: ref.watch(crmPartyLookupProvider),
+  );
 });
 
 /// Applied drawer filters for the Payments list (source of the badge count).

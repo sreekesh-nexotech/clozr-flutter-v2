@@ -1,3 +1,4 @@
+import '../entities/crm_catalog.dart';
 import '../entities/quote.dart';
 import '../entities/view_schema.dart';
 
@@ -18,6 +19,10 @@ abstract class QuotesRepository {
   /// config. The form then shows its built-in field set.
   Future<ViewSchema> getQuoteSchema();
 
+  /// The org's own quote statuses (`/quotations/statuses/`). Empty means no
+  /// catalog, which callers read as "use the built-in vocabulary".
+  Future<List<CatalogOption>> getQuoteStatuses();
+
   /// The org's quote templates for the template picker. Empty means no picker —
   /// the server then applies the org's default template on create.
   Future<List<QuoteTemplate>> getQuoteTemplates();
@@ -28,6 +33,18 @@ abstract class QuotesRepository {
   /// Returns the created quote, or null when the backend response shape is
   /// unexpected. Throws on a rejected write so the form can show why.
   Future<Quote?> createQuote(Map<String, dynamic> fields);
+
+  /// Moves a quote to another status — `PATCH .../{quotation_id}/`
+  /// `{"status_id": …}`, addressed by the record's **UUID**.
+  ///
+  /// Throws on a rejected write: entering the org's converted status is what
+  /// makes the server raise the invoice, so a failure has to reach the user
+  /// rather than leaving the screen claiming a conversion that did not happen.
+  Future<void> updateQuoteStatus(String quotationId, String statusId);
+
+  /// Partially updates a quote — the detail card's inline field edits.
+  /// [quotationId] is the record uuid, not the `QTN-…` display number.
+  Future<void> updateQuote(String quotationId, Map<String, dynamic> fields);
 }
 
 /// One selectable quote template.

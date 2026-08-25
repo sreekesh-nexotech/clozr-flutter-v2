@@ -156,7 +156,7 @@ class SavedFiltersController extends StateNotifier<SavedFiltersState> {
       e is AppError ? e.message : 'Something went wrong. Please try again.';
 }
 
-final _savedFiltersRemoteProvider = Provider<SavedFiltersRemoteDataSource?>((ref) {
+final savedFiltersRemoteProvider = Provider<SavedFiltersRemoteDataSource?>((ref) {
   if (!ApiConfig.apiEnabled) return null;
   return SavedFiltersRemoteDataSource(ref.watch(apiServiceProvider));
 });
@@ -166,7 +166,35 @@ final leadSavedFiltersProvider =
     StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
   (ref) => SavedFiltersController(
     module: 'lead',
-    remote: ref.watch(_savedFiltersRemoteProvider),
+    remote: ref.watch(savedFiltersRemoteProvider),
+  ),
+);
+
+/// Saved-view chips on the Operations Tasks list.
+///
+/// `project_task` is a real module on this collection despite the CRM filter
+/// docs listing only the five CRM ones — `POST /crm/saved-filters/` with it
+/// returns `201` and `?module=project_task` reads the chips back
+/// (`operations-task.md` §4.2). The chips were in-memory before, so they were
+/// lost on every restart.
+final opsTaskSavedFiltersProvider =
+    StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
+  (ref) => SavedFiltersController(
+    module: 'project_task',
+    remote: ref.watch(savedFiltersRemoteProvider),
+  ),
+);
+
+/// Saved-view chips on the Operations Projects list.
+///
+/// Module `project`, verified against dev: `?module=project` returns `200`.
+/// These chips were in-memory too, so they were lost on every restart and never
+/// followed the user to another device.
+final projectSavedFiltersProvider =
+    StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
+  (ref) => SavedFiltersController(
+    module: 'project',
+    remote: ref.watch(savedFiltersRemoteProvider),
   ),
 );
 

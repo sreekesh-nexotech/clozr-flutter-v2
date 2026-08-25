@@ -1,11 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
-import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/customer.dart';
 import '../../domain/entities/lead.dart';
+import '../../../../data/api/user_directory.dart';
+import '../providers/crm_catalog_providers.dart';
+import '../providers/customer_activity_providers.dart';
+import '../providers/saved_filters_providers.dart';
+import '../../domain/entities/crm_catalog.dart';
+import 'customer_filter_codec.dart';
 import '../providers/customers_providers.dart';
 import '../providers/leads_providers.dart';
 import 'tasks_filter_spec.dart' show parseCrmDate;
@@ -34,23 +39,39 @@ FilterSpec buildCustomersFilterSpec({
   required List<Customer> customers,
   required List<Lead> leads,
   List<AppUser> roster = MockUsers.reps,
+  List<CatalogOption> statusCatalog = const [],
+  List<CatalogOption> sourceCatalog = const [],
+  List<CatalogOption> productCatalog = const [],
 }) {
-  final statuses = [
-    for (final k in StatusMeta$.customerOrder)
-      FilterOption(id: k, label: StatusMeta$.customer[k]!.label),
-  ];
-  final sources = (customers.map((c) => c.source).toSet().toList()..sort())
-      .map((s) => FilterOption(id: s, label: s))
-      .toList();
+  // The org's own statuses when the catalog has loaded, the built-in vocabulary
+  // otherwise. The built-ins are only ever right by accident: an org renames its
+  // statuses freely, and the drawer used to offer Active / Upsell / Completed /
+  // Lost no matter what the org actually calls them.
+  final statuses = statusCatalog.isNotEmpty
+      ? [for (final s in statusCatalog) FilterOption(id: s.id, label: s.name)]
+      : [
+          for (final k in StatusMeta$.customerOrder)
+            FilterOption(id: k, label: StatusMeta$.customer[k]!.label),
+        ];
+  // Sources and products come from their own endpoints. Derived from the loaded
+  // rows they could only ever offer values some already-visible customer has —
+  // so you could not filter *to* anything absent from the current page.
+  final sources = sourceCatalog.isNotEmpty
+      ? [for (final o in sourceCatalog) FilterOption(id: o.id, label: o.name)]
+      : (customers.map((c) => c.source).toSet().toList()..sort())
+          .map((s) => FilterOption(id: s, label: s))
+          .toList();
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
   final companies = _allCompanies(leads, customers)
       .map((c) => FilterOption(id: c, label: c))
       .toList();
-  final products = (customers.map((c) => c.project).toSet().toList()..sort())
-      .map((p) => FilterOption(id: p, label: p))
-      .toList();
+  final products = productCatalog.isNotEmpty
+      ? [for (final o in productCatalog) FilterOption(id: o.id, label: o.name)]
+      : (customers.map((c) => c.project).toSet().toList()..sort())
+          .map((p) => FilterOption(id: p, label: p))
+          .toList();
 
   return FilterSpec(
     title: 'Customers',
@@ -134,12 +155,58 @@ final customersFilterSpecProvider = Provider<FilterSpec>((ref) {
     customers: customers,
     leads: leads,
     roster: ref.watch(rosterProvider),
+    statusCatalog: ref.watch(customerStatusOptionsProvider),
+    sourceCatalog: ref.watch(leadSourcesProvider),
+    productCatalog: ref.watch(productOptionsProvider),
   );
 });
+
+/// The org's customer statuses as drawer options.
+///
+/// Its own provider rather than reusing `customerStatusesProvider` directly:
+/// that one yields the repository's `CustomerStatus`, and every filter surface
+/// deals in [CatalogOption].
+final customerStatusOptionsProvider = Provider<List<CatalogOption>>((ref) => [
+      for (final s in ref.watch(customerStatusesProvider))
+        CatalogOption(id: s.id, name: s.name),
+    ]);
+
+/// Started at mount by the list screen so the drawer never snapshots a
+/// half-loaded catalog — the same contract the Leads drawer has.
+final customerFilterCatalogsProvider = FutureProvider<void>((ref) async {
+  await Future.wait([
+    ref.watch(customerStatusCatalogProvider.future),
+    ref.watch(leadSourceCatalogProvider.future),
+    ref.watch(productCatalogProvider.future),
+  ]);
+});
+
+/// Translates between the Customers drawer and the stored `filter_definition`.
+///
+/// Rebuilt as each catalog resolves, so a saved chip applied before they land
+/// still decodes correctly once they have.
+final customerFilterCodecProvider = Provider<CustomerFilterCodec>(
+  (ref) => CustomerFilterCodec(
+    statuses: ref.watch(customerStatusOptionsProvider),
+    sources: ref.watch(leadSourcesProvider),
+    products: ref.watch(productOptionsProvider),
+    currentUserId: UserDirectory.currentUserId,
+  ),
+);
 
 /// Applied drawer filters for the Customers list (the source of the badge).
 final customerFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
 
-/// Saved views for the Customers list (bookmark chips).
+/// Saved views for the Customers list, backed by `/crm/saved-filters/`.
+///
+/// Was an in-memory [SavedViewsController]: ids minted from the clock, gone on
+/// restart, never sent anywhere. The endpoint is the same one Leads uses and the
+/// docs confirm customer saved filters "work exactly like lead saved filters" —
+/// it simply was not called with `module: 'customer'`.
 final customerSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
+  (ref) => SavedFiltersController(
+    module: 'customer',
+    remote: ref.watch(savedFiltersRemoteProvider),
+  ),
+);

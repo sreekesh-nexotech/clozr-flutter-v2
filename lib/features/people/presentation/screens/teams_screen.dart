@@ -4,23 +4,29 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
+import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/teams_filter_spec.dart';
 import '../../application/providers/people_providers.dart';
+import '../../domain/entities/member.dart';
 import '../../domain/entities/team.dart';
 import '../components/info_banner.dart';
 import '../components/people_title_actions.dart';
 import '../components/team_card.dart';
 import '../sheets/create_team_sheet.dart';
+import '../sheets/edit_team_sheet.dart';
 
 /// Teams — groups of members organised by region or function. Header (brand +
 /// title + search + filter + create) over a scrolling list led by an info
@@ -60,8 +66,6 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
     final searchOpen = ref.watch(teamSearchOpenProvider);
     final query = ref.watch(teamSearchProvider);
     final filterCount = ref.watch(teamFiltersProvider).activeCount;
-
-    void toast(String m) => ref.read(toastProvider.notifier).show(m);
 
     return Column(
       children: [
@@ -138,7 +142,8 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                       TeamCard(
                         team: visible[i],
                         membersById: byId,
-                        onAdd: () => toast('Add member — coming soon'),
+                        onAdd: () => _addMembers(visible[i]),
+                        onEdit: () => showEditTeamSheet(context, visible[i]),
                       ),
                     ],
                 ],
@@ -176,6 +181,102 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
       ref.read(teamSavedViewsProvider.notifier).deactivate();
     }
     ref.read(toastProvider.notifier).show('Filters applied');
+  }
+
+  /// The card's "Add" button — adds members to an existing team via
+  /// `POST /management/teams/{id}/members/` (`team-api.md` §2.2), one call per
+  /// user. Was a "coming soon" toast.
+  ///
+  /// Only members not already on the team are offered, so the picker can't
+  /// produce the "User is already a member." 400 by itself.
+  Future<void> _addMembers(Team team) async {
+    final all = ref.read(membersProvider).valueOrNull ?? const <Member>[];
+    final candidates = [for (final m in all) if (!team.members.contains(m.id)) m];
+    final picked = <String>{};
+
+    final confirmed = await showClozrSheet<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SheetHeader(
+              title: 'Add to ${team.name}',
+              onClose: () => Navigator.of(ctx).pop(false),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 18.h),
+                children: [
+                  if (candidates.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
+                      child: Text(
+                        all.isEmpty
+                            ? 'No teammates have loaded yet.'
+                            : 'Everyone is already on this team.',
+                        style: AppText.body(color: AppColors.textMuted),
+                      ),
+                    ),
+                  for (final m in candidates)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setSheetState(() {
+                        picked.contains(m.id) ? picked.remove(m.id) : picked.add(m.id);
+                      }),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(m.name, style: AppText.body())),
+                            if (picked.contains(m.id))
+                              Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (candidates.isNotEmpty) ...[
+                    SizedBox(height: 18.h),
+                    PrimaryButton(
+                      label: picked.isEmpty
+                          ? 'Add members'
+                          : 'Add ${picked.length} member${picked.length == 1 ? '' : 's'}',
+                      icon: PhosphorIconsBold.plus,
+                      height: 48,
+                      onTap: picked.isEmpty ? null : () => Navigator.of(ctx).pop(true),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || picked.isEmpty || !mounted) return;
+
+    final toast = ref.read(toastProvider.notifier);
+    final count = picked.length;
+    if (!ApiConfig.apiEnabled) {
+      toast.show('$count member${count == 1 ? '' : 's'} added to ${team.name}');
+      return;
+    }
+    try {
+      await ref
+          .read(peopleRepositoryProvider)
+          .addTeamMembers(teamId: team.id, userIds: picked.toList());
+    } on AppError catch (e) {
+      if (!mounted) return;
+      // Partial success is possible — the calls are sequential — so the list is
+      // refreshed either way rather than left showing the old roster.
+      ref.invalidate(teamsProvider);
+      toast.showError(e.message);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(teamsProvider);
+    toast.show('$count member${count == 1 ? '' : 's'} added to ${team.name}');
   }
 
   // ── Saved-view row: saved bookmark chips + Clear ──

@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -5,17 +7,21 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
+import '../../../../core/utils/relative_time.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/people_providers.dart';
 import '../../domain/entities/member.dart';
 import '../components/member_card.dart';
+import '../sheets/edit_member_sheet.dart';
 
 /// Member detail — profile, availability heatmap, member information (scope /
 /// reporting hierarchy / team / status), performance snapshot and activity log.
@@ -33,7 +39,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     final membersAsync = ref.watch(membersProvider);
-    final member = ref.watch(memberByIdProvider(id));
+    // The enriched record once `GET /management/users/{id}/` lands, the list
+    // row until then — so the page paints immediately and fills in.
+    final member = ref.watch(memberDetailOrListProvider(id));
 
     return Container(
       color: AppColors.bgScreen,
@@ -87,9 +95,33 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         onBack: () => context.pop(),
         trailing: DetailIconAction(
           icon: PhosphorIconsBold.dotsThreeVertical,
-          onTap: () => ref.read(toastProvider.notifier).show('Member actions'),
+          onTap: _openMenu,
         ),
       ),
+    );
+  }
+
+  /// The overflow menu. Only Edit member for now — it is the one action
+  /// `members.md` documents that the app can carry out
+  /// (`PATCH /management/users/{user_id}/`).
+  Future<void> _openMenu() async {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    final member = ref.read(memberDetailOrListProvider(id));
+    if (member == null) return;
+    await showActionMenu(
+      context,
+      title: member.name,
+      actions: [
+        MenuAction(
+          icon: PhosphorIconsRegular.pencilSimple,
+          label: 'Edit member',
+          // The API refuses edits to a protected account, so the menu says so
+          // rather than opening a form that cannot save.
+          enabled: !member.isProtected,
+          sublabel: member.isProtected ? 'This account is protected' : null,
+          onTap: () => showEditMemberSheet(context, member),
+        ),
+      ],
     );
   }
 
@@ -126,7 +158,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                   ],
                 ),
               ),
-              if (m.isAdmin) ...[
+              // `is_protected` — the API's own flag for an account it blocks
+              // edits on. Was guessed from the role name containing "admin".
+              if (m.isProtected) ...[
                 SizedBox(width: 8.w),
                 _protectedBadge(),
               ],
@@ -174,12 +208,67 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   }
 
   // ── Availability heatmap ──
+  /// The heatmap is **not backed by anything** — the grid is generated from a
+  /// hash of the member's email, so every square is invented. Until a leave
+  /// system ships there is nothing to read it from, so the card is blurred and
+  /// captioned rather than left looking like attendance data.
+  ///
+  /// The layout underneath is untouched: when the API lands, drop the overlay
+  /// and swap [_buildMonths] for the real feed.
   Widget _availabilityCard(String email) {
-    final months = _buildMonths(email);
+    // The card itself stays crisp — only its contents blur. Blurring the whole
+    // card softened its border and corners too, which read as a rendering
+    // fault rather than a deliberate placeholder.
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(16.r),
-      child: Column(
+      child: Stack(
+        children: [
+          // Inert as well as unreadable — the month strip scrolls horizontally,
+          // and a blurred surface that still responds to touch feels broken.
+          IgnorePointer(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              child: _availabilityHeatmap(email),
+            ),
+          ),
+          Positioned.fill(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12.w),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Attendance & leave tracking is coming soon',
+                      textAlign: TextAlign.center,
+                      style: AppText.custom(
+                          size: 14, weight: FontWeight.w700, color: AppColors.textPrimary),
+                    ),
+                    SizedBox(height: 6.h),
+                    Text(
+                      'A full-day/half-day/on-leave calendar will appear here once '
+                      'the leave system ships.',
+                      textAlign: TextAlign.center,
+                      // Body-weight grey, not the muted label grey: this sits
+                      // over a blurred, uneven backdrop, where #848383 was too
+                      // low-contrast to read.
+                      style: AppText.custom(
+                          size: 12.5, weight: FontWeight.w600, color: AppColors.textBodyMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _availabilityHeatmap(String email) {
+    final months = _buildMonths(email);
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -216,9 +305,7 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
               _legend(const Color(0xFFE8EAEE), 'Weekend'),
             ],
           ),
-        ],
-      ),
-    );
+        ]);
   }
 
   Widget _monthColumn(_MonthData month) {
@@ -298,18 +385,46 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
     });
   }
 
+  /// The short form for an IANA zone, which the API sends raw — §4.1 notes the
+  /// suffix is the frontend's to render. Only the zones an Indian-market org
+  /// realistically uses are named; anything else keeps its city, which is
+  /// still readable ("Europe/Berlin (Berlin)").
+  static String _tzAbbr(String tz) {
+    const known = {
+      'Asia/Kolkata': 'IST',
+      'Asia/Calcutta': 'IST',
+      'Asia/Dubai': 'GST',
+      'UTC': 'UTC',
+      'Etc/UTC': 'UTC',
+    };
+    final hit = known[tz];
+    if (hit != null) return hit;
+    final city = tz.split('/').last.replaceAll('_', ' ');
+    return city.isEmpty ? tz : city;
+  }
+
   // ── Member information ──
   Widget _infoCard(Member m) {
+    // Every row is the record's own value now. Designation used to render the
+    // role name, and Territory and Timezone were literals — "All India" or
+    // "Kerala" off `isAdmin`, and "Asia/Kolkata (IST)" for everyone — none of
+    // it fetched. All four come from `GET /management/users/{id}/` (§4.1);
+    // until it lands, or where the member genuinely has none, they read "—"
+    // rather than inventing a plausible answer.
+    const dash = '—';
     final rows = <(String, String)>[
       ('Full name', m.name),
       ('Email', m.email),
-      ('Designation', m.role),
-      ('Phone', m.phone),
-      ('Role & scope', '${m.role} · ${m.scope}'),
+      ('Designation', m.designation.isEmpty ? dash : m.designation),
+      ('Phone', m.phone.isEmpty ? dash : m.phone),
+      ('Role & scope', m.scope.isEmpty || m.scope == dash
+          ? m.role
+          : '${m.role} · ${m.scope}'),
       ('Reporting manager', m.hasManager ? m.reportsTo : '— (top of hierarchy)'),
       ('Team', m.hasTeam ? m.team : 'No team'),
-      ('Territory', m.isAdmin ? 'All India' : 'Kerala'),
-      ('Timezone', 'Asia/Kolkata (IST)'),
+      // Territories this user *manages*; most members manage none.
+      ('Territory', m.territories.isEmpty ? dash : m.territories.join(', ')),
+      ('Timezone', m.timezone.isEmpty ? dash : '${m.timezone} (${_tzAbbr(m.timezone)})'),
       ('Custom fields', 'Configured in web app'),
     ];
     final shown = _infoMore ? rows : rows.take(7).toList();
@@ -362,7 +477,13 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   }
 
   // ── Performance & records ──
-  Widget _performanceCard(Member m) {
+  Widget _performanceCard(Member member) {
+    // The member with their owned-lead metrics filled in. `fetchMemberPerformance`
+    // and `applyPerformance` both existed but nothing ever called them, so this
+    // card always rendered the entity's zero defaults — 0 / 0 / 0 / ₹0L / —.
+    // Falls back to the plain member while in flight, in mock mode, and for a
+    // caller without `can_access_user_kpis` (which 403s).
+    final m = ref.watch(memberWithPerformanceProvider(member.id)).valueOrNull ?? member;
     final noWon = m.perfWon == 0 ? 'no won deals in range' : '';
     final noDec = m.perfClosed == 0 ? 'no decided deals in range' : '';
     return ClozrCard(
@@ -400,10 +521,63 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
     );
   }
 
+  /// Range picker for the Performance & records card. Each option is a `period`
+  /// the member-performance endpoint accepts, so picking one re-queries.
+  Future<void> _openRangeSheet() async {
+    final current = ref.read(memberPerfPeriodProvider);
+    await showClozrSheet<void>(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SheetHeader(title: 'Range'),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(14.w, 0, 14.w, 26.h),
+              child: Column(
+                children: [
+                  for (final (value, label) in kMemberPerfPeriods)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        ref.read(memberPerfPeriodProvider.notifier).state = value;
+                        Navigator.of(ctx).pop();
+                      },
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 14.h),
+                        decoration: const BoxDecoration(
+                          border: Border(bottom: BorderSide(color: AppColors.bgLight)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(label,
+                                  style: AppText.custom(
+                                      size: 15, weight: FontWeight.w600, color: AppColors.textBody)),
+                            ),
+                            if (current == value)
+                              Icon(PhosphorIconsBold.check, size: 17.sp, color: AppColors.success),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The range chip. It used to toast "Range — All time" and change nothing;
+  /// the whole `period` path down to the query already existed, unused.
   Widget _rangeControl() {
+    final period = ref.watch(memberPerfPeriodProvider);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => ref.read(toastProvider.notifier).show('Range — All time'),
+      onTap: _openRangeSheet,
       child: Container(
         height: 34.h,
         padding: EdgeInsets.symmetric(horizontal: 11.w),
@@ -415,7 +589,8 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('All time', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textBody)),
+            Text(memberPerfPeriodLabel(period),
+                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textBody)),
             SizedBox(width: 8.w),
             Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: const Color(0xFF6C6C6C)),
           ],
@@ -482,15 +657,40 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   }
 
   // ── Activity log ──
-  Widget _activityCard(Member m) {
-    final events = <_Activity>[
+  /// The real feed where the API gives one, the derived rows otherwise.
+  ///
+  /// The derived set is a fallback only — mock mode, or a role without
+  /// `view_user_management`, which 403s. It used to be *all* this card showed:
+  /// a hardcoded "Today · 09:14" sign-in, a role change attributed to the seed
+  /// name "Manoj Varma", and a fixed joining date, none of it fetched.
+  List<_Activity> _events(Member m, List<MemberActivity> feed) {
+    if (feed.isNotEmpty) return [for (final e in feed) _fromApi(e)];
+    return [
       if (m.status == 'invited')
         _Activity(PhosphorIconsRegular.paperPlaneTilt, AppColors.warningDeep, AppColors.tintAmber, 'Invite sent', '${m.email} · awaiting acceptance')
       else
-        _Activity(PhosphorIconsRegular.signIn, AppColors.blueBright, AppColors.tintBlue, 'Signed in', '${m.name} · Today · 09:14'),
-      _Activity(PhosphorIconsRegular.shieldCheck, AppColors.pending, AppColors.tintPurple, 'Role set to ${m.role}', 'Manoj Varma · 03 Jan 2025'),
-      _Activity(PhosphorIconsRegular.userPlus, AppColors.success, AppColors.tintGreen, 'Joined the workspace', '${m.name} · 12 Nov 2024'),
+        _Activity(PhosphorIconsRegular.signIn, AppColors.blueBright, AppColors.tintBlue, 'Signed in', m.name),
+      _Activity(PhosphorIconsRegular.shieldCheck, AppColors.pending, AppColors.tintPurple, 'Role set to ${m.role}', ''),
+      _Activity(PhosphorIconsRegular.userPlus, AppColors.success, AppColors.tintGreen, 'Joined the workspace', m.name),
     ];
+  }
+
+  /// One API row as a timeline entry, iconed by its `type` (§4.3).
+  _Activity _fromApi(MemberActivity e) {
+    final (icon, tone, bg) = switch (e.type) {
+      'joined' => (PhosphorIconsRegular.userPlus, AppColors.success, AppColors.tintGreen),
+      'login' => (PhosphorIconsRegular.signIn, AppColors.blueBright, AppColors.tintBlue),
+      'role_assign' => (PhosphorIconsRegular.shieldCheck, AppColors.pending, AppColors.tintPurple),
+      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textLabelAlt, AppColors.bgLight),
+    };
+    final when = e.at == null ? '' : relativeTime(e.at);
+    final sub = [e.actor, when].where((s) => s.isNotEmpty).join(' · ');
+    return _Activity(icon, tone, bg, e.label, sub);
+  }
+
+  Widget _activityCard(Member m) {
+    final feed = ref.watch(memberActivityProvider(m.id)).valueOrNull ?? const [];
+    final events = _events(m, feed);
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.r, 16.r, 16.r, 6.r),

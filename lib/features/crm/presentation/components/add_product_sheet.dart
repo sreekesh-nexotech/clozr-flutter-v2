@@ -44,10 +44,24 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
   final _price = TextEditingController();
   final _desc = TextEditingController();
 
-  String _cat = 'Fit-out';
+  /// The category label shown in the picker. Empty = "Uncategorized", which is
+  /// not a real type — it is `product_type: null` (`products.md` §8).
+  String _cat = '';
+  String? _catId;
   String _unit = 'per sq.ft.';
+
+  /// `tax_rate` defaults to **0** on the backend; the old locked "18%" was a
+  /// client-side invention that was never sent and never stored (§3).
+  int _gst = 0;
   bool _active = true;
   int _seq = 1;
+
+  /// The rates the serializer accepts — anything else is a 400 (§3).
+  static const List<int> _gstOptions = [0, 5, 12, 18, 28];
+
+  /// A package needs at least one component before it can be active (§7), and
+  /// this sheet has no component editor, so one is created inactive.
+  bool get _forcedInactive => widget.isPackage;
 
   @override
   void dispose() {
@@ -95,6 +109,36 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     );
   }
 
+  /// Category options come from `/crm/product-types/` — the org's own list.
+  /// The picker used to offer the prototype's fit-out vocabulary, none of which
+  /// exists on a live org, and the choice was never sent anyway.
+  ///
+  /// "Uncategorized" is not a type: it clears `product_type` (§8).
+  void _pickCategory() {
+    final types = ref.read(productTypeOptionsProvider);
+    if (types.isEmpty) {
+      // Mock mode (or an org with no types): the built-in list, as before.
+      _pick('Category', productCategoryOrder, _cat, (v) => setState(() {
+            _cat = v;
+            _catId = null;
+          }));
+      return;
+    }
+    const none = 'Uncategorized';
+    _pick('Category', [none, for (final t in types) t.name],
+        _cat.isEmpty ? none : _cat, (v) {
+      setState(() {
+        if (v == none) {
+          _cat = '';
+          _catId = null;
+          return;
+        }
+        _cat = v;
+        _catId = types.firstWhere((t) => t.name == v).id;
+      });
+    });
+  }
+
   Future<void> _submit() async {
     if (_name.text.trim().isEmpty) {
       ref.read(toastProvider.notifier).show('Enter the product / service name');
@@ -103,12 +147,25 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     final price = int.tryParse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     if (ApiConfig.apiEnabled) {
       try {
+        // Every field the form collects, under the names the serializer uses
+        // (`products.md` §3). SKU, category, billing unit and HSN used to be
+        // gathered and dropped, and the HSN went out as `hsn_code`, which the
+        // backend ignores.
         await ref.read(productsRepositoryProvider).createProduct({
           'product_name': _name.text.trim(),
-          'price': price,
-          'hsn_code': _hsn.text.trim(),
+          // Set once, never changeable afterwards (§4).
+          'item_type': widget.isPackage ? 'package' : 'product',
+          'product_code': _sku.text.trim(),
+          if (_catId != null) 'product_type': _catId,
+          'billing_unit': _unit,
+          'hsn_sac': _hsn.text.trim(),
+          // A package's price is **derived** from its components, and the
+          // serializer overwrites whatever is sent (`products.md` §7) — this
+          // posted ₹5,00,000 and the row came back ₹0.
+          if (!widget.isPackage) 'price': price,
+          'tax_rate': _gst,
           'description': _desc.text.trim(),
-          'is_active': _active,
+          'is_active': _forcedInactive ? false : _active,
         });
         if (!mounted) return;
         ref.invalidate(productsProvider);
@@ -117,7 +174,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
             .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
       } on AppError catch (e) {
         if (!mounted) return;
-        ref.read(toastProvider.notifier).show(e.message);
+        ref.read(toastProvider.notifier).showError(e.message);
       }
       return;
     }
@@ -129,13 +186,13 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
       id: id,
       name: _name.text.trim(),
       kind: widget.isPackage ? 'package' : 'product',
-      cat: widget.isPackage ? 'Package' : _cat,
+      cat: widget.isPackage ? 'Package' : (_cat.isEmpty ? '' : _cat),
       hsn: _hsn.text.trim().isEmpty ? '—' : _hsn.text.trim(),
       unit: _unit,
       price: _fmtINR(price),
-      gst: 18,
-      gstAmt: _fmtINR((price * 0.18).round()),
-      gross: _fmtINR((price * 1.18).round()),
+      gst: _gst,
+      gstAmt: _fmtINR((price * _gst / 100).round()),
+      gross: _fmtINR((price * (1 + _gst / 100)).round()),
       deals: 0,
       revenue: '₹0',
       revNum: 0,
@@ -197,8 +254,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                   children: [
                     if (!widget.isPackage) ...[
                       Expanded(
-                        child: _picker('Category', _cat,
-                            () => _pick('Category', productCategoryOrder, _cat, (v) => setState(() => _cat = v))),
+                        child: _picker(
+                            'Category', _cat.isEmpty ? 'Uncategorized' : _cat, _pickCategory),
                       ),
                       SizedBox(width: 9.w),
                     ],
@@ -212,7 +269,12 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(flex: 12, child: _field('Price (₹)', _price, 'e.g. 320000', number: true)),
+                    Expanded(
+                      flex: 12,
+                      child: widget.isPackage
+                          ? _derivedPriceField()
+                          : _field('Price (₹)', _price, 'e.g. 320000', number: true),
+                    ),
                     SizedBox(width: 9.w),
                     Expanded(
                       flex: 10,
@@ -220,7 +282,15 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _label$('GST rate'),
-                          Container(
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _pick(
+                                'GST rate',
+                                [for (final r in _gstOptions) '$r%'],
+                                '$_gst%',
+                                (v) => setState(() =>
+                                    _gst = int.parse(v.replaceAll('%', '')))),
+                            child: Container(
                             height: 46.h,
                             padding: EdgeInsets.symmetric(horizontal: 14.w),
                             decoration: BoxDecoration(
@@ -228,13 +298,14 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('18%',
+                                Text('$_gst%',
                                     style: AppText.custom(
                                         size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-                                Icon(PhosphorIconsRegular.lockSimple,
+                                Icon(PhosphorIconsBold.caretDown,
                                     size: 14.sp, color: AppColors.textPlaceholder),
                               ],
                             ),
+                          ),
                           ),
                         ],
                       ),
@@ -270,12 +341,27 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                       BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(12.r)),
                   child: Row(
                     children: [
-                      Expanded(child: _statusSeg('Active', _active, () => setState(() => _active = true))),
+                      Expanded(
+                          child: _statusSeg('Active', !_forcedInactive && _active,
+                              _forcedInactive ? null : () => setState(() => _active = true))),
                       SizedBox(width: 6.w),
-                      Expanded(child: _statusSeg('Inactive', !_active, () => setState(() => _active = false))),
+                      Expanded(
+                          child: _statusSeg('Inactive', _forcedInactive || !_active,
+                              _forcedInactive ? null : () => setState(() => _active = false))),
                     ],
                   ),
                 ),
+                // The backend refuses an active package with no components
+                // (§7), and this sheet has no component editor — so say that
+                // rather than letting the save fail.
+                if (_forcedInactive)
+                  Padding(
+                    padding: EdgeInsets.only(top: 7.h),
+                    child: Text(
+                        'A package starts inactive — add its components, then activate it.',
+                        style: AppText.custom(
+                            size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  ),
                 SizedBox(height: 6.h),
               ],
             ),
@@ -312,7 +398,39 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     );
   }
 
-  Widget _statusSeg(String label, bool on, VoidCallback onTap) {
+  /// [onTap] is null when the choice is not the user's to make — a package
+  /// cannot be created active.
+  /// A package has no price of its own: the backend recomputes it from the
+  /// components on every write. Asking for one and then discarding it is worse
+  /// than not asking.
+  Widget _derivedPriceField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label$('Price (₹)'),
+        Container(
+          height: 46.h,
+          padding: EdgeInsets.symmetric(horizontal: 14.w),
+          alignment: Alignment.centerLeft,
+          decoration: BoxDecoration(
+              color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text('From components',
+                    style: AppText.custom(
+                        size: 14, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              ),
+              Icon(PhosphorIconsRegular.lockSimple,
+                  size: 14.sp, color: AppColors.textPlaceholder),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _statusSeg(String label, bool on, VoidCallback? onTap) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,

@@ -8,6 +8,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/utils/phone_format.dart';
 import '../../../auth/application/providers/auth_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/call_logs_providers.dart';
@@ -50,8 +51,10 @@ class _LogCallSheet extends StatefulWidget {
 class _LogCallSheetState extends State<_LogCallSheet> {
   final _minutes = TextEditingController();
   final _seconds = TextEditingController();
+  /// Prefilled with the lead's number as ten national digits — the stored value
+  /// carries the country code, which the field now renders as a prefix.
   late final TextEditingController _toNumber =
-      TextEditingController(text: widget.lead.phone);
+      TextEditingController(text: PhoneFormat.national(widget.lead.phone));
 
   bool _incoming = false;
   _Outcome _outcome = _Outcome.connected;
@@ -72,7 +75,7 @@ class _LogCallSheetState extends State<_LogCallSheet> {
   String get _myNumber =>
       widget.ref.read(sessionControllerProvider).user?.phone.trim() ?? '';
 
-  bool get _toOk => _toNumber.text.trim().isNotEmpty;
+  bool get _toOk => PhoneFormat.isComplete(_toNumber.text);
 
   Duration get _duration => Duration(
         minutes: int.tryParse(_minutes.text.trim()) ?? 0,
@@ -98,7 +101,10 @@ class _LogCallSheetState extends State<_LogCallSheet> {
       await widget.ref.read(callLogsRepositoryProvider).logManualCall(
             leadId: widget.lead.id,
             fromNumber: _myNumber,
-            toNumber: _toNumber.text.trim(),
+            // E.164 with the code, which is what `normaliseCallNumber` and
+            // Exotel's `to_number` expect — a bare ten digits would be dialled
+            // without a country.
+            toNumber: PhoneFormat.forApi(_toNumber.text) ?? '',
             incoming: _incoming,
             isMissed: _outcome == _Outcome.missed,
             // A call that never connected has no duration to report, whatever
@@ -107,7 +113,7 @@ class _LogCallSheetState extends State<_LogCallSheet> {
           );
     } on AppError catch (e) {
       if (mounted) setState(() => _saving = false);
-      toast.show(e.message);
+      toast.showError(e.message);
       return;
     }
 
@@ -128,6 +134,9 @@ class _LogCallSheetState extends State<_LogCallSheet> {
         SheetHeader(title: 'Log call', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: SingleChildScrollView(
+            // The number field is the last one; typing there hides the
+            // direction and outcome chips above it until the sheet is dragged.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 12.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,9 +218,11 @@ class _LogCallSheetState extends State<_LogCallSheet> {
                   label: _incoming ? 'Number that called' : 'Number called',
                   required: true,
                   controller: _toNumber,
-                  hint: '+91 98470 00000',
+                  prefix: PhoneFormat.dialCode,
+                  hint: '98470 00000',
                   keyboardType: TextInputType.phone,
-                  errorText: _showErrors && !_toOk ? 'Enter a phone number' : null,
+                  inputFormatters: PhoneFormat.inputFormatters,
+                  errorText: _showErrors && !_toOk ? 'Enter 10 digits' : null,
                   onChanged: (_) => setState(() {}),
                 ),
                 if (noNumber) ...[
@@ -237,8 +248,10 @@ class _LogCallSheetState extends State<_LogCallSheet> {
           ),
         ),
         SheetSubmitBar(
-          label: _saving ? 'Logging…' : 'Log call',
+          label: 'Log call',
           icon: PhosphorIconsBold.phone,
+          busy: _saving,
+          busyLabel: 'Logging…',
           onTap: _submit,
         ),
       ],

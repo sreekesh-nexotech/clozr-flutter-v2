@@ -26,6 +26,22 @@ final invoicesProvider = FutureProvider<List<Invoice>>(
   (ref) => ref.watch(invoicesRepositoryProvider).getInvoices(),
 );
 
+/// The server's totals for one invoice, keyed by `payment_id`.
+///
+/// Refetched off the write tick, because settling a record recalculates the
+/// parent — `amount_paid`, `next_due_date` and completion all move server-side
+/// (see `markRecordPaid`'s note), and the whole point of this call is to show
+/// the server's numbers rather than guess at them.
+///
+/// `autoDispose` so a session's worth of opened invoices does not keep
+/// refetching on every write anywhere.
+final invoiceSummaryProvider =
+    FutureProvider.autoDispose.family<InvoiceSummary?, String>((ref, paymentId) {
+  if (paymentId.isEmpty) return Future.value(null);
+  ref.watch(apiWriteTickProvider);
+  return ref.watch(invoicesRepositoryProvider).getInvoiceSummary(paymentId);
+});
+
 /// Look up a single invoice by id (detail screen).
 final invoiceByIdProvider = Provider.family<Invoice?, String>((ref, id) {
   final invoices = ref.watch(invoicesProvider).valueOrNull;

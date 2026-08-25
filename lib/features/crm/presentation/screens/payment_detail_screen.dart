@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
@@ -27,6 +28,18 @@ import '../components/finance_widgets.dart';
 /// links, payment detail rows, activity and notes.
 class PaymentDetailScreen extends ConsumerWidget {
   const PaymentDetailScreen({super.key});
+
+  /// Pull-to-refresh: the payment list this record is read out of, the invoices
+  /// its linked-invoice card reads, and the party directory.
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(paymentsProvider);
+    ref.invalidate(invoicesProvider);
+    ref.invalidate(crmPartyLookupProvider);
+    await settle([
+      ref.read(paymentsProvider.future),
+      ref.read(invoicesProvider.future),
+    ]);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,7 +101,10 @@ class PaymentDetailScreen extends ConsumerWidget {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: AppRefresh(
+              onRefresh: () => _refresh(ref),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
               children: [
                 _headerCard(ref, payment, meta, canMarkPaid),
@@ -107,6 +123,7 @@ class PaymentDetailScreen extends ConsumerWidget {
                 SizedBox(height: 14.h),
                 NotesCard(onSend: (_) => ref.read(toastProvider.notifier).show('Note added')),
               ],
+              ),
             ),
           ),
         ],

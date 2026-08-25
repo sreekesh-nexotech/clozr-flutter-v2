@@ -84,7 +84,17 @@ void main() {
       expect(rows.first.name, 'task_type');
     });
 
-    test('skips what the page renders in its own chrome', () {
+    test('repeats what the page also renders in its own chrome', () {
+      // The header shows the title and the Description tab shows the body; the
+      // panel is a full readout of the org's layout, so it carries them too.
+      final rows = recordRows(_row, _schema);
+
+      expect(rows.first.label, 'Task');
+      expect(rows.any((r) => r.label == 'Description'), isTrue);
+      expect(rows.length, _schema.columns.length);
+    });
+
+    test('skip is still honoured when a caller asks for it', () {
       final rows = recordRows(_row, _schema, skip: const {'title', 'description'});
 
       expect(rows.any((r) => r.label == 'Description'), isFalse);
@@ -132,19 +142,24 @@ void main() {
   });
 
   group('robustness', () {
-    test('a column the payload does not carry at all is dropped', () {
-      // Layout and payload disagreeing means there is nothing truthful to show.
+    test('a column the payload does not carry at all still renders, as a dash', () {
+      // Layout and payload disagreeing is worth surfacing as "nothing here";
+      // dropping the row would hide the disagreement.
       final rows = recordRows(const {'title': 'x', 'task_type': 'Call'}, _schema,
           skip: const {'title'});
 
-      expect(rows.map((r) => r.label).toList(), ['Type']);
+      expect(rows.length, _schema.columns.length - 1);
+      final byLabel = {for (final r in rows) r.label: r.value};
+      expect(byLabel['Type'], 'Call');
+      expect(byLabel['Due Date'], '—');
+      expect(byLabel['Assignees'], '—');
     });
 
     test('a key present as null still renders — that is real information', () {
       final rows = recordRows(
           const {'task_type': null}, _schema, skip: const {'title'});
 
-      expect(rows.single.value, '—');
+      expect(rows.firstWhere((r) => r.name == 'task_type').value, '—');
     });
 
     test('an unrecognised nested object degrades to a dash, never a Map dump', () {

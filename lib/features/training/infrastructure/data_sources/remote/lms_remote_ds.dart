@@ -12,6 +12,7 @@ import '../../../../../data/mock/mock_users.dart';
 import '../../../domain/entities/course.dart';
 import '../../../domain/entities/learner_record.dart';
 import '../../../domain/entities/lms_activity.dart';
+import '../../../domain/entities/lms_stats.dart';
 import '../local/lms_people.dart';
 
 /// Remote LMS data: HTTP via [ApiService] + JSON→entity mapping. No caching
@@ -29,6 +30,7 @@ class LmsRemoteDataSource {
   static const String _courses = '/lms/courses/';
   static const String _learners = '/lms/learners/';
   static const String _recentActivity = '/lms/dashboard/recent-activity/';
+  static const String _dashboardStats = '/lms/dashboard/stats/';
   static String _videoProgress(String videoResourceId) =>
       '/lms/video-resources/$videoResourceId/progress/';
 
@@ -123,6 +125,13 @@ class LmsRemoteDataSource {
     }
     return out;
   }
+
+  // ── Dashboard stats (admin-gated like the rest of the dashboard) ──
+
+  /// GET /lms/dashboard/stats/ — the Overview's three tiles, answered by the
+  /// server instead of counted off whatever the screen happened to load.
+  Future<LmsStats> fetchStats() async =>
+      LmsStats.fromJson(await _api.get(_dashboardStats));
 
   // ── Activity feed (admin-only endpoint; repo handles the 403) ──
 

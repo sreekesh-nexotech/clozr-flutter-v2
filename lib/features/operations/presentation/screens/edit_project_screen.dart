@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/filters/filter_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,12 @@ import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../crm/application/providers/customers_providers.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
+import '../../../crm/domain/entities/customer.dart';
+import '../../../people/application/providers/people_providers.dart';
+import '../../../people/domain/entities/team.dart';
+import '../../application/project_write_fields.dart';
 import '../../application/providers/projects_providers.dart';
 import '../components/ops_form_scaffold.dart';
 import '../components/ops_widgets.dart';
@@ -33,7 +40,12 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
 
   bool _init = false;
   bool _dirty = false;
+  /// The uuid — the write key, never shown.
   String _id = '';
+
+  /// The human code the header shows. It printed [_id], so the user saw
+  /// 36 characters of uuid where the record's own number belongs.
+  String _code = '';
   String _customer = '';
   String _type = 'Fit-out';
   String _pri = 'Medium';
@@ -46,7 +58,6 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
   String _visibility = 'Team';
   String _method = 'Task Completion';
 
-  static const _types = ['Fit-out', 'Design Services', 'Joinery', 'MEP & Services', 'Furniture', 'AMC / Maintenance', 'Internal'];
   static const _vis = ['Organization', 'Team', 'Private'];
   static const _methods = ['Task Completion', 'Manual'];
 
@@ -75,30 +86,84 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       return;
     }
     try {
-      await ref.read(projectsRepositoryProvider).updateProject(_id, {
-        'project_name': _name.text.trim(),
-        'priority': _pri,
-        'description': _desc.text.trim(),
-        if (_end != null) 'expected_end_date': _apiDate(_end!),
-      });
+      // Everything the form collects. This sent four keys, so a changed
+      // customer, project type, status, team, manager, assignee set, cost,
+      // start date, visibility or progress method was accepted by the UI and
+      // never reached the server.
+      await ref.read(projectsRepositoryProvider).updateProject(
+            _id,
+            projectWriteFields(
+              name: _name.text,
+              priority: _pri,
+              description: _desc.text,
+              customerLabel: _customer,
+              typeLabel: _type,
+              statusLabel: _statusLabel,
+              teamLabel: _team,
+              managerId: _manager,
+              assigneeIds: _assignees,
+              cost: _cost.text,
+              start: _start,
+              end: _end,
+              visibility: _visibility,
+              progressMethod: _method,
+              // Editable only when the method is Manual, which is also the only
+              // case the API stores it in.
+              percentComplete: _isManual ? _progress.text : null,
+              customers: _customerOptions,
+              types: ref.read(projectTypeOptionsProvider),
+              statuses: ref.read(projectStatusOptionsProvider),
+              teams: _teamOptions,
+            ),
+          );
       if (!mounted) return;
+      // The list *and* the record behind the detail page — without the second
+      // one the screen re-renders the pre-edit values it already had.
       ref.invalidate(projectsProvider);
+      ref.invalidate(projectDetailProvider(_id));
       ref.read(toastProvider.notifier).show('Changes saved');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(e.message);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 
-  /// API date format (`2026-08-30`).
-  static String _apiDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// The org's customers and teams as catalog options, so a picked label can be
+  /// resolved back to the UUID the API wants.
+  List<CatalogOption> get _customerOptions => [
+        for (final c in ref.read(customersProvider).valueOrNull ?? const <Customer>[])
+          CatalogOption(id: c.id, name: c.company?.trim().isNotEmpty == true ? c.company! : c.name),
+      ];
+
+
+  /// The org's own project types (`/projects/project-types/`).
+  ///
+  /// No built-in fallback: only a name that matches a catalog entry resolves to
+  /// the `project_type_id` the API takes, so offering the prototype's seven
+  /// invented types meant picking one and having it silently dropped from the
+  /// write. An org with no types configured has nothing to choose here.
+  List<String> get _typeNames =>
+      [for (final t in ref.read(projectTypeOptionsProvider)) t.name];
+
+  List<CatalogOption> get _teamOptions => [
+        for (final t in ref.read(teamsProvider).valueOrNull ?? const <Team>[])
+          CatalogOption(id: t.id, name: t.name),
+      ];
+
+  /// The picker holds a folded key ("planning"); the API wants the org's own
+  /// status row, matched by name.
+  String get _statusLabel =>
+      (StatusMeta$.project[_status] ?? StatusMeta$.project['planning']!).label;
 
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final project = ref.watch(projectByIdProvider(id));
+    // The enriched record, so the form opens on the project's real customer,
+    // type, team, cost, visibility and progress method rather than the list
+    // row's blanks and old placeholders.
+    final project = ref.watch(projectDetailOrListProvider(id));
 
     if (project == null) {
       return OpsEditScaffold(
@@ -113,9 +178,14 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
     if (!_init) {
       _init = true;
       _id = project.id;
+    _code = project.code;
       _name.text = project.name;
       _desc.text = project.desc;
-      _cost.text = project.cost;
+      // The raw amount, not the display string: "₹25L" stripped to its digits
+      // is 25, so prefilling from `cost` turned ₹25 lakh into ₹25 on save.
+      _cost.text = project.costNum > 0
+          ? project.costNum.toStringAsFixed(0)
+          : '';
       _progress.text = '${project.progress}';
       _customer = project.internal ? '' : (project.company ?? '');
       _type = project.type;
@@ -125,18 +195,37 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       _manager = project.manager;
       _assignees.addAll(project.assignees);
       _status = project.status;
-      _visibility = project.visibility;
-      _method = project.method == 'Manual' ? 'Manual' : 'Task Completion';
+      _team = project.team;
+      // Empty until the detail record lands; keep the form's defaults rather
+      // than showing a value the project does not have.
+      if (project.visibility.isNotEmpty) _visibility = project.visibility;
+      if (project.method.isNotEmpty) _method = project.method;
     }
 
+    // Watched here, not read inside the pickers' onTap: the type and status
+    // catalogs are what a picked label resolves to an id against, and until
+    // now nothing fetched them unless the user happened to open a picker —
+    // so `/projects/project-types/` was never called and every saved
+    // project_type was quietly dropped.
+    ref.watch(projectTypeCatalogProvider);
+    ref.watch(projectStatusCatalogProvider);
+    ref.watch(customersProvider);
+    ref.watch(teamsProvider);
     final roster = ref.watch(rosterProvider);
-    final customers = {for (final p in ref.watch(projectsListProvider)) if (p.company != null) p.company!}.toList();
-    final teams = {for (final r in roster) if (r.team.isNotEmpty) r.team}.toList();
+    // The org's real customers — see the create screen for why.
+    final customers = [for (final c in _customerOptions) c.name];
+    // The org's real teams, so the picked label resolves to a `team_id`.
+    // This listed the team names sitting on roster users.
+    final teams = [for (final t in _teamOptions) t.name];
     final mgr = _manager == null ? null : MockUsers.of(_manager!);
 
     return OpsEditScaffold(
       title: 'Edit project',
-      subtitle: '$_id · changes apply on save',
+      subtitle: _code.isEmpty
+          // `task_code` is null for a standalone task, and an empty code
+          // would leave a dangling separator.
+          ? 'Changes apply on save'
+          : '$_code · changes apply on save',
       onClose: () => handleEditClose(context, dirty: _dirty),
       onSave: _save,
       children: [
@@ -160,7 +249,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
           label: 'Project type',
           value: _type,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project type', options: [for (final t in _types) (value: t, label: t)], currentValue: _type);
+            final v = await showOpsOptionPicker(context: context, title: 'Project type', options: [for (final t in _typeNames) (value: t, label: t)], currentValue: _type);
             if (v != null) setState(() { _type = v; _dirtied(); });
           },
         ),
@@ -293,7 +382,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       placeholder: 'Pick a date',
       caret: PhosphorIconsRegular.calendarBlank,
       onTap: () async {
-        final d = await showDatePicker(context: context, initialDate: value ?? DateTime(2026, 7, 9), firstDate: DateTime(2024), lastDate: DateTime(2030));
+        final d = await showDatePicker(context: context, initialDate: value ?? kFilterToday, firstDate: DateTime(2024), lastDate: DateTime(2030));
         if (d != null) onPick(d);
       },
     );

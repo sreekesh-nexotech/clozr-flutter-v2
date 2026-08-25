@@ -57,6 +57,9 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
   String _kind = 'Call';
   bool _showErrors = false;
 
+  /// True while the create is in flight, so a second tap cannot post again.
+  bool _saving = false;
+
   /// The org's own follow-up types, falling back to the built-in vocabulary
   /// before the catalog loads. `task_type` is submitted as the type **name**,
   /// so offering a type this org does not have would be rejected on save.
@@ -128,7 +131,7 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
     } on AppError catch (e) {
       // `title` and `task_type` are required server-side; an empty box comes
       // back as a per-field message, which is more use than a generic one.
-      widget.ref.read(toastProvider.notifier).show(e.message);
+      widget.ref.read(toastProvider.notifier).showError(e.message);
       return;
     }
     refreshFollowups(widget.ref);
@@ -137,8 +140,32 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  Future<void> _pickDate() async {
+    final picked = await pickSheetDate(context, _date.text);
+    if (picked == null || !mounted) return;
+    setState(() => _date.text = sheetDateLabel(picked));
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await pickSheetTime(context, _time.text);
+    if (picked == null || !mounted) return;
+    setState(() => _time.text = sheetTimeLabel(picked));
+  }
+
+  /// Guards both submit paths against a double tap: each awaits a `POST` before
+  /// the sheet pops, and a second tap in that window scheduled a second one.
   Future<void> _submit() async {
-    if (_schemaDriven) return _submitSchemaForm();
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await (_schemaDriven ? _submitSchemaForm() : _submitBuiltIn());
+    } finally {
+      // False after a successful save, when the sheet has already popped.
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _submitBuiltIn() async {
     setState(() => _showErrors = true);
     if (!_contactOk) {
       widget.ref.read(toastProvider.notifier).show('Enter a contact name');
@@ -157,7 +184,7 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
           if (lead != null) 'related_to_id': lead.id,
         });
       } on AppError catch (e) {
-        widget.ref.read(toastProvider.notifier).show(e.message);
+        widget.ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
       refreshFollowups(widget.ref);
@@ -181,7 +208,8 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
       time: _time.text.trim().isEmpty ? '10:00' : _time.text.trim(),
       status: 'due',
       owner: 'me',
-      agenda: _note.text.trim().isEmpty ? 'Follow-up' : _note.text.trim(),
+      title: 'Follow-up',
+      description: _note.text.trim(),
     );
     final drafts = widget.ref.read(followupDraftsProvider);
     widget.ref.read(followupDraftsProvider.notifier).state = [fu, ...drafts];
@@ -204,6 +232,9 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
         SheetHeader(title: 'New follow-up', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: SingleChildScrollView(
+            // Typing in Company / Contact / Note hides the rest of the form
+            // behind the keyboard; dragging the sheet is how you get it back.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 12.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,9 +274,27 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: AppTextField(label: 'Date', controller: _date, hint: 'e.g. 22 Jun 2026')),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Date',
+                        readOnly: true,
+                        onTap: _pickDate,
+                        value: _date.text.isEmpty ? null : _date.text,
+                        hint: 'e.g. 22 Jun 2026',
+                        suffixIcon: PhosphorIconsRegular.calendarBlank,
+                      ),
+                    ),
                     SizedBox(width: 10.w),
-                    Expanded(child: AppTextField(label: 'Time', controller: _time, hint: '10:00')),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Time',
+                        readOnly: true,
+                        onTap: _pickTime,
+                        value: _time.text.isEmpty ? null : _time.text,
+                        hint: '10:00',
+                        suffixIcon: PhosphorIconsRegular.clock,
+                      ),
+                    ),
                   ],
                 ),
                 SizedBox(height: 14.h),
@@ -257,7 +306,12 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
             ),
           ),
         ),
-        SheetSubmitBar(label: 'Add follow-up', icon: PhosphorIconsBold.plus, onTap: _submit),
+        SheetSubmitBar(
+            label: 'Add follow-up',
+            icon: PhosphorIconsBold.plus,
+            busy: _saving,
+            busyLabel: 'Scheduling…',
+            onTap: _submit),
       ],
     );
   }
@@ -279,6 +333,9 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
             title: 'New follow-up', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: SingleChildScrollView(
+            // The org's layout can run to many fields; typing in one must not
+            // trap the keyboard over the rest.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 12.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,6 +360,8 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
         SheetSubmitBar(
             label: 'Add follow-up',
             icon: PhosphorIconsBold.plus,
+            busy: _saving,
+            busyLabel: 'Scheduling…',
             onTap: _submit),
       ],
     );

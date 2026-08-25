@@ -47,6 +47,38 @@ class LeadCallOutcome {
 /// without a platform channel.
 typedef Dialler = Future<bool> Function(Uri uri);
 
+/// A phone number as both the telephony API and the dialler want it: E.164 —
+/// digits behind a single `+`, no spaces or punctuation.
+///
+/// Numbers reach the app however they were typed; the add-lead form's own hint
+/// is "+91 98470 00000". Exotel's `to_number` must be bare E.164, so the
+/// separators have to come off before the number is used for anything. A number
+/// that arrives without a `+` is left without one rather than being guessed a
+/// country code.
+String normaliseCallNumber(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  final digits = trimmed.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return '';
+  return trimmed.startsWith('+') ? '+$digits' : digits;
+}
+
+/// Whether a refusal means click-to-call will not work for this caller **at
+/// all** — the org has no Exotel, or this user is not a telephony agent.
+///
+/// Worth separating from a transient upstream failure because the answer is
+/// permanent: there is nothing to retry, so re-POSTing on every Call tap only
+/// buys a wasted round trip. Matched on the message because the API returns all
+/// of these as a plain `400` with no code to branch on.
+bool isExotelConfigRefusal(String message) {
+  final m = message.toLowerCase();
+  return m.contains('integration is disabled') ||
+      m.contains('not fully configured') ||
+      m.contains('not configured as a telephony agent') ||
+      m.contains('not enabled for this telephony agent') ||
+      m.contains('missing telephony agent');
+}
+
 /// Decides how the Call button places a call, and records it.
 ///
 /// Two routes, because the backend has no single "call this lead" endpoint:
@@ -66,10 +98,14 @@ class LeadCallService {
     required CallLogsRepository callLogs,
     required Dialler dialler,
     required String myNumber,
+    String? blockedReason,
+    void Function(String reason)? onBlocked,
   })  : _exotel = exotel,
         _callLogs = callLogs,
         _dial = dialler,
-        _myNumber = myNumber;
+        _myNumber = myNumber,
+        _blockedReason = blockedReason,
+        _onBlocked = onBlocked;
 
   final ExotelRemoteDataSource? _exotel;
   final CallLogsRepository _callLogs;
@@ -79,27 +115,45 @@ class LeadCallService {
   /// manual call log requires. Empty on an account with no profile phone.
   final String _myNumber;
 
+  /// Why click-to-call is already known to be unavailable to this caller, from
+  /// [exotelBlockedProvider]. Non-null means skip the POST — see [call].
+  final String? _blockedReason;
+
+  /// Called with the server's reason the first time a configuration refusal
+  /// comes back, so it is remembered for the session.
+  final void Function(String reason)? _onBlocked;
+
   Future<LeadCallOutcome> call({
     required String leadId,
     required String toNumber,
     required ExotelStatus status,
   }) async {
-    final to = toNumber.trim();
+    final to = normaliseCallNumber(toNumber);
     if (to.isEmpty) return const LeadCallOutcome(LeadCallResult.noNumber);
 
     String? exotelNote;
     final exotel = _exotel;
-    if (exotel != null && (status.usable || !status.known)) {
+    // A remembered configuration refusal short-circuits the attempt: it can
+    // only be refused again, and the screen already carries the reason as a
+    // standing notice.
+    if (exotel != null &&
+        _blockedReason == null &&
+        (status.usable || !status.known)) {
       try {
         await exotel.placeCall(leadId: leadId, toNumber: to);
         return const LeadCallOutcome(LeadCallResult.ringingViaExotel);
       } on Object catch (e) {
-        // Refused — nothing was dialled, so fall through. Only surface it when
-        // Exotel was supposed to work; for an org that does not use it, a
-        // refusal is simply the normal path and not worth a warning.
-        exotelNote = status.usable
-            ? (e is AppError ? e.message : 'Exotel could not place the call.')
-            : null;
+        // Refused — nothing was dialled, so fall through to the dialler. The
+        // reason is always carried now. It used to be dropped whenever the
+        // status was merely unknown, which is the state every ordinary sales
+        // user is in (`/exotel/status/` is settings-gated and 403s for them) —
+        // so the single most common failure, "You are not configured as a
+        // telephony agent", was explained nowhere.
+        exotelNote =
+            e is AppError ? e.message : 'Exotel could not place the call.';
+        if (e is AppError && isExotelConfigRefusal(e.message)) {
+          _onBlocked?.call(e.message);
+        }
       }
     }
 
@@ -149,11 +203,27 @@ final exotelStatusValueProvider = Provider<ExotelStatus>(
   (ref) => ref.watch(exotelStatusProvider).valueOrNull ?? const ExotelStatus.unknown(),
 );
 
+/// Why click-to-call is unavailable to this user, in the server's own words —
+/// null until a call learns otherwise, and always null in mock mode.
+///
+/// A configuration refusal (no Exotel on the org, caller is not a telephony
+/// agent) is permanent for the session, so it is remembered rather than
+/// rediscovered on every tap. It is deliberately **not** a toast: by the time
+/// one could be shown the device dialler is already in front of the user and a
+/// timed message goes unseen. The detail screen shows this beside the Call
+/// button instead, where it stays.
+final exotelBlockedProvider = StateProvider<String?>((ref) => null);
+
 final leadCallServiceProvider = Provider<LeadCallService>(
   (ref) => LeadCallService(
     exotel: ref.watch(exotelRemoteDataSourceProvider),
     callLogs: ref.watch(callLogsRepositoryProvider),
     dialler: launchUrl,
     myNumber: ref.watch(sessionControllerProvider).user?.phone ?? '',
+    // Watched, not read: the service is cached, so a `read` here would hand
+    // every later call the stale `null` and keep re-POSTing a refused request.
+    blockedReason: ref.watch(exotelBlockedProvider),
+    onBlocked: (reason) =>
+        ref.read(exotelBlockedProvider.notifier).state = reason,
   ),
 );

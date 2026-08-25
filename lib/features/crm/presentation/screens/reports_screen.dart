@@ -8,6 +8,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/utils/inr_format.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../application/providers/leads_providers.dart';
@@ -24,6 +25,13 @@ class ReportsScreen extends ConsumerWidget {
   /// closed outcome).
   static const _closed = {'won', 'lost', 'archived'};
 
+  /// Pull-to-refresh. Every figure on this screen is derived from the lead list,
+  /// so refetching it is the whole refresh.
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(leadsScopedProvider);
+    await settle([ref.read(leadsProvider.future)]);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(leadsProvider);
@@ -36,6 +44,7 @@ class ReportsScreen extends ConsumerWidget {
             child: AsyncStateView<List<Lead>>(
               value: async,
               onRetry: () => ref.invalidate(leadsProvider),
+              onRefresh: () => _refresh(ref),
               data: _body,
             ),
           ),
@@ -68,6 +77,7 @@ class ReportsScreen extends ConsumerWidget {
     final statusMax = [1, ...StatusMeta$.leadOrder.map(countOf)].reduce((a, b) => a > b ? a : b);
 
     return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 120.h),
       children: [
         _summaryGrid(total, won, winRate, openPipeline),

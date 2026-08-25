@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/auth/session_gate.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/monitoring/app_monitoring.dart';
 import '../../../../core/network/api_service.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/storage/app_cache.dart';
@@ -74,9 +76,13 @@ class SessionController extends StateNotifier<SessionState> {
     final tokens = _ref.read(tokenStorageProvider);
     try {
       await tokens.init();
-    } on Object {
+    } on Object catch (error, stack) {
       // A keychain/keystore read failure must fail closed to the login screen,
-      // never leave the gate stuck on `restoring`.
+      // never leave the gate stuck on `restoring`. It also means a user who is
+      // signed in gets bounced to login for no reason they can see, so it is
+      // reported rather than silently absorbed.
+      unawaited(AppMonitoring.captureError(error, stack,
+          message: 'Token storage init failed — session forced to login'));
       _set(SessionStatus.unauthenticated);
       return;
     }
@@ -205,6 +211,13 @@ class SessionController extends StateNotifier<SessionState> {
       UserDirectory.currentUserId = user.id;
       UserDirectory.register(userId: user.id, fullName: user.fullName);
     }
+    // Tag crash reports with who hit them and in which tenant. Only the ids
+    // travel — see AppMonitoring.identify.
+    unawaited(AppMonitoring.identify(
+      userId: user.id,
+      organizationId: user.primaryOrg?.id,
+      organizationName: user.primaryOrg?.name,
+    ));
     state = state.copyWith(user: user);
     // The whole profile is cached — organization, role, designation, avatar —
     // so a warm start renders the real identity instead of blanking until the
@@ -221,6 +234,9 @@ class SessionController extends StateNotifier<SessionState> {
       await AppCache.clearAll();
       await _ref.read(tokenStorageProvider).clear();
       UserDirectory.reset();
+      // Detach the identity too, so events from the login screen — or from the
+      // next person to sign in on this device — are not attributed to them.
+      await AppMonitoring.forget();
       _resetApiScopedProviders();
       state = const SessionState(status: SessionStatus.unauthenticated);
       SessionGate.instance.set(SessionStatus.unauthenticated);
@@ -236,6 +252,12 @@ class SessionController extends StateNotifier<SessionState> {
   void _resetApiScopedProviders() => _ref.invalidate(apiServiceProvider);
 
   void _set(SessionStatus status) {
+    // Auth transitions are the context a crash report most often lacks: "the
+    // session was torn down two seconds before this" explains a whole class of
+    // null-state failures that otherwise look inexplicable.
+    if (status != state.status) {
+      AppMonitoring.breadcrumb('Session ${status.name}', category: 'auth');
+    }
     state = state.copyWith(status: status);
     SessionGate.instance.set(status);
   }

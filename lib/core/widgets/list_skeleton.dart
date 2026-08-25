@@ -50,6 +50,14 @@ class ListSkeleton extends StatelessWidget {
       highlightColor: AppColors.bgScreen,
       child: ListView.separated(
         physics: const NeverScrollableScrollPhysics(),
+        // Sized to its rows, not to the space it is given. The skeleton is also
+        // used *inside* scrolling bodies — a detail screen's activity tab, for
+        // one — where the incoming height is unbounded. A plain viewport throws
+        // "given unbounded height" there, and because that throw happens before
+        // it is sized, the very next line of its layout trips the framework's
+        // `hasSize` assertion instead. Shrink-wrapping costs nothing here: the
+        // list is a handful of rows and never scrolls.
+        shrinkWrap: true,
         padding: padding ?? EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 24.h),
         itemCount: itemCount,
         separatorBuilder: (_, __) => SizedBox(height: 10.h),

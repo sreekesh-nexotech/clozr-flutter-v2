@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../network/app_error.dart';
+import 'app_refresh.dart';
 import 'error_state.dart';
 import 'list_skeleton.dart';
 
@@ -19,6 +20,8 @@ class AsyncStateView<T> extends StatelessWidget {
     required this.onRetry,
     this.loading,
     this.error,
+    this.onRefresh,
+    this.refreshDisplacement,
   });
 
   final AsyncValue<T> value;
@@ -26,6 +29,18 @@ class AsyncStateView<T> extends StatelessWidget {
   final VoidCallback onRetry;
   final Widget Function()? loading;
   final Widget Function(AppError error, VoidCallback retry)? error;
+
+  /// Supply to give the loaded list pull-to-refresh. Should invalidate whatever
+  /// the screen reads and await the refetch — see [settle].
+  ///
+  /// Only the data branch is wrapped: the error branch already offers Retry, and
+  /// the skeleton has nothing to pull. The empty state is covered, because
+  /// screens render theirs inside [data].
+  final Future<void> Function()? onRefresh;
+
+  /// Passed through to [AppRefresh.displacement] for screens with a taller
+  /// sticky header than the list default.
+  final double? refreshDisplacement;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +58,16 @@ class AsyncStateView<T> extends StatelessWidget {
         return error?.call(appError, onRetry) ??
             ErrorState.forError(appError, onRetry: onRetry);
       },
-      data: data,
+      data: (value) {
+        final built = data(value);
+        final refresh = onRefresh;
+        if (refresh == null) return built;
+        return AppRefresh(
+          onRefresh: refresh,
+          displacement: refreshDisplacement,
+          child: built,
+        );
+      },
     );
   }
 }

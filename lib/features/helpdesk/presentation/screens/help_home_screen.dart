@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -8,11 +9,15 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/kpi_card.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/status_pill.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import '../../application/providers/help_dashboard_providers.dart';
 import '../../application/providers/tickets_providers.dart';
+import '../../domain/entities/help_dashboard.dart';
 import '../../domain/entities/ticket.dart';
 import '../components/donut_chart.dart';
 import '../util/ticket_sla.dart';
@@ -55,7 +60,11 @@ class HelpHomeScreen extends ConsumerWidget {
                 ),
                 Padding(
                   padding: EdgeInsets.only(bottom: 3.h),
-                  child: Text('Thu, 9 Jul', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                  // Today, from the device clock. This was the literal string
+                  // "Thu, 9 Jul" — the prototype's frozen date, which read as
+                  // stale on every other day of the year.
+                  child: Text(DateFormat('EEE, d MMM').format(DateTime.now()),
+                      style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                 ),
               ],
             ),
@@ -65,9 +74,11 @@ class HelpHomeScreen extends ConsumerWidget {
         Expanded(
           child: AsyncStateView<List<Ticket>>(
             value: ticketsAsync,
-            onRetry: () => ref.invalidate(ticketsProvider),
+            onRetry: () => refreshTickets(ref),
+            onRefresh: () => _refresh(ref),
             data: (tickets) {
               final dir = ref.watch(ticketDirectoryProvider);
+              final summary = ref.watch(myTicketSummaryProvider).valueOrNull;
               final mineAll = tickets.where((t) => t.isMine).toList();
               final openT = mineAll.where((t) => t.status == 'new' || t.status == 'open' || t.status == 'pending').toList();
               final doneMine = mineAll.where((t) => t.status == 'resolved' || t.status == 'closed').toList();
@@ -85,9 +96,20 @@ class HelpHomeScreen extends ConsumerWidget {
               return ListView(
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 children: [
-                  _kpiGrid(context, ref, openT.length, breached.length),
+                  // The server's own figures where it has them: its counts are
+                  // scoped by `assigned_to_me` rather than by `isMine` over a
+                  // loaded page, and its SLA arithmetic is pause-aware.
+                  _kpiGrid(context, ref, summary?.open ?? openT.length,
+                      summary?.breachedNow ?? breached.length),
                   SizedBox(height: 16.h),
-                  _slaMixCard(withinOpen, doneMine.length, risk.length, breached.length, mineAll),
+                  _slaMixCard(
+                    ref,
+                    summary?.withinSla ?? (withinOpen + doneMine.length),
+                    summary == null ? doneMine.length : 0,
+                    summary?.slaDueWithin ?? risk.length,
+                    summary?.slaBreached ?? breached.length,
+                    mineAll,
+                  ),
                   SizedBox(height: 16.h),
                   _crossedCard(context, ref, breached, slaVal, dir),
                   SizedBox(height: 16.h),
@@ -103,6 +125,23 @@ class HelpHomeScreen extends ConsumerWidget {
     );
   }
 
+  /// Pull-to-refresh: the tickets behind every card, plus the server's KPI
+  /// figures (the medians and trends have no local fallback).
+  Future<void> _refresh(WidgetRef ref) async {
+    refreshTickets(ref);
+    ref.invalidate(helpKpisProvider);
+    ref.invalidate(myTicketSummaryProvider);
+    ref.invalidate(helpSlaMixProvider);
+    ref.invalidate(helpCompletedGridProvider);
+    await settle([
+      ref.read(ticketsProvider.future),
+      ref.read(helpKpisProvider.future),
+      ref.read(myTicketSummaryProvider.future),
+      ref.read(helpSlaMixProvider.future),
+      ref.read(helpCompletedGridProvider.future),
+    ]);
+  }
+
   // ── KPI grid ──
   Widget _kpiGrid(BuildContext context, WidgetRef ref, int openCount, int breachCount) {
     void goTickets({bool breach = false, String tab = 'all'}) {
@@ -112,26 +151,56 @@ class HelpHomeScreen extends ConsumerWidget {
       context.go(Routes.tickets);
     }
 
+    // Counts stay local (the ticket list is already loaded); the trends and the
+    // two medians come from the server or not at all — see [helpKpisProvider].
+    // They were fixed constants: "3.2 days", "1.4 hours" and four invented
+    // trend chips that never moved whatever the tickets did.
+    final kpis = ref.watch(helpKpisProvider).valueOrNull;
+    final resolution = kpis?.avgResolution;
+    final response = kpis?.firstResponse;
+    final name = ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
+
     final cards = <Widget>[
       KpiCard(
         icon: PhosphorIconsFill.ticket, iconColor: AppColors.blueBright, iconBg: AppColors.tintBlue,
-        value: '$openCount', label: 'My Open Tickets', sub: 'Assigned to Manoj', accent: AppColors.blueBright,
-        trend: '8%', trendUp: true, spark: const [5, 5, 4, 4, 4, 3, 3], onTap: () => goTickets(),
+        value: '$openCount', label: 'My Open Tickets',
+        sub: name.isEmpty ? 'Assigned to me' : 'Assigned to $name',
+        accent: AppColors.blueBright,
+        trend: kpis?.openTickets?.trendLabel,
+        trendUp: kpis?.openTickets?.trendUp ?? true,
+        onTap: () => goTickets(),
       ),
       KpiCard(
         icon: PhosphorIconsFill.warningCircle, iconColor: AppColors.error, iconBg: AppColors.tintRed,
         value: '$breachCount', label: 'My SLA Breaches', sub: 'Response or resolution', accent: AppColors.error,
-        trend: '8.4%', trendUp: false, spark: const [0, 0, 1, 1, 1, 2, 2], onTap: () => goTickets(breach: true),
+        trend: kpis?.slaBreaches?.trendLabel,
+        // More breaches is worse, so the pill's colour inverts the arrow.
+        trendUp: !(kpis?.slaBreaches?.trendUp ?? true),
+        arrowUp: kpis?.slaBreaches?.trendUp ?? false,
+        onTap: () => goTickets(breach: true),
       ),
       KpiCard(
         icon: PhosphorIconsFill.timer, iconColor: AppColors.error, iconBg: AppColors.tintRed,
-        value: '3.2', unit: 'days', label: 'My Avg Resolution', sub: 'Median, this period', accent: AppColors.error,
-        trend: '8.4%', trendUp: false, spark: const [2.4, 2.5, 2.7, 2.8, 3, 3.1, 3.2], onTap: () => goTickets(tab: 'resolved'),
+        // Sent in minutes; this card reads in days.
+        value: resolution?.days == null ? '—' : _trim(resolution!.days!),
+        unit: resolution?.days == null ? null : 'days',
+        label: 'My Avg Resolution', sub: 'Median, this period', accent: AppColors.error,
+        trend: resolution?.trendLabel,
+        // A shorter resolution is better, so falling is the good direction.
+        trendUp: !(resolution?.trendUp ?? true),
+        arrowUp: resolution?.trendUp ?? false,
+        onTap: () => goTickets(tab: 'resolved'),
       ),
       KpiCard(
         icon: PhosphorIconsFill.lightning, iconColor: AppColors.success, iconBg: AppColors.tintGreen,
-        value: '1.4', unit: 'hours', label: 'My First Response', sub: 'Median, this period', accent: AppColors.success,
-        trend: '3.9%', trendUp: true, spark: const [2.1, 2, 1.9, 1.7, 1.6, 1.5, 1.4], onTap: () => goTickets(),
+        // Sent in minutes; this card reads in hours.
+        value: response?.hours == null ? '—' : _trim(response!.hours!),
+        unit: response?.hours == null ? null : 'hours',
+        label: 'My First Response', sub: 'Median, this period', accent: AppColors.success,
+        trend: response?.trendLabel,
+        trendUp: !(response?.trendUp ?? true),
+        arrowUp: response?.trendUp ?? false,
+        onTap: () => goTickets(),
       ),
     ];
     return Column(
@@ -144,29 +213,39 @@ class HelpHomeScreen extends ConsumerWidget {
   }
 
   // ── SLA status & priority mix ──
-  Widget _slaMixCard(int withinOpen, int done, int risk, int breached, List<Ticket> mineAll) {
+  Widget _slaMixCard(WidgetRef ref, int withinOpen, int done, int risk, int breached, List<Ticket> mineAll) {
+    // `sla-priority-mix/` (§3) when it answered; the loaded tickets otherwise.
+    final mix = ref.watch(helpSlaMixProvider).valueOrNull;
+
+    final within = mix?.withinSla ?? (withinOpen + done);
+    final atRisk = mix?.atRisk ?? risk;
+    final over = mix?.breached ?? breached;
     final slaParts = [
-      DonutSegment((withinOpen + done).toDouble(), AppColors.success),
-      DonutSegment(risk.toDouble(), AppColors.warning),
-      DonutSegment(breached.toDouble(), AppColors.error),
+      DonutSegment(within.toDouble(), AppColors.success),
+      DonutSegment(atRisk.toDouble(), AppColors.warning),
+      DonutSegment(over.toDouble(), AppColors.error),
     ];
     final slaLegend = [
-      ('Within SLA', withinOpen + done, AppColors.success),
-      ('At risk', risk, AppColors.warning),
-      ('Breached', breached, AppColors.error),
+      ('Within SLA', within, AppColors.success),
+      ('At risk', atRisk, AppColors.warning),
+      ('Breached', over, AppColors.error),
     ];
+
+    // Keyed by the priorities this API actually has. The first slice counted
+    // `'Urgent'`, which is not one of them — so it was permanently 0 while
+    // every Critical ticket went uncounted.
     int byPri(String p) => mineAll.where((t) => t.pri == p).length;
+    final priCounts = <String, (int, Color)>{
+      'Critical': (mix?.critical ?? byPri('Critical'), AppColors.error),
+      'High': (mix?.high ?? byPri('High'), AppColors.warning),
+      'Medium': (mix?.medium ?? byPri('Medium'), AppColors.blueBright),
+      'Low': (mix?.low ?? byPri('Low'), AppColors.textPlaceholder),
+    };
     final priParts = [
-      DonutSegment(byPri('Urgent').toDouble(), AppColors.error),
-      DonutSegment(byPri('High').toDouble(), AppColors.warning),
-      DonutSegment(byPri('Medium').toDouble(), AppColors.blueBright),
-      DonutSegment(byPri('Low').toDouble(), AppColors.textPlaceholder),
+      for (final e in priCounts.entries) DonutSegment(e.value.$1.toDouble(), e.value.$2),
     ];
     final priLegend = [
-      ('Urgent', byPri('Urgent'), AppColors.error),
-      ('High', byPri('High'), AppColors.warning),
-      ('Medium', byPri('Medium'), AppColors.blueBright),
-      ('Low', byPri('Low'), AppColors.textPlaceholder),
+      for (final e in priCounts.entries) (e.key, e.value.$1, e.value.$2),
     ];
 
     return ClozrCard(
@@ -175,7 +254,9 @@ class HelpHomeScreen extends ConsumerWidget {
         children: [
           Text('SLA Status & Priority Mix', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
-          Text('My tickets · Manoj Varma', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          // The signed-in user, not the prototype's seed name — this card is
+          // "my tickets", so it named the wrong person for everyone but him.
+          Text(_mineLabel(ref), style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
           SizedBox(height: 16.h),
           Center(child: Text('SLA Status', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary))),
           SizedBox(height: 10.h),
@@ -282,7 +363,7 @@ class HelpHomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(t.id, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.errorDeep)),
+                  Text(t.displayRef, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.errorDeep)),
                   SizedBox(height: 2.h),
                   Text(t.subject, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
@@ -333,7 +414,7 @@ class HelpHomeScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(t.id, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+            Text(t.displayRef, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
             SizedBox(height: 2.h),
             Text(t.subject, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
             SizedBox(height: 2.h),
@@ -363,8 +444,20 @@ class HelpHomeScreen extends ConsumerWidget {
     );
   }
 
+  /// The SLA card's sub-label. Falls back to the bare "My tickets" rather than
+  /// a placeholder name when there is no session (mock mode).
+  static String _mineLabel(WidgetRef ref) {
+    final name = ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
+    return name.isEmpty ? 'My tickets' : 'My tickets · $name';
+  }
+
+  /// "3.2" — and "3" when the figure is whole.
+  static String _trim(double v) =>
+      v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
+
   // ── Resolved grid ──
   Widget _resolvedGrid(BuildContext context, WidgetRef ref, List<Ticket> doneMine) {
+    final grid = ref.watch(helpCompletedGridProvider).valueOrNull;
     void goResolved() {
       ref.read(ticketMineProvider.notifier).state = true;
       ref.read(ticketBreachingProvider.notifier).state = false;
@@ -392,23 +485,50 @@ class HelpHomeScreen extends ConsumerWidget {
               ],
             ),
           ),
-          for (final pri in const ['High', 'Medium', 'Low'])
-            GestureDetector(
-              onTap: goResolved,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: EdgeInsets.symmetric(vertical: 10.h),
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
-                child: Row(
-                  children: [
-                    Expanded(child: Align(alignment: Alignment.centerLeft, child: StatusPill(label: pri, color: ticketPriPillColor(pri)))),
-                    SizedBox(width: 82.w, child: Center(child: _gridBadge('${doneMine.where((t) => t.pri == pri).length}', false))),
-                    SizedBox(width: 82.w, child: Center(child: _gridBadge('0', true))),
-                  ],
-                ),
-              ),
+          // The server's own grid when it answered (§9), else the loaded
+          // tickets — which only ever counted the page in hand.
+          for (final pri in kTicketPriorities)
+            _gridRow(
+              pri,
+              _gridCount(grid, doneMine, pri, afterBreach: false),
+              _gridCount(grid, doneMine, pri, afterBreach: true),
+              goResolved,
             ),
         ],
+      ),
+    );
+  }
+
+  /// One priority's count, preferring the server's row.
+  ///
+  /// The local fallback splits on whether the ticket beat its resolution SLA;
+  /// "after breach" used to be a hard-coded 0, so every resolved ticket read as
+  /// on time however late it actually was.
+  int _gridCount(List<CompletedGridRow>? grid, List<Ticket> doneMine, String pri,
+      {required bool afterBreach}) {
+    final row = grid
+        ?.where((r) => r.priority.trim().toLowerCase() == pri.toLowerCase())
+        .firstOrNull;
+    if (row != null) return afterBreach ? row.afterDue : row.beforeDue;
+    return doneMine
+        .where((t) => t.pri == pri && (t.resolvedAfterBreach == true) == afterBreach)
+        .length;
+  }
+
+  Widget _gridRow(String pri, int within, int after, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 10.h),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
+        child: Row(
+          children: [
+            Expanded(child: Align(alignment: Alignment.centerLeft, child: StatusPill(label: pri, color: ticketPriPillColor(pri)))),
+            SizedBox(width: 82.w, child: Center(child: _gridBadge('$within', false))),
+            SizedBox(width: 82.w, child: Center(child: _gridBadge('$after', true))),
+          ],
+        ),
       ),
     );
   }

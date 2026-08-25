@@ -6,6 +6,7 @@ import '../../../../app/config/constants.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/network/app_error.dart';
+import '../../../../core/storage/remembered_email.dart';
 import '../../application/providers/auth_providers.dart';
 import '../../domain/entities/auth_session.dart';
 
@@ -34,6 +35,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String _enrolMessage = '';
   TwoFactorEnrolment? _enrolment;
   List<String> _backupCodes = const [];
+
+  /// Whether to keep the work email for next time. Starts on when one was
+  /// remembered, so signing in again does not silently forget it.
+  bool _remember = false;
+  final _rememberedEmail = RememberedEmail();
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreEmail();
+  }
+
+  /// Prefills the address the user asked to be remembered. Never a password:
+  /// the session itself already survives a restart through the token store, so
+  /// this only saves retyping.
+  Future<void> _restoreEmail() async {
+    final saved = await _rememberedEmail.read();
+    if (saved == null || !mounted) return;
+    setState(() {
+      _email.text = saved;
+      _remember = true;
+    });
+  }
 
   @override
   void dispose() {
@@ -84,6 +108,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           final result = await ref
               .read(sessionControllerProvider.notifier)
               .login(email, password);
+          // Saved once the server has accepted the address — including when it
+          // sends the user on to a 2FA challenge, which is still a valid sign-in
+          // for an email worth remembering. Unticked clears whatever an earlier
+          // sign-in stored.
+          await _rememberedEmail.save(email, remember: _remember);
           if (!mounted) return;
           switch (result) {
             case LoginSuccess():
@@ -210,9 +239,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           onSubmitted: (_) => _submitCredentials(),
         ),
-        SizedBox(height: 20.h),
+        SizedBox(height: 6.h),
+        _rememberRow(),
+        SizedBox(height: 14.h),
         _primaryButton('Sign in', _submitCredentials),
       ];
+
+  /// "Remember me" — the email only, and it says so, so nobody reads it as a
+  /// stored password.
+  Widget _rememberRow() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _busy ? null : () => setState(() => _remember = !_remember),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 6.h),
+        child: Row(
+          children: [
+            Container(
+              width: 20.r,
+              height: 20.r,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _remember ? AppColors.navy : AppColors.white,
+                borderRadius: BorderRadius.circular(6.r),
+                border: Border.all(
+                    color: _remember ? AppColors.navy : AppColors.borderInput, width: 1.5),
+              ),
+              child: _remember
+                  ? Icon(Icons.check, size: 14.r, color: AppColors.white)
+                  : null,
+            ),
+            SizedBox(width: 10.w),
+            Text('Remember my email',
+                style: AppText.custom(
+                    size: 13, weight: FontWeight.w600, color: AppColors.textBody)),
+          ],
+        ),
+      ),
+    );
+  }
 
   List<Widget> _challengeFields() => [
         Text(

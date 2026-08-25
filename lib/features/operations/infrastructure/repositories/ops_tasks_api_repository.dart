@@ -1,5 +1,7 @@
 import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/app_cache.dart';
+import '../../../crm/domain/entities/audit_entry.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/ops_task.dart';
 import '../../domain/repositories/ops_tasks_repository.dart';
 import '../data_sources/remote/ops_tasks_remote_ds.dart';
@@ -16,9 +18,9 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   static const String _key = 'ops_tasks';
 
   @override
-  Future<List<OpsTask>> getOpsTasks() async {
+  Future<List<OpsTask>> getOpsTasks({Map<String, dynamic> filters = const {}}) async {
     try {
-      final tasks = await _remote.fetchOpsTasks();
+      final tasks = await _remote.fetchOpsTasks(filters: filters);
       await AppCache.put(_box, _key, [for (final t in tasks) _toJson(t)]);
       return tasks;
     } on AppError catch (e) {
@@ -60,6 +62,19 @@ class OpsTasksApiRepository implements OpsTasksRepository {
         'projId': t.projId,
         'group': t.group,
         'status': t.status,
+        // Without these the offline list loses the org's own status names (so
+        // the tabs stop matching), the type facet, the blocker badge and the
+        // server's overdue verdict.
+        'statusName': t.statusName,
+        'projectName': t.projectName,
+        'groupId': t.groupId,
+        'typeId': t.typeId,
+        'typeName': t.typeName,
+        'code': t.code,
+        'subtaskCount': t.subtaskCount,
+        'subtaskDoneCount': t.subtaskDoneCount,
+        'pendingDeps': t.pendingDeps,
+        'isOverdue': t.isOverdue,
         'pri': t.pri,
         'assignees': t.assignees,
         'milestone': t.milestone,
@@ -81,6 +96,16 @@ class OpsTasksApiRepository implements OpsTasksRepository {
         projId: row['projId'] as String? ?? '',
         group: row['group'] as String? ?? 'No group',
         status: row['status'] as String? ?? 'open',
+        statusName: row['statusName'] as String? ?? '',
+        projectName: row['projectName'] as String? ?? '',
+        groupId: row['groupId'] as String? ?? '',
+        typeId: row['typeId'] as String? ?? '',
+        typeName: row['typeName'] as String? ?? '',
+        code: row['code'] as String? ?? '',
+        subtaskCount: (row['subtaskCount'] as num?)?.toInt() ?? 0,
+        subtaskDoneCount: (row['subtaskDoneCount'] as num?)?.toInt() ?? 0,
+        pendingDeps: (row['pendingDeps'] as num?)?.toInt() ?? 0,
+        isOverdue: row['isOverdue'] as bool?,
         pri: row['pri'] as String? ?? 'Medium',
         assignees: [
           for (final a in row['assignees'] as List? ?? const [])
@@ -92,9 +117,11 @@ class OpsTasksApiRepository implements OpsTasksRepository {
         end: row['end'] as String? ?? '',
         endTime: row['endTime'] as String? ?? '',
         endISO: row['endISO'] as String? ?? '',
-        expHrs: (row['expHrs'] as num?)?.toInt() ?? 0,
+        // Null, not 0/1: the API has no field behind either, and a default here
+        // would be indistinguishable from a real value on the detail page.
+        expHrs: (row['expHrs'] as num?)?.toDouble(),
         progress: (row['progress'] as num?)?.toInt(),
-        weight: (row['weight'] as num?)?.toInt() ?? 1,
+        weight: (row['weight'] as num?)?.toDouble(),
         dept: row['dept'] as String? ?? '',
         color: OpsTasksRemoteDataSource.neutralTag,
         subtasks: const [],
@@ -102,4 +129,71 @@ class OpsTasksApiRepository implements OpsTasksRepository {
         notes: const [],
         desc: row['desc'] as String? ?? '',
       );
+
+  @override
+  Future<List<CatalogOption>> getOpsTaskStatuses() => _remote.fetchOpsTaskStatuses();
+
+  /// Not cached: an aggregate is cheap, and a stale tab strip over a fresh list
+  /// is worse than no strip counts at all.
+  @override
+  Future<Map<String, int>> getStatusCounts(Map<String, dynamic> filters) =>
+      _remote.fetchStatusCounts(filters);
+
+  @override
+  Future<List<CatalogOption>> getTaskGroups(String projectId) =>
+      _remote.fetchTaskGroups(projectId);
+
+  @override
+  Future<void> deleteOpsTask(String id) async {
+    await _remote.deleteOpsTask(id);
+    await AppCache.remove(_box, _key);
+  }
+
+  /// Edges change what the list's `pending_dependency_count` says, so the
+  /// cached list has to go with them.
+  @override
+  Future<void> addDependency({required String taskId, required String dependsOn}) async {
+    await _remote.addDependency(taskId: taskId, dependsOn: dependsOn);
+    await AppCache.remove(_box, _key);
+  }
+
+  @override
+  Future<void> removeDependency(String edgeId) async {
+    await _remote.removeDependency(edgeId);
+    await AppCache.remove(_box, _key);
+  }
+
+  /// Detail reads are not cached: the full shape exists precisely because the
+  /// cached list rows are the slim projection.
+  @override
+  Future<OpsTask?> getOpsTask(String id) => _remote.fetchOpsTask(id);
+
+  /// Not cached: subtasks are a child list of one task, and the cached blob is
+  /// the org-wide slim list.
+  @override
+  Future<List<Subtask>> getSubtasks(
+    String parentId, {
+    Set<String> closedStatusIds = const {},
+  }) =>
+      _remote.fetchSubtasks(parentId, closedStatusIds: closedStatusIds);
+
+  /// A new subtask changes the parent's `subtask_count` and rolled-up progress,
+  /// so the cached list goes with it.
+  @override
+  Future<void> createSubtask({
+    required String parentId,
+    required String subject,
+    String projectId = '',
+  }) async {
+    await _remote.createSubtask(
+        parentId: parentId, subject: subject, projectId: projectId);
+    await AppCache.remove(_box, _key);
+  }
+
+  @override
+  Future<List<AuditEntry>> getTaskActivity(
+    String taskId, {
+    Map<String, String> statusNames = const {},
+  }) =>
+      _remote.fetchTaskActivity(taskId, statusNames: statusNames);
 }

@@ -44,7 +44,12 @@ class ProjectCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.textPrimary)),
                     SizedBox(height: 4.h),
-                    Text('${p.id} · ${p.type}',
+                    // `naming_series` ("PRJ-1010"), never `p.id` — that is the
+                    // UUID, which this line was printing at the user.
+                    Text([
+                      if (p.code.isNotEmpty) p.code,
+                      if (p.type.isNotEmpty) p.type,
+                    ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.body(color: AppColors.textMuted2)),

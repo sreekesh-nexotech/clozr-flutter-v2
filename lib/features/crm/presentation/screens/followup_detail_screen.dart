@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/utils/attachment_link.dart';
 import '../../../../core/utils/relative_time.dart';
 import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -15,9 +16,11 @@ import '../../../../core/models/note.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/keyboard_visibility.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -31,11 +34,13 @@ import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../application/record_rows.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead_file.dart';
 import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
+import '../components/inline_edit_row.dart';
 import '../components/option_picker_sheet.dart';
 import '../sheets/reschedule_sheet.dart';
 import 'crm_status_sheet.dart';
@@ -64,13 +69,39 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// refuses a second batch on top of the first.
   bool _uploading = false;
 
-  /// Scrolls the notes card into view and focuses the composer (#13).
-  void _focusNotes() {
-    final ctx = _notesKey.currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+  /// Drives [_focusNotes] — the page list has to be scrollable from code for
+  /// the notes card to be reachable before it has been built.
+  final ScrollController _notesScrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _notesScrollCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Scrolls the notes card into view and focuses its composer (#13).
+  ///
+  /// The page is a lazy [ListView], so when the notes card is below the fold it
+  /// has not been built and its key has no context — `ensureVisible` then does
+  /// nothing at all, which is what made this action look dead. Nudging the list
+  /// towards the end first forces the card to build, and the second pass lands
+  /// on it precisely. Matches the lead and task detail screens.
+  Future<void> _focusNotes() async {
+    if (_notesKey.currentContext == null && _notesScrollCtrl.hasClients) {
+      await _notesScrollCtrl.animateTo(
+        _notesScrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+      );
+      await WidgetsBinding.instance.endOfFrame;
     }
+    if (!mounted) return;
+    final ctx = _notesKey.currentContext;
+    if (ctx != null && ctx.mounted) {
+      await Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 240), alignment: 0.05, curve: Curves.easeOut);
+    }
+    if (!mounted) return;
     _notesKey.currentState?.focusComposer();
   }
 
@@ -100,7 +131,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           rolled.remove(id);
         }
         ref.read(followupStatusOverrideProvider.notifier).state = rolled;
-        ref.read(toastProvider.notifier).show(e.message);
+        ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
     }
@@ -150,7 +181,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       // A follow-up is a Task, so the task write serves it.
       await ref.read(crmTasksRepositoryProvider).updateTask(fu.id, picked);
     } on AppError catch (e) {
-      if (mounted) ref.read(toastProvider.notifier).show(e.message);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.message);
       return;
     }
     if (!mounted) return;
@@ -183,7 +214,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     try {
       await ref.read(crmTasksRepositoryProvider).deleteTask(fu.id);
     } on AppError catch (e) {
-      if (mounted) ref.read(toastProvider.notifier).show(e.message);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.message);
       return;
     }
     if (!mounted) return;
@@ -276,7 +307,7 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       ref.read(followupStatusOverrideProvider.notifier).state = rolled;
       // An org can require a note before a follow-up may be completed; the
       // server says so, and the status stays put.
-      if (mounted) ref.read(toastProvider.notifier).show(e.message);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.message);
       return;
     }
     if (!mounted) return;
@@ -294,6 +325,28 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     ref.invalidate(taskRowProvider(fu.id));
     final leadId = fu.leadId;
     if (leadId != null) ref.invalidate(leadFollowupsProvider(leadId));
+  }
+
+  /// Pull-to-refresh: the follow-up, its raw row, attachments, notes, audit
+  /// trail and the org's task lanes.
+  ///
+  /// The status override goes too — it only bridges an optimistic change to the
+  /// refetch, and keeping it would let a local guess override the server.
+  Future<void> _refresh(String id) async {
+    ref.read(followupStatusOverrideProvider.notifier).update((s) => {...s}..remove(id));
+    refreshFollowups(ref);
+    ref.invalidate(taskRowProvider(id));
+    ref.invalidate(taskFilesProvider(id));
+    ref.invalidate(taskActivityLogProvider(id));
+    ref.invalidate(taskStatusCatalogProvider);
+    ref.invalidate(followupDetailSchemaFutureProvider);
+    ref.invalidate(crmNotesProvider);
+    await settle([
+      ref.read(followupsProvider.future),
+      ref.read(taskRowProvider(id).future),
+      ref.read(taskFilesProvider(id).future),
+      ref.read(taskStatusCatalogProvider.future),
+    ]);
   }
 
   /// Wraps a loading / error / not-found state under the section app bar so the
@@ -341,7 +394,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     final meta = followupStatusMeta(fu, ref.watch(taskStatusOptionsProvider));
     final owner = MockUsers.of(fu.owner);
     final done = fu.status == 'done';
-    final title = fu.agenda.isNotEmpty ? fu.agenda : '${fu.kind} — ${fu.company}';
+    // The task's own title, not its description — see [FollowupCard].
+    final title = fu.title.isNotEmpty ? fu.title : '${fu.kind} — ${fu.company}';
 
     // Resolve the related record for the "Related" card.
     final customers = ref.watch(customersProvider).valueOrNull ?? const [];
@@ -373,6 +427,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     final notesSeed = CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
+    // The notes composer lives inside the list below. With the keyboard up the
+    // sticky Mark-done bar would sit between it and the keys, so it stands
+    // down until the field is dismissed.
+    final keyboardOpen = KeyboardVisibility.of(context);
+
     return Container(
       color: AppColors.bgDetail,
       child: Column(
@@ -387,7 +446,14 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: AppRefresh(
+              onRefresh: () => _refresh(fu.id),
+              child: ListView(
+              controller: _notesScrollCtrl,
+              // Dragging the page puts the keyboard away — the only other exit
+              // from the notes composer was submitting or leaving the screen.
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
               children: [
                 _headCard(context, ref, fu, meta),
@@ -410,9 +476,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                 SizedBox(height: 14.h),
                 _activityCard(fu),
               ],
+              ),
             ),
           ),
-          _bottomBar(ref, fu, done),
+          if (!keyboardOpen) _bottomBar(ref, fu, done),
         ],
       ),
     );
@@ -507,15 +574,60 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     );
   }
 
+  /// The built-in rows, used when the org's detail layout has not loaded (and
+  /// in mock mode) — the panel as it was before the layout became configurable.
+  List<(String, String)> _fallbackRows(Followup fu, StatusMeta meta, dynamic owner) => [
+        ('Type', fu.kind),
+        ('Status', meta.label),
+        ('Due', '${fu.due} · ${fu.time}'),
+        ('Contact', fu.contact),
+        ('Follow-up ID', '#${fu.id}'),
+        ('Owner', owner.name),
+      ];
+
+  /// Saves one edited field of the Details card — a follow-up is a task, so
+  /// this is the same `PATCH /crm/tasks/{id}/` the task screen uses.
+  Future<void> _saveField(
+      Followup fu, String key, Object? value, String label) async {
+    try {
+      await ref.read(crmTasksRepositoryProvider).updateTask(fu.id, {key: value});
+      if (!mounted) return;
+      ref.invalidate(taskRowProvider(fu.id));
+      ref.invalidate(followupsProvider);
+      ref.read(toastProvider.notifier).show('$label updated');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
   Widget _detailsCard(Followup fu, StatusMeta meta, dynamic owner) {
-    final rows = <(String, String)>[
-      ('Type', fu.kind),
-      ('Status', meta.label),
-      ('Due', '${fu.due} · ${fu.time}'),
-      ('Contact', fu.contact),
-      ('Follow-up ID', '#${fu.id}'),
-      ('Owner', owner.name),
-    ];
+    // The org's own Follow-up detail layout over the raw record — the same
+    // pairing the Task detail panel uses, and separately configurable from it
+    // (`?view_type=detail&is_followup=true`). Both are needed: the schema says
+    // which rows and under what labels, the record supplies their values.
+    //
+    // This card used to be a fixed six rows off the mapped entity, so it showed
+    // "Contact" and "Follow-up ID" — which are not columns the org configures —
+    // while dropping every field the entity does not carry (description,
+    // assigned_team, duration, assignees) and ignoring custom fields entirely.
+    final schema = ref.watch(followupDetailSchemaProvider);
+    final row = ref.watch(taskRowProvider(fu.id)).valueOrNull;
+    final rows = (schema.isEmpty || row == null)
+        ? [for (final r in _fallbackRows(fu, meta, owner)) (r.$1, r.$2, null)]
+        : [
+            // Every visible column, including `title` and `description` — the
+            // header and the Agenda block below still render them, and this
+            // card is a complete readout of the org's layout rather than the
+            // leftovers after the chrome has taken its share.
+            for (final r in recordRows(row, schema))
+              (r.label, r.value, r.column),
+          ];
+    // The record's own description when it has one; the entity falls back to
+    // the title, which on this card would just repeat the header.
+    final written = (row?['description'] ?? '').toString().trim();
+    // The description panel: the org's stored text, or the inline edit.
+    final agenda = row != null ? written : fu.description;
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(18.r),
@@ -524,13 +636,29 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         children: [
           Text('Details', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
+          // Long-press a row to edit it in place; a row that cannot be edited
+          // says why rather than ignoring the press.
           for (int i = 0; i < rows.length; i++)
-            DetailInfoRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
-          SizedBox(height: 14.h),
-          Text('AGENDA', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
-          SizedBox(height: 6.h),
-          Text(fu.agenda.isEmpty ? '—' : fu.agenda,
-              style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textSecondary).copyWith(height: 1.55)),
+            InlineEditRow(
+              label: rows[i].$1,
+              display: rows[i].$2,
+              column: rows[i].$3,
+              rawValue: row?[rows[i].$3?.name],
+              editForm: 'Edit follow-up',
+              onSave: (key, value) => _saveField(fu, key, value, rows[i].$1),
+              onBlocked: (msg) => ref.read(toastProvider.notifier).show(msg),
+              child: DetailInfoRow(
+                  label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+            ),
+          // Agenda is the `description` column wearing this screen's name for
+          // it, so an org that hides the column hides this block too.
+          if (schema.shows('description')) ...[
+            SizedBox(height: 14.h),
+            Text('AGENDA', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
+            SizedBox(height: 6.h),
+            Text(agenda.isEmpty ? '—' : agenda,
+                style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textSecondary).copyWith(height: 1.55)),
+          ],
         ],
       ),
     );
@@ -572,28 +700,45 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           if (files.isEmpty)
             Text('No files attached yet.', style: AppText.caption(color: AppColors.textPlaceholder))
           else
-            for (final f in files)
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: 6.h),
-                child: Row(
-                  children: [
-                    Icon(PhosphorIconsRegular.paperclip, size: 15.sp, color: AppColors.textPlaceholder),
-                    SizedBox(width: 9.w),
-                    Expanded(
-                      child: Text(f.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(
-                              size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
-                    ),
-                    if (f.uploadedAt.isNotEmpty)
-                      Text(f.uploadedAt, style: AppText.caption(color: AppColors.textPlaceholder)),
-                  ],
-                ),
-              ),
+            for (final f in files) _fileRow(f),
         ],
       ),
     );
+  }
+
+  /// One attachment. Tapping it opens the stored file — the row used to be
+  /// inert, so a file could be uploaded and listed but never viewed.
+  Widget _fileRow(LeadFile f) {
+    return InkWell(
+      onTap: () => _openFile(f),
+      borderRadius: BorderRadius.circular(9.r),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 7.h),
+        child: Row(
+          children: [
+            Icon(attachmentIcon(f.ext), size: 15.sp, color: AppColors.textPlaceholder),
+            SizedBox(width: 9.w),
+            Expanded(
+              child: Text(f.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.custom(
+                      size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+            ),
+            if (f.uploadedAt.isNotEmpty)
+              Text(f.uploadedAt, style: AppText.caption(color: AppColors.textPlaceholder)),
+            SizedBox(width: 8.w),
+            Icon(PhosphorIconsRegular.arrowSquareOut, size: 15.sp, color: AppColors.textPlaceholder),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Hands one attachment to the OS viewer, reporting why if it cannot be.
+  Future<void> _openFile(LeadFile f) async {
+    final failure = await openAttachment(f.url);
+    if (failure != null && mounted) ref.read(toastProvider.notifier).show(failure);
   }
 
   /// Picks files off the device and uploads each against this follow-up.

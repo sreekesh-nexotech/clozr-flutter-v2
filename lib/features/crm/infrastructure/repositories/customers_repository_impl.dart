@@ -12,7 +12,9 @@ class CustomersRepositoryImpl implements CustomersRepository {
   final CustomersMockDataSource _local;
 
   @override
-  Future<List<Customer>> getCustomers() async {
+  Future<List<Customer>> getCustomers({
+    Map<String, dynamic> filters = const {},
+  }) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchCustomers();
   }
@@ -51,4 +53,22 @@ class CustomersRepositoryImpl implements CustomersRepository {
       notif: 0,
     );
   }
+
+  /// Mock mode has no backend, so a write is a no-op rather than a failure —
+  /// the screens apply their own optimistic state and stay usable.
+  @override
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+  }
+
+  @override
+  Future<String?> createUpsell(String id) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+    return null;
+  }
+
+  /// Empty, which every caller reads as "no org catalog — use the built-in
+  /// status vocabulary".
+  @override
+  Future<List<CustomerStatus>> getCustomerStatuses() async => const [];
 }

@@ -17,16 +17,71 @@ import '../domain/entities/view_schema.dart';
 /// Carries the column [name] alongside the display pair so the screen can key
 /// presentation off the field — an icon, a tap target — without matching on the
 /// label, which is org-editable text.
-typedef RecordRow = ({String name, String label, String value});
+typedef RecordRow = ({
+  String name,
+  String label,
+  String value,
+  /// The column behind the row, so a detail screen can offer to edit it: the
+  /// column is what names the API field, gives its type, and says whether it
+  /// is writable at all.
+  ViewColumn column,
+});
 
-/// The rows to render: every visible column the caller has not already placed
-/// in the page's own chrome, in the org's order and under the org's labels.
+/// The column types a detail row can edit **in place**.
 ///
-/// A column the record has **no value** for still renders, as `—`: layout and
-/// payload come from the same detail config, so an empty value means the record
-/// genuinely has none — which on a detail page is information, not noise. A
-/// column the row does not carry **at all** is dropped, since that means the
-/// payload and the layout disagree and there is nothing truthful to show.
+/// A foreign key, a date, a boolean or a choice needs a picker to produce a
+/// value the API accepts, and a text box in the middle of a readout is not
+/// that — those rows stay read-only rather than inviting input the write would
+/// reject.
+const Set<String> kInlineEditableTypes = {
+  'string', 'email', 'url', 'phone', 'text',
+  'decimal', 'integer', 'number', 'float',
+};
+
+/// Whether long-pressing this row should turn it into a text box.
+///
+/// Narrower than [ViewColumn.isEditable], which answers "can a form write it":
+/// this also needs the value to be typeable, so a status or an owner is
+/// excluded even though the full edit form handles both.
+bool fieldEditsInline(ViewColumn column) =>
+    column.isEditable &&
+    !column.hasChoices &&
+    kInlineEditableTypes.contains(column.type);
+
+/// Why a long press on this row did not open a box, phrased for the person who
+/// pressed it. Null when the row *is* editable in place.
+///
+/// A gesture that silently does nothing reads as a missed press, so every row
+/// answers — the ones that cannot be edited say which kind of "cannot" it is,
+/// and [editForm] names where the field can be changed instead.
+String? inlineEditHint(ViewColumn? column, {required String editForm}) {
+  if (column == null) {
+    // No org layout loaded: nothing names the API field or its type.
+    return 'This field cannot be edited here.';
+  }
+  if (fieldEditsInline(column)) return null;
+  if (column.isCustom) {
+    return '${column.label} is a custom field and cannot be edited in the app yet.';
+  }
+  if (!column.isEditable) return '${column.label} is read-only.';
+  return '${column.label} is chosen from a list — use $editForm to change it.';
+}
+
+/// The rows to render: **every** visible column, in the org's order and under
+/// the org's labels.
+///
+/// Deliberately exhaustive — the panel is a complete readout of the org's
+/// detail layout, not a summary of it:
+///
+/// * A column the record has **no value** for still renders, as `—`: layout and
+///   payload come from the same detail config, so an empty value means the
+///   record genuinely has none, which on a detail page is information.
+/// * A column the row does not carry **at all** also renders as `—`. Payload
+///   and layout disagreeing is worth surfacing as "nothing to show here", where
+///   dropping the row hides the disagreement entirely.
+/// * Columns the page also renders in its own chrome are **not** excluded by
+///   default. Pass [skip] only where a caller genuinely wants a column left
+///   out; the chrome is unaffected either way.
 List<RecordRow> recordRows(
   Map<String, dynamic> row,
   ViewSchema schema, {
@@ -38,11 +93,13 @@ List<RecordRow> recordRows(
     final raw = column.isCustom
         ? _customValue(row, column.customKey)
         : (row.containsKey(column.name) ? row[column.name] : _absent);
-    if (identical(raw, _absent)) continue;
     out.add((
       name: column.name,
       label: column.label,
-      value: recordValueText(raw, column.type),
+      column: column,
+      // The absent sentinel is not a value the formatter should see; a column
+      // the payload omits reads the same as one it sent empty.
+      value: identical(raw, _absent) ? _dash : recordValueText(raw, column.type),
     ));
   }
   return out;

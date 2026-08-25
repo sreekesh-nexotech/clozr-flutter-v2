@@ -27,6 +27,7 @@ class Routes {
   static const addLead = '/leads/add';
   static const customers = '/customers';
   static const customerDetail = '/customers/detail';
+  static const editCustomer = '/customers/edit';
   static const followups = '/followups';
   static const followupDetail = '/followups/detail';
   static const editFollowup = '/followups/edit';
@@ -94,6 +95,7 @@ class Routes {
     addLead: RouteMeta(NavContext.crm, false),
     customers: RouteMeta(NavContext.crm, true),
     customerDetail: RouteMeta(NavContext.crm, false),
+    editCustomer: RouteMeta(NavContext.crm, false),
     followups: RouteMeta(NavContext.crm, true),
     followupDetail: RouteMeta(NavContext.crm, false),
     editFollowup: RouteMeta(NavContext.crm, false),

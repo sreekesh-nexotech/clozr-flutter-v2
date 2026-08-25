@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/filters/filter_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,12 @@ import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../crm/application/providers/customers_providers.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
+import '../../../crm/domain/entities/customer.dart';
+import '../../../people/application/providers/people_providers.dart';
+import '../../../people/domain/entities/team.dart';
+import '../../application/project_write_fields.dart';
 import '../../application/providers/projects_providers.dart';
 import '../components/ops_form_scaffold.dart';
 import '../components/ops_widgets.dart';
@@ -30,19 +37,22 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
   final _desc = TextEditingController();
 
   String _customer = '';
-  String _type = 'Fit-out';
+  // Starts unset, not on a guessed name. The picker offers only the org's own
+  // `/projects/project-types/` rows now, so a hardcoded default like 'Fit-out'
+  // matched no catalog entry: the form showed a type the payload then dropped.
+  String _type = '';
   String _pri = 'Medium';
   DateTime? _start;
   DateTime? _end;
   String? _manager;
   final Set<String> _assignees = {};
   String _team = '';
+  bool _saving = false;
   String _status = 'planning';
   String _visibility = 'Organization';
   String _method = 'Task Completion';
   bool _advanced = false;
 
-  static const _types = ['Fit-out', 'Design Services', 'Joinery', 'MEP & Services', 'Furniture', 'AMC / Maintenance', 'Internal'];
   static const _vis = ['Organization', 'Team', 'Private'];
   static const _methods = ['Task Completion', 'Manual'];
 
@@ -56,47 +66,121 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
 
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
 
+  /// The org's customers and teams as catalog options, so the picked label can
+  /// be resolved back to the UUID the API wants.
+  List<CatalogOption> get _customerOptions => [
+        for (final c in ref.read(customersProvider).valueOrNull ?? const <Customer>[])
+          CatalogOption(id: c.id, name: c.company?.trim().isNotEmpty == true ? c.company! : c.name),
+      ];
+
+
+  /// The org's own project types (`/projects/project-types/`).
+  ///
+  /// No built-in fallback: only a name that matches a catalog entry resolves to
+  /// the `project_type_id` the API takes, so offering the prototype's seven
+  /// invented types meant picking one and having it silently dropped from the
+  /// write. An org with no types configured has nothing to choose here.
+  List<String> get _typeNames =>
+      [for (final t in ref.read(projectTypeOptionsProvider)) t.name];
+
+  List<CatalogOption> get _teamOptions => [
+        for (final t in ref.read(teamsProvider).valueOrNull ?? const <Team>[])
+          CatalogOption(id: t.id, name: t.name),
+      ];
+
+  /// The status picker holds a folded key ("planning"); the API wants the org's
+  /// own status row, matched by name.
+  String get _statusLabel =>
+      (StatusMeta$.project[_status] ?? StatusMeta$.project['planning']!).label;
+
   /// API mode: create remotely, refresh the list, toast + pop as before.
   /// Mock mode: exactly the previous local toast-and-pop behavior.
   Future<void> _submit() async {
+    // Without this a second tap during the round trip makes a second project —
+    // the same duplicate-create already seen on tasks, customers and upsells.
+    if (_saving) return;
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show('Project created');
       context.pop();
       return;
     }
+    setState(() => _saving = true);
     try {
-      await ref.read(projectsRepositoryProvider).createProject({
-        'project_name': _name.text.trim(),
-        'priority': _pri,
-        'description': _desc.text.trim(),
-        if (_end != null) 'expected_end_date': _apiDate(_end!),
-      });
+      // Everything the form collects, under the API's own keys. This used to
+      // send four fields, so the manager, customer, type, team, assignees,
+      // cost, start date, visibility and progress method were all gathered
+      // from the user and dropped on the floor.
+      await ref.read(projectsRepositoryProvider).createProject(
+            projectWriteFields(
+              name: _name.text,
+              priority: _pri,
+              description: _desc.text,
+              customerLabel: _customer,
+              typeLabel: _type,
+              statusLabel: _statusLabel,
+              teamLabel: _team,
+              managerId: _manager,
+              assigneeIds: _assignees,
+              cost: _cost.text,
+              start: _start,
+              end: _end,
+              visibility: _visibility,
+              progressMethod: _method,
+              customers: _customerOptions,
+              types: ref.read(projectTypeOptionsProvider),
+              statuses: ref.read(projectStatusOptionsProvider),
+              teams: _teamOptions,
+            ),
+          );
       if (!mounted) return;
+      // The whole family: the list renders from `projectsScopedProvider` under
+      // whatever filter query is active, so dropping only the unfiltered
+      // `projectsProvider` would leave the new project invisible.
+      ref.invalidate(projectsScopedProvider);
+      // The ops dashboard and the detail screen's fallback read the unfiltered
+      // provider, so it has to drop too or they keep serving the stale list.
       ref.invalidate(projectsProvider);
       ref.read(toastProvider.notifier).show('Project created');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(e.message);
+      // Back to enabled: the form still holds everything the user typed, and a
+      // rejected name or date is meant to be fixed and resubmitted.
+      setState(() => _saving = false);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 
-  /// API date format (`2026-08-30`).
-  static String _apiDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
   @override
   Widget build(BuildContext context) {
-    final projects = ref.watch(projectsListProvider);
+    // Watched here, not read inside the pickers' onTap: the type and status
+    // catalogs are what a picked label resolves to an id against, and until
+    // now nothing fetched them unless the user happened to open a picker —
+    // so `/projects/project-types/` was never called and every saved
+    // project_type was quietly dropped.
+    ref.watch(projectTypeCatalogProvider);
+    ref.watch(projectStatusCatalogProvider);
+    ref.watch(customersProvider);
+    ref.watch(teamsProvider);
     final roster = ref.watch(rosterProvider);
-    final customers = {for (final p in projects) if (p.company != null) p.company!}.toList();
-    final teams = {for (final r in roster) if (r.team.isNotEmpty) r.team}.toList();
+    // The org's real customers, so the picked label resolves to the
+    // `customer_id` the API wants. This listed the company names already on
+    // loaded projects, so a customer never used on one could not be picked —
+    // and the label matched no catalog entry.
+    final customers = [for (final c in _customerOptions) c.name];
+    // The org's real teams, so the picked label resolves to a `team_id`.
+    // This listed the team names sitting on roster users.
+    final teams = [for (final t in _teamOptions) t.name];
     final mgrName = _manager == null ? '' : MockUsers.of(_manager!).name;
 
     return OpsFormScaffold(
       title: 'New Project',
       ctaLabel: 'Create Project',
-      ctaEnabled: _name.text.trim().isNotEmpty,
+      // `&& !_saving` greys the CTA out for the round trip using the scaffold's
+      // existing disabled styling — no spinner, no layout change.
+      // `!_endErr` too: the end-date field already flags "before start", but the
+      // CTA stayed live, so the form happily posted a range the API rejects.
+      ctaEnabled: _name.text.trim().isNotEmpty && !_saving && !_endErr,
       onClose: () => context.pop(),
       onSubmit: _submit,
       children: [
@@ -126,7 +210,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           label: 'Project type',
           value: _type,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project type', options: [for (final t in _types) (value: t, label: t)], currentValue: _type);
+            final v = await showOpsOptionPicker(context: context, title: 'Project type', options: [for (final t in _typeNames) (value: t, label: t)], currentValue: _type);
             if (v != null) setState(() => _type = v);
           },
         ),
@@ -242,7 +326,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       placeholder: 'Pick a date',
       caret: PhosphorIconsRegular.calendarBlank,
       onTap: () async {
-        final d = await showDatePicker(context: context, initialDate: value ?? DateTime(2026, 7, 9), firstDate: DateTime(2024), lastDate: DateTime(2030));
+        final d = await showDatePicker(context: context, initialDate: value ?? kFilterToday, firstDate: DateTime(2024), lastDate: DateTime(2030));
         if (d != null) onPick(d);
       },
     );

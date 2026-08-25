@@ -41,7 +41,8 @@ class FollowupsRepositoryImpl implements FollowupsRepository {
       time: '10:00',
       status: 'due',
       owner: 'me',
-      agenda: desc.isEmpty ? 'Follow-up' : desc,
+      title: 'Follow-up',
+      description: desc,
     );
   }
 

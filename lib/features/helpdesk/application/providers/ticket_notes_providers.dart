@@ -52,6 +52,11 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
     }
   }
 
+  /// Re-reads the thread from the server — pull-to-refresh, and after any write
+  /// that could have added a note elsewhere. A no-op in mock mode, where there
+  /// is nothing to re-read.
+  Future<void> reload() => _load();
+
   void addNote(String body, List<NoteAttachment> attachments) {
     if (body.trim().isEmpty && attachments.isEmpty) return;
     final localId = 'tnote-$ticketId-${_seq++}-${DateTime.now().microsecondsSinceEpoch}';

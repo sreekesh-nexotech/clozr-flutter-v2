@@ -4,6 +4,7 @@ import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/ticket.dart';
 import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../../presentation/util/ticket_sla.dart';
@@ -55,16 +56,29 @@ List<FilterOption> _uniqueOptions(Iterable<String?> values) {
 /// Build the Tickets drawer spec from the current ticket set. [lookups] resolves
 /// customer options from real data in API mode; [roster] supplies the assignee
 /// options (real members in API mode, prototype reps in mock mode).
+/// The priorities the API stores (`issue-filters.md` Part 4). The app displays
+/// "Critical" as "Urgent", but the filter offers — and sends — the server's own
+/// word.
+const kIssuePriorities = ['Critical', 'High', 'Medium', 'Low'];
+
 FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
-    {TicketLookups? lookups, List<AppUser>? roster}) {
-  final statuses = [
-    for (final e in StatusMeta$.ticket.entries) FilterOption(id: e.key, label: e.value.label),
-  ];
-  const priorities = [
-    FilterOption(id: 'Urgent', label: 'Urgent'),
-    FilterOption(id: 'High', label: 'High'),
-    FilterOption(id: 'Medium', label: 'Medium'),
-    FilterOption(id: 'Low', label: 'Low'),
+    {TicketLookups? lookups,
+    List<AppUser>? roster,
+    List<CatalogOption> statusCatalog = const []}) {
+  // The org's own statuses, keyed by `issue_status_id` — which is what
+  // `status__in` takes. Previously this was the built-in five with their
+  // labels painted on, so a status outside them ("In Progress", "Overdue",
+  // "Duplicate") was not selectable at all.
+  final statuses = statusCatalog.isNotEmpty
+      ? [for (final s in statusCatalog) FilterOption(id: s.id, label: s.name)]
+      // No catalog (mock mode, a failed fetch): the built-in vocabulary, which
+      // is also what the rows carry there.
+      : [
+          for (final e in StatusMeta$.ticket.entries)
+            FilterOption(id: e.key, label: e.value.label),
+        ];
+  final priorities = [
+    for (final p in kIssuePriorities) FilterOption(id: p, label: p),
   ];
   final cats = _uniqueOptions(tickets.map((t) => t.cat));
   final products = _uniqueOptions(tickets.map((t) => t.product));
@@ -84,7 +98,7 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
             isNotToggle: true,
             twoCol: true,
             options: statuses),
-        const FilterField(
+        FilterField(
             id: 'pri',
             label: 'Priority',
             control: FilterControl.checkboxGroup,
@@ -160,8 +174,17 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
 /// the pure [FilterMatch] helpers; radios carry helpdesk-specific logic. Pass
 /// [lookups] so the Customer filter matches real display names in API mode.
 bool ticketMatchesFilters(Ticket t, FilterValues v, [TicketLookups? lookups]) {
-  if (!FilterMatch.matchAnyOf(v.choice('statuses'), [t.status])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('pri'), [t.pri])) return false;
+  // Both vocabularies are offered to the matcher: the org's id/name (what the
+  // drawer now holds, and what the server filtered on) and the folded key /
+  // display word, which is all a mock row has.
+  if (!FilterMatch.matchAnyOf(v.choice('statuses'),
+      [t.status, if (t.statusId.isNotEmpty) t.statusId, if (t.statusName.isNotEmpty) t.statusName])) {
+    return false;
+  }
+  if (!FilterMatch.matchAnyOf(
+      v.choice('pri'), [t.pri, if (t.priorityName.isNotEmpty) t.priorityName])) {
+    return false;
+  }
   if (!FilterMatch.matchAnyOf(v.choice('cats'), [t.cat])) return false;
 
   if (!FilterMatch.matchAnyOf(v.choice('companies'), [ticketCustomerDisplay(t, lookups)])) return false;
@@ -206,11 +229,9 @@ final ticketsFilterSpecProvider = Provider<FilterSpec>((ref) {
     tickets,
     lookups: ref.watch(ticketDirectoryProvider),
     roster: ref.watch(rosterProvider),
+    statusCatalog: ref.watch(ticketStatusOptionsProvider),
   );
 });
-
-/// Applied drawer filters for the Tickets list (the source of the badge count).
-final ticketFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Tickets list (bookmark chips).
 final ticketSavedViewsProvider =

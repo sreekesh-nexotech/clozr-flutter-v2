@@ -4,13 +4,17 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:clozrapp/features/crm/application/leads_columns.dart';
+import 'package:clozrapp/features/crm/application/record_rows.dart';
 import 'package:clozrapp/features/crm/domain/entities/lead.dart';
 import 'package:clozrapp/features/crm/domain/entities/lead_schema.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/lead_schema_remote_ds.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/leads_remote_ds.dart';
 
 Map<String, dynamic> _col(String name, String label, int order,
-        {bool visible = true, String type = 'string', bool custom = false}) =>
+        {bool visible = true,
+        String type = 'string',
+        bool custom = false,
+        bool inFields = true}) =>
     {
       'name': name,
       'label': label,
@@ -20,7 +24,10 @@ Map<String, dynamic> _col(String name, String label, int order,
       'is_protected': name == 'lead_name',
       // The server omits `is_fixed` entirely on the detail view — only column
       // and card views mark fixed columns. Absent here on purpose.
-      'field_info': {'type': type, 'is_custom': custom},
+      //
+      // `field_info` is what marks a column as form-backed: a display-only
+      // column (`created_at`) arrives without it.
+      if (inFields) 'field_info': {'type': type, 'is_custom': custom},
     };
 
 /// The seeded detail layout, as `?view_type=detail` actually returns it.
@@ -106,24 +113,48 @@ void main() {
     });
   });
 
+  _editableRowTests();
+  _sharedInlineEditTests();
+
   group('leadDetailRows', () {
-    test('renders exactly the fields the page chrome does not already show', () {
+    test('renders every visible column, in the org order', () {
       final rows = leadDetailRows(_lead(whatsappNo: '+919000000000',
           territory: 'South', lastFu: 'Call · 2d ago'), schema);
 
       expect(rows.map((r) => r.label).toList(), [
+        'Lead Name',
+        'Company Name',
+        'Value / Need',
+        'Lead Owner',
         'Lead Source',
         'Email',
         'Contact',
         'WhatsApp',
+        'Status',
+        'Lead Score',
         'Territory',
+        'Assignees',
         'Last Follow-up',
         'Activity',
       ]);
-      // Name / company / value / status / score / owner / assignees are the
-      // profile, score and people blocks — never repeated as rows.
-      expect(rows.any((r) => r.label == 'Lead Name'), isFalse);
-      expect(rows.any((r) => r.label == 'Lead Score'), isFalse);
+      // One row per visible column, hidden ones still dropped.
+      expect(rows.length, schema.columns.length);
+    });
+
+    test('repeats the columns the page chrome also renders', () {
+      // Name / company / value / status / score / owner / assignees appear in
+      // the profile, score and people blocks *as well*. This card is a full
+      // readout of the org's detail layout, so it carries them too.
+      final byLabel = {
+        for (final r in leadDetailRows(_lead(), schema)) r.label: r.value
+      };
+
+      expect(byLabel['Lead Name'], 'Ishaan Verma');
+      expect(byLabel['Company Name'], 'DataForge Inc');
+      expect(byLabel['Lead Score'], '23');
+      // Visible, but this lead has no owner and no assignees — kept as rows.
+      expect(byLabel['Lead Owner'], '—');
+      expect(byLabel['Assignees'], '—');
     });
 
     test('a visible column the lead has no value for shows an em dash', () {
@@ -136,6 +167,20 @@ void main() {
       // …while the ones it does have render normally.
       expect(byLabel['Email'], 'ishaan@example.com');
       expect(byLabel['Contact'], '+917676055470');
+    });
+
+    test('a column the entity cannot supply is still listed, as an em dash', () {
+      // `annual_revenue` has no field on [Lead], so leadColumnText answers
+      // null. It used to disappear from the card; now the row is present and
+      // labelled, with no value to show.
+      final withUnmapped = LeadSchemaRemoteDataSource.mapSchema({
+        'has_org_config': true,
+        'all_fields': {
+          'columns': [_col('annual_revenue', 'Annual Revenue', 1)],
+        },
+      });
+
+      expect(leadDetailRows(_lead(), withUnmapped).single.value, '—');
     });
 
     test('uses the org label, so a renamed column renames the row', () {
@@ -198,6 +243,150 @@ void main() {
 
       expect(lead.whatsappNo, '');
       expect(lead.territory, '');
+    });
+  });
+}
+
+/// Long-pressing a Lead-information row edits that field, so each row has to
+/// carry the column behind it — the column is what names the API field, gives
+/// its type, and says whether it is writable at all.
+void _editableRowTests() {
+  LeadListSchema schemaOf(List<Map<String, dynamic>> columns) =>
+      LeadSchemaRemoteDataSource.mapSchema({
+        'has_org_config': true,
+        'all_fields': {'columns': columns},
+      });
+
+  group('leadDetailRows — editability', () {
+    test('every row carries the column behind it', () {
+      final rows = leadDetailRows(_lead(), schemaOf([
+        _col('lead_name', 'Lead Name', 1),
+        _col('email', 'Email', 2, type: 'email'),
+      ]));
+      expect(rows.map((r) => r.column?.name).toList(), ['lead_name', 'email']);
+    });
+
+    test('a typed, form-backed column is editable', () {
+      final rows = leadDetailRows(_lead(), schemaOf([
+        _col('email', 'Email', 1, type: 'email'),
+      ]));
+      expect(rows.single.column!.isEditable, isTrue);
+    });
+
+    test('a custom field is not — it needs its own write shape', () {
+      final rows = leadDetailRows(_lead(), schemaOf([
+        _col('budget', 'Budget', 1, type: 'decimal', custom: true),
+      ]));
+      expect(rows.single.column!.isEditable, isFalse);
+    });
+
+    test('a column the schema gives no type is not editable', () {
+      // Nothing says how to render or coerce it, so no box is offered.
+      final rows = leadDetailRows(_lead(), schemaOf([
+        _col('activity', 'Activity', 1, type: ''),
+      ]));
+      expect(rows.single.column!.isEditable, isFalse);
+    });
+  });
+
+  group('inline editing — which rows turn into a box', () {
+    LeadColumn columnOf(Map<String, dynamic> raw) =>
+        LeadSchemaRemoteDataSource.mapSchema({
+          'has_org_config': true,
+          'all_fields': {'columns': [raw]},
+        }).columns.single;
+
+    test('typeable fields do', () {
+      for (final type in ['string', 'email', 'url', 'phone', 'text', 'decimal']) {
+        expect(leadFieldEditsInline(columnOf(_col('f', 'F', 1, type: type))), isTrue,
+            reason: type);
+      }
+    });
+
+    test('a picker field does not — a text box cannot produce its value', () {
+      // A status is an id, a date is an ISO string, a boolean is a flag: typing
+      // free text into any of them writes something the API rejects or misreads.
+      for (final type in ['foreignkey', 'manytomany', 'date', 'datetime', 'boolean']) {
+        expect(leadFieldEditsInline(columnOf(_col('f', 'F', 1, type: type))), isFalse,
+            reason: type);
+      }
+    });
+
+    test('a read-only column never does, whatever its type', () {
+      final c = columnOf(_col('created_at', 'Created on', 1,
+          type: 'string', inFields: false));
+      expect(leadFieldEditsInline(c), isFalse);
+    });
+  });
+
+  group('inline editing — the hint a blocked row gives back', () {
+    LeadColumn columnOf(Map<String, dynamic> raw) =>
+        LeadSchemaRemoteDataSource.mapSchema({
+          'has_org_config': true,
+          'all_fields': {'columns': [raw]},
+        }).columns.single;
+
+    test('an editable row has nothing to explain', () {
+      expect(leadInlineEditHint(columnOf(_col('email', 'Email', 1, type: 'email'))),
+          isNull);
+    });
+
+    test('a read-only row says so, by its own label', () {
+      final hint = leadInlineEditHint(
+          columnOf(_col('created_at', 'Created on', 1, inFields: false)));
+      expect(hint, 'Created on is read-only.');
+    });
+
+    test('a picker row points at where it can be changed', () {
+      final hint = leadInlineEditHint(
+          columnOf(_col('status', 'Status', 1, type: 'foreignkey')));
+      expect(hint, contains('chosen from a list'));
+      expect(hint, contains('Edit lead'));
+      expect(hint, startsWith('Status'));
+    });
+
+    test('a custom field says it is not supported yet', () {
+      final hint = leadInlineEditHint(
+          columnOf(_col('budget', 'Budget', 1, type: 'decimal', custom: true)));
+      expect(hint, contains('custom field'));
+    });
+
+    test('a row with no column behind it still answers', () {
+      // The built-in fallback rows, shown when no org layout has loaded.
+      expect(leadInlineEditHint(null), isNotNull);
+    });
+  });
+}
+
+/// The gate and the refusal message are shared by five detail screens now, so
+/// the module-specific wording is the only thing that varies.
+void _sharedInlineEditTests() {
+  LeadColumn columnOf(Map<String, dynamic> raw) =>
+      LeadSchemaRemoteDataSource.mapSchema({
+        'has_org_config': true,
+        'all_fields': {'columns': [raw]},
+      }).columns.single;
+
+  group('inline editing — shared across modules', () {
+    test('the hint names the form that module actually has', () {
+      final status = columnOf(_col('status', 'Status', 1, type: 'foreignkey'));
+      expect(inlineEditHint(status, editForm: 'Edit quote'),
+          contains('use Edit quote'));
+      expect(inlineEditHint(status, editForm: 'Edit customer'),
+          contains('use Edit customer'));
+    });
+
+    test('a read-only row reads the same whichever module asks', () {
+      final c = columnOf(_col('created_at', 'Created on', 1, inFields: false));
+      expect(inlineEditHint(c, editForm: 'Edit task'), 'Created on is read-only.');
+      expect(inlineEditHint(c, editForm: 'Edit follow-up'),
+          'Created on is read-only.');
+    });
+
+    test('the gate itself does not vary by module', () {
+      final typed = columnOf(_col('description', 'Notes', 1, type: 'text'));
+      expect(fieldEditsInline(typed), isTrue);
+      expect(inlineEditHint(typed, editForm: 'Edit anything'), isNull);
     });
   });
 }

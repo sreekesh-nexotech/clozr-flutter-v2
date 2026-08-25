@@ -8,9 +8,16 @@ class AppNotification {
   final String category; // leads/payments/tasks/system/ops/help/training
   final bool urgent;
   final String day; // today / yesterday / earlier
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
+  /// Explicit look, as the prototype seed carries. Null on API rows — the row
+  /// widget resolves the trio from [category] / [urgent] / [type] instead,
+  /// which keeps the icon package out of the data source (and out of every
+  /// test that touches it).
+  final IconData? icon;
+  final Color? iconColor;
+  final Color? iconBg;
+
+  /// The server's raw event type ('PmoTaskAssigned'), for the icon lookup.
+  final String type;
   final String title;
   final String body;
   final String time; // "7m", "1d"
@@ -23,9 +30,10 @@ class AppNotification {
     required this.category,
     required this.urgent,
     required this.day,
-    required this.icon,
-    required this.iconColor,
-    required this.iconBg,
+    this.icon,
+    this.iconColor,
+    this.iconBg,
+    this.type = '',
     required this.title,
     required this.body,
     required this.time,
@@ -42,6 +50,7 @@ class AppNotification {
         icon: icon,
         iconColor: iconColor,
         iconBg: iconBg,
+        type: type,
         title: title,
         body: body,
         time: time,

@@ -9,10 +9,12 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../infrastructure/data_sources/local/tickets_mock_ds.dart';
 import '../components/ticket_form_fields.dart';
+import '../util/ticket_sla.dart';
 
 /// New ticket — full-screen form. Chips are functional; the customer picker is a
 /// real sheet so the required field is satisfiable; other pickers toast.
@@ -29,10 +31,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   String? _custId;
   String _channel = 'Phone';
   String _cat = 'Complaint';
+  String _typeId = '';
   String _pri = 'Medium';
   final Set<String> _assignees = {'me'};
-  String? _product;
+  String? _product;   // display name
+  String? _productId; // what the write sends
   String? _projId;
+  String? _projName;
 
   @override
   void dispose() {
@@ -47,6 +52,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   Widget build(BuildContext context) {
     final sla = TicketDirectory.sla[_pri] ?? TicketDirectory.sla['Medium']!;
     final dir = ref.watch(ticketDirectoryProvider);
+    final types = ref.watch(ticketTypeOptionsProvider);
+    // A new ticket starts on the org's first type rather than on a built-in
+    // word the org does not use — otherwise no chip reads as selected, and
+    // whatever did would not match the id the POST carries.
+    if (types.isNotEmpty && _typeId.isEmpty) {
+      _typeId = types.first.id;
+      _cat = types.first.name;
+    }
     final cust = dir.customer(_custId);
 
     return Container(
@@ -94,16 +107,26 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 SizedBox(height: 14.h),
                 TicketFieldLabel('Category'),
                 SizedBox(height: 7.h),
+                // The org's own issue types when it has any; the built-in set
+                // only when the catalog is empty (mock mode).
                 TicketChipWrap(
-                  options: const ['Complaint', 'Service Request', 'Question', 'Feedback'],
+                  options: types.isEmpty
+                      ? const ['Complaint', 'Service Request', 'Question', 'Feedback']
+                      : [for (final c in types) c.name],
                   selected: _cat,
-                  onSelect: (v) => setState(() => _cat = v),
+                  onSelect: (v) => setState(() {
+                    _cat = v;
+                    _typeId = types
+                        .firstWhere((c) => c.name == v,
+                            orElse: () => const CatalogOption(id: '', name: ''))
+                        .id;
+                  }),
                 ),
                 SizedBox(height: 14.h),
                 TicketFieldLabel('Priority'),
                 SizedBox(height: 7.h),
                 TicketChipWrap(
-                  options: const ['High', 'Medium', 'Low'],
+                  options: kTicketPriorities,
                   selected: _pri,
                   onSelect: (v) => setState(() => _pri = v),
                 ),
@@ -123,16 +146,30 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                   label: _product ?? 'Select (optional)…',
                   placeholder: _product == null,
                   icon: PhosphorIconsRegular.magnifyingGlass,
-                  onTap: () => ref.read(toastProvider.notifier).show('Product picker'),
+                  onTap: () async {
+                    final picked = await pickTicketProduct(context, ref, selectedId: _productId);
+                    if (picked == null || !mounted) return;
+                    setState(() {
+                      _productId = picked.id;
+                      _product = picked.name;
+                    });
+                  },
                 ),
                 SizedBox(height: 14.h),
                 TicketFieldLabel('Related project'),
                 SizedBox(height: 7.h),
                 TicketPickerRow(
-                  label: dir.project(_projId)?.name ?? 'Select (optional)…',
+                  label: _projName ?? dir.project(_projId)?.name ?? 'Select (optional)…',
                   placeholder: _projId == null,
                   icon: PhosphorIconsRegular.magnifyingGlass,
-                  onTap: () => ref.read(toastProvider.notifier).show('Project picker'),
+                  onTap: () async {
+                    final picked = await pickTicketProject(context, ref, selectedId: _projId);
+                    if (picked == null || !mounted) return;
+                    setState(() {
+                      _projId = picked.id;
+                      _projName = picked.name;
+                    });
+                  },
                 ),
                 SizedBox(height: 14.h),
                 AppTextField(
@@ -165,15 +202,18 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         'priority': _pri,
         'channel': _channel,
         'category': _cat,
+        if (_typeId.isNotEmpty) 'issue_type': _typeId,
         if (_custId != null) 'customer_id': _custId,
+        if (_productId != null) 'product_id': _productId,
+        if (_projId != null) 'project_id': _projId,
       });
-      ref.invalidate(ticketsProvider);
+      refreshTickets(ref);
       if (!mounted) return;
       ref.read(toastProvider.notifier).show('Ticket created');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(e.message);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 
@@ -253,9 +293,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
   Widget _formHeader(BuildContext context, String title, VoidCallback onClose) {
     return Container(
-      color: AppColors.bgApp,
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+      // The fill belongs inside the decoration: `Container` asserts when given
+      // both, so this combination threw on every build of the screen.
+      decoration: const BoxDecoration(
+        color: AppColors.bgApp,
+        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Row(
         children: [
           GestureDetector(

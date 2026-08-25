@@ -333,6 +333,9 @@ class NotificationsScreen extends ConsumerWidget {
     if (route != null) context.push(route);
   }
 
+  /// A notification's module list. Record-level links are not possible — the
+  /// API sends no source-object id on the row or its detail — so the row opens
+  /// the list its event belongs to.
   String _listRoute(String? id) {
     switch (id) {
       case 'payments':
@@ -343,6 +346,22 @@ class NotificationsScreen extends ConsumerWidget {
         return Routes.rewards;
       case 'billing':
         return Routes.billing;
+      case 'leads':
+        return Routes.leads;
+      case 'followups':
+        return Routes.followups;
+      case 'tasks':
+        return Routes.tasks;
+      case 'quotes':
+        return Routes.quotes;
+      case 'opsTasks':
+        return Routes.opsTasks;
+      case 'projects':
+        return Routes.opsProjects;
+      case 'tickets':
+        return Routes.tickets;
+      case 'members':
+        return Routes.members;
       default:
         return Routes.home;
     }

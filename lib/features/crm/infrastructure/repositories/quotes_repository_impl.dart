@@ -1,4 +1,5 @@
 import '../../../../app/config/constants.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/quote.dart';
 import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/quotes_repository.dart';
@@ -30,6 +31,10 @@ class QuotesRepositoryImpl implements QuotesRepository {
   @override
   Future<ViewSchema> getQuoteSchema() async => ViewSchema.empty;
 
+  /// Mock mode has no org catalog; the drawer falls back to the built-ins.
+  @override
+  Future<List<CatalogOption>> getQuoteStatuses() async => const [];
+
   /// No template catalog without a backend; the picker hides itself.
   @override
   Future<List<QuoteTemplate>> getQuoteTemplates() async => const [];
@@ -42,4 +47,16 @@ class QuotesRepositoryImpl implements QuotesRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return null;
   }
+
+  /// Nothing to write to. The screen's optimistic path still runs, so the
+  /// prototype behaves as it always did.
+  @override
+  Future<void> updateQuoteStatus(String quotationId, String statusId) async {
+    await Future<void>.delayed(AppConstants.mockLatency);
+  }
+
+  /// Mock write: no-op — the seed catalog is immutable here.
+  @override
+  Future<void> updateQuote(
+      String quotationId, Map<String, dynamic> fields) async {}
 }

@@ -1,6 +1,7 @@
 import '../entities/course.dart';
 import '../entities/learner_record.dart';
 import '../entities/lms_activity.dart';
+import '../entities/lms_stats.dart';
 
 /// Abstract contract for LMS data. The presentation layer depends only on this;
 /// whether data comes from a mock source or a REST API is an infrastructure
@@ -11,6 +12,11 @@ abstract class LmsRepository {
   Future<List<Course>> getCourses();
   Future<List<LearnerRecord>> getRecords();
   Future<List<LmsActivity>> getActivity();
+
+  /// The Overview's headline figures. Null when unavailable (mock mode, or the
+  /// `403` a non-admin gets on the dashboard), which the screen reads as
+  /// "derive them from what is loaded", exactly as it did before.
+  Future<LmsStats?> getStats();
 
   /// Persists the signed-in user's progress on one module (best-effort,
   /// fire-and-forget — the UI has already applied the optimistic update).

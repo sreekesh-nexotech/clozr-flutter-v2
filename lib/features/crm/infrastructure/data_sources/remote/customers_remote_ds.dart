@@ -25,11 +25,22 @@ class CustomersRemoteDataSource {
 
   /// Raw customer rows (up to [_maxPages] pages). Exposed separately from
   /// [fetchCustomers] so the repository can cache the JSON before mapping.
-  Future<List<Map<String, dynamic>>> fetchCustomerRows() async {
+  Future<List<Map<String, dynamic>>> fetchCustomerRows({
+    Map<String, dynamic> filters = const {},
+  }) async {
+    // Paging steers the walk itself, so a stored filter can never own it.
+    final safe = {...filters}
+      ..removeWhere((k, _) => k == 'page' || k == 'page_size');
     final rows = <Map<String, dynamic>>[];
     int? page;
     for (var i = 0; i < _maxPages; i++) {
       final body = await _api.get(ApiEndpoints.customers, query: {
+        ...safe,
+        // The org's **mobile** card projection — the same config the card's
+        // layout comes from. Without it the payload carried the list columns
+        // while the card obeyed the mobile layout. After `safe` so a stored
+        // filter cannot override it.
+        'view_type': 'mobile',
         'page_size': _pageSize,
         if (page != null) 'page': page,
       });
@@ -41,8 +52,41 @@ class CustomersRemoteDataSource {
     return rows;
   }
 
-  Future<List<Customer>> fetchCustomers() async =>
-      mapCustomerRows(await fetchCustomerRows());
+  Future<List<Customer>> fetchCustomers({
+    Map<String, dynamic> filters = const {},
+  }) async =>
+      mapCustomerRows(await fetchCustomerRows(filters: filters));
+
+  /// `PATCH /crm/customers/{id}/` — a partial update.
+  ///
+  /// Sent verbatim: unlike [createCustomer] this must be able to *clear* a
+  /// field, so blanks and nulls are meaningful and are not stripped.
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields) =>
+      _api.patch(ApiEndpoints.customer(id), body: fields);
+
+  /// `POST /crm/customers/{id}/upsell/` — spawns a new upsell lead against this
+  /// customer and moves it into the `upsell_in_progress` status.
+  ///
+  /// The new lead comes back so the caller can navigate to it; a shape surprise
+  /// answers null rather than throwing, since the upsell itself succeeded.
+  Future<String?> createUpsell(String id) async {
+    final body = await _api.post(ApiEndpoints.customerUpsell(id));
+    if (body is! Map) return null;
+    final lead = body['lead'] is Map ? body['lead'] as Map : body;
+    return (lead['lead_id'] ?? lead['id'])?.toString();
+  }
+
+  /// `GET /crm/customer-statuses/` — the org's own customer statuses, in the
+  /// order an admin arranged them.
+  ///
+  /// `status_type` travels alongside the name: it is the backend-fixed code
+  /// (`active` / `upsell_in_progress` / `completed` / `lost`) that decides the
+  /// pill colour, where the name is free text an org can rename.
+  Future<List<Map<String, dynamic>>> fetchCustomerStatusRows() async {
+    final body = await _api.get(ApiEndpoints.customerStatuses,
+        query: {'page_size': 100});
+    return Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+  }
 
   /// Creates a customer from API-shaped form fields; only non-empty values
   /// are sent. Returns null when the response shape is unexpected.
@@ -127,6 +171,7 @@ class CustomersRemoteDataSource {
     final location = _str(row, 'location');
 
     return Customer(
+      raw: row,
       id: id,
       leadId: null, // list rows carry no source-lead reference
       name: name,

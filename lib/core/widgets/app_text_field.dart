@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../app/theme/app_colors.dart';
@@ -23,6 +24,7 @@ class AppTextField extends StatelessWidget {
     this.suffixIcon,
     this.errorText,
     this.prefix,
+    this.inputFormatters,
   });
 
   final String label;
@@ -37,7 +39,15 @@ class AppTextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final IconData? suffixIcon;
   final String? errorText;
+
+  /// Rendered inside the border, ahead of the input, and **not** part of the
+  /// controller's text — a `+91` here is shown, never typed over or submitted.
   final String? prefix;
+
+  /// Keystroke-level constraints (digits only, a length cap). `keyboardType`
+  /// alone does not restrict anything: it picks the on-screen keyboard, which
+  /// still offers `+ * #`, and pasting bypasses it entirely.
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +98,7 @@ class AppTextField extends StatelessWidget {
                             controller: controller,
                             onChanged: onChanged,
                             keyboardType: keyboardType,
+                            inputFormatters: inputFormatters,
                             minLines: multiline ? 3 : 1,
                             maxLines: multiline ? 6 : 1,
                             style: AppText.body(),

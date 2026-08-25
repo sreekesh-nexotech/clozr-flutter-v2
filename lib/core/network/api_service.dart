@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
+import 'package:sentry_dio/sentry_dio.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../config/api_config.dart';
 import '../storage/token_storage.dart';
@@ -50,6 +52,17 @@ class ApiService {
         compact: true,
       ));
     }
+
+    // Must be the last step of the Dio setup — `addSentry` wraps whatever
+    // adapter/transformer/interceptors are configured by this point.
+    //
+    // Guarded on the live SDK rather than on the DSN so unit tests, which build
+    // an ApiService around a mock adapter without ever calling
+    // `SentryFlutter.init`, keep an untouched Dio. Only 5xx responses become
+    // issues (sentry_dio's default); 4xx are the backend answering correctly
+    // and the UI already explains them. Bodies and headers stay out of the
+    // event because `sendDefaultPii` is off.
+    if (Sentry.isEnabled) _dio.addSentry();
   }
 
   final TokenStorage _tokens;
@@ -67,6 +80,30 @@ class ApiService {
   /// point every request already passes through, means a new action announces
   /// itself for free.
   ValueListenable<int> get writes => _writes;
+
+  final ValueNotifier<AppError?> _failures = ValueNotifier<AppError?>(null);
+
+  /// The most recent failure the user ought to hear about, with the backend's
+  /// own wording.
+  ///
+  /// Published here rather than left to call sites because many of them cannot
+  /// report it. Best-effort fetches swallow their errors by design
+  /// (`catch (Object) → empty`) so a screen never blanks, and the notes thread
+  /// deliberately keeps its optimistic entry when a POST fails. Those choices
+  /// are right for reads and for not losing the user's typing — but they also
+  /// meant a rejected write disappeared entirely.
+  ///
+  /// Two things qualify, and the split is the point:
+  ///
+  /// * **Any failed write** (POST/PUT/PATCH/DELETE). The user asked for
+  ///   something and it did not happen; that is never not worth saying.
+  /// * **Any 403**, on any method — a permission refusal explains a screen
+  ///   that renders with pieces missing.
+  ///
+  /// A failed **read** is otherwise left quiet on purpose: `payments/schema/`
+  /// 404s on every load of two screens, and announcing that each time would
+  /// train the user to ignore the toast that matters.
+  ValueListenable<AppError?> get failures => _failures;
 
   TokenStorage get tokens => _tokens;
 
@@ -101,7 +138,20 @@ class ApiService {
       if (res.requestOptions.method.toUpperCase() != 'GET') _writes.value++;
       return res.data;
     } on DioException catch (e) {
-      throw AppError.fromDio(e);
+      final error = AppError.fromDio(e);
+      // Announced before the throw, so it is recorded even when the caller
+      // swallows the exception — which is exactly what the best-effort fetches
+      // and the optimistic notes composer do.
+      //
+      // 401 is deliberately excluded: it is the session expiring, which the
+      // auth interceptor already handles by logging out, and a toast about it
+      // would only add noise to that.
+      final isWrite = e.requestOptions.method.toUpperCase() != 'GET';
+      if (!error.isAuthError &&
+          (isWrite || error.type == AppErrorType.forbidden)) {
+        _failures.value = error;
+      }
+      throw error;
     }
   }
 }

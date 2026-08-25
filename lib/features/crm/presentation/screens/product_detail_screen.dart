@@ -6,13 +6,23 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
+import '../../../notes/application/providers/notes_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/utils/relative_time.dart';
+import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/products_providers.dart';
+import '../../../../core/utils/inr_format.dart';
+import '../../domain/entities/audit_entry.dart';
+import '../../domain/entities/package_composition.dart';
 import '../../domain/entities/product.dart';
 import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
@@ -21,6 +31,22 @@ import '../components/finance_widgets.dart';
 /// performance, pricing, details and notes.
 class ProductDetailScreen extends ConsumerWidget {
   const ProductDetailScreen({super.key});
+
+  /// Pull-to-refresh: the product list this record is read out of.
+  Future<void> _refresh(WidgetRef ref, String id) async {
+    ref.invalidate(productsProvider);
+    // The row and its notes are their own calls; reloading only the list left
+    // both stale under a pull.
+    ref.invalidate(productDetailProvider(id));
+    ref.invalidate(productNotesProvider(id));
+    ref.invalidate(productActivityLogProvider(id));
+    await settle([
+      ref.read(productsProvider.future),
+      ref.read(productDetailProvider(id).future),
+      ref.read(productNotesProvider(id).future),
+      ref.read(productActivityLogProvider(id).future),
+    ]);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -52,7 +78,11 @@ class ProductDetailScreen extends ConsumerWidget {
     String id,
     Widget Function(Widget) scaffold,
   ) {
-    final product = ref.watch(productByIdProvider(id));
+    // The item's own row wins over the list's copy: it is one call, and a
+    // product beyond the loaded pages still opens. Null in mock mode and on
+    // failure — then the list row stands, exactly as before.
+    final product = ref.watch(productDetailProvider(id)).valueOrNull ??
+        ref.watch(productByIdProvider(id));
     if (product == null) {
       return scaffold(const EmptyState(
         icon: PhosphorIconsRegular.package,
@@ -61,10 +91,26 @@ class ProductDetailScreen extends ConsumerWidget {
       ));
     }
 
-    final notes = [
-      for (final n in product.notes)
-        NoteEntry(initials: _initials(n.author), author: n.author, time: n.time, body: n.body),
-    ];
+    // The entity's own `notes` are the mock seed's; a real product's notes come
+    // from the polymorphic notes endpoint, which is empty in mock mode.
+    final fetched = ref.watch(productNotesProvider(id)).valueOrNull ?? const [];
+    final notes = fetched.isNotEmpty
+        ? [
+            for (final n in fetched)
+              NoteEntry(
+                  initials: _initials(n.author),
+                  author: n.author,
+                  time: n.time,
+                  body: n.body),
+          ]
+        : [
+            for (final n in product.notes)
+              NoteEntry(
+                  initials: _initials(n.author),
+                  author: n.author,
+                  time: n.time,
+                  body: n.body),
+          ];
 
     return Container(
       color: AppColors.bgDetail,
@@ -76,11 +122,14 @@ class ProductDetailScreen extends ConsumerWidget {
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
-              onTap: () => ref.read(toastProvider.notifier).show('Product actions'),
+              onTap: () => _openMenu(context, ref, product),
             ),
           ),
           Expanded(
-            child: ListView(
+            child: AppRefresh(
+              onRefresh: () => _refresh(ref, id),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
               children: [
                 _headerCard(ref, product),
@@ -91,29 +140,48 @@ class ProductDetailScreen extends ConsumerWidget {
                       style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.6)),
                 ),
                 SizedBox(height: 14.h),
-                _performanceCard(product),
-                SizedBox(height: 14.h),
-                _pricingCard(product),
+                if (_performanceCard(product) case final card?) ...[
+                  card,
+                  SizedBox(height: 14.h),
+                ],
+                // A package's price is derived from what it contains, so the
+                // composition belongs above the pricing that follows from it.
+                if (product.composition case final comp?)
+                  // The composition *is* the pricing for a package: its price
+                  // is the derived total, and the per-unit GST rows below apply
+                  // to a single product, not to a bundle whose components each
+                  // carry their own rate.
+                  _compositionCard(comp)
+                else
+                  _pricingCard(product),
                 SizedBox(height: 14.h),
                 FinanceCard(
                   title: 'Details',
                   child: Column(
                     children: [
-                      MetaRow(label: 'Category', value: product.cat),
-                      MetaRow(label: 'Billing unit', value: product.unit),
-                      MetaRow(label: 'SKU / code', value: product.id),
-                      MetaRow(label: 'HSN / SAC', value: product.hsn, last: true),
+                      // A field the org's Product layout does not expose comes
+                      // back absent; an empty value cell reads as a rendering
+                      // fault rather than as "not set".
+                      MetaRow(label: 'Category', value: _orDash(product.cat)),
+                      MetaRow(label: 'Billing unit', value: _orDash(product.unit)),
+                      MetaRow(label: 'SKU / code', value: _orDash(product.code)),
+                      MetaRow(label: 'HSN / SAC', value: _orDash(product.hsn), last: true),
                     ],
                   ),
                 ),
                 SizedBox(height: 14.h),
                 NotesCard(
                   title: 'Notes',
-                  countLabel: '${product.notes.length} ${product.notes.length == 1 ? 'note' : 'notes'}',
+                  countLabel: '${notes.length} ${notes.length == 1 ? 'note' : 'notes'}',
                   notes: notes,
-                  onSend: (_) => ref.read(toastProvider.notifier).show('Note added'),
+                  onSend: (body) => _addNote(ref, id, body),
                 ),
+                if (ApiConfig.apiEnabled) ...[
+                  SizedBox(height: 14.h),
+                  _activityCard(ref, id),
+                ],
               ],
+              ),
             ),
           ),
         ],
@@ -148,11 +216,19 @@ class ProductDetailScreen extends ConsumerWidget {
                       ],
                     ),
                     SizedBox(height: 3.h),
-                    Text('${product.id} · ${product.cat}',
+                    // `product_code` is optional, and `product.id` is the
+                    // `product_id` uuid — printing that as a fallback put a raw
+                    // uuid on screen for every product created without a SKU.
+                    Text([
+                      if (product.code.isNotEmpty) product.code,
+                      if (product.cat.isNotEmpty) product.cat,
+                    ].join(' · '),
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                    SizedBox(height: 3.h),
-                    Text('# HSN/SAC ${product.hsn}',
-                        style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    if (product.hsn.isNotEmpty) ...[
+                      SizedBox(height: 3.h),
+                      Text('# HSN/SAC ${product.hsn}',
+                          style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    ],
                   ],
                 ),
               ),
@@ -169,8 +245,7 @@ class ProductDetailScreen extends ConsumerWidget {
               _pillButton(
                 icon: PhosphorIconsRegular.power,
                 label: product.active ? 'Deactivate' : 'Activate',
-                onTap: () => ref.read(toastProvider.notifier)
-                    .show(product.active ? 'Product deactivated' : 'Product activated'),
+                onTap: () => _setActive(ref, product, !product.active),
               ),
               SizedBox(width: 8.w),
               _pillButton(
@@ -207,7 +282,14 @@ class ProductDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _performanceCard(Product product) {
+  /// Usage stats — hidden entirely when nothing backs them.
+  ///
+  /// No endpoint reports deals or revenue per catalog item, so on a live
+  /// backend this card was three big blue zeros: "0 deals, ₹0 lifetime revenue,
+  /// — avg", which reads as a product nobody ever sold rather than as a figure
+  /// the server does not publish.
+  Widget? _performanceCard(Product product) {
+    if (product.deals == 0 && product.revNum == 0) return null;
     final perf = <(String, String)>[
       ('${product.deals}', 'Deals using this'),
       (product.revenue, 'Lifetime revenue'),
@@ -238,22 +320,30 @@ class ProductDetailScreen extends ConsumerWidget {
   }
 
   Widget _pricingCard(Product product) {
+    // "Unit price ()" is what an empty billing unit produced.
     final unitBare = product.unit.replaceFirst('per ', '');
+    final priceLabel = unitBare.isEmpty ? 'Unit price' : 'Unit price ($unitBare)';
     return FinanceCard(
       title: 'Pricing',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MetaRow(label: 'Unit price ($unitBare)', value: product.price),
-          MetaRow(label: 'GST rate', value: '${product.gst}%'),
-          MetaRow(label: 'GST amount', value: product.gstAmt, last: true),
+          MetaRow(label: priceLabel, value: product.price),
+          // '—' when the org's Product layout does not expose `tax_rate`: the
+          // rate is unknown, and so is everything computed from it.
+          MetaRow(label: 'GST rate', value: product.gstKnown ? '${product.gst}%' : '—'),
+          MetaRow(
+              label: 'GST amount',
+              value: product.gstKnown ? product.gstAmt : '—',
+              last: true),
           Padding(
             padding: EdgeInsets.only(top: 12.h, bottom: 2.h),
             child: Row(
               children: [
                 Text('Gross unit price', style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
                 const Spacer(),
-                Text(product.gross, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                Text(product.gstKnown ? product.gross : product.price,
+                    style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
               ],
             ),
           ),
@@ -280,9 +370,236 @@ class ProductDetailScreen extends ConsumerWidget {
     );
   }
 
-  String _desc(Product p) =>
-      p.desc ??
-      '${p.name} delivered by Kairali Interior Works. Billed ${p.unit} at ${p.price} + 18% GST.';
+  /// The row's own description.
+  ///
+  /// The fallback used to compose a sentence — "<name> delivered by Kairali
+  /// Interior Works. Billed <unit> at <price> + 18% GST." — which named the
+  /// prototype's vendor and asserted a tax rate, for a product whose
+  /// description the backend simply left empty.
+  String _desc(Product p) {
+    final d = p.desc?.trim();
+    return d == null || d.isEmpty ? 'No description added.' : d;
+  }
+
+  /// What a package contains and what that comes to (`products.md` §7).
+  ///
+  /// Every figure here is the server's: components are priced live off the
+  /// component products, and `price` is recomputed from this composition on
+  /// every write. The app calculates nothing.
+  ///
+  /// The line items render when the payload carries them; this org's view
+  /// settings withhold `components`/`adjustments` while still sending the six
+  /// totals, so the card says which part is missing rather than implying an
+  /// empty package.
+  Widget _compositionCard(PackageComposition c) {
+    final hasLines = c.components.isNotEmpty || c.adjustments.isNotEmpty;
+    return FinanceCard(
+      title: 'Package composition',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final comp in c.components)
+            MetaRow(
+              label: '${comp.name}${comp.quantity > 1 ? ' × ${comp.quantity}' : ''}',
+              value: formatInr(comp.lineExcl),
+            ),
+          for (final adj in c.adjustments)
+            MetaRow(
+              label: adj.display,
+              value: '${adj.isDiscount ? '−' : ''}${formatInr(adj.amount)}',
+            ),
+          if (!hasLines)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 4.h),
+              child: Text('Component breakdown is not available for this package.',
+                  style: AppText.custom(
+                      size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+            ),
+          MetaRow(label: 'Components subtotal', value: formatInr(c.componentsExcl)),
+          if (c.hasAdjustments)
+            MetaRow(
+                label: 'Adjustments',
+                value: '${c.adjustmentsExcl < 0 ? '−' : ''}'
+                    '${formatInr(c.adjustmentsExcl.abs())}'),
+          MetaRow(label: 'Tax', value: formatInr(c.taxAmount), last: true),
+          Padding(
+            padding: EdgeInsets.only(top: 12.h, bottom: 2.h),
+            child: Row(
+              children: [
+                Text('Package total',
+                    style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                const Spacer(),
+                Text(formatInr(c.totalIncl),
+                    style: AppText.custom(
+                        size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The overflow menu behind the header's 3-dot button, which used to toast
+  /// "Product actions" and do nothing.
+  void _openMenu(BuildContext context, WidgetRef ref, Product product) {
+    showActionMenu(
+      context,
+      title: 'Product actions',
+      actions: [
+        MenuAction(
+          icon: PhosphorIconsRegular.power,
+          label: product.active ? 'Deactivate' : 'Activate',
+          onTap: () => _setActive(ref, product, !product.active),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete product',
+          destructive: true,
+          onTap: () => _confirmDelete(context, ref, product),
+        ),
+      ],
+    );
+  }
+
+  /// `DELETE /crm/products/{id}/` (`products.md` §4), behind a confirmation —
+  /// it is a hard delete, not an archive.
+  ///
+  /// The backend refuses (`400`) when the product is a component of a package,
+  /// naming the packages; that message is shown as-is rather than replaced with
+  /// a generic failure. A product merely referenced by leads or customers does
+  /// delete — those FKs are `SET_NULL`.
+  Future<void> _confirmDelete(
+      BuildContext context, WidgetRef ref, Product product) async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text('Delete this product?',
+            style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+        content: Text(
+            '"${product.name}" will be removed from the catalog. Quotes already '
+            'issued keep the name and price they captured.',
+            style: AppText.body(color: AppColors.textMuted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Delete', style: AppText.bodyStrong(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (go != true) return;
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Product deleted');
+      return;
+    }
+    try {
+      await ref.read(productsRepositoryProvider).deleteProduct(product.id);
+      ref.invalidate(productsProvider);
+      ref.read(toastProvider.notifier).show('Product deleted');
+      // The record is gone; staying on its detail screen would show a husk.
+      if (context.mounted) context.pop();
+    } on AppError catch (e) {
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  /// The catalog item's audit trail, under the Notes card.
+  ///
+  /// `products.md` has no per-product feed, so this is the shared
+  /// `/access-control/audit-logs/` trail keyed by `model_name=Product` — the
+  /// same one the lead, customer and quote detail pages use.
+  ///
+  /// The card stays on screen when the trail is empty, saying so.
+  ///
+  /// Hiding it read as "the feature is missing": most of this catalog predates
+  /// the audit hook (the seeded rows have no trail at all), and a role without
+  /// `view_audit_log` gets a 403 that resolves to the same empty list. The
+  /// wording claims neither — it says only that there is nothing to show.
+  Widget _activityCard(WidgetRef ref, String id) {
+    final entries = ref.watch(productActivityLogProvider(id)).valueOrNull ?? const [];
+    return FinanceCard(
+      title: 'Activity',
+      child: Padding(
+        padding: EdgeInsets.only(top: 6.h),
+        child: entries.isEmpty
+            ? Text('No activity to show for this item.',
+                style: AppText.custom(
+                    size: 13, weight: FontWeight.w500, color: AppColors.textMuted))
+            : ActivityTimeline(entries: [for (final e in entries) _auditRow(e)]),
+      ),
+    );
+  }
+
+  /// One audit row as a timeline entry, iconed by what kind of event it was.
+  ActivityEntry _auditRow(AuditEntry e) {
+    final (icon, tone, bg) = switch (e.kind) {
+      AuditEventKind.created => (PhosphorIconsRegular.package, AppColors.blueBright, AppColors.tintBlue),
+      AuditEventKind.statusChanged => (PhosphorIconsRegular.arrowsClockwise, AppColors.warning, AppColors.tintAmber),
+      AuditEventKind.noteAdded => (PhosphorIconsRegular.note, AppColors.pending, AppColors.tintPurple),
+      AuditEventKind.childAdded => (PhosphorIconsRegular.plusCircle, AppColors.success, AppColors.tintGreen),
+      AuditEventKind.deleted => (PhosphorIconsRegular.trash, AppColors.error, AppColors.tintRed),
+      _ => (PhosphorIconsRegular.pencilSimple, AppColors.blueBright, AppColors.tintBlue),
+    };
+    // Actor and "2h ago" share the single sub-line the timeline gives a row.
+    final when = e.at == null ? '' : relativeTime(e.at);
+    final sub = [e.subtitle, e.actor, when].where((s) => s.isNotEmpty).join(' · ');
+    return ActivityEntry(icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
+  }
+
+  /// Flips `is_active` (`PATCH /crm/products/{id}/`, `products.md` §4).
+  ///
+  /// The button used to toast "Product deactivated" without a write, so the
+  /// pill it claimed to change was back to Active on the next read.
+  Future<void> _setActive(WidgetRef ref, Product product, bool active) async {
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier)
+          .show(active ? 'Product activated' : 'Product deactivated');
+      return;
+    }
+    try {
+      await ref
+          .read(productsRepositoryProvider)
+          .updateProduct(product.id, {'is_active': active});
+      ref.invalidate(productDetailProvider(product.id));
+      ref.invalidate(productsProvider);
+      ref.read(toastProvider.notifier)
+          .show(active ? 'Product activated' : 'Product deactivated');
+    } on AppError catch (e) {
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  /// Posts an internal note against the product
+  /// (`/crm/notes/` with `related_to=product`, verified live).
+  ///
+  /// The composer used to toast "Note added" and post nothing, so the note
+  /// vanished the moment the card reloaded.
+  Future<void> _addNote(WidgetRef ref, String id, String body) async {
+    final text = body.trim();
+    if (text.isEmpty) return;
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Note added');
+      return;
+    }
+    try {
+      await ref.read(notesRepositoryProvider).addNote(
+            relatedTo: 'product',
+            relatedToId: id,
+            body: text,
+          );
+      ref.invalidate(productNotesProvider(id));
+      ref.read(toastProvider.notifier).show('Note added');
+    } on AppError catch (e) {
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  static String _orDash(String v) => v.isEmpty ? '—' : v;
 
   String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));

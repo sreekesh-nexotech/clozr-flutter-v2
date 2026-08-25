@@ -84,7 +84,7 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).show(e.message);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 

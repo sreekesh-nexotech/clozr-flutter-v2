@@ -89,6 +89,9 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
   String _assignee = 'me';
   bool _showErrors = false;
 
+  /// True while the create is in flight, so a second tap cannot post again.
+  bool _saving = false;
+
   @override
   void dispose() {
     for (final c in [_title, _desc, _due, _dueTime]) {
@@ -100,6 +103,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
   bool get _titleOk => _title.text.trim().isNotEmpty;
 
   Future<void> _submit() async {
+    if (_saving) return;
     setState(() => _showErrors = true);
     if (!_titleOk) {
       widget.ref.read(toastProvider.notifier).show('Enter a task title');
@@ -107,6 +111,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
     }
     final lead = widget.lead;
     if (ApiConfig.apiEnabled) {
+      setState(() => _saving = true);
       try {
         await widget.ref.read(crmTasksRepositoryProvider).createTask({
           'title': _title.text.trim(),
@@ -118,7 +123,9 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
           if (lead != null) 'related_to_id': lead.id,
         });
       } on AppError catch (e) {
-        widget.ref.read(toastProvider.notifier).show(e.message);
+        // Refused — let the user correct it and try again.
+        if (mounted) setState(() => _saving = false);
+        widget.ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
       widget.ref.invalidate(crmTasksProvider);
@@ -149,6 +156,18 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
     widget.ref.read(crmTaskDraftsProvider.notifier).state = [task, ...drafts];
     widget.ref.read(toastProvider.notifier).show('Task added');
     Navigator.of(context).pop();
+  }
+
+  Future<void> _pickDueDate() async {
+    final picked = await pickSheetDate(context, _due.text);
+    if (picked == null || !mounted) return;
+    setState(() => _due.text = sheetDateLabel(picked));
+  }
+
+  Future<void> _pickDueTime() async {
+    final picked = await pickSheetTime(context, _dueTime.text);
+    if (picked == null || !mounted) return;
+    setState(() => _dueTime.text = sheetTimeLabel(picked));
   }
 
   void _pickAssignee() {
@@ -221,6 +240,10 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
         SheetHeader(title: 'New task', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: SingleChildScrollView(
+            // Title and Description sit above the Status / Type / Priority
+            // chips, so typing hides the rest of the form; dragging the sheet
+            // is how you get back to it.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 12.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -289,12 +312,26 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                   children: [
                     Expanded(
                       flex: 3,
-                      child: AppTextField(label: 'Due date', controller: _due, hint: '24 Jun 2026'),
+                      child: AppTextField(
+                        label: 'Due date',
+                        readOnly: true,
+                        onTap: _pickDueDate,
+                        value: _due.text.isEmpty ? null : _due.text,
+                        hint: '24 Jun 2026',
+                        suffixIcon: PhosphorIconsRegular.calendarBlank,
+                      ),
                     ),
                     SizedBox(width: 10.w),
                     Expanded(
                       flex: 2,
-                      child: AppTextField(label: 'Due time', controller: _dueTime, hint: '10:00'),
+                      child: AppTextField(
+                        label: 'Due time',
+                        readOnly: true,
+                        onTap: _pickDueTime,
+                        value: _dueTime.text.isEmpty ? null : _dueTime.text,
+                        hint: '10:00',
+                        suffixIcon: PhosphorIconsRegular.clock,
+                      ),
                     ),
                   ],
                 ),
@@ -309,7 +346,12 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
             ),
           ),
         ),
-        SheetSubmitBar(label: 'Add task', icon: PhosphorIconsBold.plus, onTap: _submit),
+        SheetSubmitBar(
+            label: 'Add task',
+            icon: PhosphorIconsBold.plus,
+            busy: _saving,
+            busyLabel: 'Adding…',
+            onTap: _submit),
       ],
     );
   }

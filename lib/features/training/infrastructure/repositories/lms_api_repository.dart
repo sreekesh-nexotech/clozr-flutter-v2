@@ -2,6 +2,7 @@ import '../../../../core/network/app_error.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/entities/lms_activity.dart';
+import '../../domain/entities/lms_stats.dart';
 import '../../domain/repositories/lms_repository.dart';
 import '../data_sources/remote/lms_remote_ds.dart';
 
@@ -48,6 +49,18 @@ class LmsApiRepository implements LmsRepository {
       // Admin-only endpoint — non-admins simply see their own record.
     }
     return records;
+  }
+
+  @override
+  Future<LmsStats?> getStats() async {
+    try {
+      return await _remote.fetchStats();
+    } on AppError catch (e) {
+      if (e.type == AppErrorType.forbidden || e.type == AppErrorType.notFound) {
+        return null; // Admin-gated — the tiles fall back to derived figures.
+      }
+      rethrow;
+    }
   }
 
   @override

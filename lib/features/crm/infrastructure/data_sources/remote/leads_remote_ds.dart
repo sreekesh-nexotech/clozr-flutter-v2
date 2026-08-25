@@ -45,6 +45,17 @@ class LeadsRemoteDataSource {
   /// [mineOnly] adds `is_teams=true` — the server-side "My leads" scope (leads
   /// the caller owns OR is an assignee on). It is re-sent on every page so the
   /// scope holds across the whole walk.
+  ///
+  /// `view_type=mobile` asks the server to trim each row to the org's **mobile**
+  /// card config — the same config the card's layout comes from
+  /// (`leads.md` §`?view_type=`). Without it the payload carries the org's
+  /// *list* columns while the card obeys the *mobile* layout, so a field the
+  /// org put on the card but off the table arrived with no value.
+  ///
+  /// Not yet honoured on dev — a mobile request returns the same 15 keys as a
+  /// default one, on `/leads/`, `/customers/` and `/tasks/` alike. Sent anyway:
+  /// the doc specifies an unknown value is ignored rather than rejected, so
+  /// this is inert until the backend ships it and correct the moment it does.
   Future<List<Map<String, dynamic>>> fetchLeadRows({
     bool mineOnly = false,
     Map<String, dynamic> filters = const {},
@@ -58,6 +69,7 @@ class LeadsRemoteDataSource {
     for (var i = 0; i < _maxPages; i++) {
       final body = await _api.get(ApiEndpoints.leads, query: {
         ...safe,
+        'view_type': 'mobile',
         'page_size': _pageSize,
         if (mineOnly) 'is_teams': true,
         if (page != null) 'page': page,
@@ -344,6 +356,7 @@ class LeadsRemoteDataSource {
     final industryName = _str(row, 'industry_name');
 
     return Lead(
+      raw: row,
       id: id,
       name: name,
       initials: UserDirectory.initialsOf(name),

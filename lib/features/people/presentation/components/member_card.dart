@@ -20,9 +20,12 @@ const Map<String, Color> kRoleTone = {
 
 Color roleTone(String role) => kRoleTone[role] ?? const Color(0xFF6C6C6C);
 
+/// "Deactivated" rather than "Inactive" — the word the backend's own status
+/// chips use (`members.md` §Status), and the one that distinguishes an account
+/// an admin switched off from an invitation never accepted.
 ({String label, Color color}) memberStatusMeta(String status) => switch (status) {
       'active' => (label: 'Active', color: AppColors.success),
-      'inactive' => (label: 'Inactive', color: AppColors.textMuted),
+      'inactive' => (label: 'Deactivated', color: AppColors.textMuted),
       _ => (label: 'Invited', color: AppColors.warningDeep),
     };
 

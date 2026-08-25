@@ -157,16 +157,23 @@ class ConversationsController extends StateNotifier<ConversationsState> {
 
   Future<void> _refreshMessages(String id) async {
     try {
-      final fetched = await _repo.getMessages(id);
+      final thread = await _repo.getThread(id);
       if (!mounted) return;
       state = state.copyWith(conversations: [
         for (final c in state.conversations)
           if (c.id == id)
-            c.copyWith(messages: [
-              ...fetched,
-              // Keep optimistic sends that raced the fetch.
-              ...c.messages.where((m) => m.mine && m.time == 'Now'),
-            ])
+            c.copyWith(
+              messages: [
+                ...thread.messages,
+                // Keep optimistic sends that raced the fetch.
+                ...c.messages.where((m) => m.mine && m.time == 'Now'),
+              ],
+              // The Medias and Links tabs read the same fetch — before this
+              // they were only ever filled by the prototype seed, so both
+              // reported "nothing shared" on every real conversation.
+              media: thread.media,
+              links: thread.links,
+            )
           else
             c,
       ]);

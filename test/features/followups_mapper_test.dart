@@ -38,6 +38,9 @@ void main() {
       expect(f.time, '09:30');
       expect(f.status, 'due'); // future due date, not completed
       expect(f.owner, 'u-rahul');
+      // Both fields are kept — the description no longer overwrites the title.
+      expect(f.title, isNotEmpty);
+      expect(f.description, 'Discuss scope and share ballpark');
       expect(f.agenda, 'Discuss scope and share ballpark');
     });
 
@@ -88,13 +91,16 @@ void main() {
       expect(f.owner, 'me');
     });
 
-    test('agenda falls back to the title when description is empty/null', () {
+    test('title survives an empty description; agenda falls back to it', () {
       final noDesc = FollowupsRemoteDataSource.followupFromJson(
           {...row(), 'description': null}, now: now)!;
+      expect(noDesc.title, 'Follow up on sign-off');
+      expect(noDesc.description, isEmpty);
       expect(noDesc.agenda, 'Follow up on sign-off');
 
       final blank = FollowupsRemoteDataSource.followupFromJson(
           {...row(), 'description': '   '}, now: now)!;
+      expect(blank.title, 'Follow up on sign-off');
       expect(blank.agenda, 'Follow up on sign-off');
     });
 

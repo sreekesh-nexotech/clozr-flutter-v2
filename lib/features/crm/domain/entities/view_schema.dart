@@ -20,6 +20,7 @@ class ViewColumn extends Equatable {
     this.isFixed = false,
     this.inFields = false,
     this.relatedModel = '',
+    this.choices = const [],
   });
 
   final String name;
@@ -54,9 +55,23 @@ class ViewColumn extends Equatable {
   /// (`LeadSource`, `LeadStatus`, `User`, `Territory`, …). Empty otherwise.
   final String relatedModel;
 
+  /// The fixed value set for a **model choice** field, as `(value, label)` pairs
+  /// — `first_response_unit` is `days | hours`, `payment_type` is `lumpsum |
+  /// subscription | …`.
+  ///
+  /// Not the same thing as a foreign key: these are hard-coded on the model, not
+  /// an org catalog with its own endpoint. Without them a choice column has no
+  /// options to offer and a form renders it as a free-text box — which is how
+  /// `first_response_unit: "23"` reached the API and came back
+  /// `"23" is not a valid choice`.
+  final List<(String value, String label)> choices;
+
+  /// Whether the value comes from a fixed model choice set.
+  bool get hasChoices => choices.isNotEmpty;
+
   /// Maps one column, or null when it is hidden or unusable. `visible` is
   /// treated as opt-in: a column that does not say it is visible is not shown.
-  static ViewColumn? fromJson(Object? row) {
+  static ViewColumn? fromJson(Object? row, {Map? fields}) {
     if (row is! Map) return null;
     if (row['visible'] != true) return null;
 
@@ -83,7 +98,33 @@ class ViewColumn extends Equatable {
       inFields: row['in_fields'] == true || info is Map,
       relatedModel:
           info is Map ? (info['related_model'] ?? '').toString() : '',
+      // Looked for in `field_info` first, then in the schema's top-level
+      // `fields` map — the documented example puts them there
+      // (`fields.status.choices`), and the two are not guaranteed to be the
+      // same object.
+      choices: _choicesOf(info) ??
+          _choicesOf(fields is Map ? fields[name] : null) ??
+          const [],
     );
+  }
+
+  /// `[{value, label}]` → `(value, label)` pairs. The **value** is what the API
+  /// stores and validates against, so it is never derived from the label.
+  static List<(String, String)>? _choicesOf(Object? field) {
+    final raw = field is Map ? field['choices'] : null;
+    if (raw is! List || raw.isEmpty) return null;
+    final out = <(String, String)>[];
+    for (final c in raw) {
+      if (c is Map) {
+        final value = (c['value'] ?? '').toString();
+        if (value.isEmpty) continue;
+        final label = (c['label'] ?? '').toString();
+        out.add((value, label.isNotEmpty ? label : value));
+      } else if (c is String && c.isNotEmpty) {
+        out.add((c, c));
+      }
+    }
+    return out.isEmpty ? null : out;
   }
 
   /// Whether this column can be rendered as an input on a form.
@@ -104,7 +145,7 @@ class ViewColumn extends Equatable {
 
   @override
   List<Object?> get props =>
-      [name, label, order, type, isCustom, isFixed, inFields, relatedModel];
+      [name, label, order, type, isCustom, isFixed, inFields, relatedModel, choices];
 }
 
 /// The org's Leads list layout: which columns to render, in which order, under
@@ -147,9 +188,13 @@ class ViewSchema extends Equatable {
     final rows = all is Map ? all['columns'] : null;
     if (rows is! List) return ViewSchema.empty;
 
+    // Passed down so a column can pick up its model choices, which the
+    // documented shape puts here rather than on the column itself.
+    final fields = body['fields'] is Map ? body['fields'] as Map : null;
+
     final columns = <ViewColumn>[];
     for (final row in rows) {
-      final column = ViewColumn.fromJson(row);
+      final column = ViewColumn.fromJson(row, fields: fields);
       if (column != null) columns.add(column);
     }
     columns.sort((a, b) => a.order.compareTo(b.order));

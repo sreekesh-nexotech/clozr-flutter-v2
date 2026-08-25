@@ -30,6 +30,7 @@ class AuditLogRemoteDataSource {
     required String modelName,
     required String recordId,
     Map<String, String> statusNames = const {},
+    String recordLabel = 'Lead',
   }) async {
     if (recordId.isEmpty) return const [];
     try {
@@ -40,7 +41,7 @@ class AuditLogRemoteDataSource {
         'page_size': _pageSize,
       });
       final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
-      return mapEntries(rows, statusNames: statusNames);
+      return mapEntries(rows, statusNames: statusNames, recordLabel: recordLabel);
     } on Object {
       return const [];
     }
@@ -51,11 +52,12 @@ class AuditLogRemoteDataSource {
   static List<AuditEntry> mapEntries(
     List<dynamic> rows, {
     Map<String, String> statusNames = const {},
+    String recordLabel = 'Lead',
   }) {
     final out = <AuditEntry>[];
     for (final row in rows) {
       if (row is! Map<String, dynamic>) continue;
-      final entry = mapEntry(row, statusNames: statusNames);
+      final entry = mapEntry(row, statusNames: statusNames, recordLabel: recordLabel);
       if (entry != null) out.add(entry);
     }
     return out;
@@ -69,6 +71,9 @@ class AuditLogRemoteDataSource {
   static AuditEntry? mapEntry(
     Map<String, dynamic> row, {
     Map<String, String> statusNames = const {},
+    /// What the record is called in the log's own sentences — every feed used
+    /// to say "Lead created", including a quote's and a ticket's.
+    String recordLabel = 'Lead',
   }) {
     final id = _str(row['audit_log_id']);
     if (id.isEmpty) return null;
@@ -82,7 +87,7 @@ class AuditLogRemoteDataSource {
         AuditEntry(id: id, kind: kind, title: title, subtitle: subtitle, at: at, actor: actor);
 
     if (action == 'create') {
-      return build(AuditEventKind.created, 'Lead created', _by(actor));
+      return build(AuditEventKind.created, '$recordLabel created', _by(actor));
     }
     if (action == 'delete') {
       return build(AuditEventKind.deleted, 'Deleted', _by(actor));
@@ -102,6 +107,17 @@ class AuditLogRemoteDataSource {
           label,
           _by(actor),
         );
+      }
+
+      // A lifecycle event the backend raised itself rather than a user edit —
+      // an SLA clock expiring, a ticket reopening. Carries a type and no actor,
+      // so it reads as the system speaking.
+      final event = changes['issue_event'];
+      if (event is Map) {
+        final type = _str(event['type']);
+        if (type.isNotEmpty) {
+          return build(_eventKind(type), _eventLabel(type), 'System');
+        }
       }
 
       // A direct field write. `request_body` is what the client sent, which is
@@ -138,6 +154,38 @@ class AuditLogRemoteDataSource {
 
     return build(AuditEventKind.other, 'Record updated', _by(actor));
   }
+
+  /// `sla_breached` → "SLA breached".
+  static String _eventLabel(String type) {
+    switch (type) {
+      case 'sla_breached':
+        return 'SLA breached';
+      case 'first_response_breached':
+        return 'First-response SLA breached';
+      case 'sla_paused':
+        return 'SLA paused';
+      case 'sla_resumed':
+        return 'SLA resumed';
+      case 'reopened':
+        return 'Ticket reopened';
+      case 'resolved':
+        return 'Ticket resolved';
+      case 'closed':
+        return 'Ticket closed';
+      case 'escalated':
+        return 'Ticket escalated';
+    }
+    // An event the app has no sentence for still reads as something: the raw
+    // type, humanised, beats swallowing the row.
+    final words = type.replaceAll('_', ' ').trim();
+    if (words.isEmpty) return 'Ticket updated';
+    return '${words[0].toUpperCase()}${words.substring(1)}';
+  }
+
+  static AuditEventKind _eventKind(String type) =>
+      type.contains('breach') || type.contains('escalat')
+          ? AuditEventKind.other
+          : AuditEventKind.statusChanged;
 
   static String _childLabel(String type, String action) {
     final noun = type.isEmpty ? 'Record' : type;

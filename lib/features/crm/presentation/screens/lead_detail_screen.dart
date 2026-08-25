@@ -13,14 +13,19 @@ import '../../../../core/models/note.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/keyboard_visibility.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/utils/attachment_link.dart';
+import '../../domain/entities/lead_schema.dart';
+import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/call_logs_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
@@ -42,10 +47,12 @@ import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_file.dart';
 import '../../domain/entities/quote.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../data/api/user_directory.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
+import '../components/inline_edit_row.dart';
 import '../sheets/reassign_owner_sheet.dart';
 import '../components/option_picker_sheet.dart';
 import '../sheets/add_followup_sheet.dart';
@@ -169,7 +176,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           .updateLead(lead.id, {'assignees': ids});
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(e.message);
+      ref.read(toastProvider.notifier).showError(e.message);
       return;
     }
     if (!mounted) return;
@@ -226,6 +233,42 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         ),
       ],
     );
+  }
+
+  /// Pull-to-refresh for the whole page: the record, every activity tab, the
+  /// notes, the audit trail and the org's layout.
+  ///
+  /// Each tab reads its own lead-scoped provider, and none of them refetches on
+  /// a revisit — so a task ticked on another device, or a note added from the
+  /// web app, only appeared here after leaving and coming back. Refreshing all
+  /// of them (not just the visible tab) is deliberate: switching tabs after the
+  /// pull should not show stale rows.
+  Future<void> _refresh(String id) async {
+    ref.invalidate(leadDetailProvider(id));
+    ref.invalidate(leadRowProvider(id));
+    ref.invalidate(leadTasksProvider(id));
+    ref.invalidate(leadCallLogsProvider(id));
+    ref.invalidate(leadFollowupsProvider(id));
+    ref.invalidate(leadQuotesProvider(id));
+    ref.invalidate(leadFilesProvider(id));
+    ref.invalidate(leadActivityLogProvider(id));
+    // Whole family: the notifier loads in its constructor, so dropping it is
+    // what re-reads the thread. Not awaited — nothing exposes that future — but
+    // the record fetches below outlast it comfortably.
+    ref.invalidate(crmNotesProvider);
+    ref.invalidate(leadDetailSchemaFutureProvider);
+    ref.invalidate(leadStatusCatalogProvider);
+    // The Call button's route depends on this, and it is fetched once at mount.
+    ref.invalidate(exotelStatusProvider);
+    await settle([
+      ref.read(leadDetailProvider(id).future),
+      ref.read(leadTasksProvider(id).future),
+      ref.read(leadCallLogsProvider(id).future),
+      ref.read(leadFollowupsProvider(id).future),
+      ref.read(leadQuotesProvider(id).future),
+      ref.read(leadFilesProvider(id).future),
+      ref.read(leadDetailSchemaFutureProvider.future),
+    ]);
   }
 
   /// Wraps a loading / error / not-found state under the section app bar so the
@@ -286,20 +329,26 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       ref.invalidate(leadDetailProvider(lead.id));
     }
 
-    final toast = ref.read(toastProvider.notifier);
-    if (outcome.message != null) toast.show(outcome.message!);
-    switch (outcome.result) {
-      case LeadCallResult.ringingViaExotel:
-        toast.show('Ringing your phone…');
-      case LeadCallResult.noNumber:
-        toast.show('This lead has no phone number.');
-      case LeadCallResult.diallerUnavailable:
-        toast.show('Could not open the dialler.');
-      case LeadCallResult.dialledNotLogged:
-        toast.show('Call not logged — add your phone number to your profile.');
-      case LeadCallResult.dialledAndLogged:
-      case LeadCallResult.dialledLogFailed:
-        break; // the dialler is on screen; a log failure already toasted
+    // One toast, not two. `show` replaces whatever is on screen, so raising the
+    // Exotel reason and then the outcome wiped the reason in the same frame it
+    // appeared — which is how a refusal could be "reported" and still never be
+    // read. Composed instead, and a configuration refusal also leaves the
+    // standing notice by the Call button.
+    final outcomeNote = switch (outcome.result) {
+      LeadCallResult.ringingViaExotel => 'Ringing your phone…',
+      LeadCallResult.noNumber => 'This lead has no phone number.',
+      LeadCallResult.diallerUnavailable => 'Could not open the dialler.',
+      LeadCallResult.dialledNotLogged =>
+        'Call not logged — add your phone number to your profile.',
+      // The dialler is already on screen, and a failed log carries its own text.
+      LeadCallResult.dialledAndLogged || LeadCallResult.dialledLogFailed => null,
+    };
+    final parts = [
+      if (outcome.message != null) outcome.message!,
+      if (outcomeNote != null) outcomeNote,
+    ];
+    if (parts.isNotEmpty) {
+      ref.read(toastProvider.notifier).show(parts.join(' · '));
     }
   }
 
@@ -401,6 +450,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   }
 
   Widget _buildLead(BuildContext context, Lead lead) {
+    // The notes composer lives inside the list below. With the keyboard up the
+    // sticky call bar would sit between it and the keys — so it stands down,
+    // and the list reclaims the space its footer was reserving.
+    final keyboardOpen = KeyboardVisibility.of(context);
 
     final statuses = ref.watch(leadStatusesProvider);
     // Watched only to start the telephony-status fetch at mount, so the Call
@@ -457,9 +510,15 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: AppRefresh(
+              onRefresh: () => _refresh(lead.id),
+              child: ListView(
               controller: _scroll,
-              padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
+              // Dragging the page puts the keyboard away — the only other exit
+              // from the notes composer was submitting or leaving the screen.
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, keyboardOpen ? 24.h : 140.h),
               children: [
                 _profileCard(lead, meta, statuses),
                 SizedBox(height: 14.h),
@@ -485,9 +544,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 SizedBox(height: 14.h),
                 _activityLogCard(lead),
               ],
+              ),
             ),
           ),
-          _bottomBar(lead),
+          if (!keyboardOpen) _bottomBar(lead),
         ],
       ),
     );
@@ -497,6 +557,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   Widget _profileCard(Lead lead, StatusMeta meta, List<CatalogOption> statuses) {
     final sd = lead.statusDays;
     final stageLine = sd == 0 ? 'In status since today' : '$sd ${sd == 1 ? 'day' : 'days'} in status';
+    // Company when there is one, location otherwise — `company` can arrive as
+    // an empty string as well as null, so a plain `??` is not enough.
+    final subtitle = (lead.company?.trim().isNotEmpty ?? false)
+        ? lead.company!.trim()
+        : lead.location.trim();
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(18.r),
@@ -529,8 +594,17 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                         if (lead.upsell) ...[SizedBox(width: 8.w), _upsellBadge()],
                       ],
                     ),
-                    SizedBox(height: 3.h),
-                    Text('#${lead.id} · ${lead.company ?? lead.location}', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    // The id used to lead this line as "#L-1042". Server ids are
+                    // UUIDs, which read as noise and crowd out the company, so
+                    // only the human-meaningful half is shown — and nothing at
+                    // all when the lead carries neither company nor location.
+                    if (subtitle.isNotEmpty) ...[
+                      SizedBox(height: 3.h),
+                      Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    ],
                     SizedBox(height: 5.h),
                     Row(
                       children: [
@@ -699,23 +773,66 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// The built-in information rows, used when the org's `detail` layout has not
   /// loaded (and in mock mode). Keeps the screen looking exactly as it did
   /// before the layout became configurable.
-  List<({String label, String value})> _fallbackInfoRows(Lead lead) => [
-        (label: 'Email', value: lead.email),
-        (label: 'Mobile', value: lead.phone),
-        (label: 'Lead source', value: lead.source),
-        (label: 'Product / Need', value: lead.project),
-        (label: 'Deal value', value: lead.value),
-        (label: 'Industry', value: lead.industry),
-        (label: 'Location', value: lead.location),
-        (label: 'Created on', value: lead.createdOn),
-        (label: 'Website', value: lead.website),
+  /// No column on these: without the org's layout there is nothing that names
+  /// the API field or its type, so a long press has nothing to edit.
+  List<({String label, String value, LeadColumn? column})> _fallbackInfoRows(
+          Lead lead) =>
+      [
+        (label: 'Email', value: lead.email, column: null),
+        (label: 'Mobile', value: lead.phone, column: null),
+        (label: 'Lead source', value: lead.source, column: null),
+        (label: 'Product / Need', value: lead.project, column: null),
+        (label: 'Deal value', value: lead.value, column: null),
+        (label: 'Industry', value: lead.industry, column: null),
+        (label: 'Location', value: lead.location, column: null),
+        (label: 'Created on', value: lead.createdOn, column: null),
+        (label: 'Website', value: lead.website, column: null),
       ];
+
+  /// Saves one edited field of the Lead information card.
+  ///
+  /// One key, under the name the schema says (`status_id`, not `status`) and
+  /// coerced by the column's type — a `PATCH` carrying the whole record would
+  /// re-submit values the user never looked at.
+  Future<void> _saveField(Lead lead, String key, Object? value, String label) async {
+    try {
+      await ref.read(leadsRepositoryProvider).updateLead(lead.id, {key: value});
+      if (!mounted) return;
+      ref.invalidate(leadRowProvider(lead.id));
+      ref.invalidate(leadDetailProvider(lead.id));
+      ref.read(toastProvider.notifier).show('$label updated');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  Widget _infoRow(
+    Lead lead,
+    ({String label, String value, LeadColumn? column}) r,
+    Map<String, dynamic>? row,
+  ) {
+    return InlineEditRow(
+      label: r.label,
+      display: r.value,
+      column: r.column,
+      rawValue: row?[r.column?.name],
+      editForm: 'Edit lead',
+      writeKey: LeadsRemoteDataSource.writeKeyFor,
+      onSave: (key, value) => _saveField(lead, key, value, r.label),
+      onBlocked: (msg) => ref.read(toastProvider.notifier).show(msg),
+      child: DetailInfoRow(label: r.label, value: r.value),
+    );
+  }
 
   // ── Information ──
   Widget _infoCard(Lead lead) {
     // The org's own detail layout drives these rows: which fields, in what
     // order, under what labels. Empty schema → the built-in list above.
     final schema = ref.watch(leadDetailSchemaProvider);
+    // Already fetched for the Edit-lead form; read here so an inline edit seeds
+    // from the stored value rather than the formatted one.
+    final rawRow = ref.watch(leadRowProvider(lead.id)).valueOrNull;
     final all = schema.isEmpty
         ? _fallbackInfoRows(lead)
         : leadDetailRows(lead, schema);
@@ -738,7 +855,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         children: [
           Text('Lead information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
-          for (final r in rows) DetailInfoRow(label: r.label, value: r.value),
+          // Long-press a row to edit it in place, for the fields the org's
+          // layout says are writable. Read-only columns (`created_at`,
+          // `lead_score`) and rows with no column behind them stay inert.
+          for (final r in rows) _infoRow(lead, r, rawRow),
           if (collapsible)
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -796,7 +916,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     ],
                   ),
                 ),
-                _roundAction(PhosphorIconsRegular.arrowsClockwise, () => ref.read(toastProvider.notifier).show('Reassign owner')),
+                _roundAction(PhosphorIconsRegular.arrowsClockwise, () => _reassignOwner(lead)),
               ],
             ),
           ),
@@ -1018,6 +1138,29 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   String _taskStatus(CrmTask t) =>
       ref.watch(crmTaskStatusOverrideProvider)[t.id] ?? t.status;
 
+  /// The pill a task's status renders as — the org's own lane name, not the
+  /// built-in bucket it folds into.
+  ///
+  /// This card printed `StatusMeta\$.task[key].label`, so an org running
+  /// Open / In Progress / Completed / Cancelled read "To do" / "In Progress" /
+  /// "Done" / "Blocked" — the last one not merely renamed but reversed in
+  /// meaning. The Tasks list has spoken the org's vocabulary for a while; this
+  /// card had been left behind.
+  StatusMeta _taskMeta(CrmTask t) {
+    final statuses = ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [];
+    final key = _taskStatus(t);
+    // No local override: the record's own name is exact.
+    if (key == t.status) return crmTaskStatusMeta(t, statuses);
+    // Ticked in this session, so the stored name is stale — name whichever lane
+    // the new key folds onto.
+    for (final s in statuses) {
+      if (crmTaskStatusKey(name: s.name, type: s.statusType) == key) {
+        return StatusMeta(s.name, crmTaskStatusColor(s));
+      }
+    }
+    return StatusMeta$.task[key] ?? StatusMeta$.task['todo']!;
+  }
+
   /// Ticks a task done, or reopens it — `PATCH /crm/tasks/{id}/` with the org
   /// status whose type maps to the UI key.
   ///
@@ -1042,7 +1185,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           rolled.remove(t.id);
         }
         ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        if (mounted) ref.read(toastProvider.notifier).show(e.message);
+        if (mounted) ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
       if (!mounted) return;
@@ -1050,6 +1193,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       // than living on the override forever.
       ref.invalidate(leadTasksProvider(lead.id));
       ref.invalidate(crmTasksProvider);
+      // Mirror of the task detail screen's own write: its schema-driven info
+      // panel reads the raw row, so ticking here has to dirty it too or that
+      // panel shows the old status when the task is opened.
+      ref.invalidate(taskRowProvider(t.id));
     }
     if (mounted) {
       ref
@@ -1090,7 +1237,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   ),
                 ),
                 SizedBox(width: 8.w),
-                _miniPill(StatusMeta$.task[t.status] ?? StatusMeta$.task['todo']!),
+                // Reads through the override like the checkbox and title do —
+                // on the raw status the pill kept the old lane after a tick
+                // here, or after a status change made on the task detail.
+                _miniPill(_taskMeta(t)),
               ],
             ),
           ),
@@ -1108,8 +1258,19 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// Hands a call recording to the OS player. Only ever the CDN copy — the raw
+  /// Exotel link 403s for anyone but Exotel, so the mapper drops it.
+  Future<void> _openRecording(CallLog c) async {
+    final failure = await openAttachment(c.recordingUrl);
+    if (failure != null && mounted) {
+      ref.read(toastProvider.notifier).show(failure);
+    }
+  }
+
   /// One call row. The icon shows direction, the tint shows how it ended —
-  /// answered (green out / blue in), unanswered (grey) or missed (red).
+  /// answered (green out / blue in), unanswered (grey) or missed (red). A row
+  /// with a recording is tappable: the play control used to be an inert
+  /// waveform glyph, so a recorded call could be seen but never heard.
   Widget _callRow(CallLog c) {
     final icon = c.isMissed
         ? PhosphorIconsRegular.phoneX
@@ -1123,7 +1284,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             : c.isIncoming
                 ? AppColors.blueBright
                 : AppColors.success;
-    return Container(
+    final row = Container(
       padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
@@ -1146,7 +1307,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     Expanded(child: Text(c.outcome, style: AppText.bodyStrong())),
                     if (c.hasRecording) ...[
                       SizedBox(width: 6.w),
-                      Icon(PhosphorIconsRegular.waveform, size: 14.sp, color: AppColors.textPlaceholder),
+                      Icon(PhosphorIconsFill.playCircle, size: 16.sp, color: AppColors.blueBright),
                     ],
                   ],
                 ),
@@ -1164,6 +1325,12 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           ),
         ],
       ),
+    );
+    if (!c.hasRecording) return row;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openRecording(c),
+      child: row,
     );
   }
 
@@ -1198,7 +1365,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(f.agenda.isEmpty ? '${f.kind} follow-up' : f.agenda,
+                          Text(f.title.isEmpty ? '${f.kind} follow-up' : f.title,
                               style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
                           SizedBox(height: 3.h),
                           Text('${f.kind} · ${f.contact}', style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
@@ -1309,44 +1476,57 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// Hands one attachment to the OS viewer, reporting why if it cannot be.
+  Future<void> _openFile(LeadFile f) async {
+    final failure = await openAttachment(f.url);
+    if (failure != null && mounted) ref.read(toastProvider.notifier).show(failure);
+  }
+
+  /// One attachment. Tapping it opens the stored file — the row used to be
+  /// inert, so a file could be uploaded and listed but never viewed.
   Widget _fileRow(LeadFile f) {
     final uploader = MockUsers.of(f.uploadedBy).name.split(' ').first;
     final meta = [f.ext, if (uploader.isNotEmpty) uploader, if (f.uploadedAt.isNotEmpty) f.uploadedAt].join(' · ');
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38.w,
-            height: 38.w,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-            child: Icon(PhosphorIconsRegular.paperclip, size: 18.sp, color: AppColors.textSecondary),
-          ),
-          SizedBox(width: 12.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(f.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
-                SizedBox(height: 3.h),
-                Text(meta, style: AppText.caption()),
-                if (f.description.isNotEmpty) ...[
-                  SizedBox(height: 4.h),
-                  Text(f.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.4)),
-                ],
-              ],
+    return InkWell(
+      onTap: () => _openFile(f),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38.w,
+              height: 38.w,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(attachmentIcon(f.ext), size: 18.sp, color: AppColors.textSecondary),
             ),
-          ),
-        ],
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(f.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                  SizedBox(height: 3.h),
+                  Text(meta, style: AppText.caption()),
+                  if (f.description.isNotEmpty) ...[
+                    SizedBox(height: 4.h),
+                    Text(f.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.4)),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(width: 8.w),
+            Icon(PhosphorIconsRegular.arrowSquareOut, size: 16.sp, color: AppColors.textPlaceholder),
+          ],
+        ),
       ),
     );
   }
@@ -1412,44 +1592,91 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   }
 
   Widget _bottomBar(Lead lead) {
+    // Set once a call has learned that click-to-call is not available to this
+    // caller. Shown here rather than toasted: the fallback opens the device
+    // dialler immediately, so a timed message would be behind the phone app.
+    final blocked = ref.watch(exotelBlockedProvider);
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 28.h),
       decoration: const BoxDecoration(
         color: AppColors.white,
         border: Border(top: BorderSide(color: AppColors.borderCardSoft)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _callLead(lead),
-              child: Container(
-                height: 52.h,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(13.r)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(PhosphorIconsRegular.phone, size: 19.sp, color: AppColors.white),
-                    SizedBox(width: 9.w),
-                    Text('Call', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
-                  ],
+          if (blocked != null) ...[
+            _clickToCallNotice(blocked),
+            SizedBox(height: 10.h),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _callLead(lead),
+                  child: Container(
+                    height: 52.h,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(13.r)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(PhosphorIconsRegular.phone, size: 19.sp, color: AppColors.white),
+                        SizedBox(width: 9.w),
+                        Text('Call', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
+              SizedBox(width: 10.w),
+              _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
+              SizedBox(width: 10.w),
+              // Same destination as the overflow menu's Edit lead, and the same
+              // lock: a converted lead is frozen server-side (403), so offering
+              // the form would only produce a rejected save.
+              _squareAction(
+                PhosphorIconsBold.pencilSimple,
+                AppColors.white,
+                () => _editLead(lead),
+                border: const Color(0xFFB9C2D8),
+                borderWidth: 1.5,
+              ),
+            ],
           ),
-          SizedBox(width: 10.w),
-          _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
-          SizedBox(width: 10.w),
-          // Same destination as the overflow menu's Edit lead, and the same
-          // lock: a converted lead is frozen server-side (403), so offering the
-          // form would only produce a rejected save.
-          _squareAction(
-            PhosphorIconsBold.pencilSimple,
-            AppColors.white,
-            () => _editLead(lead),
-            border: const Color(0xFFB9C2D8),
-            borderWidth: 1.5,
+        ],
+      ),
+    );
+  }
+
+  /// Says why the Call button opens the phone's dialler instead of ringing
+  /// through the CRM, in the server's own words.
+  Widget _clickToCallNotice(String reason) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+      decoration: BoxDecoration(
+        color: AppColors.tintAmber,
+        borderRadius: BorderRadius.circular(11.r),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.warningDeep),
+          SizedBox(width: 9.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Click-to-call unavailable',
+                    style: AppText.custom(
+                        size: 12.5, weight: FontWeight.w700, color: AppColors.warningDeep)),
+                SizedBox(height: 2.h),
+                Text('$reason Call opens your phone\'s dialler instead, and the call is still logged.',
+                    style: AppText.custom(
+                            size: 11.5, weight: FontWeight.w500, color: AppColors.textLabelAlt)
+                        .copyWith(height: 1.4)),
+              ],
+            ),
           ),
         ],
       ),

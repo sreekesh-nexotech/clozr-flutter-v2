@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../core/auth/session_gate.dart';
 import '../../core/config/api_config.dart';
@@ -15,6 +16,7 @@ import '../../features/crm/presentation/screens/lead_detail_screen.dart';
 import '../../features/crm/presentation/screens/add_lead_screen.dart';
 import '../../features/crm/presentation/screens/customers_screen.dart';
 import '../../features/crm/presentation/screens/customer_detail_screen.dart';
+import '../../features/crm/presentation/screens/edit_customer_screen.dart';
 import '../../features/crm/presentation/screens/followups_screen.dart';
 import '../../features/crm/presentation/screens/followup_detail_screen.dart';
 import '../../features/crm/presentation/screens/tasks_screen.dart';
@@ -73,9 +75,16 @@ final shellNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Builds a route whose page has no transition animation. Tab switches inside
 /// the shell should feel instant, like the prototype's screen swaps.
+///
+/// `name` is what Sentry reads off `RouteSettings` for its navigation
+/// breadcrumbs and screen transactions — without it these pages report as
+/// `unknown`. Routes built from [_push] get it for free (GoRouter names the
+/// pages it wraps itself); the ones built here supply their own page, so they
+/// have to pass it.
 GoRoute _r(String path, Widget child) => GoRoute(
       path: path,
-      pageBuilder: (context, state) => NoTransitionPage(key: state.pageKey, child: child),
+      pageBuilder: (context, state) =>
+          NoTransitionPage(key: state.pageKey, name: path, child: child),
     );
 
 /// Builds a route with the default push transition (for detail/create/edit
@@ -88,6 +97,12 @@ GoRoute _push(String path, Widget child) => GoRoute(
 final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
   initialLocation: Routes.dashboard,
+  // Navigation breadcrumbs, so a crash report shows the path the user took to
+  // reach it. Screen-load *transactions* are left to the shell navigator's
+  // observer below: the ShellRoute is pushed once and stays for the whole
+  // session, so timing it here would produce one transaction per session
+  // instead of one per screen.
+  observers: [SentryNavigatorObserver(enableAutoTransactions: false)],
   // Auth gate — active only when a backend is configured. Mock mode keeps the
   // original boot-straight-into-the-shell behavior.
   refreshListenable: SessionGate.instance,
@@ -119,6 +134,9 @@ final GoRouter appRouter = GoRouter(
     ShellRoute(
       navigatorKey: shellNavigatorKey,
       builder: (context, state, child) => ClozrShell(child: child),
+      // Every screen behind the login gate lives on this navigator, so this is
+      // the observer that measures screen loads.
+      observers: [SentryNavigatorObserver()],
       routes: [
         // CRM
         _r(Routes.home, const CrmHomeScreen()),
@@ -127,6 +145,7 @@ final GoRouter appRouter = GoRouter(
         _push(Routes.addLead, const AddLeadScreen()),
         _r(Routes.customers, const CustomersScreen()),
         _push(Routes.customerDetail, const CustomerDetailScreen()),
+        _push(Routes.editCustomer, const EditCustomerScreen()),
         _r(Routes.followups, const FollowupsScreen()),
         _push(Routes.followupDetail, const FollowupDetailScreen()),
         // A follow-up is a Task with `is_followup=true`, so the Task edit form

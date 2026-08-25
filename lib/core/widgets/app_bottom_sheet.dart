@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../app/theme/app_colors.dart';
@@ -31,28 +33,43 @@ class ClozrSheetContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(maxHeight: 844.h * 0.84),
-      decoration: BoxDecoration(
-        color: AppColors.bgApp,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: EdgeInsets.only(top: 10.h, bottom: 4.h),
-            child: Container(
-              width: 38.w,
-              height: 5.h,
-              decoration: BoxDecoration(
-                color: AppColors.borderGrey,
-                borderRadius: BorderRadius.circular(3.r),
+    final media = MediaQuery.of(context);
+    final keyboard = media.viewInsets.bottom;
+    // Lift the sheet above the keyboard AND shrink its cap by the same amount,
+    // otherwise an 84%-tall sheet pushed up by the inset overflows the top.
+    // Without this the keyboard simply draws over the sheet's sticky footer —
+    // e.g. the filter drawer's "Name this view…" field.
+    final maxHeight = math.max(
+      0.0,
+      math.min(844.h * 0.84, media.size.height - media.padding.top - keyboard - 24.h),
+    );
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        decoration: BoxDecoration(
+          color: AppColors.bgApp,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: 10.h, bottom: 4.h),
+              child: Container(
+                width: 38.w,
+                height: 5.h,
+                decoration: BoxDecoration(
+                  color: AppColors.borderGrey,
+                  borderRadius: BorderRadius.circular(3.r),
+                ),
               ),
             ),
-          ),
-          Flexible(child: child),
-        ],
+            Flexible(child: child),
+          ],
+        ),
       ),
     );
   }
@@ -71,13 +88,21 @@ class SheetHeader extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontSize: 17.sp,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              )),
+          // Expanded, not bare: titles are often a record name (the action menu
+          // is headed by the project/customer itself), and an unconstrained one
+          // pushed the close button off the row.
+          Expanded(
+            child: Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontSize: 17.sp,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                )),
+          ),
+          SizedBox(width: 10.w),
           GestureDetector(
             onTap: onClose ?? () => Navigator.of(context).maybePop(),
             child: Container(

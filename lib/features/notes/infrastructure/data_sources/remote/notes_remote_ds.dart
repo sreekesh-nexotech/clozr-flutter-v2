@@ -15,9 +15,14 @@ class NotesRemoteDataSource {
 
   final ApiService _api;
 
-  /// Top-level notes for one record, newest-first. Replies load lazily (the
-  /// mobile panel shows threads without hydrating them), so `replies` is
-  /// always empty here.
+  /// Top-level notes for one record, newest-first, each with its thread
+  /// hydrated.
+  ///
+  /// The list endpoint returns top-level notes only — a reply never appears in
+  /// it — so every thread costs one extra request. Skipping them left replies
+  /// visible until the app restarted and then gone, which reads as data loss.
+  /// Only notes the list says have replies are fetched, and they go out
+  /// concurrently.
   Future<List<NoteEntry>> fetchNotes(String relatedTo, String relatedToId) async {
     final body = await _api.get(ApiEndpoints.notes, query: {
       'related_to': relatedTo,
@@ -26,11 +31,48 @@ class NotesRemoteDataSource {
     });
     final page = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
     final out = <NoteEntry>[];
+    final threaded = <NoteEntry>[];
     for (final row in page.results) {
       final note = noteFromJson(row);
-      if (note != null) out.add(note);
+      if (note == null) continue;
+      out.add(note);
+      // Absent `reply_count` means "unknown", not "none" — fetch rather than
+      // silently drop a thread the response simply did not describe.
+      final count = _replyCount(row);
+      if (count == null || count > 0) threaded.add(note);
     }
+    await Future.wait([
+      for (final n in threaded)
+        fetchReplies(n.id).then((replies) => n.replies
+          ..clear()
+          ..addAll(replies)),
+    ]);
     return out;
+  }
+
+  /// One note's replies, oldest-first (the order the API returns them, which is
+  /// natural reading order under the parent).
+  ///
+  /// A failed thread yields an empty list rather than throwing: the whole notes
+  /// panel falling back to empty over one bad thread loses far more than the
+  /// replies it could not load.
+  Future<List<NoteReply>> fetchReplies(String noteId) async {
+    try {
+      final body = await _api.get(ApiEndpoints.noteReplies(noteId),
+          query: {'page_size': 100});
+      final page = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
+      return [for (final row in page.results) replyFromJson(row)];
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// The row's `reply_count`, or null when it is missing or unreadable.
+  static int? _replyCount(Map<String, dynamic> row) {
+    final raw = row['reply_count'];
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
   }
 
   /// Creates a top-level note; returns the mapped created row (null on shape
@@ -114,15 +156,21 @@ class NotesRemoteDataSource {
     );
   }
 
-  /// One API reply → [NoteReply]. Time renders as "Just now" because replies
-  /// are only mapped straight after posting.
+  /// One API reply → [NoteReply].
+  ///
+  /// Time comes from `created_at`, so a thread loaded from the server reads
+  /// "2d ago" rather than claiming every old reply was just written. A reply
+  /// echoed back without one — or mapped straight after posting — is "Just
+  /// now", which is true in that case.
   static NoteReply replyFromJson(Map<String, dynamic> json,
-      {String? fallbackBody}) {
+      {String? fallbackBody, DateTime? now}) {
     final by = json['created_by'];
+    UserDirectory.registerJson(by);
     final content = _str(json['content']);
+    final created = parseApiDate(json['created_at']);
     return NoteReply(
       author: (by is Map ? _str(by['full_name']) : null) ?? 'You',
-      time: 'Just now',
+      time: created == null ? 'Just now' : relativeTime(created, now: now),
       body: (content != null && content.isNotEmpty)
           ? content
           : (fallbackBody ?? ''),

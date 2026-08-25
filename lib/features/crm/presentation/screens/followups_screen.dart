@@ -9,6 +9,7 @@ import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -129,10 +130,13 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
           child: AsyncStateView<List<Followup>>(
             value: async,
             onRetry: () => refreshFollowups(ref),
+            onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(visibleFollowupsProvider);
               if (visible.isEmpty) {
                 return ListView(
+                  // So the gesture still works with nothing to scroll.
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.checkCircle,
@@ -146,6 +150,11 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                 );
               }
               return ListView.separated(
+                // Scrolling the results puts the search keyboard away. Without
+                // it the only exit is the search field's own × chip, so the
+                // keyboard covered the rows the user had just searched for.
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 itemCount: visible.length,
                 separatorBuilder: (_, __) => SizedBox(height: 12.h),
@@ -198,7 +207,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
           rolled.remove(f.id);
         }
         ref.read(followupStatusOverrideProvider.notifier).state = rolled;
-        ref.read(toastProvider.notifier).show(e.message);
+        ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
     }
@@ -213,6 +222,27 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     await ref.read(followupFormReadyProvider.future);
     if (!mounted) return;
     await showAddFollowupSheet(ctx, ref);
+  }
+
+  /// Pull-to-refresh: the rows, the org's follow-up types and task lanes, and
+  /// both follow-up layouts (the card and the add/detail form). The catalogs and
+  /// schemas are session-scoped, so this is the only way to pick up an admin's
+  /// change short of a restart.
+  Future<void> _refresh() async {
+    refreshFollowups(ref);
+    ref.invalidate(followupTypeCatalogProvider);
+    ref.invalidate(taskStatusCatalogProvider);
+    ref.invalidate(taskPriorityCatalogProvider);
+    ref.invalidate(followupCardSchemaFutureProvider);
+    ref.invalidate(followupDetailSchemaFutureProvider);
+    // Gates the Add sheet on the org's form being ready; stale after the
+    // schemas above are dropped.
+    ref.invalidate(followupFormReadyProvider);
+    await settle([
+      ref.read(followupsProvider.future),
+      ref.read(taskStatusCatalogProvider.future),
+      ref.read(followupCardSchemaFutureProvider.future),
+    ]);
   }
 
   Future<void> _openFilters() async {

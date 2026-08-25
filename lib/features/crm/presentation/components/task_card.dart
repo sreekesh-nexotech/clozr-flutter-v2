@@ -8,6 +8,7 @@ import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../domain/entities/crm_task.dart';
+import '../../application/task_columns.dart';
 import '../../domain/entities/view_schema.dart';
 import 'crm_check_box.dart';
 
@@ -58,6 +59,9 @@ class TaskCard extends ConsumerWidget {
     // The whole lower strip is optional — with none of its three slots visible
     // it would render as a hairline over empty space.
     final showFooter = showAssignee || showDue || showPriority;
+    // Everything else the org made visible, in its order — the card no longer
+    // renders only the slots it was built with.
+    final extras = taskExtraColumns(task, schema);
 
     return ClozrCard(
       radius: 16,
@@ -84,6 +88,17 @@ class TaskCard extends ConsumerWidget {
                           color: done ? AppColors.textPlaceholder : AppColors.textPrimary,
                           height: 1.35,
                         ).copyWith(decoration: done ? TextDecoration.lineThrough : null)),
+                    // Its own line, on the org's say-so — `description` is a
+                    // distinct column in the mobile layout, not a stand-in for
+                    // the title.
+                    if (schema.shows('description') && task.description.isNotEmpty) ...[
+                      SizedBox(height: 4.h),
+                      Text(task.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(
+                              size: 12.5, weight: FontWeight.w500, color: AppColors.textLabelAlt)),
+                    ],
                     if (showType) ...[
                       SizedBox(height: 4.h),
                       Text('#${task.id} · ${task.type}',
@@ -97,6 +112,14 @@ class TaskCard extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    ],
+                    if (extras.isNotEmpty) ...[
+                      SizedBox(height: 6.h),
+                      Wrap(
+                        spacing: 6.w,
+                        runSpacing: 6.h,
+                        children: [for (final e in extras) _chip(e.label, e.value)],
+                      ),
                     ],
                   ],
                 ),
@@ -163,6 +186,28 @@ class TaskCard extends ConsumerWidget {
           SizedBox(width: 6.w),
           Text(meta.label, style: AppText.custom(size: 12, weight: FontWeight.w700, color: meta.color)),
         ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, String value) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
+      decoration: BoxDecoration(
+        color: AppColors.bgChipGrey,
+        borderRadius: BorderRadius.circular(8.r),
+      ),
+      child: RichText(
+        text: TextSpan(children: [
+          TextSpan(
+            text: '$label ',
+            style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textMuted),
+          ),
+          TextSpan(
+            text: value,
+            style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textPrimary),
+          ),
+        ]),
       ),
     );
   }

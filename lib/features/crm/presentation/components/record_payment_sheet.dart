@@ -168,7 +168,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
           ref.read(paidOverrideProvider.notifier).state = {
             ...ref.read(paidOverrideProvider)
           }..remove(next.id);
-          ref.read(toastProvider.notifier).show(e.message);
+          ref.read(toastProvider.notifier).showError(e.message);
           return;
         }
       }

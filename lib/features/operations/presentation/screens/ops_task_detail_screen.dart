@@ -7,6 +7,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/models/note.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/utils/relative_time.dart';
+import '../../../../data/api/status_keys.dart';
+import '../../../../data/api/user_directory.dart';
+import '../../../crm/application/providers/crm_notes_providers.dart';
+import '../../../crm/domain/entities/audit_entry.dart' hide AuditEntry;
+import '../../../crm/domain/entities/audit_entry.dart' as crm_audit show AuditEntry;
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -19,7 +28,6 @@ import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/providers/ops_notes_providers.dart';
 import '../../application/providers/ops_subtasks_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
@@ -37,7 +45,11 @@ class OpsTaskDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
+  /// Local override of the folded status key — what drives the pill colour and
+  /// the completed-lock. [_statusName] is the org's own name for the same
+  /// choice, which is what the picker and the write need.
   String? _status;
+  String? _statusName;
   List<String>? _waitingOn;
   final _subCtrl = TextEditingController();
   final _notesKey = GlobalKey<NotesThreadState>();
@@ -52,9 +64,20 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     final tasksAsync = ref.watch(opsTasksProvider);
-    final task = ref.watch(opsTaskByIdProvider(id));
+    final task = ref.watch(opsTaskDetailOrListProvider(id));
     final allTasks = ref.watch(opsTasksListProvider);
-    final projects = ref.watch(projectsListProvider);
+    final projects = ref.watch(allProjectsProvider);
+    // Watched, not read on demand: the status sheet needs the org's catalog,
+    // and nothing else on this screen would ever have started that fetch.
+    ref.watch(opsTaskStatusCatalogProvider);
+
+    // Gate on **this task's** record, not on the whole task list. The list is a
+    // multi-page walk, so waiting on it meant one task's page could not paint
+    // until every task in the org had downloaded. The list is still watched —
+    // it just no longer blocks.
+    final gate = task != null
+        ? const AsyncValue<List<OpsTask>>.data(<OpsTask>[])
+        : tasksAsync;
 
     return Container(
       color: AppColors.bgScreen,
@@ -63,7 +86,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
           _appBar('Task', task?.subject),
           Expanded(
             child: AsyncStateView<List<OpsTask>>(
-              value: tasksAsync,
+              value: gate,
               onRetry: () => ref.invalidate(opsTasksProvider),
               loading: () => const DetailSkeleton(),
               data: (_) {
@@ -78,7 +101,17 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 // with the standalone subtask page (#12). Dependencies remain a
                 // local working copy.
                 final subtasks = ref.watch(opsSubtasksProvider(id));
-                final waitingOn = _waitingOn ??= List.of(task.waitingOn);
+                // Seed the local working copy from the **full** record only.
+                // `??=` seeded it on the first build instead, which is the slim
+                // list row — and that carries no dependency edges at all, so
+                // the blockers stayed empty until the screen was rebuilt from
+                // scratch (which is why they showed up after a trip through
+                // Edit and back).
+                if (_waitingOn == null &&
+                    ref.watch(opsTaskDetailProvider(id)).valueOrNull != null) {
+                  _waitingOn = List.of(task.waitingOn);
+                }
+                final waitingOn = _waitingOn ?? task.waitingOn;
                 final status = _status ?? task.status;
 
                 final meta = StatusMeta$.opsTask[status] ?? StatusMeta$.opsTask['open']!;
@@ -96,20 +129,13 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                     SizedBox(height: 14.h),
                     _detailsCard(task, meta, progress, locked),
                     SizedBox(height: 14.h),
-                    _subtasksCard(task.id, subtasks, locked),
+                    _subtasksCard(task, subtasks, locked),
                     if (!locked || _hasDeps(task, waitingOn, allTasks)) ...[
                       SizedBox(height: 14.h),
                       _depsCard(task, waitingOn, allTasks, locked),
                     ],
-                    NotesThread(
-                      author: ref.watch(noteAuthorProvider),
-                      key: _notesKey,
-                      notes: ref.watch(opsNotesProvider(task.id)),
-                      onAddNote: (body, atts) => ref.read(opsNotesProvider(task.id).notifier).addNote(body, atts),
-                      onAddReply: (noteId, body) => ref.read(opsNotesProvider(task.id).notifier).addReply(noteId, body),
-                    ),
-                    SizedBox(height: 14.h),
-                    OpsAuditLog(entries: _audit(task, waitingOn)),
+                    _notes(task.id),
+                    _auditLog(task, waitingOn),
                   ],
                 );
               },
@@ -288,10 +314,16 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   Widget _detailsCard(OpsTask t, StatusMeta meta, int progress, bool locked) {
     final valueColor = locked ? AppColors.textPlaceholder : AppColors.textPrimary;
     final rows = <(String, String)>[
+      // `task_code` ("PRJ-1010-t3"), display-only and stable. Absent on a
+      // standalone task and on the slim list row, so the row waits for the
+      // retrieve rather than showing the UUID.
+      if (t.code.isNotEmpty) ('Task ID', t.code),
       ('Expected start', '${t.start.replaceAll(' 2026', '')}${t.startTime.isNotEmpty ? ' · ${t.startTime}' : ''}'),
       ('Expected end', '${t.end.replaceAll(' 2026', '')}${t.endTime.isNotEmpty ? ' · ${t.endTime}' : ''}'),
-      ('Expected time', '${t.expHrs} hrs'),
-      ('Task weight', '${t.weight}'),
+      // Detail-only decimals, so both wait for the retrieve rather than
+      // printing the "0 hrs" / "1" the mapper used to hardcode.
+      if (t.expHrs != null) ('Expected time', '${opsDecimalLabel(t.expHrs!)} hrs'),
+      if (t.weight != null) ('Task weight', opsDecimalLabel(t.weight!)),
       ('Milestone', t.milestone ? 'Yes' : 'No'),
       ('Department', t.dept),
     ];
@@ -328,7 +360,10 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
             SizedBox(height: 4.h),
             Text('Calculated from subtasks', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
           ],
-          if (t.status == 'completed') ...[
+          // Only when the record actually carries one of them — a completed
+          // task whose dates were never stamped would otherwise read
+          // "started — · completed —".
+          if (t.status == 'completed' && (t.actualStart != null || t.actualEnd != null)) ...[
             SizedBox(height: 4.h),
             Text('Actual: started ${t.actualStart ?? '—'} · completed ${t.actualEnd ?? '—'}',
                 style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
@@ -374,8 +409,13 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     );
   }
 
-  Widget _subtasksCard(String taskId, List<Subtask> subs, bool locked) {
-    final done = subs.where((s) => s.done).length;
+  Widget _subtasksCard(OpsTask t, List<Subtask> subs, bool locked) {
+    final taskId = t.id;
+    // The child rows are their own fetch (§3C), so until they land the record's
+    // own `subtask_done_count` / `subtask_count` are what the counter has —
+    // showing "0/0 done" on a task the server says has five would be wrong.
+    final done = subs.isEmpty ? t.subtaskDoneCount : subs.where((s) => s.done).length;
+    final total = subs.isEmpty ? t.subtaskCount : subs.length;
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -387,8 +427,8 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
               SizedBox(width: 7.w),
               Text('Subtasks', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
               const Spacer(),
-              if (subs.isNotEmpty)
-                Text('$done/${subs.length} done', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
+              if (total > 0)
+                Text('$done/$total done', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
             ],
           ),
           for (int i = 0; i < subs.length; i++) _subtaskRow(taskId, i, subs[i], locked),
@@ -450,7 +490,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         child: Row(
           children: [
             GestureDetector(
-              onTap: locked ? null : () => ref.read(opsSubtasksProvider(taskId).notifier).toggle(index),
+              onTap: locked ? null : () => _toggleSubtask(taskId, index),
               child: Container(
                 width: 22.w,
                 height: 22.w,
@@ -479,14 +519,18 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
               Text(s.due, style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
             ],
             SizedBox(width: 8.w),
-            Container(
-              width: 24.w,
-              height: 24.w,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-              child: Text(MockUsers.of(s.who).initials, style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
-            ),
-            SizedBox(width: 6.w),
+            // Unassigned subtasks are ordinary — the avatar is dropped rather
+            // than drawn as an "Unknown" placeholder.
+            if (s.who.isNotEmpty) ...[
+              Container(
+                width: 24.w,
+                height: 24.w,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                child: Text(MockUsers.of(s.who).initials, style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
+              ),
+              SizedBox(width: 6.w),
+            ],
             Icon(PhosphorIconsRegular.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
           ],
         ),
@@ -494,24 +538,110 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     );
   }
 
+  /// Drops the local copy so the card re-seeds from the refetched record —
+  /// otherwise the working list would keep showing the pre-edit set.
+  void _refreshDeps(String taskId) {
+    setState(() => _waitingOn = null);
+    ref.invalidate(opsTaskDetailProvider(taskId));
+    ref.invalidate(opsTasksProvider);
+    ref.invalidate(opsTasksScopedProvider);
+  }
+
+  /// `DELETE /projects/task-dependencies/{edge}/`. The ✕ used to mutate the
+  /// local list only, so the blocker came straight back on the next load.
+  Future<void> _removeDep(OpsTask t, String blockerId, String? edgeId) async {
+    if (!ApiConfig.apiEnabled) {
+      setState(() => _waitingOn?.remove(blockerId));
+      return;
+    }
+    // No edge id means this row came from a slim list row rather than the
+    // record, so there is nothing to delete by. Refetch instead of pretending.
+    if (edgeId == null || edgeId.isEmpty) {
+      _refreshDeps(t.id);
+      return;
+    }
+    try {
+      await ref.read(opsTasksRepositoryProvider).removeDependency(edgeId);
+      if (!mounted) return;
+      _refreshDeps(t.id);
+      ref.read(toastProvider.notifier).show('Dependency removed');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  /// `POST /projects/task-dependencies/`. Picks the blocker from the org's
+  /// tasks, minus this task and the ones it already waits on.
+  Future<void> _addDep(OpsTask t, List<String> waitingOn, List<OpsTask> all) async {
+    final taken = {t.id, ...waitingOn};
+    final options = [
+      for (final x in all)
+        if (!taken.contains(x.id)) (value: x.id, label: x.subject),
+    ];
+    if (options.isEmpty) {
+      ref.read(toastProvider.notifier).show('No other tasks to depend on');
+      return;
+    }
+    final chosen = await showOpsOptionPicker(
+      context: context,
+      title: 'Waiting on',
+      options: options,
+      currentValue: '',
+    );
+    if (chosen == null || !mounted) return;
+
+    if (!ApiConfig.apiEnabled) {
+      setState(() => _waitingOn = [...waitingOn, chosen]);
+      return;
+    }
+    try {
+      await ref.read(opsTasksRepositoryProvider).addDependency(taskId: t.id, dependsOn: chosen);
+      if (!mounted) return;
+      _refreshDeps(t.id);
+      ref.read(toastProvider.notifier).show('Dependency added');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      // A cycle, a duplicate or a cross-project blocker all land here, and the
+      // backend's message is the only thing that says which.
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
   bool _hasDeps(OpsTask t, List<String> waitingOn, List<OpsTask> all) {
-    if (waitingOn.isNotEmpty) return true;
+    if (waitingOn.isNotEmpty || t.blocking.isNotEmpty) return true;
     return all.any((x) => x.waitingOn.contains(t.id));
   }
 
   Widget _depsCard(OpsTask t, List<String> waitingOn, List<OpsTask> all, bool locked) {
+    // The record labels its own edges, so a chip needs neither a second fetch
+    // nor a scan of the full task list. `all` is only the mock-mode fallback.
+    final labelled = {for (final d in t.deps) d.taskId: d};
+
     final waitChips = <Widget>[];
     for (final id in waitingOn) {
+      final edge = labelled[id];
       final wt = all.where((x) => x.id == id).firstOrNull;
-      final unres = wt != null && wt.status != 'completed' && wt.status != 'cancelled';
+      final unres = edge != null
+          ? !edge.isClosed
+          : wt != null && wt.status != 'completed' && wt.status != 'cancelled';
+      final label = edge?.subject.isNotEmpty == true ? edge!.subject : (wt?.subject ?? id);
       waitChips.add(_depChip(
-        label: wt?.subject ?? id,
+        label: label,
         unres: unres,
-        onOpen: wt == null ? null : () => context.push('${Routes.opsTaskDetail}?id=${wt.id}'),
-        onRemove: locked ? null : () => setState(() => waitingOn.remove(id)),
+        // Openable off the edge alone — the blocker need not be in the loaded
+        // list, and often is not.
+        onOpen: () => context.push('${Routes.opsTaskDetail}?id=$id'),
+        onRemove: locked ? null : () => _removeDep(t, id, edge?.edgeId),
       ));
     }
-    final blocking = all.where((x) => x.waitingOn.contains(t.id)).toList();
+
+    final blocking = t.blocking.isNotEmpty
+        ? [for (final d in t.blocking) (id: d.taskId, subject: d.subject)]
+        : [
+            for (final x in all.where((x) => x.waitingOn.contains(t.id)))
+              (id: x.id, subject: x.subject)
+          ];
     final showWait = !locked || waitChips.isNotEmpty;
 
     return ClozrCard(
@@ -535,7 +665,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 ...waitChips,
                 if (!locked)
                   GestureDetector(
-                    onTap: () => ref.read(toastProvider.notifier).show('Add a dependency'),
+                    onTap: () => _addDep(t, waitingOn, all),
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 7.h),
                       decoration: BoxDecoration(
@@ -613,6 +743,48 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     );
   }
 
+  /// The task's own audit trail — `GET /projects/tasks/{id}/activity/` (§3B).
+  ///
+  /// This card used to be five hardcoded rows naming two prototype users and
+  /// fixed June dates, on every task in the org.
+  ///
+  /// In API mode the real feed is the only source: an empty one means the task
+  /// genuinely has no recorded history (or the call failed), and no card at all
+  /// beats a fabricated timeline. The derived rows survive for mock mode, which
+  /// has no endpoint behind it.
+  Widget _auditLog(OpsTask t, List<String> waitingOn) {
+    final entries = ref.watch(opsTaskActivityProvider(t.id)).valueOrNull ?? const [];
+    if (entries.isEmpty) {
+      if (ApiConfig.apiEnabled) return const SizedBox.shrink();
+      return Padding(
+        padding: EdgeInsets.only(top: 14.h),
+        child: OpsAuditLog(entries: _audit(t, waitingOn)),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.only(top: 14.h),
+      child: OpsAuditLog(entries: [for (final e in entries) _auditRow(e)]),
+    );
+  }
+
+  /// One feed row as a timeline entry. `summary` is already a sentence — the
+  /// server humanizes this feed, unlike the raw-diff audit endpoint — so only
+  /// the icon and the actor/time line are chosen here.
+  AuditEntry _auditRow(crm_audit.AuditEntry e) {
+    final (icon, tone, bg) = switch (e.kind) {
+      AuditEventKind.created => (PhosphorIconsRegular.plusCircle, AppColors.navy, AppColors.tintNavy),
+      AuditEventKind.statusChanged => (PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.blueSubtle),
+      AuditEventKind.noteAdded => (PhosphorIconsRegular.note, AppColors.pending, AppColors.tintPurple),
+      AuditEventKind.childAdded => (PhosphorIconsRegular.listChecks, AppColors.success, AppColors.tintGreen),
+      AuditEventKind.deleted => (PhosphorIconsRegular.trash, AppColors.error, AppColors.tintRed),
+      _ => (PhosphorIconsRegular.pencilSimple, AppColors.blueBright, AppColors.blueSubtle),
+    };
+    final when = e.at == null ? '' : relativeTime(e.at);
+    final sub = [e.actor, when].where((s) => s.isNotEmpty).join(' · ');
+    return AuditEntry(icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
+  }
+
+  /// The prototype's derived rows. Mock mode only — see [_auditLog].
   List<AuditEntry> _audit(OpsTask t, List<String> waitingOn) {
     final first = t.assignees.isEmpty ? '—' : MockUsers.of(t.assignees.first).name;
     final entries = <AuditEntry>[];
@@ -630,16 +802,142 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     return entries;
   }
 
-  void _addSubtask(String taskId) {
+  /// `PATCH /projects/tasks/{subtask_id}/ {"status": …}` (§3C).
+  ///
+  /// A tick can be refused: closing the last open subtask of a parent that
+  /// still has open dependencies comes back as a `400`, and that message is the
+  /// whole explanation.
+  Future<void> _toggleSubtask(String taskId, int index) async {
+    final err = await ref.read(opsSubtasksProvider(taskId).notifier).toggle(index);
+    if (!mounted || err == null) return;
+    ref.read(toastProvider.notifier).showError(err);
+  }
+
+  /// `POST /projects/tasks/` with `parent_task` (§3C). The field is cleared
+  /// only once the write lands, so a refusal keeps what was typed.
+  Future<void> _addSubtask(String taskId) async {
     final text = _subCtrl.text.trim();
     if (text.isEmpty) return;
-    ref.read(opsSubtasksProvider(taskId).notifier).add(text);
+    final err = await ref.read(opsSubtasksProvider(taskId).notifier).add(text);
+    if (!mounted) return;
+    if (err != null) {
+      ref.read(toastProvider.notifier).showError(err);
+      return;
+    }
     _subCtrl.clear();
+  }
+
+  /// The original's assignees as real user ids, or null when none survive —
+  /// `'me'` is a UI sentinel and prototype seed ids must never reach the API.
+  List<String>? _copyableAssignees(OpsTask t) {
+    final out = [
+      for (final id in t.assignees)
+        if (UserDirectory.realUserId(id) case final real?) real,
+    ];
+    return out.isEmpty ? null : out;
+  }
+
+  /// Copies the task with a fresh subject.
+  ///
+  /// There is no duplicate endpoint — it is a plain `POST /projects/tasks/` of
+  /// the same field set. Deliberately *not* copied: the dependency edges,
+  /// subtasks and progress, which belong to the original's own history. The
+  /// copy opens for editing rather than being filed silently.
+  Future<void> _duplicate(OpsTask t) async {
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Task duplicated');
+      return;
+    }
+    try {
+      final created = await ref.read(opsTasksRepositoryProvider).createOpsTask({
+        'subject': '${t.subject} (copy)',
+        if (t.projId.isNotEmpty) 'project': t.projId,
+        if (t.groupId.isNotEmpty) 'task_group': t.groupId,
+        if (t.typeId.isNotEmpty) 'type': t.typeId,
+        'priority': t.pri,
+        'description': t.desc,
+        'is_milestone': t.milestone,
+        if (t.dept.isNotEmpty) 'department': t.dept,
+        // Status is left out on purpose: a copy starts at the org's default
+        // rather than inheriting "Completed" from the task it came from.
+        if (_copyableAssignees(t) case final a?) 'assignees': a,
+        if (t.endISO.isNotEmpty) 'exp_end_date': t.endISO,
+      });
+      if (!mounted) return;
+      ref.invalidate(opsTasksProvider);
+      ref.invalidate(opsTasksScopedProvider);
+      ref.read(toastProvider.notifier).show('Task duplicated');
+      if (created != null) context.push('${Routes.editTask}?id=${created.id}');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  /// `DELETE /projects/tasks/{id}/`, behind a confirm.
+  Future<void> _delete(OpsTask t) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('"${t.subject}" will be removed for everyone. '
+            'This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Task deleted');
+      context.pop();
+      return;
+    }
+    try {
+      await ref.read(opsTasksRepositoryProvider).deleteOpsTask(t.id);
+      if (!mounted) return;
+      ref.invalidate(opsTasksProvider);
+      ref.invalidate(opsTasksScopedProvider);
+      ref.read(toastProvider.notifier).show('Task deleted');
+      context.pop();
+    } on AppError catch (e) {
+      if (!mounted) return;
+      // A 409 names the tasks depending on this one. The menu already disables
+      // delete for blockers it can see, but the server sees edges this screen
+      // does not — so the message still has to land.
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
+  /// `GET/POST /crm/notes/` with `related_to=project_task`.
+  ///
+  /// This used to be an in-memory store seeded from the record's mock notes, so
+  /// nothing typed here ever left the device.
+  ///
+  /// Note the discriminator: `project_task` is the PMO task, `task` is the CRM
+  /// interactions task — a different resource. Both models are named "task"
+  /// underneath, so the wrong value quietly returns the wrong thread.
+  Widget _notes(String taskId) {
+    final seed = CrmNotesSeed(taskId, () => const <NoteEntry>[], apiModel: 'project_task');
+    return NotesThread(
+      key: _notesKey,
+      author: ref.watch(noteAuthorProvider),
+      notes: ref.watch(crmNotesProvider(seed)),
+      onAddNote: (body, atts) =>
+          ref.read(crmNotesProvider(seed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) =>
+          ref.read(crmNotesProvider(seed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
+    );
   }
 
   Future<void> _openMenu() async {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final task = ref.read(opsTaskByIdProvider(id));
+    final task = ref.read(opsTaskDetailOrListProvider(id));
     if (task == null) return;
     final status = _status ?? task.status;
     final locked = status == 'completed' || status == 'cancelled';
@@ -675,7 +973,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         MenuAction(
           icon: PhosphorIconsRegular.copy,
           label: 'Duplicate task',
-          onTap: () => ref.read(toastProvider.notifier).show('Duplicate task — coming soon'),
+          onTap: () => _duplicate(task),
         ),
         MenuAction(
           icon: PhosphorIconsRegular.trash,
@@ -683,23 +981,100 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
           destructive: true,
           enabled: !blockedDel,
           sublabel: blockedDel ? 'Resolve subtasks & dependencies first' : null,
-          onTap: () => ref.read(toastProvider.notifier).show('Delete task — coming soon'),
+          onTap: () => _delete(task),
         ),
       ],
     );
   }
 
+  /// `PATCH /projects/tasks/{id}/ {"status": "<uuid>"}`.
+  ///
+  /// This used to offer the built-in vocabulary and only set local state, so
+  /// the pill changed on screen and the server never heard about it.
+  ///
+  /// Changing status is the one edit a closed task always accepts — it *is* the
+  /// reopen (§3A) — so this stays enabled while Edit is locked.
   Future<void> _openStatusSheet() async {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final task = ref.read(opsTaskByIdProvider(id));
+    final task = ref.read(opsTaskDetailOrListProvider(id));
     if (task == null) return;
+
+    // Wait for the catalog before opening. `read` alone returned whatever was
+    // cached — which on a detail screen reached directly is nothing, so every
+    // pick then failed to resolve to an id.
+    await ref.read(opsTaskStatusCatalogProvider.future);
+    if (!mounted) return;
+
+    // The org's own statuses, keyed **and labelled** by their own name; the
+    // built-ins only stand in in mock mode. Borrowing the built-in `label` here
+    // meant the sheet listed "Open"/"Working" while returning the org's names.
+    final catalog = ref.read(opsTaskStatusOptionsProvider);
+    final statuses = <String, StatusMeta>{
+      if (catalog.isEmpty)
+        ...StatusMeta$.opsTask
+      else
+        for (final s in catalog)
+          s.name: StatusMeta(
+            s.name,
+            (StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)] ??
+                    StatusMeta$.opsTask['open']!)
+                .color,
+          ),
+    };
+    final current =
+        _statusName ?? (task.statusName.isNotEmpty ? task.statusName : task.status);
+
     final chosen = await showOpsStatusPicker(
       context: context,
       title: 'Task status',
-      statuses: StatusMeta$.opsTask,
-      currentKey: _status ?? task.status,
+      statuses: statuses,
+      // Matched case-insensitively: the stored value may be the folded key
+      // ('open') while the catalog keys are the org's names ('Open').
+      currentKey: statuses.keys.firstWhere(
+        (k) => k.toLowerCase() == current.trim().toLowerCase(),
+        orElse: () => current,
+      ),
     );
-    if (chosen != null && mounted) setState(() => _status = chosen);
+    if (chosen == null || !mounted) return;
+
+    // The pill and the lock read the folded key; the picker and the write use
+    // the org's name. Keep both in step.
+    void applyLocally() => setState(() {
+          _statusName = chosen;
+          _status = catalog.isEmpty ? chosen : opsTaskStatusKey(name: chosen);
+        });
+
+    if (!ApiConfig.apiEnabled) {
+      applyLocally();
+      return;
+    }
+    final statusId = catalog
+        .where((s) => s.name.trim().toLowerCase() == chosen.trim().toLowerCase())
+        .map((s) => s.id)
+        .firstOrNull;
+    if (statusId == null) {
+      // No id to send. Better to say so than to move the pill and drop the
+      // write — and name the actual cause, which is almost always that the
+      // org's status list never loaded.
+      ref.read(toastProvider.notifier).showError(catalog.isEmpty
+          ? "Couldn't load your organisation's task statuses"
+          : "Couldn't match “$chosen” to a status");
+      return;
+    }
+    try {
+      await ref.read(opsTasksRepositoryProvider).updateOpsTask(task.id, {'status': statusId});
+      if (!mounted) return;
+      applyLocally();
+      ref.invalidate(opsTaskDetailProvider(task.id));
+      ref.invalidate(opsTasksProvider);
+      ref.invalidate(opsTasksScopedProvider);
+      ref.read(toastProvider.notifier).show('Status updated');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      // Completing is refused while subtasks or dependencies are still open,
+      // and the 400 names the blockers — that message is the whole explanation.
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
   }
 }
 

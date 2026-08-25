@@ -9,19 +9,22 @@ import '../../../../data/mock/mock_users.dart';
 import '../../domain/entities/member.dart';
 import '../../domain/entities/team.dart';
 
-/// The Teams list card — team glyph + name/zone/count, an "Add" button, then a
-/// hairline over the team lead and an overlapping member-avatar stack.
+/// The Teams list card — team glyph + name/zone/count, "Edit" and "Add"
+/// buttons, then a hairline over the team lead and an overlapping member-avatar
+/// stack.
 class TeamCard extends StatelessWidget {
   const TeamCard({
     super.key,
     required this.team,
     required this.membersById,
     required this.onAdd,
+    required this.onEdit,
   });
 
   final Team team;
   final Map<String, Member> membersById;
   final VoidCallback onAdd;
+  final VoidCallback onEdit;
 
   Color _color(String id) => MockUsers.memberColors[id] ?? AppColors.navy;
 
@@ -48,7 +51,12 @@ class TeamCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(team.name, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    // Ellipsised: the row now carries two buttons, so a long
+                    // team name has less to work with than it used to.
+                    Text(team.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
                     SizedBox(height: 2.h),
                     Row(
                       children: [
@@ -65,7 +73,9 @@ class TeamCard extends StatelessWidget {
                   ],
                 ),
               ),
-              SizedBox(width: 10.w),
+              SizedBox(width: 8.w),
+              _editButton(),
+              SizedBox(width: 8.w),
               _addButton(),
             ],
           ),
@@ -104,6 +114,26 @@ class TeamCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// Icon-only, unlike "Add": a second labelled button would eat the width the
+  /// team name needs, and the pencil sits in the same chrome so the pair still
+  /// reads as one control group.
+  Widget _editButton() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onEdit,
+      child: Container(
+        height: 34.h,
+        width: 34.w,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(9.r),
+          border: Border.all(color: AppColors.borderCard),
+        ),
+        child: Icon(PhosphorIconsRegular.pencilSimple, size: 15.sp, color: AppColors.textSecondary),
       ),
     );
   }

@@ -5,6 +5,14 @@ import 'package:equatable/equatable.dart';
 class CrmTask extends Equatable {
   final String id;
   final String title;
+
+  /// The task's `description`. A distinct field, never folded into [title]:
+  /// the org's mobile layout lists both, and a headline that silently became
+  /// the description is exactly the bug follow-ups had.
+  ///
+  /// Absent from the default list payload — it arrives only on the mobile card
+  /// projection and on the detail retrieve.
+  final String description;
   final String type; // key into TASKTYPES — Call / Email / Meeting / …
   final String? leadId;
   final String status; // key into StatusMeta$.task — todo / inprogress / blocked / done
@@ -24,9 +32,18 @@ class CrmTask extends Equatable {
   final String due; // "16 Jun 2026"
   final String dueNote; // "2d overdue" / "Today" / "In 2d" / ""
 
+    /// The row exactly as the API sent it.
+  ///
+  /// The typed fields cover the card's fixed frame; this is what makes the rest
+  /// dynamic — a column the org adds to its layout is read from here by name,
+  /// so a field nobody anticipated still renders.
+  final Map<String, dynamic> raw;
+
   const CrmTask({
+    this.raw = const {},
     required this.id,
     required this.title,
+    this.description = '',
     required this.type,
     required this.leadId,
     required this.status,

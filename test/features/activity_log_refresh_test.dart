@@ -44,8 +44,8 @@ class _CountingDs implements AuditLogRemoteDataSource {
   Future<List<AuditEntry>> fetchFor({
     required String modelName,
     required String recordId,
+    String recordLabel = 'Lead',
     Map<String, String> statusNames = const {},
-    int limit = 50,
   }) async {
     calls++;
     return const [];

@@ -37,7 +37,7 @@ class _FakeRepo implements MessagesRepository {
       ];
 
   @override
-  Future<List<ChatMessage>> getMessages(String id) async => const [];
+  Future<ChatThread> getThread(String id) async => const ChatThread();
 
   @override
   Future<void> markRead(String id) async {}

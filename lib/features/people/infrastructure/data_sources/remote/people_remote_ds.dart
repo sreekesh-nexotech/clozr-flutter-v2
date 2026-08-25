@@ -5,8 +5,10 @@ import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
 import '../../../../../core/network/app_error.dart';
 import '../../../../../core/utils/inr_format.dart';
+import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../domain/entities/member.dart';
+import '../../../domain/entities/module_catalog.dart';
 import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team.dart';
 
@@ -28,9 +30,33 @@ class PeopleRemoteDataSource {
 
   // ── Reads (raw rows; the repository caches these) ──
 
-  /// `GET /management/users/` — org member list, paginated.
-  Future<List<Map<String, dynamic>>> fetchMemberRows() =>
-      _pagedRows(ApiEndpoints.users);
+  /// `GET /management/users/` — the org's members, paginated.
+  ///
+  /// **Two calls, merged.** The endpoint returns only **active** members unless
+  /// `is_active` is supplied (`members.md` §Status), so the plain list can never
+  /// contain a deactivated or a not-yet-activated member. The second pass with
+  /// `?is_active=false` is what makes the Status filter mean anything — without
+  /// it the Invited and Deactivated chips match nothing, because those rows were
+  /// never fetched.
+  ///
+  /// The second pass is best-effort: it is the *extra* half of the list, so a
+  /// failure there should cost the inactive rows, not the whole screen.
+  Future<List<Map<String, dynamic>>> fetchMemberRows() async {
+    final rows = await _pagedRows(ApiEndpoints.users);
+    try {
+      rows.addAll(
+        await _pagedRows(ApiEndpoints.users, query: {'is_active': false}),
+      );
+    } on AppError {
+      // Keep the active members rather than failing the list.
+    }
+    // Defensive: an org that ignores the flag would otherwise double every row.
+    final seen = <String>{};
+    return [
+      for (final row in rows)
+        if (seen.add('${row['user_id']}')) row,
+    ];
+  }
 
   /// `GET /management/teams/` — org team list, paginated.
   Future<List<Map<String, dynamic>>> fetchTeamRows() =>
@@ -49,15 +75,64 @@ class PeopleRemoteDataSource {
   /// member, all-time. 403-safe: non-admins without KPI access get null (the
   /// detail screen simply keeps the entity's zero defaults). Never called at
   /// list time — that would be an N+1.
-  Future<Map<String, dynamic>?> fetchMemberPerformance(String userId) async {
+  Future<Map<String, dynamic>?> fetchMemberPerformance(
+    String userId, {
+    String period = 'all_time',
+  }) async {
+    if (userId.isEmpty) return null;
     try {
       final body = await _api.get(
         ApiEndpoints.memberPerformance,
-        query: {'user_id': userId, 'period': 'all_time'},
+        query: {'user_id': userId, 'period': period},
       );
       return body is Map<String, dynamic> ? body : null;
     } on AppError {
       return null; // Performance is a nicety, never a blocker.
+    }
+  }
+
+  /// `GET /management/users/{user_id}/` — one member, enriched
+  /// (`members.md` §4.1).
+  ///
+  /// Worth its own call because the paginated list omits what the detail page
+  /// needs: `scope` (a per-user permission lookup the list will not run),
+  /// `is_protected`, `profile.designation`, `profile.timezone` and
+  /// `territories`.
+  ///
+  /// Best-effort — the screen already has the list row to fall back on, so a
+  /// failure costs the enrichment rather than the page.
+  Future<Map<String, dynamic>?> fetchMemberRow(String userId) async {
+    if (userId.isEmpty) return null;
+    try {
+      final body = await _api.get(ApiEndpoints.user(userId));
+      return body is Map<String, dynamic> ? body : null;
+    } on AppError {
+      return null;
+    }
+  }
+
+  /// `GET /management/users/{user_id}/activity/` — the member's activity feed
+  /// (`members.md` §4.3), newest first.
+  ///
+  /// Composed server-side from reliable lifecycle events (`joined` off
+  /// `date_joined`, `login` off `last_login`) plus best-effort audit rows for
+  /// role assignments and updates. The doc notes the audit half is written
+  /// asynchronously and may be absent if the worker is down — joined/login
+  /// always render.
+  ///
+  /// 403-safe like the performance call: a role without `view_user_management`
+  /// gets an empty list rather than an error, and the card falls back.
+  Future<List<Map<String, dynamic>>> fetchMemberActivity(String userId) async {
+    if (userId.isEmpty) return const [];
+    try {
+      final body = await _api.get(ApiEndpoints.userActivity(userId),
+          query: {'limit': 20});
+      final results = body is Map<String, dynamic> ? body['results'] : body;
+      return results is List
+          ? results.whereType<Map<String, dynamic>>().toList()
+          : const [];
+    } on AppError {
+      return const [];
     }
   }
 
@@ -72,6 +147,7 @@ class PeopleRemoteDataSource {
     required String name,
     String? phone,
     String? roleId,
+    String? managerId,
   }) async {
     final parts = name.trim().split(RegExp(r'\s+'));
     final firstName = parts.isEmpty ? '' : parts.first;
@@ -83,7 +159,45 @@ class PeopleRemoteDataSource {
       'last_name': lastName,
       if (phone != null && phone.isNotEmpty) 'phone': phone,
       if (roleId != null && roleId.isNotEmpty) 'role_id': roleId,
+      if (managerId != null && managerId.isNotEmpty) 'manager_id': managerId,
     });
+  }
+
+  /// `PATCH /management/users/{user_id}/` — edit a member (`members.md`
+  /// §Edit member).
+  ///
+  /// Partial by design: only the fields the form actually changed are sent, so
+  /// an untouched value is never rewritten with a stale copy.
+  ///
+  /// Two behaviours the caller has to know about, both documented:
+  /// * `role_id` **replaces** the member's existing role.
+  /// * `manager_id` closes the current hierarchy row and opens a new one,
+  ///   recalculating the subtree's levels.
+  ///
+  /// Errors are not swallowed — a duplicate email is a `400` on the `email`
+  /// key, and the message is the only thing that explains a failed save.
+  Future<void> updateMember(
+    String userId, {
+    String? name,
+    String? email,
+    String? phone,
+    String? roleId,
+    String? managerId,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null && name.trim().isNotEmpty) {
+      final parts = name.trim().split(RegExp(r'\s+'));
+      body['first_name'] = parts.first;
+      body['last_name'] = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
+    if (email != null && email.trim().isNotEmpty) body['email'] = email.trim();
+    // Sent even when blank: clearing a phone is a real edit, and the profile
+    // write accepts an empty string for it.
+    if (phone != null) body['phone'] = phone.trim();
+    if (roleId != null && roleId.isNotEmpty) body['role_id'] = roleId;
+    if (managerId != null && managerId.isNotEmpty) body['manager_id'] = managerId;
+    if (body.isEmpty) return;
+    await _api.patch(ApiEndpoints.user(userId), body: body);
   }
 
   /// `POST /management/teams/` — create a team. Only non-null fields are sent.
@@ -91,27 +205,144 @@ class PeopleRemoteDataSource {
     required String name,
     String? description,
     String? leadUserId,
+    List<String> memberIds = const [],
   }) async {
     final body = await _api.post(ApiEndpoints.teams, body: {
       'name': name,
       if (description != null && description.isNotEmpty)
         'description': description,
       if (leadUserId != null && leadUserId.isNotEmpty) 'manager_id': leadUserId,
+      // Write-only on create (`team-api.md` §1.2): the members to seed the team
+      // with. Without it a new team is always created empty and every member has
+      // to be added one at a time afterwards.
+      if (memberIds.isNotEmpty) 'member_ids': memberIds,
     });
     return body is Map<String, dynamic> ? teamFromJson(body, const {}) : null;
   }
 
-  /// `POST /management/roles/` — create a custom role granting the CRM card
-  /// with hierarchy visibility (the mobile Add-role sheet's fixed grant).
-  Future<void> createRole({required String name, String? description}) async {
-    await _api.post(ApiEndpoints.roles, body: {
-      'name': name,
-      if (description != null && description.isNotEmpty)
-        'description': description,
-      'module_groups': [
-        {'group': 'crm', 'visibility': 'hierarchy'},
-      ],
-    });
+  /// `PATCH /management/teams/{team_id}/` — edit a team (`team-api.md` §1.5).
+  ///
+  /// Partial by design: only the fields the sheet actually changed are sent, so
+  /// clearing the lead is distinguishable from not touching it. `member_ids` is
+  /// a **full replacement** of the roster, not an addition (§1.5) — which is
+  /// what an edit form showing the whole roster wants, and why it is only sent
+  /// when the picker was opened and changed.
+  Future<void> updateTeam(String id, Map<String, dynamic> fields) async {
+    if (id.isEmpty || fields.isEmpty) return;
+    await _api.patch(ApiEndpoints.team(id), body: fields);
+  }
+
+  /// `POST /management/teams/{team_id}/members/` — add one member
+  /// (`team-api.md` §2.2).
+  ///
+  /// One call per user; the endpoint takes a single `user_id`. "Already a
+  /// member" comes back as a 400, which the caller treats as success rather
+  /// than an error — the desired end state is the same.
+  Future<void> addTeamMember({required String teamId, required String userId}) async {
+    if (teamId.isEmpty || userId.isEmpty) return;
+    try {
+      await _api.post(ApiEndpoints.teamMembers(teamId), body: {'user_id': userId});
+    } on AppError catch (e) {
+      final already = e.message.toLowerCase().contains('already');
+      if (e.type != AppErrorType.validation || !already) rethrow;
+    }
+  }
+
+  /// `DELETE /management/roles/{role_id}/` — delete a custom role
+  /// (`roles.md` §6).
+  ///
+  /// Errors are **not** swallowed: a seeded role is a 403 and a role that still
+  /// has members is a 409 carrying the count, and the screen has to say which.
+  Future<void> deleteRole(String id) async {
+    if (id.isEmpty) return;
+    await _api.delete(ApiEndpoints.role(id));
+  }
+
+  /// `GET /management/permissions/module-catalog/` — the capability cards and
+  /// visibility scopes the Add role form offers (`roles.md` §1).
+  ///
+  /// Best-effort: any failure yields the empty catalog, which the form reads as
+  /// "use the built-in card set" rather than blocking role creation on it.
+  Future<ModuleCatalog> fetchModuleCatalog() async {
+    try {
+      return ModuleCatalog.fromJson(await _api.get(ApiEndpoints.moduleCatalog));
+    } on Object {
+      return ModuleCatalog.empty;
+    }
+  }
+
+  /// `POST /management/roles/` — creates a custom role granting the chosen
+  /// capability cards at the chosen record scope.
+  Future<void> createRole({
+    required String name,
+    String? description,
+    Set<String> groups = const {},
+    String visibility = 'hierarchy',
+  }) async {
+    await _api.post(
+      ApiEndpoints.roles,
+      body: roleCreateBody(
+        name: name,
+        description: description,
+        groups: groups,
+        visibility: visibility,
+      ),
+    );
+  }
+
+  /// `PATCH /management/roles/{id}/` — edits a **custom** role (`roles.md` §5).
+  ///
+  /// Same body as create. Supplying `module_groups` **replaces** the role's
+  /// capability set rather than adding to it, so the form always sends the
+  /// complete set of ticked cards.
+  ///
+  /// Errors are deliberately not swallowed: a seeded role rejects the edit with
+  /// `403 "Seeded roles cannot be edited."`, and a duplicate name is a `400` —
+  /// both are the only explanation the user would get.
+  Future<void> updateRole(
+    String id, {
+    required String name,
+    String? description,
+    Set<String> groups = const {},
+    String visibility = 'hierarchy',
+  }) async {
+    await _api.patch(
+      ApiEndpoints.role(id),
+      body: roleCreateBody(
+        name: name,
+        description: description,
+        groups: groups,
+        visibility: visibility,
+      ),
+    );
+  }
+
+  /// The create body, split out so the contract is testable without a socket.
+  ///
+  /// One `module_groups` entry per checked card, each carrying the form's
+  /// single visibility choice — the shape `roles.md` §3 documents as the
+  /// recommended (group-based) input. This used to be hard-coded to
+  /// `[{group: crm, visibility: hierarchy}]`, so every role came out granting
+  /// CRM at hierarchy scope no matter what the form was set to.
+  ///
+  /// With nothing checked the key is omitted rather than sent empty: the server
+  /// treats a supplied `module_groups` as the **complete** grant set, and `[]`
+  /// would be an explicit "grant nothing".
+  static Map<String, dynamic> roleCreateBody({
+    required String name,
+    String? description,
+    Set<String> groups = const {},
+    String visibility = 'hierarchy',
+  }) {
+    return {
+      'name': name.trim(),
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      if (groups.isNotEmpty)
+        'module_groups': [
+          for (final group in groups) {'group': group, 'visibility': visibility},
+        ],
+    };
   }
 
   // ── Mapping (static so the repository can re-map cached rows and tests can
@@ -126,6 +357,26 @@ class PeopleRemoteDataSource {
       if (member != null) out.add(member);
     }
     return out;
+  }
+
+  /// A member row → `active` | `inactive` | `invited`.
+  ///
+  /// There is no status field on the backend (`members.md` §Status): everything
+  /// hangs off `is_active`, and the two false cases are told apart client-side
+  /// by whether the user has ever logged in. Someone an admin deactivated has
+  /// a last-login; someone still sitting on an unopened activation email does
+  /// not.
+  ///
+  /// This used to answer `is_active ? active : invited`, which labelled every
+  /// deactivated member "Invited" — and left the drawer's Inactive chip matching
+  /// nothing, since the value was never produced.
+  static String memberStatusKey(Map<String, dynamic> json) {
+    if (json['is_active'] == true) return 'active';
+    // `last_login` is the reliable signal; `date_joined`-style keys are not, as
+    // an invited user has those too.
+    final lastLogin = json['last_login'];
+    final hasLoggedIn = lastLogin != null && '$lastLogin'.trim().isNotEmpty;
+    return hasLoggedIn ? 'inactive' : 'invited';
   }
 
   /// One member row → [Member]. Returns null (row skipped) when `user_id` is
@@ -155,10 +406,23 @@ class PeopleRemoteDataSource {
 
     final profile = json['profile'];
     var phone = '';
+    var designation = '';
+    var timezone = '';
     if (profile is Map) {
       phone = (profile['phone'] as String?) ?? '';
       if (phone.isEmpty) phone = (profile['mobile'] as String?) ?? '';
+      designation = (profile['designation'] as String? ?? '').trim();
+      timezone = (profile['timezone'] as String? ?? '').trim();
     }
+
+    // Territories this user *manages*; absent on list rows.
+    final territoriesRaw = json['territories'];
+    final territories = <String>[
+      if (territoriesRaw is List)
+        for (final t in territoriesRaw)
+          if (t is Map && (t['name'] as String? ?? '').trim().isNotEmpty)
+            (t['name'] as String).trim(),
+    ];
 
     UserDirectory.register(userId: id, fullName: name, role: roleName);
 
@@ -171,8 +435,29 @@ class PeopleRemoteDataSource {
       scope: scope is Map ? (scope['label'] as String? ?? '—') : '—',
       reportsTo:
           manager is Map ? (manager['full_name'] as String? ?? '— (exempt)') : '— (exempt)',
+      managerId: manager is Map ? (manager['user_id'] as String? ?? '') : '',
       team: team,
-      status: json['is_active'] == true ? 'active' : 'invited',
+      status: memberStatusKey(json),
+      designation: designation,
+      timezone: timezone,
+      territories: territories,
+      isProtected: json['is_protected'] == true,
+    );
+  }
+
+  /// One activity row → [MemberActivity]. Returns null when the row carries no
+  /// label, which is the only field the card cannot render without.
+  static MemberActivity? activityFromJson(Map<String, dynamic> json) {
+    final label = (json['label'] as String? ?? '').trim();
+    if (label.isEmpty) return null;
+    final actor = json['actor'];
+    return MemberActivity(
+      type: (json['type'] as String? ?? '').trim(),
+      label: label,
+      // `actor` is a display name on this feed, not the nested user object the
+      // CRM endpoints send.
+      actor: actor is String ? actor.trim() : '',
+      at: parseApiDate(json['timestamp']),
     );
   }
 
@@ -191,8 +476,15 @@ class PeopleRemoteDataSource {
       role: m.role,
       scope: m.scope,
       reportsTo: m.reportsTo,
+      managerId: m.managerId,
       team: m.team,
       status: m.status,
+      // Carried through, or overlaying performance would blank the detail
+      // fields the retrieve call had just filled in.
+      designation: m.designation,
+      timezone: m.timezone,
+      territories: m.territories,
+      isProtected: m.isProtected,
       perfOpen: open,
       perfClosed: closed,
       perfWon: (json['deals_won'] as num?)?.toInt() ?? 0,
@@ -241,12 +533,15 @@ class PeopleRemoteDataSource {
     if (id.isEmpty) return null;
 
     final caps = <String>[];
+    final groupKeys = <String>[];
     final grouped = json['grouped_permissions'];
     if (grouped is List) {
       for (final group in grouped) {
         if (group is Map && group['group'] is String) {
-          final label = (group['group'] as String).toUpperCase();
-          if (label.isNotEmpty && !caps.contains(label)) caps.add(label);
+          final key = (group['group'] as String).trim();
+          if (key.isEmpty || groupKeys.contains(key)) continue;
+          groupKeys.add(key);
+          caps.add(key.toUpperCase());
         }
       }
     }
@@ -258,24 +553,34 @@ class PeopleRemoteDataSource {
       scope: _roleScope(json),
       desc: json['description'] as String? ?? '',
       caps: caps,
+      groupKeys: groupKeys,
+      scopeCode: _roleScopeCode(json) ?? '',
+      // Absent on an older payload: fall back to "editable implies deletable",
+      // which is what the screen assumed before this field existed.
+      deletable: json['is_deletable'] as bool? ?? (json['is_editable'] != false),
+      userCount: (json['user_count'] as num?)?.toInt() ?? 0,
     );
   }
 
-  /// `permission_type` code → the visibility label the UI renders.
-  static const Map<String, String> _scopeLabels = {
-    'all': 'Organization-wide',
-    'hierarchy': 'Self + Reporting Hierarchy',
-    'team': 'Team-based + Reporting Hierarchy',
-    'owned': 'Owned Records',
-    'assignee': 'Assigned Records',
-    'filtered': 'Filtered Records',
-  };
+  /// `permission_type` code → the visibility label the UI renders. Shared with
+  /// the Add role form ([kRoleScopeLabels]) so a scope reads the same on the
+  /// card that displays it and on the form that sets it.
+  static const Map<String, String> _scopeLabels = kRoleScopeLabels;
 
   /// Derives a role's visibility scope from its lead-module record permission
   /// (the same signal the web app's sub-label uses). Roles with no lead scope
   /// (e.g. the seeded Admin, whose access is the `is_staff` bypass) read as
   /// Organization-wide when they look full-access, `'—'` otherwise.
   static String _roleScope(Map<String, dynamic> json) {
+    final label = _scopeLabels[_roleScopeCode(json) ?? ''];
+    if (label != null) return label;
+    final level = (json['permission_level'] as num?)?.toInt() ?? 0;
+    return level >= 100 ? 'Organization-wide' : '—';
+  }
+
+  /// The raw `permission_type` behind [_roleScope] — what the edit form needs
+  /// to preselect a scope, since the label is not what a write accepts.
+  static String? _roleScopeCode(Map<String, dynamic> json) {
     String? leadType(Object? rows) {
       if (rows is! List) return null;
       for (final row in rows) {
@@ -301,10 +606,7 @@ class PeopleRemoteDataSource {
       }
     }
 
-    final label = type == null ? null : _scopeLabels[type];
-    if (label != null) return label;
-    final level = (json['permission_level'] as num?)?.toInt() ?? 0;
-    return level >= 100 ? 'Organization-wide' : '—';
+    return type;
   }
 
   // ── Helpers ──
@@ -332,12 +634,16 @@ class PeopleRemoteDataSource {
     return v == v.roundToDouble() ? '${v.toInt()}%' : '${v.toStringAsFixed(1)}%';
   }
 
-  Future<List<Map<String, dynamic>>> _pagedRows(String path) async {
+  Future<List<Map<String, dynamic>>> _pagedRows(
+    String path, {
+    Map<String, dynamic> query = const {},
+  }) async {
     final rows = <Map<String, dynamic>>[];
     for (var page = 1; page <= _maxPages; page++) {
       final body = await _api.get(path, query: {
         'page': page,
         'page_size': ApiConfig.defaultPageSize,
+        ...query,
       });
       if (body is! Map<String, dynamic>) break;
       final results = body['results'];

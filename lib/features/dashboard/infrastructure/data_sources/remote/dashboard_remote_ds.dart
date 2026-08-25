@@ -48,7 +48,7 @@ class DashboardRemoteDataSource {
   static const kPmoProjects = 'pmo_projects';
   static const kPmoEmployees = 'pmo_employees';
   static const kIssueKpis = 'issue_kpis';
-  static const kIssueStatus = 'issue_status';
+  static const kIssueCategories = 'issue_categories';
   static const kIssueSla = 'issue_sla';
   static const kIssueAttention = 'issue_attention';
   static const kIssueFlow = 'issue_flow';
@@ -61,6 +61,7 @@ class DashboardRemoteDataSource {
   Future<Map<String, Object?>> fetchSections({
     String period = 'month',
     String? teamId,
+    String? userId,
     List<AppError>? errors,
   }) async {
     // 'all' is the org-wide sentinel and 'individual' is not a team uuid —
@@ -78,6 +79,9 @@ class DashboardRemoteDataSource {
             'scope': scope,
             'period': period,
             if (team != null) 'team_id': team,
+            // The member filter. Documented to win over `team_id` when both
+            // are sent, so both go out and the server settles it.
+            if (userId != null && userId.isNotEmpty) 'user_id': userId,
             ...?extra,
           };
       try {
@@ -136,7 +140,11 @@ class DashboardRemoteDataSource {
       kPmoProjects: call('$pmo/active-projects/'),
       kPmoEmployees: call('$pmo/employee-performance/'),
       kIssueKpis: call('$issue/kpis/'),
-      kIssueStatus: call('$issue/tickets-by-status/'),
+      // The category axis (IssueType), which is what the chart is titled after.
+      // Was `tickets-by-status/` — the workflow-lane axis, a different breakdown
+      // entirely, so the bars were Open/In Progress/Resolved under a "by
+      // Category" heading.
+      kIssueCategories: call('$issue/tickets-by-category/'),
       kIssueSla: call('$issue/sla-priority-mix/'),
       kIssueAttention: call('$issue/top-tickets-needing-attention/'),
       kIssueFlow: call('$issue/ticket-flow-trend/'),
@@ -190,7 +198,7 @@ class DashboardRemoteDataSource {
       opsProjects: _opsProjects(raw[kPmoProjects], base.opsProjects),
       opsRoster: _opsRoster(raw[kPmoEmployees], base.opsRoster),
       helpKpis: _helpKpis(raw[kIssueKpis], base.helpKpis),
-      helpCategories: _helpCategories(raw[kIssueStatus], base.helpCategories),
+      helpCategories: _helpCategories(raw[kIssueCategories], base.helpCategories),
       helpSla: _donutSection(raw[kIssueSla], 'sla', _slaBuckets, base.helpSla),
       helpPriority:
           _donutSection(raw[kIssueSla], 'priority', _priorityBuckets, base.helpPriority),
@@ -426,31 +434,60 @@ class DashboardRemoteDataSource {
     return out;
   }
 
-  /// `/dashboard-issue/tickets-by-status/` — undocumented; a list of
-  /// `{name|label|status, count}` rows under a few likely keys, else mock.
+  /// `/dashboard-issue/tickets-by-category/` → the Tickets-by-Category bars.
+  ///
+  /// `{total, uncategorized, categories:[{issue_type_id, name, count}]}`. Every
+  /// category comes back **zero-filled** and name-ordered, so the payload is the
+  /// org's whole `IssueType` list however few tickets there are.
+  ///
+  /// `uncategorized` is charted as its own bar rather than dropped — `issue_type`
+  /// is nullable, and omitting untyped tickets would leave this chart's total
+  /// disagreeing with every other widget on the panel.
   static List<DashBar> _helpCategories(Object? json, List<DashBar> base) {
-    Object? rows;
-    if (json is List) {
-      rows = json;
-    } else if (json is Map) {
-      for (final key in const ['statuses', 'items', 'types', 'results']) {
-        if (json[key] is List) {
-          rows = json[key];
-          break;
-        }
-      }
-    }
+    if (json is! Map) return base;
+    final rows = json['categories'];
     if (rows is! List) return base;
-    final out = <DashBar>[];
+
+    final named = <DashBar>[];
     for (final row in rows) {
       if (row is! Map) continue;
-      final name = _str(row['name'] ?? row['label'] ?? row['status']);
-      final count = _intOf(row['count'] ?? row['total']);
+      final name = _str(row['name']);
+      final count = _intOf(row['count']);
       if (name.isEmpty || count == null) continue;
-      out.add(DashBar(_shortLabel(name), count));
+      named.add(DashBar(_shortLabel(name), count));
     }
-    return out.isEmpty ? base : out;
+    if (named.isEmpty) return base;
+
+    // Zero-count categories are **kept**. The endpoint zero-fills on purpose so
+    // the bar set stays put as tickets move between categories, and dropping
+    // them showed an org with tickets in two categories a two-bar chart, as if
+    // the other six did not exist.
+    final untyped = _intOf(json['uncategorized']) ?? 0;
+    final out = [...named, if (untyped > 0) DashBar('No category', untyped)];
+    if (out.length <= _maxCategoryBars) return out;
+
+    // Past what the row can label, the smallest buckets are summed into "Other"
+    // rather than truncated, so the bars still add up to the endpoint's `total`.
+    // The survivors stay in the server's name order — ranking is only how the
+    // tail is chosen, not how the chart reads.
+    final byCount = [for (var i = 0; i < out.length; i++) i]
+      ..sort((a, b) => out[b].count.compareTo(out[a].count));
+    final kept = byCount.take(_maxCategoryBars - 1).toSet();
+    var tail = 0;
+    for (var i = 0; i < out.length; i++) {
+      if (!kept.contains(i)) tail += out[i].count;
+    }
+    return [
+      for (var i = 0; i < out.length; i++)
+        if (kept.contains(i)) out[i],
+      DashBar('Other', tail),
+    ];
   }
+
+  /// The most bars [DashBars] can label at phone width. Each is an `Expanded`
+  /// slot, so more bars means narrower labels rather than a scroll — this is the
+  /// point past which they stop being readable at all.
+  static const _maxCategoryBars = 10;
 
   /// Two-series area trend from `{buckets:[{label, <a>, <b>}]}`.
   static DashTrend _trendOf(
@@ -967,19 +1004,60 @@ class DashboardRemoteDataSource {
       ].where((s) => s.isNotEmpty).toList();
       final priority = row['priority'];
       final priorityName = priority is Map ? _str(priority['name']) : _str(priority);
+      // `sla_status` is what the endpoint actually sends (`within_sla` /
+      // `at_risk` / `breached` / `on_hold`, verified against the dev backend).
+      // The `sla_label` / `sla` / `breached` keys below it are older names kept
+      // as tolerance — on their own they matched nothing, so every row rendered
+      // with an empty SLA chip and none was ever flagged as breached.
+      final slaStatus = _str(row['sla_status']).toLowerCase();
       out.add(DashTicketAttn(
-        tid: _str(row['ticket_no'] ?? row['issue_no'] ?? row['code'] ?? row['id']),
+        // `display_number` is the ticket's own reference ("TCK-00012"); it, and
+        // `issue_id`, are the keys the API sends. Without them the row's number
+        // was blank on every ticket.
+        tid: _str(row['display_number'] ??
+            row['ticket_no'] ??
+            row['issue_no'] ??
+            row['code'] ??
+            row['id'] ??
+            row['issue_id']),
         subject: subject,
         sub: subParts.join(' · '),
-        slaLabel: _str(row['sla_label'] ?? row['sla']),
-        breached: row['breached'] == true || row['sla_breached'] == true,
-        paused: row['paused'] == true || row['on_hold'] == true,
+        slaLabel: _str(row['sla_label'] ?? row['sla']).isNotEmpty
+            ? _str(row['sla_label'] ?? row['sla'])
+            : _slaLabel(slaStatus, _intOf(row['days_remaining'])),
+        breached: slaStatus == 'breached' ||
+            row['breached'] == true ||
+            row['sla_breached'] == true,
+        paused: slaStatus == 'on_hold' ||
+            slaStatus == 'paused' ||
+            row['paused'] == true ||
+            row['on_hold'] == true,
         priority: priorityName,
         priorityColor: (priority is Map ? _hexColor(priority['color']) : null) ??
             _priorityColor(priorityName),
       ));
     }
     return out.isEmpty ? base : out;
+  }
+
+  /// The SLA chip's text for an `sla_status` code, with the countdown folded in
+  /// when the row carries one — "12d over" says more than "Breached" on a card
+  /// whose whole point is triage order.
+  static String _slaLabel(String status, int? daysRemaining) {
+    final days = daysRemaining;
+    if (days != null && days < 0) return '${-days}d over';
+    switch (status) {
+      case 'breached':
+        return 'Breached';
+      case 'at_risk':
+        return days == null ? 'At risk' : '${days}d left';
+      case 'on_hold':
+      case 'paused':
+        return 'Paused';
+      case 'within_sla':
+        return days == null ? 'On track' : '${days}d left';
+    }
+    return days == null ? '' : '${days}d left';
   }
 
   static Color _priorityColor(String name) {
@@ -996,6 +1074,44 @@ class DashboardRemoteDataSource {
         return DashColors.lowGrey;
     }
     return DashColors.grey;
+  }
+
+  /// `/dashboard-new/users/?module=…[&team_id=…]` — the Member dropdown
+  /// (`admin_dashboard.md` §9).
+  ///
+  /// [module] is **required** by the API (`crm` | `pmo` | `issue`) and 400s
+  /// without it; [teamId] narrows the list to that team, which is why this is
+  /// fetched per selection rather than bundled with the widgets.
+  ///
+  /// Best-effort: any failure yields the empty list, and the picker then offers
+  /// "All members" alone rather than inventing people. A 403 is expected here —
+  /// listing members needs `can_access_user_kpis`.
+  Future<List<DashTeamOption>> fetchMembers({
+    required String module,
+    String? teamId,
+  }) async {
+    final team = (teamId == null || teamId.isEmpty || teamId == 'all' || teamId == 'individual')
+        ? null
+        : teamId;
+    try {
+      final body = await _api.get('${ApiEndpoints.dashboardNew}/users/', query: {
+        'module': module,
+        if (team != null) 'team_id': team,
+      });
+      final rows = body is Map ? body['users'] : null;
+      if (rows is! List) return const [];
+      final out = <DashTeamOption>[];
+      for (final row in rows) {
+        if (row is! Map) continue;
+        final id = _str(row['user_id']);
+        final name = _str(row['name']);
+        if (id.isEmpty || name.isEmpty) continue;
+        out.add(DashTeamOption(id, name, _str(row['email'])));
+      }
+      return out;
+    } on Object {
+      return const [];
+    }
   }
 
   // ── teams ──

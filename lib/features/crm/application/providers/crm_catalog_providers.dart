@@ -9,6 +9,7 @@ import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/quote.dart';
 import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart';
 
 /// The org's CRM option lists (pipeline stages, lead sources), used to drive
@@ -146,6 +147,10 @@ final taskStatusOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [],
 );
 
+// The quote-status catalog lives in `quotes_providers.dart`, reached through
+// the quotes repository rather than the shared catalog data source — that is
+// the module's own DI seam, and it keeps mock mode answering empty for free.
+
 /// Completes once **every** option catalog the Leads filter drawer needs has
 /// resolved.
 ///
@@ -194,6 +199,30 @@ StatusMeta crmTaskStatusMeta(CrmTask task, List<CatalogOption> statuses) {
   // Catalog still loading, fetch failed, or the lane was removed since this
   // task was written: keep the org's own name, colour it by its bucket.
   final fallback = StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
+  return StatusMeta(name, fallback.color);
+}
+
+/// The pill a quote's status should render as — the twin of [crmTaskStatusMeta].
+///
+/// Shows the org's **own** status name whenever the API sent one, so a quote in
+/// "Under Review" reads "Under Review" rather than being folded into the
+/// built-in "Draft", and always agrees with the tab it sits under. Mock rows
+/// carry no status name and keep the built-in vocabulary.
+///
+/// Quote statuses have no `status_type` (doc §4), so an unknown name is
+/// coloured by the bucket [quoteStatusKey] folded it into.
+StatusMeta quoteStatusMeta(Quote quote, List<CatalogOption> statuses) {
+  final fallback =
+      StatusMeta$.quote[quote.status] ?? StatusMeta$.quote['draft']!;
+  final name = quote.statusName.trim();
+  if (name.isEmpty) return fallback;
+
+  final key = name.toLowerCase();
+  for (final s in statuses) {
+    if (s.key == key) return StatusMeta(s.name, s.color ?? fallback.color);
+  }
+  // Catalog still loading, fetch failed, or the status was removed since this
+  // quote was written: keep the org's own name, colour it by its bucket.
   return StatusMeta(name, fallback.color);
 }
 

@@ -15,11 +15,13 @@ class MessagesRepositoryImpl implements MessagesRepository {
       _local.fetchConversations();
 
   @override
-  Future<List<ChatMessage>> getMessages(String conversationId) async {
+  Future<ChatThread> getThread(String conversationId) async {
     for (final c in _local.fetchConversations()) {
-      if (c.id == conversationId) return c.messages;
+      if (c.id == conversationId) {
+        return ChatThread(messages: c.messages, media: c.media, links: c.links);
+      }
     }
-    return const [];
+    return const ChatThread();
   }
 
   @override

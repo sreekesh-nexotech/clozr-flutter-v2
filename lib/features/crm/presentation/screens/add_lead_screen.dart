@@ -17,6 +17,7 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
+import '../../../../core/utils/phone_format.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
@@ -85,7 +86,9 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     if (_prefilled || lead == null) return;
     _prefilled = true;
     _name.text = lead.name;
-    _phone.text = lead.phone;
+    // The field holds the ten national digits; the stored value carries the
+    // country code ("+917045090267"), so it is stripped back on the way in.
+    _phone.text = PhoneFormat.national(lead.phone);
     _email.text = lead.email;
     _company.text = lead.company ?? '';
     _project.text = lead.project;
@@ -111,7 +114,9 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   }
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
-  bool get _phoneOk => _phone.text.trim().length >= 6;
+  /// Required here, so a complete ten digits — `length >= 6` used to accept
+  /// half a number and any punctuation typed into it.
+  bool get _phoneOk => PhoneFormat.isComplete(_phone.text);
   bool get _projectOk => _project.text.trim().isNotEmpty;
 
   Future<void> _submit() async {
@@ -149,7 +154,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
             name: _name.text,
             company: _company.text,
             email: _email.text,
-            phone: _phone.text,
+            phone: PhoneFormat.forApi(_phone.text) ?? '',
             website: _website.text,
           );
     if (fields.isEmpty) {
@@ -175,7 +180,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).show(e.message);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 
@@ -342,7 +347,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                   title: 'Contact',
                   children: [
                     AppTextField(label: 'Full name', required: true, controller: _name, hint: 'e.g. Anagha Menon', errorText: _showErrors && !_nameOk ? "Please enter the contact's name" : null, onChanged: (_) => setState(() {})),
-                    AppTextField(label: 'Phone', required: true, controller: _phone, hint: '+91 98470 00000', keyboardType: TextInputType.phone, errorText: _showErrors && !_phoneOk ? 'Enter a valid phone number' : null, onChanged: (_) => setState(() {})),
+                    AppTextField(label: 'Phone', required: true, controller: _phone, prefix: PhoneFormat.dialCode, hint: '98470 00000', keyboardType: TextInputType.phone, inputFormatters: PhoneFormat.inputFormatters, errorText: _showErrors && !_phoneOk ? 'Enter 10 digits' : null, onChanged: (_) => setState(() {})),
                     AppTextField(label: 'Email', controller: _email, hint: 'name@email.com', keyboardType: TextInputType.emailAddress),
                     AppTextField(label: 'Company', controller: _company, hint: 'e.g. Kalyan Silks'),
                   ],

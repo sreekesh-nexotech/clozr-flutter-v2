@@ -13,9 +13,11 @@ import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/application/providers/saved_filters_providers.dart';
 import '../../../crm/presentation/components/saved_chip_row.dart' as chips;
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/config/api_config.dart';
 import '../../application/filters/projects_filter_spec.dart';
 import '../../application/providers/projects_providers.dart';
 import '../../domain/entities/project.dart';
@@ -56,18 +58,36 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       AddAction(label: 'New project', run: (ctx) => ctx.push(Routes.createProject)),
     );
 
-    final projectsAsync = ref.watch(projectsProvider);
+    // The **filtered** fetch: this is what the list renders, so its loading and
+    // error states are the ones the screen must show. Watching the unfiltered
+    // `projectsProvider` here meant a filter change re-queried invisibly and the
+    // old rows stayed on screen until it landed.
+    final projectsAsync = ref.watch(projectsFilteredProvider);
     final base = ref.watch(projBaseProvider);
     final tab = ref.watch(projTabProvider);
     final mine = ref.watch(myProjectsProvider);
+    // Watched purely to start the facet fetches now, at mount. Nothing else here
+    // reads them, so without this the drawer would snapshot them unloaded and
+    // fall back to the built-in vocabularies.
+    ref.watch(projectStatusOptionsProvider);
+    ref.watch(projectTypeOptionsProvider);
     final searchOpen = ref.watch(projSearchOpenProvider);
     final query = ref.watch(projSearchProvider);
     final filters = ref.watch(projectFiltersProvider);
     final filterCount = filters.activeCount;
 
+    // The org's own statuses drive the tab strip — names and order straight from
+    // `/projects/project-statuses/` (ordered by `position`). Empty (still
+    // loading, failed fetch, mock mode) falls back to the built-in vocabulary,
+    // the same "empty is no opinion" contract used everywhere else.
+    final statusCatalog = ref.watch(projectStatusOptionsProvider);
+    final counts = ref.watch(projectStatusCountsProvider).valueOrNull ?? const <String, int>{};
     final tabDefs = <(String, String)>[
       ('all', 'All'),
-      for (final k in StatusMeta$.project.keys) (k, StatusMeta$.project[k]!.label),
+      if (statusCatalog.isEmpty)
+        for (final k in StatusMeta$.project.keys) (k, StatusMeta$.project[k]!.label)
+      else
+        for (final s in statusCatalog) (s.name, s.name),
     ];
 
     return Column(
@@ -105,7 +125,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                 children: [
                   for (final (k, label) in tabDefs)
                     TabChip(
-                      label: '$label (${projTabCount(base, k, mine: mine)})',
+                      // The server's aggregate when it answered, else the rows
+                      // on hand — which only counts what has been downloaded.
+                      label: '$label (${counts[k] ?? projTabCount(base, k, mine: mine)})',
                       active: tab == k,
                       onTap: () => ref.read(projTabProvider.notifier).state = k,
                     ),
@@ -120,12 +142,15 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
         Expanded(
           child: AsyncStateView<List<Project>>(
             value: projectsAsync,
-            onRetry: () => ref.invalidate(projectsProvider),
+            onRetry: () => ref.invalidate(projectsScopedProvider),
             data: (_) {
               final tabVisible = ref.watch(visibleProjectsProvider);
               final visible = filters.isEmpty
                   ? tabVisible
-                  : tabVisible.where((p) => projectMatchesFilters(p, filters)).toList();
+                  : tabVisible
+                      .where((p) => projectMatchesFilters(p, filters,
+                          serverApplied: ApiConfig.apiEnabled))
+                      .toList();
               return visible.isEmpty
                   ? ListView(
                       children: const [
@@ -156,11 +181,35 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   }
 
   // ── Filter drawer ──
+  /// Applies a filter set to the list.
+  ///
+  /// The query it is about to watch is dropped first, so re-applying a
+  /// combination fetched earlier really re-queries rather than serving the list
+  /// as it looked then.
+  void _applyFilters(FilterValues values) {
+    // Every input the query key is built from, or the invalidation targets a
+    // different key than the one the list is about to watch and re-applying a
+    // combination fetched earlier would serve the cached result.
+    final params = projectFilterParamsFor(
+      values: values,
+      codec: ref.read(projectFilterCodecProvider),
+      mine: ref.read(myProjectsProvider),
+      search: ref.read(projSearchDebouncedProvider),
+      statusTab: ref.read(projTabProvider),
+    );
+    ref.invalidate(projectsScopedProvider(ProjectListQuery(filters: params)));
+    ref.read(projectFiltersProvider.notifier).state = values;
+  }
+
   Future<void> _openFilters() async {
+    // The sheet takes its spec once and keeps it, so the facets must be settled
+    // before it opens. Normally already resolved — the fetches start at mount.
+    await ref.read(projectFilterCatalogsProvider.future);
+    if (!mounted) return;
     final spec = ref.read(projectsFilterSpecProvider);
     final current = ref.read(projectFiltersProvider);
     final base = ref.read(projBaseProvider);
-    final activeView = ref.read(projectSavedViewsProvider).active;
+    final activeView = ref.read(projectSavedFiltersProvider).active;
 
     final result = await showFilterSheet(
       context: context,
@@ -168,24 +217,41 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       initial: current,
       previewCount: (draft) => base.where((p) => projectMatchesFilters(p, draft)).length,
       activeViewName: activeView?.name,
-      onSaveView: (name, draft) {
-        ref.read(projectSavedViewsProvider.notifier).upsert(name, draft);
-        ref.read(toastProvider.notifier).show('View "$name" saved');
-      },
+      onSaveView: _saveView,
     );
     if (result == null) return;
 
-    ref.read(projectFiltersProvider.notifier).state = result;
-    final views = ref.read(projectSavedViewsProvider);
-    if (views.active != null && views.active!.values != result) {
-      ref.read(projectSavedViewsProvider.notifier).deactivate();
+    _applyFilters(result);
+    // A manual Apply deactivates the active saved view unless the draft still
+    // means the same thing. Compared as encoded definitions, since that is what
+    // the view actually stores.
+    final active = ref.read(projectSavedFiltersProvider).active;
+    if (active != null) {
+      final encoded = ref.read(projectFilterCodecProvider).encode(result);
+      if (!sameFilterDefinition(encoded, active.definition)) {
+        ref.read(projectSavedFiltersProvider.notifier).deactivate();
+      }
     }
     ref.read(toastProvider.notifier).show('Filters applied');
   }
 
+  /// Persists the drawer draft as a saved filter on `/crm/saved-filters/`
+  /// (module `project`).
+  ///
+  /// The API stores the backend's own param dict, so the draft is encoded
+  /// before it is sent; rejections (duplicate name, the per-module limit, an
+  /// unknown filter key) come back as user-safe text and are shown as-is.
+  Future<void> _saveView(String name, FilterValues draft) async {
+    final definition = ref.read(projectFilterCodecProvider).encode(draft);
+    final error =
+        await ref.read(projectSavedFiltersProvider.notifier).save(name, definition);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).show(error ?? 'View "$name" saved');
+  }
+
   // ── Saved-view row: My Projects toggle + saved bookmark chips + Clear ──
   Widget _savedViewRow(bool mine, int filterCount) {
-    final saved = ref.watch(projectSavedViewsProvider);
+    final saved = ref.watch(projectSavedFiltersProvider);
     return SizedBox(
       height: 34.h,
       child: Row(
@@ -193,12 +259,17 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
           OpsSavedChip(
             label: 'My Projects',
             active: mine,
-            onTap: () => ref.read(myProjectsProvider.notifier).state = !mine,
+            // `ownership=me` is a server scope, so flipping it changes the
+            // query key rather than re-filtering rows already on screen.
+            onTap: () {
+              ref.read(myProjectsProvider.notifier).state = !mine;
+              _applyFilters(ref.read(projectFiltersProvider));
+            },
           ),
           SizedBox(width: 8.w),
           Expanded(
             child: chips.SavedChipRow(
-              views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name)],
               active: {if (saved.activeId != null) saved.activeId!},
               showClearAlways: filterCount > 0,
               onToggle: _toggleView,
@@ -210,22 +281,40 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     );
   }
 
-  void _toggleView(String id) {
-    final saved = ref.read(projectSavedViewsProvider);
+  Future<void> _toggleView(String id) async {
+    final saved = ref.read(projectSavedFiltersProvider);
     if (saved.activeId == id) {
-      ref.read(projectSavedViewsProvider.notifier).deactivate();
-      ref.read(projectFiltersProvider.notifier).state = FilterValues();
+      // Tapping the active view deactivates it and clears the applied filters.
+      ref.read(projectSavedFiltersProvider.notifier).deactivate();
+      _applyFilters(FilterValues());
       return;
     }
-    final view = saved.views.firstWhere((v) => v.id == id);
-    ref.read(projectSavedViewsProvider.notifier).apply(id);
-    ref.read(projectFiltersProvider.notifier).state = view.values.copy();
+    final view = saved.filters.firstWhere((f) => f.id == id);
+    // A filter the server marked invalid fails inert by contract — never run
+    // it, say why instead.
+    if (!view.isValid) {
+      ref.read(toastProvider.notifier).show(
+            'View "${view.name}" refers to a field that no longer exists.',
+          );
+      return;
+    }
+    // A chip is tappable without ever opening the drawer, so wait for the same
+    // catalogs here: decoding maps stored status/type/customer ids back to
+    // drawer options, and a half-loaded catalog would drop them.
+    await ref.read(projectFilterCatalogsProvider.future);
+    if (!mounted) return;
+
+    final values = ref
+        .read(projectFilterCodecProvider)
+        .decode(view.definition, ref.read(projectsFilterSpecProvider));
+    ref.read(projectSavedFiltersProvider.notifier).apply(id);
+    _applyFilters(values);
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
   void _clearFilters() {
-    ref.read(projectSavedViewsProvider.notifier).clearActive();
-    ref.read(projectFiltersProvider.notifier).state = FilterValues();
+    ref.read(projectSavedFiltersProvider.notifier).deactivate();
+    _applyFilters(FilterValues());
     ref.read(toastProvider.notifier).show('Filters cleared');
   }
 }

@@ -1,9 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../app/theme/app_colors.dart';
+import '../../features/shell/application/providers/shell_providers.dart';
 import '../models/note.dart';
+import '../utils/attachment_link.dart';
+import 'attachment_preview.dart';
 import 'app_bottom_sheet.dart';
 
 /// The shared Notes section used on every detail page (#13).
@@ -13,7 +17,7 @@ import 'app_bottom_sheet.dart';
 /// nested replies, and an inline reply composer. The host owns the [notes]
 /// list and the mutation callbacks; this widget owns only the transient
 /// composer/reply/attachment draft state.
-class NotesThread extends StatefulWidget {
+class NotesThread extends ConsumerStatefulWidget {
   const NotesThread({
     super.key,
     required this.notes,
@@ -33,10 +37,10 @@ class NotesThread extends StatefulWidget {
   final void Function(String noteId, String body) onAddReply;
 
   @override
-  State<NotesThread> createState() => NotesThreadState();
+  ConsumerState<NotesThread> createState() => NotesThreadState();
 }
 
-class NotesThreadState extends State<NotesThread> {
+class NotesThreadState extends ConsumerState<NotesThread> {
   final _noteCtrl = TextEditingController();
   final _replyCtrl = TextEditingController();
   final _noteFocus = FocusNode();
@@ -123,9 +127,12 @@ class NotesThreadState extends State<NotesThread> {
       // is not registered yet and every call throws. Silence here reads as "the
       // button does nothing", so say what actually happened.
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Could not open the file picker: $e')),
-      );
+      // The app toast, not a SnackBar: this composer is often inside a
+      // root-navigator bottom sheet, where a SnackBar renders under the sheet,
+      // and `ScaffoldMessenger.maybeOf` drops the message outright when there is
+      // no messenger in scope. The toast is mounted above the navigator and
+      // clears the keyboard, which is always up while a note is being written.
+      ref.read(toastProvider.notifier).showError('Could not open the file picker: $e');
       return;
     }
     final picked = result;
@@ -437,8 +444,41 @@ class NotesThreadState extends State<NotesThread> {
     );
   }
 
+  /// Hands a stored attachment to the OS viewer.
+  ///
+  /// A chip with no hosted link is not silent: a file that has only been picked
+  /// lives on the device until the note is posted, and a tap that appears to do
+  /// nothing reads as a broken attachment rather than one that has not been
+  /// sent yet.
+  Future<void> _openAttachment(NoteAttachment a) async {
+    final url = a.url;
+    // An image previews in-app — including one only just picked, which is read
+    // from disk. Waiting until it is posted to see what you attached was the
+    // whole complaint.
+    if (a.isImage && attachmentImage(a) != null) {
+      await showAttachmentPreview(context, a,
+          onOpenExternally: () => _launch(url ?? ''));
+      return;
+    }
+    if (url == null || url.isEmpty) {
+      ref.read(toastProvider.notifier).showError(a.localPath != null
+          ? 'This file uploads when you post the note.'
+          : 'This file has no link to open.');
+      return;
+    }
+    // Anything else can only be rendered by the OS viewer.
+    await _launch(url);
+  }
+
+  /// Hands the link to the browser / document viewer, reporting a refusal.
+  Future<void> _launch(String url) async {
+    final failure = await openAttachment(url);
+    if (failure == null || !mounted) return;
+    ref.read(toastProvider.notifier).showError(failure);
+  }
+
   Widget _attachmentChip(NoteAttachment a, {VoidCallback? onRemove}) {
-    return Container(
+    final chip = Container(
       padding: EdgeInsets.fromLTRB(8.w, 6.h, onRemove != null ? 6.w : 10.w, 6.h),
       decoration: BoxDecoration(
         color: const Color(0xFFF3F5F8),
@@ -448,8 +488,23 @@ class NotesThreadState extends State<NotesThread> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(a.isImage ? PhosphorIconsFill.image : PhosphorIconsFill.filePdf,
-              size: 15.sp, color: a.isImage ? AppColors.blueBright : AppColors.error),
+          // The photo itself, not a generic glyph — a row of identically
+          // named camera files is otherwise impossible to tell apart.
+          if (attachmentImage(a) case final img?)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4.r),
+              child: Image(
+                image: img,
+                width: 18.w,
+                height: 18.w,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(PhosphorIconsFill.image,
+                    size: 15.sp, color: AppColors.blueBright),
+              ),
+            )
+          else
+            Icon(a.isImage ? PhosphorIconsFill.image : PhosphorIconsFill.filePdf,
+                size: 15.sp, color: a.isImage ? AppColors.blueBright : AppColors.error),
           SizedBox(width: 6.w),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 120.w),
@@ -471,6 +526,11 @@ class NotesThreadState extends State<NotesThread> {
           ],
         ],
       ),
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openAttachment(a),
+      child: chip,
     );
   }
 

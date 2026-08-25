@@ -6,9 +6,13 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
+import '../../../../data/api/status_keys.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
@@ -34,7 +38,9 @@ class TicketsScreen extends ConsumerStatefulWidget {
 class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   final _searchCtrl = TextEditingController();
 
-  static const _tabOrder = ['all', 'new', 'open', 'pending', 'resolved', 'closed'];
+  /// The built-in vocabulary, used until `/crm/issue-statuses/` lands and in
+  /// mock mode.
+  static const _builtInTabs = ['all', 'new', 'open', 'pending', 'resolved', 'closed'];
 
   @override
   void initState() {
@@ -56,8 +62,24 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       AddAction(label: 'New ticket', run: (ctx) => ctx.push(Routes.createTicket)),
     );
 
-    final ticketsAsync = ref.watch(ticketsProvider);
+    // The list itself is the server-filtered fetch; `ticketsProvider` stays
+    // the org-wide source the detail screen and the boards read.
+    final ticketsAsync = ApiConfig.apiEnabled
+        ? ref.watch(ticketsFilteredProvider)
+        : ref.watch(ticketsProvider);
     final all = ticketsAsync.valueOrNull ?? const [];
+    final serverCounts = ref.watch(ticketTabCountsProvider);
+    // The org's own statuses drive the strip — names, order and ids, straight
+    // from the catalog. The built-in five could not express "In Progress",
+    // "Overdue" or "Duplicate", so those tickets had no tab of their own.
+    final statusCatalog = ref.watch(ticketStatusOptionsProvider);
+    final tabs = <(String, String)>[
+      ('all', 'All'),
+      if (statusCatalog.isEmpty)
+        for (final k in _builtInTabs.skip(1)) (k, _label(k))
+      else
+        for (final s in statusCatalog) (s.id, s.name),
+    ];
     final tab = ref.watch(ticketTabProvider);
     final searchOpen = ref.watch(ticketSearchOpenProvider);
     final query = ref.watch(ticketSearchProvider);
@@ -98,10 +120,11 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               height: 40.h,
               child: TabChipRow(
                 children: [
-                  for (final k in _tabOrder)
+                  for (final (k, label) in tabs)
                     TabChip(
-                      label: '${_label(k)} (${ticketTabCount(all, mine, breach, k)})',
-                      active: tab == k,
+                      label:
+                          '$label (${ticketTabCountOf(serverCounts, all, mine, breach, k)})',
+                      active: _tabActive(tab, k, statusCatalog),
                       onTap: () => ref.read(ticketTabProvider.notifier).state = k,
                     ),
                 ],
@@ -115,7 +138,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
         Expanded(
           child: AsyncStateView<List<Ticket>>(
             value: ticketsAsync,
-            onRetry: () => ref.invalidate(ticketsProvider),
+            onRetry: () => ref.invalidate(ApiConfig.apiEnabled ? ticketsFilteredProvider : ticketsProvider),
+            onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(filteredTicketsProvider);
               return visible.isEmpty
@@ -139,7 +163,37 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     );
   }
 
-  String _label(String key) => key == 'all' ? 'All' : StatusMeta$.ticket[key]!.label;
+  String _label(String key) =>
+      key == 'all' ? 'All' : StatusMeta$.ticket[key]?.label ?? key;
+
+  /// Whether a chip reads as selected.
+  ///
+  /// Tolerant on purpose: another screen can set the tab to a folded key
+  /// ("show me resolved") while the strip is keyed by the org's status ids, so
+  /// the chip for the status that folds there should still light up.
+  bool _tabActive(String tab, String chipKey, List<CatalogOption> catalog) {
+    if (tab == chipKey) return true;
+    for (final s in catalog) {
+      if (s.id == chipKey && ticketStatusKey(s.name) == tab) return true;
+    }
+    return false;
+  }
+
+  /// Pull-to-refresh: the rows, the tab counts and the status catalog — a
+  /// status an admin added since the screen mounted should appear too.
+  Future<void> _refresh() async {
+    refreshTickets(ref);
+    ref.invalidate(ticketStatusCatalogProvider);
+    if (ApiConfig.apiEnabled) {
+      refreshTickets(ref);
+      ref.invalidate(ticketStatusCountsProvider);
+    }
+    await settle([
+      ref.read(ApiConfig.apiEnabled ? ticketsFilteredProvider.future : ticketsProvider.future),
+      ref.read(ticketStatusCatalogProvider.future),
+      if (ApiConfig.apiEnabled) ref.read(ticketStatusCountsProvider.future),
+    ]);
+  }
 
   // ── Filter drawer ──
   Future<void> _openFilters() async {
@@ -278,6 +332,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
 
   Widget _empty() {
     return ListView(
+      // Pullable even with nothing in it — an empty list is the state you most
+      // want to retry from.
+      physics: const AlwaysScrollableScrollPhysics(),
       children: [
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 56.h),

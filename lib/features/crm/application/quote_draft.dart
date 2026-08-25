@@ -124,3 +124,66 @@ class QuoteDraft {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 }
+
+/// Columns the New quote form renders with widgets of its own, so the
+/// schema-driven section never offers a second, differently-behaved box for the
+/// same field.
+///
+/// Three reasons a name is here:
+/// * **picker behaviour the generic form cannot express** — the lead is chosen
+///   through a searchable sheet, the template writes an id while showing a
+///   name, line items are a repeater with a running total;
+/// * **interdependence** — a count applies only to an even split, a billing
+///   period only to a subscription;
+/// * **server-owned** — the owner is stamped on create, the number and totals
+///   are computed, and a quote gains a customer only when its lead converts.
+const quoteFormOwnedColumns = <String>{
+  'lead',
+  'template',
+  'line_items',
+  'currency',
+  'payment_type',
+  'num_installments',
+  'billing_period_days',
+  'owner',
+  'customer',
+  'quotation_number',
+  'status',
+  'total_amount',
+};
+
+/// The org's Quote layout minus the columns the form owns — the field set the
+/// schema-driven section renders.
+///
+/// Everything else the org has configured visible comes through untouched, in
+/// the org's order and under the org's labels, so a field an admin adds
+/// tomorrow appears on the form with no code change.
+ViewSchema quoteFormSchema(ViewSchema schema) => ViewSchema(
+      columns: [
+        for (final c in schema.columns)
+          if (!quoteFormOwnedColumns.contains(c.name)) c,
+      ],
+      hasOrgConfig: schema.hasOrgConfig,
+    );
+
+/// Folds the schema-driven section's values into the create body.
+///
+/// Empty values are dropped rather than sent. This is a **create**: there is no
+/// stored value to clear, and `""` would override the org's default with a
+/// blank — the same rule [QuoteDraft.toCreateJson] applies to the fields it
+/// owns. Nulls come from boxes left untouched (an empty date reads as null),
+/// and are dropped for the same reason.
+Map<String, dynamic> withSchemaFields(
+  Map<String, dynamic> base,
+  Map<String, dynamic> fields,
+) {
+  final out = {...base};
+  for (final entry in fields.entries) {
+    final value = entry.value;
+    if (value == null) continue;
+    if (value is String && value.trim().isEmpty) continue;
+    if (value is Iterable && value.isEmpty) continue;
+    out[entry.key] = value;
+  }
+  return out;
+}

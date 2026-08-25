@@ -47,6 +47,11 @@ Future<void> showDashTeamPicker(BuildContext context, WidgetRef ref, List<DashTe
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
+                      // The member list is scoped to the team, so a member
+                      // picked under the old one is no longer a valid filter —
+                      // and `user_id` wins over `team_id`, so leaving it set
+                      // would make the new team selection do nothing at all.
+                      ref.read(dashMemberProvider.notifier).state = '';
                       ref.read(dashTeamProvider.notifier).state = o.id;
                       Navigator.of(ctx).pop();
                     },

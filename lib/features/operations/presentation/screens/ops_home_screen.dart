@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -15,8 +16,11 @@ import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/segmented_control.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import '../../application/providers/ops_dashboard_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../domain/entities/ops_kpis.dart';
 import '../../domain/entities/ops_task.dart';
 import '../../domain/entities/project.dart';
 
@@ -25,7 +29,18 @@ import '../../domain/entities/project.dart';
 class OpsHomeScreen extends ConsumerWidget {
   const OpsHomeScreen({super.key});
 
-  static const _priRank = {'High': 0, 'Medium': 1, 'Low': 2};
+  /// Sort order for the Priority segment.
+  ///
+  /// `Urgent` belongs here: [priorityKey] folds the API's "urgent"/"critical"
+  /// into it, and the org's own catalog uses it. It was missing, and the sort
+  /// looked its rank up with `!` — so choosing Priority with a single urgent
+  /// task assigned to you threw a null-check error mid-build and took the whole
+  /// dashboard down with it.
+  static const _priRank = {'Urgent': 0, 'High': 1, 'Medium': 2, 'Low': 3};
+
+  /// A priority's rank, with anything unrecognised sorted last rather than
+  /// crashing — the catalog is the org's to change.
+  static int _rankOf(String priority) => _priRank[priority] ?? _priRank.length;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,7 +82,7 @@ class OpsHomeScreen extends ConsumerWidget {
     }
 
     final tasks = ref.watch(opsTasksListProvider);
-    final projects = ref.watch(projectsListProvider);
+    final projects = ref.watch(allProjectsProvider);
     final sort = ref.watch(opsSortProvider);
 
     final mineAll = tasks.where((t) => t.isMine).toList();
@@ -75,7 +90,11 @@ class OpsHomeScreen extends ConsumerWidget {
     final done = mineAll.where((t) => t.status == 'completed').toList();
     final total = mineAll.where((t) => t.status != 'cancelled').toList();
     final overdue = open.where((t) => taskDueDelta(t) < 0).toList();
-    final activeProj = projects.where((p) => p.isMine && p.status == 'active').toList();
+    // Server-scoped (`ownership=me`) and counted as "still live", not "folds to
+    // exactly `active`". Filtering the org-wide list on `isMine` here counted
+    // only projects you *manage* whose status happened to fold to `active` —
+    // `?view=list` strips `assignees`, so being on the team never registered.
+    final activeProj = ref.watch(myOpenProjectsProvider);
     final donePct = total.isEmpty ? 0.0 : done.length / total.length;
 
     String projName(String id) =>
@@ -84,7 +103,7 @@ class OpsHomeScreen extends ConsumerWidget {
     final myTasks = open.toList()
       ..sort((a, b) {
         if (sort == 'due') return a.endISO.compareTo(b.endISO);
-        final r = _priRank[a.pri]!.compareTo(_priRank[b.pri]!);
+        final r = _rankOf(a.pri).compareTo(_rankOf(b.pri));
         return r != 0 ? r : a.endISO.compareTo(b.endISO);
       });
     final attn = open.toList()..sort((a, b) => a.endISO.compareTo(b.endISO));
@@ -104,6 +123,9 @@ class OpsHomeScreen extends ConsumerWidget {
           done: done.length,
           total: total.length,
           donePct: donePct,
+          // Trends and the cycle time come from the server or not at all — see
+          // [opsKpisProvider]. Counts stay local so the grid never blanks.
+          kpis: ref.watch(opsKpisProvider).valueOrNull,
           onActive: () {
             ref.read(myProjectsProvider.notifier).state = true;
             ref.read(projTabProvider.notifier).state = 'active';
@@ -117,7 +139,11 @@ class OpsHomeScreen extends ConsumerWidget {
         SizedBox(height: 16.h),
         _attnCard(context, attn, projName),
         SizedBox(height: 16.h),
-        _gridCard(done, () => goTasks(tab: 'completed')),
+        _gridCard(
+          done,
+          ref.watch(opsCompletedGridProvider).valueOrNull ?? const [],
+          () => goTasks(tab: 'completed'),
+        ),
       ],
     );
   }
@@ -148,7 +174,10 @@ class OpsHomeScreen extends ConsumerWidget {
               ),
               Padding(
                 padding: EdgeInsets.only(bottom: 3.h),
-                child: Text('Thu, 9 Jul',
+                // Today, from the device clock. This was the literal string
+                // "Thu, 9 Jul" — the prototype's frozen date, which read as
+                // stale on every other day of the year.
+                child: Text(DateFormat('EEE, d MMM').format(DateTime.now()),
                     style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
               ),
             ],
@@ -158,16 +187,27 @@ class OpsHomeScreen extends ConsumerWidget {
     );
   }
 
+  /// The KPI grid.
+  ///
+  /// Counts are derived from the task and project lists this screen already
+  /// loads. [kpis] adds what those lists cannot answer: the period-over-period
+  /// trend on each card, and the average task cycle — which needs completion
+  /// timestamps the task rows do not carry. Null (mock mode, still loading, or
+  /// a 403 for a user without `view_dashboard`) simply means no chip and no
+  /// cycle figure, rather than a placeholder standing in for one.
   Widget _kpiGrid({
     required int active,
     required int overdue,
     required int done,
     required int total,
     required double donePct,
+    required OpsKpis? kpis,
     required VoidCallback onActive,
     required VoidCallback onOverdue,
     required VoidCallback onCompleted,
   }) {
+    final cycle = kpis?.avgTaskCycle;
+    final cycleDays = cycle?.days;
     return Column(
       children: [
         IntrinsicHeight(
@@ -183,9 +223,8 @@ class OpsHomeScreen extends ConsumerWidget {
                   label: 'My Active Projects',
                   sub: "Projects I'm part of",
                   accent: AppColors.success,
-                  trend: '2.3%',
-                  trendUp: true,
-                  spark: const [1, 1, 2, 2, 2, 3, 3],
+                  trend: kpis?.activeProjects?.trendLabel,
+                  trendUp: kpis?.activeProjects?.trendUp ?? true,
                   onTap: onActive,
                 ),
               ),
@@ -199,9 +238,11 @@ class OpsHomeScreen extends ConsumerWidget {
                   label: 'My Overdue Tasks',
                   sub: 'Past their due date',
                   accent: AppColors.error,
-                  trend: '8.4%',
-                  trendUp: false,
-                  spark: const [0, 0, 0, 1, 1, 1, 1],
+                  trend: kpis?.tasksOverdue?.trendLabel,
+                  // More overdue tasks is worse, so the pill's colour is the
+                  // inverse of the direction the arrow points.
+                  trendUp: !(kpis?.tasksOverdue?.trendUp ?? true),
+                  arrowUp: kpis?.tasksOverdue?.trendUp ?? false,
                   onTap: onOverdue,
                 ),
               ),
@@ -222,8 +263,8 @@ class OpsHomeScreen extends ConsumerWidget {
                   label: 'Tasks Completed',
                   sub: 'All my tasks, this period',
                   accent: AppColors.blueBright,
-                  trend: '1.3%',
-                  trendUp: true,
+                  // No trend chip: §1 carries no completed-tasks figure, and
+                  // the ratio beside it is already the whole story.
                   progress: donePct,
                   onTap: onCompleted,
                 ),
@@ -234,14 +275,18 @@ class OpsHomeScreen extends ConsumerWidget {
                   icon: PhosphorIconsFill.clock,
                   iconColor: AppColors.success,
                   iconBg: AppColors.tintGreen,
-                  value: '4.5',
-                  unit: 'days',
+                  // The server's figure or nothing: a cycle time needs the
+                  // completion timestamps the task list does not return, so
+                  // this was a constant standing in for a measurement.
+                  value: cycleDays == null ? '—' : _trimDays(cycleDays),
+                  unit: cycleDays == null ? null : 'days',
                   label: 'My Avg Task Cycle',
                   sub: 'Median completion time',
                   accent: AppColors.success,
-                  trend: '4.3%',
-                  trendUp: true,
-                  spark: const [6.5, 6.2, 5.8, 5.4, 5.1, 4.8, 4.5],
+                  trend: cycle?.trendLabel,
+                  // A shorter cycle is better, so falling is the good direction.
+                  trendUp: !(cycle?.trendUp ?? true),
+                  arrowUp: cycle?.trendUp ?? false,
                   onTap: onCompleted,
                 ),
               ),
@@ -251,6 +296,17 @@ class OpsHomeScreen extends ConsumerWidget {
       ],
     );
   }
+
+  /// The My Tasks sub-label. Falls back to the bare "Open tasks" rather than a
+  /// placeholder name when there is no session (mock mode).
+  static String _openTasksFor(WidgetRef ref) {
+    final name = ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
+    return name.isEmpty ? 'Open tasks' : 'Open tasks · $name';
+  }
+
+  /// "3.2" rather than "3.2 days" → "3" when the figure is whole.
+  static String _trimDays(double days) =>
+      days == days.roundToDouble() ? days.round().toString() : days.toStringAsFixed(1);
 
   Widget _myTasksCard(BuildContext context, WidgetRef ref, List<OpsTask> rows, String sort,
       String Function(String) projName, VoidCallback onViewMore) {
@@ -269,7 +325,10 @@ class OpsHomeScreen extends ConsumerWidget {
                   children: [
                     Text('My Tasks', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
-                    Text('Open tasks · Manoj Varma', style: AppText.caption(color: AppColors.textPlaceholder)),
+                    // The signed-in user, not the prototype's seed name — this
+                    // card is "my tasks", so it named the wrong person for
+                    // everyone but him.
+                    Text(_openTasksFor(ref), style: AppText.caption(color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -422,7 +481,38 @@ class OpsHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _gridCard(List<OpsTask> done, VoidCallback onRow) {
+  /// Completed tasks by priority, split by whether they landed before or after
+  /// their due date.
+  ///
+  /// [rows] is the server's own split. When it is unavailable the same split is
+  /// derived from [done] via [OpsTask.completedLate] — which is only possible
+  /// now that the task mapper reads `act_end_date`. Before that, this card put
+  /// every completed task in BEFORE DUE and a hard-coded zero in AFTER DUE.
+  Widget _gridCard(
+    List<OpsTask> done,
+    List<OpsCompletedRow> rows,
+    VoidCallback onRow,
+  ) {
+    final grid = rows.isNotEmpty
+        ? rows
+        : [
+            // The server names the priorities it knows; falling back, the three
+            // the task list uses are all there are to count.
+            for (final pri in const ['High', 'Medium', 'Low'])
+              OpsCompletedRow(
+                priority: pri,
+                beforeDue: done
+                    .where((t) => t.pri == pri && t.completedLate != true)
+                    .length,
+                afterDue: done
+                    .where((t) => t.pri == pri && t.completedLate == true)
+                    .length,
+              ),
+          ];
+    return _gridCardBody(grid, onRow);
+  }
+
+  Widget _gridCardBody(List<OpsCompletedRow> grid, VoidCallback onRow) {
     Widget headCell(String label, {TextAlign align = TextAlign.start}) => Text(label,
         textAlign: align,
         style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6));
@@ -449,14 +539,14 @@ class OpsHomeScreen extends ConsumerWidget {
               ],
             ),
           ),
-          for (final pri in const ['High', 'Medium', 'Low'])
-            _gridRow(pri, done.where((t) => t.pri == pri).length, onRow),
+          for (final row in grid) _gridRow(row, onRow),
         ],
       ),
     );
   }
 
-  Widget _gridRow(String pri, int before, VoidCallback onTap) {
+  Widget _gridRow(OpsCompletedRow row, VoidCallback onTap) {
+    final pri = row.priority;
     final priColor = StatusMeta$.projectPriority[pri] ?? AppColors.textMuted;
     Widget badge(int n, {required bool bad}) => Container(
           width: 26.w,
@@ -477,8 +567,8 @@ class OpsHomeScreen extends ConsumerWidget {
         child: Row(
           children: [
             Expanded(child: Align(alignment: Alignment.centerLeft, child: StatusPill(label: pri, color: priColor))),
-            SizedBox(width: 82.w, child: Center(child: badge(before, bad: false))),
-            SizedBox(width: 82.w, child: Center(child: badge(0, bad: true))),
+            SizedBox(width: 82.w, child: Center(child: badge(row.beforeDue, bad: false))),
+            SizedBox(width: 82.w, child: Center(child: badge(row.afterDue, bad: true))),
           ],
         ),
       ),

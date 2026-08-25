@@ -1,5 +1,6 @@
 import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/app_cache.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/repositories/products_repository.dart';
 import '../data_sources/remote/products_remote_ds.dart';
@@ -28,6 +29,25 @@ class ProductsApiRepository implements ProductsRepository {
       }
       rethrow;
     }
+  }
+
+  @override
+  Future<Product?> getProduct(String id) => _remote.fetchProduct(id);
+
+  @override
+  Future<List<CatalogOption>> getProductTypes() => _remote.fetchProductTypes();
+
+  @override
+  Future<Product?> updateProduct(String id, Map<String, dynamic> fields) async {
+    final updated = await _remote.updateProduct(id, fields);
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+    return updated;
+  }
+
+  @override
+  Future<void> deleteProduct(String id) async {
+    await _remote.deleteProduct(id);
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
   }
 
   @override

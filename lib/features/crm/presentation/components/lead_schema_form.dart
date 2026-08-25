@@ -30,6 +30,8 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
     required this.schema,
     required this.row,
     this.optionsByColumn = const {},
+    this.writeKey,
+    this.writeMulti,
   });
 
   /// The org's detail layout. Only [ViewSchema.editableColumns] are rendered.
@@ -46,6 +48,23 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
   /// follow-up types. Supplying options here renders such a column as a picker
   /// instead of a free-text box, and the picked **name** is what gets written.
   final Map<String, List<CatalogOption>> optionsByColumn;
+
+  /// The API key a column is written under, when it differs from the column
+  /// name. Defaults to the Lead mapping, which renames `status` to `status_id`.
+  ///
+  /// Pluggable because the modules disagree: a **customer** writes its status as
+  /// plain `status` (verified against a live org — `{status: <uuid>}` is
+  /// accepted), so reusing the Lead mapping here would post `status_id` and have
+  /// it silently ignored.
+  final String Function(ViewColumn column)? writeKey;
+
+  /// The value a `manytomany` column is written as, given the chosen ids.
+  /// Defaults to the bare id list, which is what `assignees` wants.
+  ///
+  /// Pluggable because the shape is per-field, not per-type: a customer's
+  /// `products` is a list of **objects** (`{product_id, quantity}`), and posting
+  /// bare ids there is a 400 — *"Expected a dictionary, but got str"*.
+  final Object? Function(ViewColumn column, List<String> ids)? writeMulti;
 
   @override
   ConsumerState<LeadSchemaForm> createState() => LeadSchemaFormState();
@@ -135,7 +154,7 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   Map<String, dynamic> get payload {
     final out = <String, dynamic>{};
     for (final c in widget.schema.editableColumns) {
-      final key = LeadsRemoteDataSource.writeKeyFor(c);
+      final key = widget.writeKey?.call(c) ?? LeadsRemoteDataSource.writeKeyFor(c);
       switch (c.type) {
         case 'foreignkey':
           // An id that no longer matches a catalog option is a value we could
@@ -147,21 +166,44 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
           // value we could not resolve is not an instruction to clear it.
           if (id != null) out[key] = id;
         case 'manytomany':
-          out[key] = [
+          final ids = <String>[
             for (final id in _selectedIds(c))
-              if (_writeId(c, _known(c, id)) != null) _writeId(c, _known(c, id)),
+              if (_writeId(c, _known(c, id)) != null) _writeId(c, _known(c, id))!,
           ];
+          out[key] = widget.writeMulti?.call(c, ids) ?? ids;
         case 'boolean':
           out[key] = _controller(c.name).text.trim().toLowerCase() == 'yes';
         default:
           // Typed coercion lives in `schemaWriteValue` — a number field's box
           // has to be sent as a number, and an empty one as null rather than
           // `""`, which the API rejects outright.
-          final value = schemaWriteValue(c.type, _controller(c.name).text);
+          final text = _choiceValue(c, _controller(c.name).text);
+          final value = schemaWriteValue(c.type, text);
           if (!identical(value, absentValue)) out[key] = value;
       }
     }
     return out;
+  }
+
+  /// The stored value for a **model choice** column, given what the box shows.
+  ///
+  /// The picker leaves the human label in the field — which is right for a
+  /// caller-supplied catalog, where the API stores the name it is given — but a
+  /// model choice is validated against its `value` (`days`, not `Days`). So the
+  /// label is resolved back here rather than at pick time, which keeps the field
+  /// readable and the payload correct.
+  ///
+  /// Anything that matches no choice is passed through untouched: the server is
+  /// the authority on its own value set, and rewriting an unrecognised entry
+  /// would only hide the error it is about to return.
+  String _choiceValue(ViewColumn c, String text) {
+    if (!c.hasChoices) return text;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return text;
+    for (final (value, label) in c.choices) {
+      if (label == trimmed || value == trimmed) return value;
+    }
+    return text;
   }
 
   /// [id] if it is one this column's catalog actually offers, else null.
@@ -185,6 +227,14 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   List<CatalogOption> _optionsFor(ViewColumn c) {
     final override = widget.optionsByColumn[c.name];
     if (override != null) return override;
+    // The field's own model choices, when the schema reported them. Ahead of the
+    // related-model switch below because a choice field has no related model.
+    if (c.hasChoices) {
+      return [
+        for (final (value, label) in c.choices)
+          CatalogOption(id: value, name: label),
+      ];
+    }
     switch (c.relatedModel) {
       case 'LeadStatus':
         return ref.read(leadStatusesProvider);
@@ -304,9 +354,12 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       context: context,
       title: c.label,
       options: options,
+      // Matched on either side: a record seeds the box with the stored value
+      // (`days`), a previous pick leaves the label (`Days`), and both have to
+      // pre-select the same row.
       selected: {
         for (final o in options)
-          if (o.name == current) o.id,
+          if (o.name == current || o.id == current) o.id,
       },
       emptyNote: 'No ${c.label.toLowerCase()} options are configured for this '
           'organisation yet.',
@@ -316,6 +369,61 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
         ? ''
         : options.firstWhere((o) => o.id == picked.first).name;
     setState(() => _controller(c.name).text = name);
+  }
+
+  /// A date (or date+time) column. Picked, never typed: the box's text is sent
+  /// to the API verbatim, so a hand-typed "24/6/26" is a 400 — and the column
+  /// is usually a due date, which is exactly what a calendar is for.
+  Widget _dateField(ViewColumn c, {required bool withTime}) {
+    final current = DateTime.tryParse(_controller(c.name).text.trim());
+    return AppTextField(
+      label: c.label,
+      readOnly: true,
+      value: current == null
+          ? null
+          : withTime
+              ? '${sheetDateLabel(current)} · ${sheetTimeLabel(TimeOfDay.fromDateTime(current))}'
+              : sheetDateLabel(current),
+      hint: 'Select ${c.label.toLowerCase()}…',
+      suffixIcon: PhosphorIconsRegular.calendarBlank,
+      onTap: () => _pickDate(c, withTime: withTime),
+    );
+  }
+
+  Future<void> _pickDate(ViewColumn c, {required bool withTime}) async {
+    final ctrl = _controller(c.name);
+    final current = DateTime.tryParse(ctrl.text.trim());
+    final day = await pickSheetDate(context, ctrl.text);
+    if (day == null || !mounted) return;
+    if (!withTime) {
+      setState(() => ctrl.text = sheetIsoDate(day));
+      return;
+    }
+    // A datetime column needs both halves, so the time picker follows. Skipping
+    // it means midnight rather than discarding the date just chosen.
+    final picked = await pickSheetTime(
+        context, current == null ? '' : sheetTimeLabel(TimeOfDay.fromDateTime(current)));
+    if (!mounted) return;
+    final time = picked ?? const TimeOfDay(hour: 0, minute: 0);
+    setState(() => ctrl.text = '${sheetIsoDate(day)}T${sheetTimeLabel(time)}:00');
+  }
+
+  Widget _timeField(ViewColumn c) {
+    return AppTextField(
+      label: c.label,
+      readOnly: true,
+      value: sheetTimeText(_controller(c.name).text),
+      hint: 'Select ${c.label.toLowerCase()}…',
+      suffixIcon: PhosphorIconsRegular.clock,
+      onTap: () => _pickTime(c),
+    );
+  }
+
+  Future<void> _pickTime(ViewColumn c) async {
+    final ctrl = _controller(c.name);
+    final picked = await pickSheetTime(context, ctrl.text);
+    if (picked == null || !mounted) return;
+    setState(() => ctrl.text = sheetTimeLabel(picked));
   }
 
   Future<void> _pickMany(ViewColumn c) async {
@@ -356,12 +464,16 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     );
   }
 
-  /// Whether this column is a picker despite being typed as plain text —
-  /// true only when the caller supplied its options.
+  /// Whether this column is a picker despite being typed as plain text.
+  ///
+  /// True when the caller supplied options **or** the schema reported the field's
+  /// own model choices. The latter matters: a choice field with no picker renders
+  /// as a free-text box, and anything typed into it is rejected — the API
+  /// validates against the value set (`"23" is not a valid choice`).
   bool _isTextChoice(ViewColumn c) =>
       c.type != 'foreignkey' &&
       c.type != 'manytomany' &&
-      widget.optionsByColumn.containsKey(c.name);
+      (widget.optionsByColumn.containsKey(c.name) || c.hasChoices);
 
   Widget _field(ViewColumn c) {
     if (_isTextChoice(c)) {
@@ -430,19 +542,13 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
         );
 
       case 'date':
+        return _dateField(c, withTime: false);
+
       case 'datetime':
-        return AppTextField(
-          label: c.label,
-          controller: _controller(c.name),
-          hint: 'YYYY-MM-DD',
-        );
+        return _dateField(c, withTime: true);
 
       case 'time':
-        return AppTextField(
-          label: c.label,
-          controller: _controller(c.name),
-          hint: 'HH:MM',
-        );
+        return _timeField(c);
 
       // Long-form prose (a follow-up's description). A single-line box would
       // hide most of what is already stored in it.

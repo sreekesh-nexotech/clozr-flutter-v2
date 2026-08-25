@@ -220,7 +220,8 @@ Followup _followupWithStatus(Followup f, FollowupStatusOverride o) => Followup(
       statusName: o.name.isNotEmpty ? o.name : f.statusName,
       priority: f.priority,
       owner: f.owner,
-      agenda: f.agenda,
+      title: f.title,
+      description: f.description,
     );
 
 /// Active status tab on the Follow-ups list.
@@ -263,7 +264,8 @@ final visibleFollowupsProvider = Provider<List<Followup>>((ref) {
         f.company.toLowerCase().contains(q) ||
         f.contact.toLowerCase().contains(q) ||
         f.kind.toLowerCase().contains(q) ||
-        f.agenda.toLowerCase().contains(q));
+        f.title.toLowerCase().contains(q) ||
+        f.description.toLowerCase().contains(q));
   }
   final list = out.toList()
     ..sort((a, b) => (_fuOrder[a.status] ?? 0) - (_fuOrder[b.status] ?? 0));

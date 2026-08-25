@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../features/shell/presentation/toast_overlay.dart';
 import 'config/constants.dart';
 import 'router/app_router.dart';
 import 'theme/app_dimens.dart';
@@ -26,7 +27,16 @@ class ClozrApp extends StatelessWidget {
           routerConfig: appRouter,
           // Lock text scaling to 1.0 so the dense layout matches the design.
           builder: (context, child) => MediaQuery.withNoTextScaling(
-            child: child ?? const SizedBox.shrink(),
+            // The toast sits here, above the navigator, so it is visible over
+            // routed screens **and** over the bottom sheets that open on the
+            // root navigator. Inside the shell it was hidden behind any open
+            // sheet, which is where most write errors are raised.
+            child: Stack(
+              children: [
+                child ?? const SizedBox.shrink(),
+                const ToastOverlay(),
+              ],
+            ),
           ),
         );
       },

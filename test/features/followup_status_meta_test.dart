@@ -31,7 +31,7 @@ Followup _fu({String statusName = '', String status = 'due'}) => Followup(
       status: status,
       statusName: statusName,
       owner: 'me',
-      agenda: 'Follow-up',
+      title: 'Follow-up',
     );
 
 void main() {
@@ -126,7 +126,7 @@ void main() {
         statusName: 'Open',
         priority: 'high',
         owner: 'me',
-        agenda: 'Follow-up',
+        title: 'Follow-up',
       );
 
       expect(followupWithStatusForTest(before, o).priority, 'high');

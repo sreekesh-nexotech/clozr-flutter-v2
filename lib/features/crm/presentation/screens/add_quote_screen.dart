@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
@@ -18,6 +19,7 @@ import '../../domain/entities/lead.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/repositories/quotes_repository.dart';
 import '../components/lead_picker_sheet.dart';
+import '../components/lead_schema_form.dart';
 
 /// New quote — a full-screen form. Line items are chosen from the live product
 /// catalog and the total recomputes as you go; submit is a static toast + pop.
@@ -35,6 +37,9 @@ class _QuoteLine {
 }
 
 class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
+  /// Reads the schema-driven section's values at submit time.
+  final _schemaFormKey = GlobalKey<LeadSchemaFormState>();
+
   final _titleCtrl = TextEditingController();
   final _validCtrl = TextEditingController();
   final _dueCtrl = TextEditingController();
@@ -62,6 +67,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   /// double-tapped into two quotes.
   bool _saving = false;
 
+  /// True while the lead list is being fetched for the picker.
+  bool _loadingLeads = false;
+
   @override
   void dispose() {
     _titleCtrl.dispose();
@@ -77,7 +85,6 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     super.dispose();
   }
 
-  int _parseAmt(String s) => int.tryParse(s.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
 
   /// The selected template's name, defaulting to the org's default one so the
   /// chip row is never blank.
@@ -91,13 +98,35 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
 
   /// Picks the lead this quote is for — the API's one required field.
   Future<void> _pickLead() async {
-    final leads = ref.read(leadsProvider).valueOrNull ?? const <Lead>[];
+    if (_loadingLeads) return; // a second tap would stack two pickers
+    final toast = ref.read(toastProvider.notifier);
+    setState(() => _loadingLeads = true);
+
+    final List<Lead> leads;
+    try {
+      // Awaited, not read as a snapshot. `ref.read(leadsProvider).valueOrNull`
+      // answers null while the fetch is in flight, and this screen is usually
+      // reached from the Quotes list — where nothing has watched the provider
+      // yet, so the first tap always saw `AsyncLoading` and reported "no leads"
+      // for a list that was merely still loading. Tapping again a moment later
+      // worked, which is what made it look intermittent.
+      leads = await ref.read(leadsProvider.future);
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingLeads = false);
+      // A failed fetch is not an empty org — say which one it was.
+      toast.showError(e is AppError ? e.message : 'Could not load leads');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _loadingLeads = false);
+
     if (leads.isEmpty) {
-      ref.read(toastProvider.notifier).show('No leads available yet');
+      toast.show('No leads available yet');
       return;
     }
     final picked = await showLeadPickerSheet(context: context, leads: leads);
-    if (picked != null) setState(() => _lead = picked);
+    if (picked != null && mounted) setState(() => _lead = picked);
   }
 
   /// Builds the draft from the form's current state.
@@ -117,9 +146,15 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               QuoteDraftLine(
                 description: p.name,
                 quantity: int.tryParse(line.qtyCtrl.text) ?? 1,
-                // Rupees as a plain string — the API takes decimals as strings,
-                // and the catalog price is a display value like "₹2,400".
-                unitPrice: '${_parseAmt(p.price)}',
+                // The catalog's **numeric** price, two decimals, as the API's
+                // decimal-string contract wants.
+                //
+                // This used to strip the non-digits out of `p.price`, which is
+                // a display string `formatInr` abbreviates: "₹1.8L" became 18,
+                // "₹1.29Cr" became 129. Only prices under ₹1,000 survived
+                // intact, so quotes were being raised at a fraction of a
+                // percent of their real value.
+                unitPrice: p.priceNum.toStringAsFixed(2),
               ),
         ],
       );
@@ -140,6 +175,13 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       toast.show('Add at least one product line');
       return;
     }
+    // A row whose product never resolved is dropped when the draft is built,
+    // so it would reach neither the payload nor the user's attention — the
+    // quote would just quietly cost less than what is on screen.
+    if (draft.lines.length != _lines.length) {
+      toast.show('Every line needs a product — pick one, or remove the row');
+      return;
+    }
     if (_payType.needsInstallmentCount && draft.numInstallments < 2) {
       toast.show('An even split needs at least 2 installments');
       return;
@@ -147,9 +189,16 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
 
     setState(() => _saving = true);
     try {
-      final quote = await ref
-          .read(quotesRepositoryProvider)
-          .createQuote(draft.toCreateJson(schema: ref.read(quoteSchemaProvider)));
+      // The org's own fields ride on top of the body the draft builds. In
+      // schema-driven mode the draft's own title/valid-until/notes/terms boxes
+      // are not rendered, so they are empty and `toCreateJson` omits them —
+      // the two halves cannot collide.
+      final body = withSchemaFields(
+        draft.toCreateJson(schema: ref.read(quoteSchemaProvider)),
+        _schemaFormKey.currentState?.payload ?? const {},
+      );
+      final quote =
+          await ref.read(quotesRepositoryProvider).createQuote(body);
       if (!mounted) return;
       // The list is now stale either way.
       ref.invalidate(quotesProvider);
@@ -163,7 +212,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      toast.show(e.message);
+      toast.showError(e.message);
     }
   }
 
@@ -227,12 +276,19 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     // every `shows()` below reads as "render it" — so the form is never held
     // behind the schema call.
     final schema = ref.watch(quoteSchemaProvider);
+    // The org's fields, minus the ones this screen renders itself. Non-empty
+    // means the org has a layout to honour, and the section below replaces the
+    // built-in title / valid-until / notes / terms boxes with it.
+    final formSchema = quoteFormSchema(schema);
+    final schemaDriven = formSchema.editableColumns.isNotEmpty;
     final templates = ref.watch(quoteTemplatesProvider);
 
     int total = 0;
     for (final line in _lines) {
       final p = _productById(products, line.productId);
-      if (p != null) total += _parseAmt(p.price) * (int.tryParse(line.qtyCtrl.text) ?? 1);
+      if (p != null) {
+        total += (p.priceNum * (int.tryParse(line.qtyCtrl.text) ?? 1)).round();
+      }
     }
 
     return Container(
@@ -250,7 +306,12 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   required: true,
                   readOnly: true,
                   value: _lead?.name,
-                  hint: 'Search by name, company or #id',
+                  // The fetch is usually instant, but on a cold open it is a
+                  // round trip — a tap that appears to do nothing invites the
+                  // second tap that used to produce the false "no leads".
+                  hint: _loadingLeads
+                      ? 'Loading leads…'
+                      : 'Search by name, company or #id',
                   suffixIcon: PhosphorIconsRegular.magnifyingGlass,
                   onTap: _pickLead,
                 ),
@@ -276,7 +337,19 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   ],
                 ),
                 SizedBox(height: 14.h),
-                if (schema.shows('quotation_title')) ...[
+                if (schemaDriven) ...[
+                  _sectionLabel('Details'),
+                  LeadSchemaForm(
+                    key: _schemaFormKey,
+                    schema: formSchema,
+                    row: null,
+                    // Quote columns are written under their own names. The
+                    // default mapping is the Lead one, which renames `status`
+                    // to `status_id` — wrong here, and `status` is screen-owned
+                    // anyway.
+                    writeKey: (c) => c.name,
+                  ),
+                ] else if (schema.shows('quotation_title')) ...[
                   AppTextField(
                       label: schema.labelOf('quotation_title', 'Quote title'),
                       controller: _titleCtrl,
@@ -377,28 +450,33 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                       hint: 'e.g. 30',
                       keyboardType: TextInputType.number),
                 ],
-                if (schema.shows('valid_until')) ...[
-                  SizedBox(height: 14.h),
-                  AppTextField(
-                      label: schema.labelOf('valid_until', 'Valid until'),
-                      controller: _validCtrl,
-                      hint: 'e.g. 2026-09-04'),
-                ],
-                if (schema.shows('notes')) ...[
-                  SizedBox(height: 14.h),
-                  AppTextField(
-                      label: schema.labelOf('notes', 'Notes'),
-                      controller: _notesCtrl,
-                      multiline: true,
-                      hint: 'Notes shown on the quote…'),
-                ],
-                if (schema.shows('terms_and_conditions')) ...[
-                  SizedBox(height: 14.h),
-                  AppTextField(
-                      label: schema.labelOf('terms_and_conditions', 'Terms & conditions'),
-                      controller: _termsCtrl,
-                      multiline: true,
-                      hint: 'The T&C text printed on the quote…'),
+                // Rendered here only when there is no org layout to honour
+                // (mock mode, a failed schema call, an org with no config).
+                // Otherwise the Details section above already owns them.
+                if (!schemaDriven) ...[
+                  if (schema.shows('valid_until')) ...[
+                    SizedBox(height: 14.h),
+                    AppTextField(
+                        label: schema.labelOf('valid_until', 'Valid until'),
+                        controller: _validCtrl,
+                        hint: 'e.g. 2026-09-04'),
+                  ],
+                  if (schema.shows('notes')) ...[
+                    SizedBox(height: 14.h),
+                    AppTextField(
+                        label: schema.labelOf('notes', 'Notes'),
+                        controller: _notesCtrl,
+                        multiline: true,
+                        hint: 'Notes shown on the quote…'),
+                  ],
+                  if (schema.shows('terms_and_conditions')) ...[
+                    SizedBox(height: 14.h),
+                    AppTextField(
+                        label: schema.labelOf('terms_and_conditions', 'Terms & conditions'),
+                        controller: _termsCtrl,
+                        multiline: true,
+                        hint: 'The T&C text printed on the quote…'),
+                  ],
                 ],
               ],
             ),
@@ -627,7 +705,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 children: [
                   Text('Line total', style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                   Text(
-                    selected != null ? _fmtAmt(_parseAmt(selected.price) * (int.tryParse(line.qtyCtrl.text) ?? 1)) : '₹0',
+                    selected != null
+                        ? _fmtAmt((selected.priceNum * (int.tryParse(line.qtyCtrl.text) ?? 1)).round())
+                        : '₹0',
                     style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary),
                   ),
                 ],
@@ -715,9 +795,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
 
   Future<void> _pickOwner() async {
     final roster = ref.read(rosterProvider);
-    final chosen = await showModalBottomSheet<String>(
+    final chosen = await showClozrSheet<String>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (ctx) => _OwnerSheet(current: _owner, roster: roster),
     );
     if (chosen != null) setState(() => _owner = chosen);
@@ -732,7 +811,12 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   }
 }
 
-/// Minimal owner picker sheet reusing the sheet chrome.
+/// Owner picker, over the shared sheet chrome.
+///
+/// The rows **scroll**. The roster is as long as the org is, and this sheet
+/// used to lay them out in a plain Column inside a default-height modal — which
+/// caps at 9/16 of the screen and overflowed by 426px once the team filled it,
+/// leaving the last owners unreachable.
 class _OwnerSheet extends StatelessWidget {
   const _OwnerSheet({required this.current, required this.roster});
   final String current;
@@ -740,65 +824,49 @@ class _OwnerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.bgApp,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: EdgeInsets.only(top: 10.h, bottom: 8.h),
-              child: Container(
-                width: 38.w,
-                height: 5.h,
-                decoration: BoxDecoration(color: AppColors.borderGrey, borderRadius: BorderRadius.circular(3.r)),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 8.h),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Owner', style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
-              ),
-            ),
-            for (final r in roster)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(r.id),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 13.h),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 38.w,
-                        height: 38.w,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(color: r.color, shape: BoxShape.circle),
-                        child: Text(r.initials, style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.white)),
-                      ),
-                      SizedBox(width: 12.w),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(r.name, style: AppText.custom(size: 14.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
-                            Text(r.role, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-                          ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SheetHeader(title: 'Owner', onClose: () => Navigator.of(context).pop()),
+        Flexible(
+          child: ListView(
+            shrinkWrap: true,
+            padding: EdgeInsets.only(bottom: 24.h),
+            children: [
+              for (final r in roster)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).pop(r.id),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 13.h),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38.w,
+                          height: 38.w,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(color: r.color, shape: BoxShape.circle),
+                          child: Text(r.initials, style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.white)),
                         ),
-                      ),
-                      if (r.id == current) Icon(PhosphorIconsBold.check, size: 18.sp, color: AppColors.success),
-                    ],
+                        SizedBox(width: 12.w),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(r.name, style: AppText.custom(size: 14.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                              Text(r.role, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                            ],
+                          ),
+                        ),
+                        if (r.id == current) Icon(PhosphorIconsBold.check, size: 18.sp, color: AppColors.success),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            SizedBox(height: 12.h),
-          ],
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

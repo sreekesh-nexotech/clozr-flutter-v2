@@ -113,6 +113,10 @@ class _FilterSheetState extends State<_FilterSheet> {
         _header(active),
         Flexible(
           child: SingleChildScrollView(
+            // A search-and-select field can be anywhere in the drawer; once its
+            // keyboard is up it covers the sections below and there is no other
+            // way to put it away without leaving the field.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 12.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

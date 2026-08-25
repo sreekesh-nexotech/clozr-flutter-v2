@@ -9,6 +9,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:clozrapp/core/network/api_service.dart';
+import 'package:clozrapp/data/api/status_keys.dart';
+import 'package:clozrapp/features/crm/application/providers/crm_catalog_providers.dart';
+import 'package:clozrapp/features/crm/domain/entities/crm_catalog.dart';
+import 'package:clozrapp/features/crm/domain/entities/crm_task.dart';
 import 'package:clozrapp/core/storage/token_storage.dart';
 import 'package:clozrapp/features/crm/domain/entities/view_schema.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/attachments_remote_ds.dart';
@@ -57,6 +61,7 @@ ViewColumn _col(String name, String type, {String related = ''}) => ViewColumn(
     );
 
 void main() {
+  _statusVocabularyTests();
   group('edit', () {
     test('PATCHes the task with the fields it was given', () async {
       final a = _Adapter();
@@ -211,4 +216,61 @@ class _ThrowingAdapter implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+/// The status a task *displays* must be the org's own lane name. The folded key
+/// is for colour, the tick and the overdue rule — never for the label. An org
+/// running Open / In Progress / Completed / Cancelled saw "To do" / "Done" /
+/// "Blocked", the last reversed in meaning rather than merely renamed.
+void _statusVocabularyTests() {
+  CrmTask task({required String status, String statusName = ''}) => CrmTask(
+        id: 't-1',
+        title: 'Call the customer',
+        type: 'Call',
+        leadId: null,
+        status: status,
+        statusName: statusName,
+        priority: 'Medium',
+        assignee: 'me',
+        due: '',
+        dueNote: '',
+      );
+
+  /// The org's four lanes, exactly as `/crm/crm-task-statuses/` returns them.
+  const org = [
+    CatalogOption(id: 's1', name: 'Open'),
+    CatalogOption(id: 's2', name: 'In Progress'),
+    CatalogOption(id: 's3', name: 'Completed'),
+    CatalogOption(id: 's4', name: 'Cancelled'),
+  ];
+
+  group('task status vocabulary', () {
+    test('a lane keeps its own name, not the bucket it folds into', () {
+      expect(crmTaskStatusMeta(task(status: 'todo', statusName: 'Open'), org).label,
+          'Open');
+      expect(
+          crmTaskStatusMeta(task(status: 'done', statusName: 'Completed'), org).label,
+          'Completed');
+    });
+
+    test('Cancelled is not "Blocked"', () {
+      // The fold sends `cancelled` to the `blocked` bucket, whose built-in
+      // label says something else entirely about why the task stopped.
+      expect(crmTaskStatusKey(name: 'Cancelled', type: 'cancelled'), 'blocked');
+      expect(
+          crmTaskStatusMeta(task(status: 'blocked', statusName: 'Cancelled'), org)
+              .label,
+          'Cancelled');
+    });
+
+    test('a mock row with no lane name keeps the built-in vocabulary', () {
+      expect(crmTaskStatusMeta(task(status: 'todo'), const []).label, 'To do');
+    });
+
+    test('a lane dropped from the catalog still shows its stored name', () {
+      expect(
+          crmTaskStatusMeta(task(status: 'todo', statusName: 'Triage'), org).label,
+          'Triage');
+    });
+  });
 }

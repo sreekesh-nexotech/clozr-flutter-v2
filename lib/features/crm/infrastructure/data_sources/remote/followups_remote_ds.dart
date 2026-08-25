@@ -26,12 +26,30 @@ class FollowupsRemoteDataSource {
   /// Raw rows for the follow-ups linked to one lead, scoped server-side with
   /// the shared generic-relation params rather than filtered after the fact.
   Future<List<Map<String, dynamic>>> fetchFollowupRowsForLead(String leadId) =>
-      _fetchRows(leadId: leadId);
+      fetchFollowupRowsFor(relatedTo: 'lead', relatedToId: leadId);
+
+  /// Raw rows for the follow-ups linked to **any** record — `related_to` is the
+  /// lowercased model name (`lead`, `customer`).
+  Future<List<Map<String, dynamic>>> fetchFollowupRowsFor({
+    required String relatedTo,
+    required String relatedToId,
+  }) =>
+      _fetchRows(relatedTo: relatedTo, relatedToId: relatedToId);
+
+  /// Mapped follow-ups for any related record.
+  Future<List<Followup>> fetchFollowupsFor({
+    required String relatedTo,
+    required String relatedToId,
+  }) async =>
+      mapRows(await fetchFollowupRowsFor(
+          relatedTo: relatedTo, relatedToId: relatedToId));
 
   Future<List<Map<String, dynamic>>> _fetchRows({
-    String? leadId,
+    String? relatedTo,
+    String? relatedToId,
     Map<String, dynamic> filters = const {},
   }) async {
+    final scoped = relatedTo != null && relatedToId != null;
     // Paging steers the walk; a stored filter can never own it.
     final safe = {...filters}
       ..removeWhere((k, _) => k == 'page' || k == 'page_size');
@@ -40,9 +58,16 @@ class FollowupsRemoteDataSource {
       final body = await _api.get(ApiEndpoints.crmTasks, query: {
         ...safe,
         'is_followup': 'true',
+        // Trims each row to the org's **mobile** card config — the same config
+        // the card's layout comes from (`leads.md` §`?view_type=`, implemented
+        // once on the shared CRM base viewset).
+        //
+        // Verified live on this resource: the default payload has no
+        // `description`, so the description line had nothing to render.
+        'view_type': 'mobile',
         'page_size': 100,
-        if (leadId != null) 'related_to': 'lead',
-        if (leadId != null) 'related_to_id': leadId,
+        if (scoped) 'related_to': relatedTo,
+        if (scoped) 'related_to_id': relatedToId,
         if (page > 1) 'page': page,
       });
       final chunk = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
@@ -156,6 +181,7 @@ class FollowupsRemoteDataSource {
     final desc = _str(json['description'])?.trim();
 
     return Followup(
+      raw: json,
       id: id,
       kind: _str(json['task_type']) ?? '',
       contact: label ?? title,
@@ -171,7 +197,8 @@ class FollowupsRemoteDataSource {
       ),
       owner: UserDirectory.mapUserId(
           assigned is Map ? _str(assigned['user_id']) : null),
-      agenda: (desc != null && desc.isNotEmpty) ? desc : title,
+      title: title,
+      description: desc ?? '',
       // Kept verbatim beside the folded bucket so the tabs can offer the org's
       // real statuses (see [Followup.statusName]).
       statusName: statusName ?? '',

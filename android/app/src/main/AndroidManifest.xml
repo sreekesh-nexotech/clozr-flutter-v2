@@ -59,5 +59,12 @@
             <action android:name="android.intent.action.DIAL"/>
             <data android:scheme="tel"/>
         </intent>
+        <!-- Opening an attachment hands its https link to a browser or a
+             document viewer. Same package-visibility rule as the dialler: on
+             Android 11+ the launch fails unless the intent is declared. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

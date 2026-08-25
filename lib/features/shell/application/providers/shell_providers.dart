@@ -10,15 +10,35 @@ final drawerOpenProvider = StateProvider<bool>((ref) => false);
 final drawerExpandedProvider =
     StateProvider<Map<String, bool>>((ref) => const {});
 
-/// Transient toast message. Auto-clears after [AppConstants.toastDuration].
-class ToastController extends StateNotifier<String?> {
+/// One toast: the text, and whether it reports a failure.
+///
+/// The distinction is not cosmetic. Every toast used to render with the green
+/// success check, so a refusal the backend sent back — "Task updates are not
+/// allowed on weekends." — appeared under a tick, which reads as *done*.
+class ToastMessage {
+  const ToastMessage(this.text, {this.isError = false});
+
+  final String text;
+  final bool isError;
+}
+
+/// Transient toast message. Auto-clears after [AppConstants.toastDuration]
+/// (errors get [AppConstants.toastErrorDuration] — a refusal is a sentence to
+/// read, not a word to glance at).
+class ToastController extends StateNotifier<ToastMessage?> {
   ToastController() : super(null);
   Timer? _timer;
 
-  void show(String message) {
+  void show(String message) => _show(ToastMessage(message), AppConstants.toastDuration);
+
+  /// A failure the user has to read: server refusals, validation, write errors.
+  void showError(String message) =>
+      _show(ToastMessage(message, isError: true), AppConstants.toastErrorDuration);
+
+  void _show(ToastMessage message, Duration duration) {
     _timer?.cancel();
     state = message;
-    _timer = Timer(AppConstants.toastDuration, () => state = null);
+    _timer = Timer(duration, () => state = null);
   }
 
   void clear() {
@@ -33,5 +53,5 @@ class ToastController extends StateNotifier<String?> {
   }
 }
 
-final toastProvider =
-    StateNotifierProvider<ToastController, String?>((ref) => ToastController());
+final toastProvider = StateNotifierProvider<ToastController, ToastMessage?>(
+    (ref) => ToastController());

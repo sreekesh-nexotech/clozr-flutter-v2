@@ -8,6 +8,16 @@ version: 1.0.0+1
 # the documented, authoritative toolchain.
 environment:
   sdk: '>=3.5.0 <4.0.0'
+  # Declares the toolchain this project actually builds against. Note that pub
+  # does NOT enforce a root package's flutter constraint — a bare `flutter`
+  # (rather than `fvm flutter`) will still re-resolve the whole lockfile against
+  # whatever SDK is on PATH and only fail later, during compile, on
+  # `IconData is a final class`. This line is documentation for humans and
+  # tooling, not a guard. The guard is using `fvm`.
+  #
+  # Raising this bound means doing the toolchain migration in the README's
+  # Toolchain section first — it is not a version bump on its own.
+  flutter: '>=3.24.0 <3.25.0'
 
 dependencies:
   flutter:
@@ -59,6 +69,28 @@ dependencies:
   # call" endpoint — dialling is the device's job, the API only logs that the
   # call happened (`POST /crm/call-logs/`).
   url_launcher: ^6.3.1
+
+  # Crash reporting / performance monitoring. `sentry_dio` is the companion
+  # integration that hangs off the single ApiService Dio — see
+  # lib/core/monitoring/sentry_config.dart for the DSN and the PII rules.
+  #
+  # HELD at 8.x. Every sentry_flutter 9.x depends on `jni`, whose Gradle script
+  # reads `flutter.ndkVersion` inside its `android {}` block — a property the
+  # Flutter 3.24.5 Gradle plugin does not expose, so `assembleDebug` dies with
+  # "Could not get unknown property 'flutter'". Pub won't catch this: 9.x
+  # declares `flutter: '>=3.24.0'` and resolves happily, then fails at build.
+  # 8.14.2 is the last release with no `jni` dependency. Moving to 9.x means
+  # moving off the 3.24.5 pin first — see the Toolchain note in README.md for
+  # why that pin exists.
+  sentry_flutter: ^8.14.2
+  sentry_dio: ^8.14.2
+
+  # Not used directly — constrained because sentry_flutter asks only for
+  # `>=1.0.0` and pub would take 9.x, whose Gradle script hits the same
+  # `flutter.compileSdkVersion` wall described above. 8.3.1 hardcodes
+  # `compileSdk 34` and builds on 3.24.5. Drop this line when the toolchain pin
+  # is lifted.
+  package_info_plus: ^8.3.1
 
 dev_dependencies:
   flutter_test:

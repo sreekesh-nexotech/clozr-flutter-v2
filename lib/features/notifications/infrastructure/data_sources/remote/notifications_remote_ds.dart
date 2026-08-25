@@ -1,7 +1,4 @@
-import 'package:flutter/widgets.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../../../../app/theme/app_colors.dart';
 import '../../../../../core/config/api_config.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
@@ -63,52 +60,6 @@ String notificationDayBucket(DateTime? createdAt, {DateTime? now}) {
   return 'earlier';
 }
 
-/// Per-category icon/colour combos, copied from the mock seed so remote rows
-/// look identical to the design.
-({IconData icon, Color color, Color bg}) notificationIconFor(
-  String category, {
-  bool urgent = false,
-  String type = '',
-}) {
-  switch (category) {
-    case 'leads':
-      return (
-        icon: PhosphorIconsFill.userPlus,
-        color: AppColors.blueBright,
-        bg: AppColors.tintBlue,
-      );
-    case 'payments':
-      return urgent
-          ? (icon: PhosphorIconsFill.warningCircle, color: AppColors.error, bg: AppColors.tintRed)
-          : (icon: PhosphorIconsFill.currencyInr, color: AppColors.success, bg: AppColors.tintGreen);
-    case 'tasks':
-      return urgent
-          ? (icon: PhosphorIconsFill.warning, color: AppColors.warningDeep, bg: AppColors.tintAmber)
-          : (icon: PhosphorIconsFill.listChecks, color: AppColors.blueBright, bg: AppColors.tintBlue);
-    case 'ops':
-      return urgent
-          ? (icon: PhosphorIconsFill.kanban, color: AppColors.error, bg: AppColors.tintRed)
-          : (icon: PhosphorIconsFill.briefcase, color: AppColors.blueBright, bg: AppColors.tintBlue);
-    case 'help':
-      return urgent
-          ? (icon: PhosphorIconsFill.ticket, color: AppColors.error, bg: AppColors.tintRed)
-          : (icon: PhosphorIconsFill.chatCircleDots, color: AppColors.blueBright, bg: AppColors.tintBlue);
-    case 'training':
-      return (
-        icon: PhosphorIconsFill.graduationCap,
-        color: AppColors.blueBright,
-        bg: AppColors.tintBlue,
-      );
-    default: // system
-      if (type.toLowerCase().contains('user')) {
-        return (icon: PhosphorIconsFill.userCirclePlus, color: AppColors.textLabelAlt, bg: AppColors.tintGrey);
-      }
-      return urgent
-          ? (icon: PhosphorIconsFill.plug, color: AppColors.pending, bg: AppColors.tintPurple)
-          : (icon: PhosphorIconsFill.downloadSimple, color: AppColors.textLabelAlt, bg: AppColors.tintGrey);
-  }
-}
-
 /// `message` is documented as HTML content — strip tags/entities for the
 /// two-line plain-text row body.
 String _stripHtml(String html) {
@@ -134,8 +85,36 @@ String _humanizeType(String type) {
   return spaced[0].toUpperCase() + spaced.substring(1).toLowerCase();
 }
 
-/// The row payload has no source-object ids, so only list-level deep links
-/// can be derived from the type. Everything else is 'none'.
+/// Whether a notification type is time-critical, which is what drives the
+/// row's red/amber treatment.
+///
+/// Derived from `type` because **the serializer carries no urgency field** —
+/// the mapper's `urgent`/`is_urgent`/`priority` reads below match nothing the
+/// API sends, so every live row rendered as routine and the design's urgent
+/// styling never appeared. The names come from the documented event-type
+/// vocabulary (`notification-preference-settings.md` §"Event types"): the
+/// deadline and overdue events are the ones a user has to act on.
+bool notificationUrgentForType(String type) {
+  final t = type.toLowerCase();
+  return t.contains('overdue') ||
+      t.contains('duereminder') ||
+      t.contains('deadline') ||
+      t.contains('missed') ||
+      t.contains('breach') ||
+      t.contains('escalat') ||
+      t.contains('expir') ||
+      t.contains('dunning') ||
+      t.contains('failed') ||
+      t.contains('rejected');
+}
+
+/// The list a notification's type belongs to.
+///
+/// The row payload carries **no source-object id** — not even on the detail
+/// endpoint, where `source_content_type` comes back null — so a record-level
+/// deep link is not derivable. What the type does say is which *module* the
+/// event happened in, so the row opens that list instead of nothing at all,
+/// which is where every CRM and PMO notification used to land.
 (String, String?) _targetFor(String type) {
   final t = type.toLowerCase();
   if (t.startsWith('lms')) return ('list', 'lmsMy');
@@ -145,6 +124,17 @@ String _humanizeType(String type) {
       t.startsWith('license')) {
     return ('list', 'billing');
   }
+  if (t.startsWith('lead')) return ('list', 'leads');
+  if (t.startsWith('followup')) return ('list', 'followups');
+  // PMO first: `PmoTask*` also starts with neither `task` nor `project`.
+  if (t.startsWith('pmotask')) return ('list', 'opsTasks');
+  if (t.startsWith('project')) return ('list', 'projects');
+  if (t.startsWith('task')) return ('list', 'tasks');
+  if (t.contains('ticket') || t.contains('issue') || t.contains('sla')) {
+    return ('list', 'tickets');
+  }
+  if (t.startsWith('quote')) return ('list', 'quotes');
+  if (t.startsWith('user')) return ('list', 'members');
   return ('none', null);
 }
 
@@ -156,15 +146,22 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
   final type = _str(row['type']) ?? '';
   final category = notificationCategoryToUi(_str(row['category']), type);
 
-  // No urgency flag exists on the serializer today — read defensively anyway.
+  // No urgency flag exists on the serializer, so the type decides. The
+  // explicit reads stay first in case one is ever added.
   final urgent = row['urgent'] == true ||
       row['is_urgent'] == true ||
-      _str(row['priority'])?.toLowerCase() == 'high';
+      _str(row['priority'])?.toLowerCase() == 'high' ||
+      notificationUrgentForType(type);
 
   final text = _str(row['notification_text']);
   final message = _str(row['message']);
-  final body = message == null ? '' : _stripHtml(message);
+  var body = message == null ? '' : _stripHtml(message);
   final title = text ?? (body.isNotEmpty ? body : _humanizeType(type));
+
+  // `message` is empty on every live row, which left the row's second line
+  // blank. The person who caused the event is the useful thing to put there —
+  // "Kavita Das" under "You have been assigned a task: Write unit tests".
+  if (body.isEmpty) body = _str(row['from_user_name']) ?? '';
 
   // The live field is `read`; `is_read` kept as a defensive alias. When both
   // are absent, fall back to the computed `status` string.
@@ -173,7 +170,6 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
       readFlag is bool ? !readFlag : _str(row['status'])?.toLowerCase() == 'unread';
 
   final created = parseApiDate(row['created_at']);
-  final look = notificationIconFor(category, urgent: urgent, type: type);
   final target = _targetFor(type);
 
   return AppNotification(
@@ -181,9 +177,7 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
     category: category,
     urgent: urgent,
     day: notificationDayBucket(created, now: now),
-    icon: look.icon,
-    iconColor: look.color,
-    iconBg: look.bg,
+    type: type,
     title: title,
     body: body == title ? '' : body,
     time: relativeTime(created, now: now),

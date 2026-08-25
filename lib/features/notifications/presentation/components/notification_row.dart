@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../domain/entities/app_notification.dart';
+import 'notification_icons.dart';
 
 /// A single notification row: icon chip, title/body, urgent pill + category ·
 /// time meta, deep-link affordance, unread dot, overflow menu.
@@ -44,6 +45,9 @@ class NotificationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The seed carries an explicit icon; an API row resolves one from its
+    // category, urgency and type — same trio either way.
+    final look = notificationLook(notif);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onOpen,
@@ -61,8 +65,8 @@ class NotificationRow extends StatelessWidget {
             Container(
               width: 38.w,
               height: 38.w,
-              decoration: BoxDecoration(color: notif.iconBg, borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(notif.icon, size: 19.sp, color: notif.iconColor),
+              decoration: BoxDecoration(color: look.bg, borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(look.icon, size: 19.sp, color: look.color),
             ),
             SizedBox(width: 11.w),
             Expanded(

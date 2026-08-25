@@ -9,8 +9,15 @@ import '../providers/products_providers.dart';
 ///
 /// Unit price is an **absolute-rupee** number range (unitScale 1), not lakhs.
 
-/// Parse a product's display price ("₹2,400", "₹2,50,000") to rupees.
+/// A product's unit price in rupees, for the number-range facet.
+///
+/// Reads [Product.priceNum], never the display string: `formatInr` abbreviates
+/// (₹4,999 renders as "₹5K"), so stripping non-digits off the display yielded
+/// **5** for a ₹4,999 product and the range filter compared rupees against a
+/// handful. The display parse survives only for rows built without a numeric
+/// price, where it is still exact ("₹2,400" → 2400).
 int productPriceNum(Product p) {
+  if (p.priceNum > 0) return p.priceNum.round();
   final digits = p.price.replaceAll(RegExp(r'[^0-9]'), '');
   return int.tryParse(digits) ?? 0;
 }
@@ -19,11 +26,17 @@ int productPriceNum(Product p) {
 FilterSpec buildProductsFilterSpec(List<Product> products) {
   // Category options mirror the catalog's product categories (audit §8), in the
   // canonical order; excludes the synthetic "Package" category.
-  final present = products.map((p) => p.cat).toSet();
-  final categories = [
+  // Anything the catalog actually carries: the built-in names first, in their
+  // canonical order, then the org's own. Intersecting with the built-in list
+  // alone left the facet **empty** against a live catalog, whose categories
+  // ("SaaS Platform", …) are none of the prototype's fit-out words.
+  final present = products.map((p) => p.cat).where((c) => c.isNotEmpty).toSet();
+  final ordered = <String>[
     for (final c in productCategoryOrder)
-      if (present.contains(c)) FilterOption(id: c, label: c),
+      if (present.contains(c)) c,
+    ...(present.difference(productCategoryOrder.toSet()).toList()..sort()),
   ];
+  final categories = [for (final c in ordered) FilterOption(id: c, label: c)];
   final statuses = const [
     FilterOption(id: 'active', label: 'Active'),
     FilterOption(id: 'inactive', label: 'Inactive'),
@@ -81,7 +94,14 @@ bool productMatchesFilters(Product p, FilterValues v) {
 
 /// The Products drawer spec, derived from the loaded catalog.
 final productsFilterSpecProvider = Provider<FilterSpec>((ref) {
-  final products = ref.watch(allProductsProvider);
+  // Scoped to the open mode: built from the whole catalog, the Packages
+  // drawer offered categories and billing units that only products have, and
+  // choosing one emptied the list.
+  final wantPackages = ref.watch(prodModeProvider) == 'packages';
+  final products = ref
+      .watch(allProductsProvider)
+      .where((p) => p.isPackage == wantPackages)
+      .toList();
   return buildProductsFilterSpec(products);
 });
 

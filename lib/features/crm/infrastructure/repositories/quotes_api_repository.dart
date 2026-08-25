@@ -1,5 +1,6 @@
 import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/app_cache.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/quote.dart';
 import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/quotes_repository.dart';
@@ -50,6 +51,9 @@ class QuotesApiRepository implements QuotesRepository {
   Future<ViewSchema> getQuoteSchema() => _remote.fetchQuoteSchema();
 
   @override
+  Future<List<CatalogOption>> getQuoteStatuses() => _remote.fetchQuoteStatuses();
+
+  @override
   Future<List<QuoteTemplate>> getQuoteTemplates() => _remote.fetchTemplates();
 
   @override
@@ -59,5 +63,20 @@ class QuotesApiRepository implements QuotesRepository {
     // refetches rather than serving a set that predates it.
     await AppCache.remove(AppCache.crmCache, _cacheKey);
     return quote;
+  }
+
+  @override
+  Future<void> updateQuote(
+      String quotationId, Map<String, dynamic> fields) async {
+    await _remote.updateQuote(quotationId, fields);
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+  }
+
+  @override
+  Future<void> updateQuoteStatus(String quotationId, String statusId) async {
+    await _remote.updateQuoteStatus(quotationId, statusId);
+    // The list is the detail screen's own source, so a stale cache would show
+    // the pre-change status straight back after the invalidate.
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
   }
 }

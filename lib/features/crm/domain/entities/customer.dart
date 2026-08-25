@@ -29,7 +29,18 @@ class Customer extends Equatable {
   final String lastFu;
   final int notif;
 
+  /// The row exactly as the API sent it.
+  ///
+  /// The typed fields above cover what the card's fixed frame needs. This is
+  /// what makes the rest **dynamic**: a column the org adds to its layout —
+  /// today `sla_unit`, tomorrow something that does not exist yet — is read
+  /// from here by name, so a new field shows up without a code change. Mapping
+  /// every column through a hardcoded switch meant anything unforeseen
+  /// rendered as nothing.
+  final Map<String, dynamic> raw;
+
   const Customer({
+    this.raw = const {},
     required this.id,
     required this.leadId,
     required this.name,

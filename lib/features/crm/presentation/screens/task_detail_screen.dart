@@ -13,20 +13,25 @@ import '../../../../core/models/note.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
+import '../../../../core/widgets/keyboard_visibility.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/utils/attachment_link.dart';
 import '../../../../core/utils/relative_time.dart';
 import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/record_rows.dart';
+import '../../../../data/api/status_keys.dart';
+import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/audit_entry.dart';
@@ -34,6 +39,7 @@ import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/lead_file.dart';
 import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
+import '../components/inline_edit_row.dart';
 import 'crm_status_sheet.dart';
 
 /// Task type → Phosphor glyph (mirrors the prototype's TASKTYPES map).
@@ -116,7 +122,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           rolled.remove(id);
         }
         ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        ref.read(toastProvider.notifier).show(e.message);
+        ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
       // The info panel reads the raw record, so the optimistic override alone
@@ -124,6 +130,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       // is what made a status change look like it had not applied.
       ref.invalidate(taskRowProvider(id));
       ref.invalidate(crmTasksProvider);
+      // The lead detail Tasks tab reads its own per-lead family, which neither
+      // of the above touches — without this it keeps serving the pre-change
+      // record after popping back.
+      ref.invalidate(leadTasksProvider);
     }
     ref.read(toastProvider.notifier).show(successMessage);
   }
@@ -152,7 +162,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         if (related is Map && related['id'] != null) 'related_to_id': related['id'],
       });
     } on AppError catch (e) {
-      toast.show(e.message);
+      toast.showError(e.message);
       return;
     }
     ref.invalidate(crmTasksProvider);
@@ -182,7 +192,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     try {
       await ref.read(crmTasksRepositoryProvider).deleteTask(task.id);
     } on AppError catch (e) {
-      toast.show(e.message);
+      toast.showError(e.message);
       return;
     }
     ref.invalidate(crmTasksProvider);
@@ -214,6 +224,30 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             onTap: () => _confirmDelete(task)),
       ],
     );
+  }
+
+  /// Pull-to-refresh: the task, its raw row (which the schema-driven info panel
+  /// renders from), attachments, notes, audit trail and the org's detail layout.
+  ///
+  /// The status override is cleared too — it exists only to bridge the gap
+  /// between an optimistic tick and the refetch, and keeping it would let a
+  /// local guess win over what the server just said.
+  Future<void> _refresh(String id) async {
+    ref.read(crmTaskStatusOverrideProvider.notifier).update((s) => {...s}..remove(id));
+    ref.invalidate(crmTasksProvider);
+    ref.invalidate(taskRowProvider(id));
+    ref.invalidate(taskFilesProvider(id));
+    ref.invalidate(taskActivityLogProvider(id));
+    ref.invalidate(taskDetailSchemaFutureProvider);
+    // The notifier loads in its constructor, so dropping the family is what
+    // re-reads the thread.
+    ref.invalidate(crmNotesProvider);
+    await settle([
+      ref.read(crmTasksProvider.future),
+      ref.read(taskRowProvider(id).future),
+      ref.read(taskFilesProvider(id).future),
+      ref.read(taskDetailSchemaFutureProvider.future),
+    ]);
   }
 
   /// Wraps a loading / error / not-found state under the section app bar so the
@@ -251,7 +285,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       ));
     }
 
-    final meta = StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
+    // The org's own lane name ("Open", "Cancelled"), not the built-in bucket
+    // it folds into — the same vocabulary the Tasks list and its tabs use.
+    final meta = crmTaskStatusMeta(
+        task, ref.watch(taskStatusCatalogProvider).valueOrNull ?? const []);
     final assignee = MockUsers.of(task.assignee);
     final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
     final lead = task.leadId == null ? null : leads.where((l) => l.id == task.leadId).firstOrNull;
@@ -261,6 +298,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     // composer stays usable regardless of the task's status.
     final notesSeed = CrmNotesSeed('TASK-${task.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.watch(crmNotesProvider(notesSeed));
+
+    // The notes composer lives inside the list below. With the keyboard up the
+    // sticky Mark-complete bar would sit between it and the keys, so it stands
+    // down until the field is dismissed.
+    final keyboardOpen = KeyboardVisibility.of(context);
 
     return Container(
       color: AppColors.bgDetail,
@@ -276,8 +318,14 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: AppRefresh(
+              onRefresh: () => _refresh(task.id),
+              child: ListView(
               controller: _notesScrollCtrl,
+              // Dragging the page puts the keyboard away — the only other exit
+              // from the notes composer was submitting or leaving the screen.
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
               children: [
                 _titleCard(task, meta),
@@ -299,9 +347,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                 SizedBox(height: 14.h),
                 _activityCard(task, meta, assignee),
               ],
+              ),
             ),
           ),
-          _bottomBar(task, done),
+          if (!keyboardOpen) _bottomBar(task, done),
         ],
       ),
     );
@@ -384,15 +433,52 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     );
   }
 
+  /// The org's own lanes when the catalog has loaded, the built-in four
+  /// otherwise (mock mode, or a failed fetch).
+  ///
+  /// The sheet used to offer "To do / In Progress / Blocked / Done" against an
+  /// org running Open / In Progress / Completed / Cancelled — so the list you
+  /// picked from named lanes the org does not have, and "Blocked" stood in for
+  /// "Cancelled".
   void _openStatusSheet(CrmTask task, StatusMeta meta) {
+    final statuses = ref.read(taskStatusCatalogProvider).valueOrNull ?? const [];
+    if (statuses.isEmpty) {
+      showCrmStatusSheet(
+        context: context,
+        ref: ref,
+        title: 'Update task status',
+        options: const ['todo', 'inprogress', 'blocked', 'done'],
+        meta: StatusMeta$.task,
+        current: task.status,
+        onSelect: (k) =>
+            _setStatus(task.id, k, 'Status set to ${StatusMeta$.task[k]!.label}'),
+      );
+      return;
+    }
+    final currentName = task.statusName.trim().toLowerCase();
     showCrmStatusSheet(
       context: context,
       ref: ref,
       title: 'Update task status',
-      options: const ['todo', 'inprogress', 'blocked', 'done'],
-      meta: StatusMeta$.task,
-      current: task.status,
-      onSelect: (k) => _setStatus(task.id, k, 'Status set to ${StatusMeta$.task[k]!.label}'),
+      options: [for (final s in statuses) s.name],
+      meta: {
+        for (final s in statuses) s.name: StatusMeta(s.name, crmTaskStatusColor(s)),
+      },
+      current: statuses
+              .where((s) => s.name.trim().toLowerCase() == currentName)
+              .map((s) => s.name)
+              .firstOrNull ??
+          '',
+      // The lane's own key is what the tick, the strikethrough and the overdue
+      // rule read, so the folded key is what the override carries.
+      onSelect: (name) {
+        final lane = statuses.firstWhere((s) => s.name == name);
+        _setStatus(
+          task.id,
+          crmTaskStatusKey(name: lane.name, type: lane.statusType),
+          'Status set to ${lane.name}',
+        );
+      },
     );
   }
 
@@ -455,17 +541,36 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         (PhosphorIconsRegular.hash, 'Task ID', task.id),
       ];
 
+  /// Saves one edited field of the Task information card
+  /// (`PATCH /crm/tasks/{id}/`).
+  Future<void> _saveField(
+      CrmTask task, String key, Object? value, String label) async {
+    try {
+      await ref.read(crmTasksRepositoryProvider).updateTask(task.id, {key: value});
+      if (!mounted) return;
+      ref.invalidate(taskRowProvider(task.id));
+      ref.invalidate(crmTasksProvider);
+      ref.read(toastProvider.notifier).show('$label updated');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError(e.message);
+    }
+  }
+
   Widget _infoCard(CrmTask task, dynamic assignee) {
     // The org's own layout over the raw record. Both must be present: the
     // schema says which rows, the record supplies their values.
     final schema = ref.watch(taskDetailSchemaProvider);
     final row = ref.watch(taskRowProvider(task.id)).valueOrNull;
     final rows = (schema.isEmpty || row == null)
-        ? _fallbackRows(task, assignee)
+        ? [for (final r in _fallbackRows(task, assignee)) (r.$1, r.$2, r.$3, null)]
         : [
-            // `title` is the page header, so it is never repeated as a row.
-            for (final r in recordRows(row, schema, skip: const {'title', 'description'}))
-              (_rowIcon(r.name), r.label, r.value),
+            // Every visible column, including `title` and `description` — the
+            // header and the Description tab still render them, and this panel
+            // is a complete readout of the org's layout rather than the
+            // leftovers after the chrome has taken its share.
+            for (final r in recordRows(row, schema))
+              (_rowIcon(r.name), r.label, r.value, r.column),
           ];
     return ClozrCard(
       radius: 18,
@@ -475,21 +580,32 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         children: [
           Text('Task information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
+          // Long-press a row to edit it in place; a row that cannot be edited
+          // says why rather than ignoring the press.
           for (int i = 0; i < rows.length; i++)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 9.h),
-              decoration: BoxDecoration(
-                border: i == rows.length - 1 ? null : const Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
-              ),
-              child: Row(
-                children: [
-                  SizedBox(width: 20.w, child: Icon(rows[i].$1, size: 17.sp, color: AppColors.textPlaceholder)),
-                  SizedBox(width: 12.w),
-                  SizedBox(width: 92.w, child: Text(rows[i].$2, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted))),
-                  Expanded(
-                    child: Text(rows[i].$3, textAlign: TextAlign.right, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                  ),
-                ],
+            InlineEditRow(
+              label: rows[i].$2,
+              display: rows[i].$3,
+              column: rows[i].$4,
+              rawValue: row?[rows[i].$4?.name],
+              editForm: 'Edit task',
+              onSave: (key, value) => _saveField(task, key, value, rows[i].$2),
+              onBlocked: (msg) => ref.read(toastProvider.notifier).show(msg),
+              child: Container(
+                padding: EdgeInsets.symmetric(vertical: 9.h),
+                decoration: BoxDecoration(
+                  border: i == rows.length - 1 ? null : const Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(width: 20.w, child: Icon(rows[i].$1, size: 17.sp, color: AppColors.textPlaceholder)),
+                    SizedBox(width: 12.w),
+                    SizedBox(width: 92.w, child: Text(rows[i].$2, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted))),
+                    Expanded(
+                      child: Text(rows[i].$3, textAlign: TextAlign.right, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -524,13 +640,30 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   /// The task's attachments, from the shared polymorphic table.
   Widget _filesTab(CrmTask task) {
-    final files = ref.watch(taskFilesProvider(task.id)).valueOrNull ?? const <LeadFile>[];
+    final async = ref.watch(taskFilesProvider(task.id));
+    final files = async.valueOrNull ?? const <LeadFile>[];
     return Padding(
       padding: EdgeInsets.only(top: 12.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (files.isEmpty)
+          // Loading and error both used to read as "no files attached", which
+          // made a list that had simply not arrived look empty.
+          if (async.isLoading && files.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 10.h),
+              child: Text('Loading files…',
+                  style: AppText.custom(
+                      size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            )
+          else if (async.hasError && files.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 10.h),
+              child: Text(crmAppError(async.error!).message,
+                  style: AppText.custom(
+                      size: 13.5, weight: FontWeight.w500, color: AppColors.error)),
+            )
+          else if (files.isEmpty)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 10.h),
               child: Text('No files attached yet.',
@@ -538,23 +671,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                       size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
             )
           else
-            for (final f in files)
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: 7.h),
-                child: Row(
-                  children: [
-                    Icon(PhosphorIconsRegular.paperclip, size: 15.sp, color: AppColors.textPlaceholder),
-                    SizedBox(width: 9.w),
-                    Expanded(
-                      child: Text(f.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(
-                              size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
-                    ),
-                  ],
-                ),
-              ),
+            for (final f in files) _fileRow(f),
           SizedBox(height: 10.h),
           GestureDetector(
             onTap: _uploading ? null : () => _uploadFiles(task),
@@ -578,6 +695,59 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// One attachment. Tapping it opens the stored file — a row was previously
+  /// inert, so an uploaded file could be listed but never viewed.
+  Widget _fileRow(LeadFile f) {
+    final uploader = MockUsers.of(f.uploadedBy).name.split(' ').first;
+    final meta = [
+      f.ext,
+      if (uploader.isNotEmpty) uploader,
+      if (f.uploadedAt.isNotEmpty) f.uploadedAt,
+    ].join(' · ');
+    return InkWell(
+      onTap: () => _openFile(f),
+      borderRadius: BorderRadius.circular(10.r),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 8.h),
+        child: Row(
+          children: [
+            Container(
+              width: 34.w,
+              height: 34.w,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(10.r)),
+              child: Icon(attachmentIcon(f.ext), size: 17.sp, color: AppColors.textSecondary),
+            ),
+            SizedBox(width: 11.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(f.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.custom(
+                          size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                  SizedBox(height: 2.h),
+                  Text(meta, style: AppText.caption()),
+                ],
+              ),
+            ),
+            SizedBox(width: 8.w),
+            Icon(PhosphorIconsRegular.arrowSquareOut, size: 16.sp, color: AppColors.textPlaceholder),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Hands one attachment to the OS viewer, reporting why if it cannot be.
+  Future<void> _openFile(LeadFile f) async {
+    final failure = await openAttachment(f.url);
+    if (failure != null && mounted) ref.read(toastProvider.notifier).show(failure);
   }
 
   /// Picks files off the device and uploads each against this task.

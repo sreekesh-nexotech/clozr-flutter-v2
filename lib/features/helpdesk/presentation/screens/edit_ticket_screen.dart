@@ -9,6 +9,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../components/ticket_form_fields.dart';
@@ -28,15 +29,23 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
   final _descCtrl = TextEditingController();
   final _contactCtrl = TextEditingController();
   bool _prefilled = false;
+  /// The `issue_id` uuid — the write key, never shown.
   String _id = '';
+
+  /// The ticket number ("TKT-0025") for the subtitle. The header printed [_id],
+  /// so the user saw 36 characters of uuid where the reference belongs.
+  String _ref = '';
   String? _custId;
   String? _origCust;
   String _channel = 'Phone';
   String _cat = 'Complaint';
+  String _typeId = '';
   String _pri = 'Medium';
   String _origPri = 'Medium';
-  String? _product;
+  String? _product;   // display name
+  String? _productId; // what the write sends
   String? _projId;
+  String? _projName;
   bool _subjErr = false;
   bool _dirty = false;
 
@@ -53,22 +62,23 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
     final t = ref.read(ticketByIdProvider(id));
     if (t == null) return;
     _id = t.id;
+    _ref = t.displayRef;
     _subjectCtrl.text = t.subject;
     _descCtrl.text = t.desc;
     _contactCtrl.text = t.contact;
     _custId = t.custId;
     _origCust = t.custId;
     _channel = t.channel;
-    _cat = _normalizeCat(t.cat);
+    _cat = t.cat;
+    _typeId = t.typeId;
     _pri = t.pri;
     _origPri = t.pri;
     _product = t.product;
+    _productId = t.productId;
     _projId = t.projId;
+    _projName = t.projName;
     _prefilled = true;
   }
-
-  // The edit form's category vocabulary is Complaint / Request / Query.
-  String _normalizeCat(String c) => const ['Complaint', 'Request', 'Query'].contains(c) ? c : 'Request';
 
   bool get _slaNote => _pri != _origPri || _custId != _origCust;
 
@@ -77,6 +87,7 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
     if (!_prefilled) _prefill();
     final dir = ref.watch(ticketDirectoryProvider);
     final cust = dir.customer(_custId);
+    final types = ref.watch(ticketTypeOptionsProvider);
 
     return PopScope(
       canPop: !_dirty,
@@ -142,11 +153,17 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
                   _section('Classification'),
                   TicketFieldLabel('Category'),
                   SizedBox(height: 7.h),
+                  // The org's own issue types when it has any; the built-in
+                  // three only when the catalog is empty (mock mode).
                   TicketChipWrap(
-                    options: const ['Complaint', 'Request', 'Query'],
+                    options: types.isEmpty
+                        ? const ['Complaint', 'Request', 'Query']
+                        : [for (final c in types) c.name],
                     selected: _cat,
                     onSelect: (v) => setState(() {
                       _cat = v;
+                      _typeId = types.firstWhere((c) => c.name == v,
+                          orElse: () => const CatalogOption(id: '', name: '')).id;
                       _dirty = true;
                     }),
                   ),
@@ -154,7 +171,7 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
                   TicketFieldLabel('Priority'),
                   SizedBox(height: 7.h),
                   TicketChipWrap(
-                    options: const ['Urgent', 'High', 'Medium', 'Low'],
+                    options: kTicketPriorities,
                     selected: _pri,
                     dotColor: ticketPriDotColor,
                     onSelect: (v) => setState(() {
@@ -173,16 +190,32 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
                     label: _product ?? 'Select product…',
                     placeholder: _product == null,
                     icon: PhosphorIconsBold.caretRight,
-                    onTap: () => ref.read(toastProvider.notifier).show('Product picker'),
+                    onTap: () async {
+                      final picked = await pickTicketProduct(context, ref, selectedId: _productId);
+                      if (picked == null || !mounted) return;
+                      setState(() {
+                        _productId = picked.id;
+                        _product = picked.name;
+                        _dirty = true;
+                      });
+                    },
                   ),
                   SizedBox(height: 14.h),
                   TicketFieldLabel('Related project'),
                   SizedBox(height: 7.h),
                   TicketPickerRow(
-                    label: dir.project(_projId)?.name ?? 'No project linked',
+                    label: _projName ?? dir.project(_projId)?.name ?? 'No project linked',
                     placeholder: _projId == null,
                     icon: PhosphorIconsBold.caretRight,
-                    onTap: () => ref.read(toastProvider.notifier).show('Project picker'),
+                    onTap: () async {
+                      final picked = await pickTicketProject(context, ref, selectedId: _projId);
+                      if (picked == null || !mounted) return;
+                      setState(() {
+                        _projId = picked.id;
+                        _projName = picked.name;
+                        _dirty = true;
+                      });
+                    },
                   ),
                 ],
               ),
@@ -196,9 +229,13 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
 
   Widget _header() {
     return Container(
-      color: AppColors.white,
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 14.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+      // The fill belongs inside the decoration: `Container` asserts when given
+      // both, so this combination threw on every build of the screen.
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Row(
         children: [
           GestureDetector(
@@ -222,7 +259,7 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Edit ticket', style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                Text('$_id · changes apply on save', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text(_ref.isEmpty ? 'Changes apply on save' : '$_ref · changes apply on save', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
               ],
             ),
           ),
@@ -259,9 +296,11 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
 
   Widget _footer() {
     return Container(
-      color: AppColors.white,
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(top: BorderSide(color: AppColors.borderCardSoft)),
+      ),
       child: Row(
         children: [
           GestureDetector(
@@ -314,10 +353,16 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
           'subject': _subjectCtrl.text.trim(),
           'description': _descCtrl.text.trim(),
           'priority': _pri,
+          'channel': _channel,
+          if (_typeId.isNotEmpty) 'issue_type': _typeId,
+          if (_custId != null) 'customer_id': _custId,
+          // Sent as keys even when null: null is how the backend unlinks them.
+          'product_id': _productId,
+          'project_id': _projId,
         });
-        ref.invalidate(ticketsProvider);
+        refreshTickets(ref);
       } on AppError catch (e) {
-        if (mounted) ref.read(toastProvider.notifier).show(e.message);
+        if (mounted) ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
       if (!mounted) return;

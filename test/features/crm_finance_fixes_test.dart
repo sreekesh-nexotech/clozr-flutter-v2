@@ -1,7 +1,10 @@
+import 'package:clozrapp/core/filters/filter_models.dart';
+import 'package:clozrapp/features/crm/application/filters/payments_filter_spec.dart';
 import 'package:clozrapp/features/crm/application/providers/crm_party_providers.dart';
 import 'package:clozrapp/features/crm/application/providers/invoices_providers.dart';
 import 'package:clozrapp/features/crm/domain/entities/customer.dart';
 import 'package:clozrapp/features/crm/domain/entities/invoice.dart';
+import 'package:clozrapp/features/crm/domain/entities/payment.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/invoices_remote_ds.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,6 +47,20 @@ Invoice _invoice({String? custId}) => Invoice(
       of: 0,
       balance: '₹10L',
       status: 'unpaid',
+    );
+
+/// Minimal [Payment] — only `custId` matters for the company lookup.
+Payment _payment({String? custId}) => Payment(
+      id: 'PAY-1',
+      custId: custId,
+      invId: 'INV-1',
+      label: 'Advance',
+      amount: '₹1L',
+      amountNum: 100000,
+      method: 'UPI',
+      status: 'due',
+      date: '05 May 2026',
+      owner: '',
     );
 
 void main() {
@@ -126,6 +143,63 @@ void main() {
       expect(invoiceWho(_invoice(custId: 'CUST-9'), lookup), 'CUST-9');
       expect(invoiceWho(_invoice(custId: null), lookup), '—');
       expect(invoiceWho(_invoice(custId: 'CUST-1'), lookup), 'Bluewave Interiors');
+    });
+  });
+
+  // The Payments drawer's Customer options were still resolved through the
+  // prototype seed, so against a live org they listed nothing — or, on a
+  // colliding id, a company that does not exist in the tenant.
+  group('paymentCompany — the drawer reads the real customers', () {
+    final lookup = customerPartyLookup([
+      _customer(id: 'CUST-1', name: 'Asha Rao', company: 'Bluewave Interiors'),
+      _customer(id: 'CUST-2', name: 'Vinod K', company: null),
+    ]);
+
+    test('resolves a real customer to its company', () {
+      expect(paymentCompany(_payment(custId: 'CUST-1'), lookup),
+          'Bluewave Interiors');
+    });
+
+    test('falls back to the person when no company is recorded', () {
+      expect(paymentCompany(_payment(custId: 'CUST-2'), lookup), 'Vinod K');
+    });
+
+    test('a seed id is not resolved — no fabricated company reaches the drawer', () {
+      // 'C2001' is Kalyan Silks in CrmPartyDirectory.
+      expect(paymentCompany(_payment(custId: 'C2001'), lookup), isNull);
+      expect(paymentCompany(_payment(custId: null), lookup), isNull);
+    });
+
+    test('the built options are the real companies, deduped and sorted', () {
+      final spec = buildPaymentsFilterSpec(
+        [
+          _payment(custId: 'CUST-2'),
+          _payment(custId: 'CUST-1'),
+          _payment(custId: 'CUST-1'),
+          _payment(custId: 'C2001'), // unresolvable — contributes nothing
+        ],
+        roster: const [],
+        lookup: lookup,
+      );
+      final company = spec.sections
+          .expand((s) => s.fields)
+          .firstWhere((f) => f.id == 'company');
+
+      expect(company.options.map((o) => o.label).toList(),
+          ['Bluewave Interiors', 'Vinod K']);
+    });
+
+    test('filtering joins on the same resolved label', () {
+      final values = FilterValues()
+        ..['company'] = ChoiceValue(ids: {'Bluewave Interiors'});
+
+      expect(paymentMatchesFilters(_payment(custId: 'CUST-1'), values, lookup),
+          isTrue);
+      expect(paymentMatchesFilters(_payment(custId: 'CUST-2'), values, lookup),
+          isFalse);
+      // Unresolvable parties match nothing rather than everything.
+      expect(paymentMatchesFilters(_payment(custId: 'C2001'), values, lookup),
+          isFalse);
     });
   });
 }

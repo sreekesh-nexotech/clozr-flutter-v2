@@ -38,15 +38,15 @@ class MessagesApiRepository implements MessagesRepository {
   }
 
   @override
-  Future<List<ChatMessage>> getMessages(String conversationId) async {
+  Future<ChatThread> getThread(String conversationId) async {
     try {
       final rows = await _remote.fetchMessageRows(conversationId);
       await AppCache.put(_box, _messagesKey(conversationId), rows);
-      return _remote.mapMessageRows(rows);
+      return _remote.mapThreadRows(rows);
     } on AppError catch (e) {
       if (_offline(e)) {
         final cached = AppCache.get(_box, _messagesKey(conversationId))?.data;
-        if (cached is List) return _remote.mapMessageRows(cached);
+        if (cached is List) return _remote.mapThreadRows(cached);
       }
       rethrow;
     }

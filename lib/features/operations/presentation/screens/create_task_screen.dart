@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/filters/filter_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -11,7 +12,9 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/ops_task_write_fields.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
 import '../components/ops_form_scaffold.dart';
@@ -31,8 +34,17 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   final _desc = TextEditingController();
 
   String? _projId;
-  String _group = 'No group';
+
+  /// True once the `?project=` query param has been read, so a rebuild does not
+  /// re-seed a project the user has since changed.
+  bool _seededProject = false;
+  /// The picked lane's `task_group_id` — empty string is the "No group" lane,
+  /// which the API stores as a null FK.
+  String _groupId = '';
   final Set<String> _assignees = {};
+  bool _saving = false;
+  /// The org's own status **name** once the catalog loads (a built-in key
+  /// before that, and in mock mode).
   String _status = 'open';
   String _pri = 'Medium';
   DateTime? _start;
@@ -51,6 +63,28 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
   bool get _valid => _subject.text.trim().isNotEmpty && _projId != null;
 
+  /// The status chips: the org's own statuses once
+  /// `/projects/project-task-statuses/` has answered, the built-in vocabulary
+  /// before that and in mock mode. `(key, label)` — the key is what a picked
+  /// chip resolves to an id against.
+  List<(String, String)> get _statusChips {
+    final catalog = ref.watch(opsTaskStatusOptionsProvider);
+    if (catalog.isEmpty) {
+      return [for (final e in StatusMeta$.opsTask.entries) (e.key, e.value.label)];
+    }
+    return [for (final s in catalog) (s.name, s.name)];
+  }
+
+  /// The selected status, corrected for the catalog arriving after the form
+  /// opened: the `'open'` default is a built-in key, and an org that renamed
+  /// its first lane would otherwise show every chip unselected.
+  String get _statusKey {
+    final chips = _statusChips;
+    if (chips.isEmpty) return _status;
+    if (chips.any((c) => c.$1 == _status)) return _status;
+    return chips.first.$1;
+  }
+
   /// API mode: create remotely, refresh the list, toast + pop as before.
   /// Mock mode: exactly the previous local toast-and-pop behavior.
   ///
@@ -59,44 +93,82 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   /// the task's `project` FK (in mock mode it would be a `PRJ-24xx` seed id,
   /// but this branch never runs there).
   Future<void> _submit() async {
+    // Without this a second tap during the round trip creates a second task.
+    if (_saving) return;
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show('Task created');
       context.pop();
       return;
     }
+    setState(() => _saving = true);
     try {
-      await ref.read(opsTasksRepositoryProvider).createOpsTask({
-        'subject': _subject.text.trim(),
-        if (_projId != null) 'project': _projId,
-        'priority': _pri,
-        'description': _desc.text.trim(),
-      });
+      await ref.read(opsTasksRepositoryProvider).createOpsTask(
+            opsTaskWriteFields(
+              subject: _subject.text,
+              priority: _pri,
+              description: _desc.text,
+              projectId: _projId,
+              groupId: _groupId,
+              statusLabel: _statusKey,
+              assigneeIds: _assignees,
+              start: _start,
+              startTime: _startTime,
+              end: _end,
+              endTime: _endTime,
+              expectedHours: _hours.text,
+              statuses: ref.read(opsTaskStatusOptionsProvider),
+            ),
+          );
       if (!mounted) return;
+      // The whole family: the list renders from `opsTasksScopedProvider` under
+      // whatever filter query is active, so dropping only the unfiltered
+      // `opsTasksProvider` would leave the new task invisible.
+      ref.invalidate(opsTasksScopedProvider);
+      // …and the unfiltered one too, which the ops dashboard reads.
       ref.invalidate(opsTasksProvider);
       ref.read(toastProvider.notifier).show('Task created');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(e.message);
+      // The form still holds everything typed, and a rejected date or subject
+      // is meant to be corrected and resubmitted.
+      setState(() => _saving = false);
+      ref.read(toastProvider.notifier).showError(e.message);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final projects = ref.watch(projectsListProvider);
-    final tasks = ref.watch(opsTasksListProvider);
+    // Opened from a project's Tasks tab, which passes the project it belongs to
+    // — the picker still offers every project, this only saves choosing the one
+    // the user was already looking at.
+    if (!_seededProject) {
+      _seededProject = true;
+      final preset = GoRouterState.of(context).uri.queryParameters['project'];
+      if (preset != null && preset.isNotEmpty) _projId = preset;
+    }
+    final projects = ref.watch(allProjectsProvider);
     final projName = _projId == null ? '' : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? '';
 
-    final groups = <String>{'No group'};
-    for (final t in tasks.where((t) => t.projId == _projId)) {
-      groups.add(t.group);
-    }
-    if (groups.length == 1) groups.addAll(['Design', 'Site works', 'Snagging']);
+    // The picked project's real lanes. Groups are per project, so this re-asks
+    // whenever the project changes. It used to collect group *names* off the
+    // loaded tasks and, when that came up empty, offer an invented
+    // Design / Site works / Snagging — none of which resolved to a lane.
+    final groupCatalog =
+        _projId == null ? const <CatalogOption>[] : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
+    final groupName = _groupId.isEmpty
+        ? 'No group'
+        : groupCatalog.where((g) => g.id == _groupId).map((g) => g.name).firstOrNull ?? 'No group';
+
+    final statusChips = _statusChips;
+    final statusKey = _statusKey;
 
     return OpsFormScaffold(
       title: 'New Task',
       ctaLabel: 'Create Task',
-      ctaEnabled: _valid,
+      // The end-date field already flags "before start", but the CTA stayed
+      // live, so the form would post a range the API rejects.
+      ctaEnabled: _valid && !_saving && !_endErr,
       onClose: () => context.pop(),
       onSubmit: _submit,
       children: [
@@ -115,21 +187,26 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
               options: [for (final p in projects) (value: p.id, label: p.name)],
               currentValue: _projId ?? '',
             );
-            if (v != null) setState(() { _projId = v; _group = 'No group'; });
+            // Lanes belong to a project, so a previously-picked group is no
+            // longer valid once the project changes.
+            if (v != null) setState(() { _projId = v; _groupId = ''; });
           },
         ),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Task group',
-          value: _group,
+          value: groupName,
           onTap: () async {
             final v = await showOpsOptionPicker(
               context: context,
               title: 'Task group',
-              options: [for (final g in groups) (value: g, label: g)],
-              currentValue: _group,
+              options: [
+                (value: '', label: 'No group'),
+                for (final g in groupCatalog) (value: g.id, label: g.name),
+              ],
+              currentValue: _groupId,
             );
-            if (v != null) setState(() => _group = v);
+            if (v != null) setState(() => _groupId = v);
           },
         ),
         SizedBox(height: 14.h),
@@ -143,8 +220,8 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
           spacing: 8.w,
           runSpacing: 8.h,
           children: [
-            for (final e in StatusMeta$.opsTask.entries)
-              OpsFormChip(label: e.value.label, selected: _status == e.key, onTap: () => setState(() => _status = e.key)),
+            for (final (key, label) in statusChips)
+              OpsFormChip(label: label, selected: statusKey == key, onTap: () => setState(() => _status = key)),
           ],
         ),
         SizedBox(height: 14.h),
@@ -213,7 +290,7 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
       onTap: () async {
         final d = await showDatePicker(
           context: context,
-          initialDate: value ?? DateTime(2026, 7, 9),
+          initialDate: value ?? kFilterToday,
           firstDate: DateTime(2024),
           lastDate: DateTime(2030),
         );

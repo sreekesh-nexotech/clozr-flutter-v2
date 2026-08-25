@@ -145,8 +145,22 @@ String paymentStatusKey({String? status, DateTime? dueDate, DateTime? now}) {
 }
 
 /// Invoice (quotation Payment) → `unpaid | partial | completed`.
+///
+/// The server's own status wins wherever it says something recognisable. It
+/// reports `partially_paid` (`quotation-schema-and-list-view-api.md` §2b
+/// `summary`), which only matched `'completed'` before and so fell through to
+/// the amount heuristic below — and `amount_paid` is not guaranteed to be on a
+/// **list** row, since the payload is trimmed to the org's list config. A
+/// partially paid invoice then read as **Unpaid**.
+///
+/// The amount check stays as the fallback for a status this does not know, and
+/// for mock rows which carry none.
 String invoiceStatusKey({String? status, double amountPaid = 0}) {
-  if (_norm(status) == 'completed') return 'completed';
+  final s = _norm(status);
+  if (s.contains('partial')) return 'partial';
+  // `fully_paid` / `paid` / `completed` all mean the same thing here.
+  if (s == 'completed' || s == 'paid' || s == 'fully_paid') return 'completed';
+  if (s == 'unpaid' || s == 'pending') return 'unpaid';
   return amountPaid > 0 ? 'partial' : 'unpaid';
 }
 

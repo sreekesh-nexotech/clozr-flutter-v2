@@ -23,13 +23,20 @@ class CallLogsRemoteDataSource {
 
   /// Raw rows for one lead, following `next` up to a sane page cap. The
   /// repository caches these and maps them via [mapRows].
-  Future<List<Map<String, dynamic>>> fetchCallLogRowsForLead(
-      String leadId) async {
+  Future<List<Map<String, dynamic>>> fetchCallLogRowsForLead(String leadId) =>
+      fetchCallLogRowsFor(relatedTo: 'lead', relatedToId: leadId);
+
+  /// Raw rows for **any** related record — `related_to` is the lowercased model
+  /// name (`lead`, `customer`).
+  Future<List<Map<String, dynamic>>> fetchCallLogRowsFor({
+    required String relatedTo,
+    required String relatedToId,
+  }) async {
     final rows = <Map<String, dynamic>>[];
     for (var page = 1; page <= 50; page++) {
       final body = await _api.get(ApiEndpoints.callLogs, query: {
-        'related_to': 'lead',
-        'related_to_id': leadId,
+        'related_to': relatedTo,
+        'related_to_id': relatedToId,
         'page_size': ApiConfig.defaultPageSize,
         if (page > 1) 'page': page,
       });
@@ -43,6 +50,14 @@ class CallLogsRemoteDataSource {
   /// Mapped call list for one lead (malformed rows are skipped, never fatal).
   Future<List<CallLog>> fetchCallLogsForLead(String leadId) async =>
       mapRows(await fetchCallLogRowsForLead(leadId));
+
+  /// Mapped call list for any related record.
+  Future<List<CallLog>> fetchCallLogsFor({
+    required String relatedTo,
+    required String relatedToId,
+  }) async =>
+      mapRows(await fetchCallLogRowsFor(
+          relatedTo: relatedTo, relatedToId: relatedToId));
 
   /// `POST /crm/call-logs/` — records an outgoing call against a lead.
   ///
@@ -150,8 +165,12 @@ class CallLogsRemoteDataSource {
           isMissed: isMissed, connected: connected, duration: duration),
       time: callTimeLabel(started, now: now),
       summary: _str(json['call_summary'])?.trim() ?? '',
-      recordingUrl:
-          _str(json['cdn_recording_url']) ?? _str(json['recording_url']) ?? '',
+      // `cdn_recording_url` only. The raw `recording_url` is Exotel's own link
+      // and 403s for anyone but Exotel, and it is populated by the status
+      // webhook *before* the CDN copy exists — so falling back to it offered a
+      // play control, on exactly the rows that are still processing, that could
+      // only fail. Empty here reads as "no recording yet", which is right.
+      recordingUrl: _str(json['cdn_recording_url']) ?? '',
     );
   }
 

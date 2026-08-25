@@ -12,23 +12,25 @@ class LeadSchemaRemoteDataSource {
 
   final ApiService _api;
 
-  /// The layout for the mobile list card, falling back to the table layout.
+  /// The layout for the mobile list card — `mobile`, and only `mobile`.
   ///
-  /// `mobile` is the view type meant for this screen (the server seeds it as a
-  /// compact subset: name, company, status, value, assignees). Orgs seeded
-  /// before that view type existed have no `mobile` rows, and the server's own
-  /// fallback only covers the data endpoints — so ask for `list` here when
-  /// `mobile` comes back with nothing to render.
+  /// `mobile` is the view type meant for this screen, so it is the one the card
+  /// obeys. There is deliberately **no fallback to `list`**: the two layouts are
+  /// configured independently and an org that trims its mobile view has said
+  /// what it wants on a phone. Borrowing the table layout would quietly show
+  /// columns that were removed on purpose.
+  ///
+  /// An org with no `mobile` rows resolves to [LeadListSchema.empty], whose
+  /// contract everywhere is "no opinion — render the built-in layout". That is
+  /// the honest answer for an unconfigured org, and it is what the card already
+  /// does while the fetch is in flight.
   ///
   /// Note the layout is `mobile` but the **payload** is trimmed to the org's
   /// `list` config: the data endpoints resolve their view type from the request
   /// action, not a query param. A column visible on the card but hidden on the
   /// list therefore arrives with no value — which renders as absent, since the
   /// card skips empty values.
-  Future<LeadListSchema> fetchListSchema() async {
-    final mobile = await _fetch('mobile');
-    return mobile.isNotEmpty ? mobile : _fetch('list');
-  }
+  Future<LeadListSchema> fetchListSchema() => _fetch('mobile');
 
   /// The layout for the lead detail page.
   ///

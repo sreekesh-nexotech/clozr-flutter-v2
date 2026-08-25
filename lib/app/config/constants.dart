@@ -24,6 +24,11 @@ class AppConstants {
   /// Toast auto-dismiss duration.
   static const Duration toastDuration = Duration(milliseconds: 2200);
 
+  /// Auto-dismiss for an error toast. Longer than [toastDuration] because a
+  /// server refusal is a full sentence the user has to read and act on, and
+  /// there is no way to bring it back once it has gone.
+  static const Duration toastErrorDuration = Duration(milliseconds: 5000);
+
   /// Simulated network latency for mock data sources so skeleton/loading
   /// states are visible. Set to [Duration.zero] to disable.
   static const Duration mockLatency = Duration(milliseconds: 350);

@@ -9,6 +9,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
   final DashboardMockDataSource _ds;
 
   @override
-  Future<DashboardData> getDashboard({String period = 'month', String? teamId}) async =>
+  Future<DashboardData> getDashboard(
+          {String period = 'month', String? teamId, String? userId}) async =>
       _ds.load();
 }

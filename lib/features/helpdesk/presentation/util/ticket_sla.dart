@@ -1,15 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/config/api_config.dart';
 import '../../domain/entities/ticket.dart';
 
 /// Pure SLA / breach computations ported from the prototype's helpdesk
-/// view-models. Two fixed "now" anchors match the design exactly:
-///  - [kNowList] (09:00) drives the tickets list card + detail banner.
-///  - [kNowBoard] (09:41) drives the Support Overview board + home dashboard.
-final DateTime kNowList = DateTime.parse('2026-07-09T09:00:00');
-final DateTime kNowBoard = DateTime.parse('2026-07-09T09:41:00');
-final DateTime kEod = DateTime.parse('2026-07-09T23:59:59');
+/// view-models.
+///
+/// The two anchors below were **fixed instants** on 09 Jul 2026 — 09:00 for the
+/// tickets list and detail banner, 09:41 for the Support Overview board and the
+/// home dashboard — so the design's screenshots reproduced exactly.
+///
+/// Against a real backend that froze every SLA figure in time: buckets, the
+/// "Overdue 3h 12m" pills and the stat strip were all measured from July 9th,
+/// so a ticket due last week still read as on track. They now follow the real
+/// clock whenever there is an API, and stay frozen in mock mode, where the seed
+/// records are dated relative to that day and would otherwise all read as
+/// breached. Same contract as `kFilterToday`.
+final DateTime _kMockNowList = DateTime.parse('2026-07-09T09:00:00');
+final DateTime _kMockNowBoard = DateTime.parse('2026-07-09T09:41:00');
+
+DateTime get kNowList => ApiConfig.apiEnabled ? DateTime.now() : _kMockNowList;
+DateTime get kNowBoard => ApiConfig.apiEnabled ? DateTime.now() : _kMockNowBoard;
+
+/// End of the day [kNowBoard] falls in — the boundary for the "Due today"
+/// bucket. Derived so it tracks the anchor instead of naming a fixed date.
+DateTime get kEod {
+  final n = kNowBoard;
+  return DateTime(n.year, n.month, n.day, 23, 59, 59);
+}
 
 /// Priority → pill colour (`PROJPRI`) used by the list/detail priority pill.
 /// Urgent is not in the map, falling back to muted grey, matching the design.
@@ -19,6 +38,15 @@ Color ticketPriPillColor(String pri) => const {
       'Low': AppColors.success,
     }[pri] ??
     AppColors.textMuted;
+
+/// The priorities `/crm/issues/` actually accepts and reports
+/// (`admin_helpdesk_dashboard.md` §3, verified live — all four are in use).
+///
+/// One list, because the three that existed disagreed: the create form offered
+/// High/Medium/Low, the edit form offered Urgent/High/Medium/Low — `Urgent` is
+/// not a value this API has — and the dashboard's resolved grid iterated
+/// High/Medium/Low, so **Critical tickets were missing from it entirely**.
+const kTicketPriorities = ['Critical', 'High', 'Medium', 'Low'];
 
 /// Priority → dot / donut colour (`hhPRI`) used by the dashboard + board dots.
 Color ticketPriDotColor(String pri) => const {
@@ -119,15 +147,22 @@ BoardPill boardPill(Ticket t) {
   final due = _dueMs(t);
   final st = boardState(t);
   final now = kNowBoard.millisecondsSinceEpoch;
+  // A ticket can have no deadline at all — the API returns a null
+  // `sla_remaining_seconds` for those, and helpdesk.md §7 says they land in
+  // `on_track` because they cannot breach. Every branch below dereferenced
+  // `due!`, so such a row crashed the board rather than rendering.
+  if (due == null) {
+    return BoardPill('No due date', AppColors.bgChipGrey, AppColors.textLabelAlt);
+  }
   if (st == 'breached') {
-    final mins = (now - due!) ~/ 60000;
+    final mins = (now - due) ~/ 60000;
     return BoardPill('Overdue ${mins ~/ 60}h ${mins % 60}m', AppColors.tintRed, AppColors.error);
   }
   if (st == 'lt1h') {
-    final mins = ((due! - now) / 60000).ceil();
+    final mins = ((due - now) / 60000).ceil();
     return BoardPill('Breach in ${mins < 1 ? 1 : mins}m', AppColors.tintAmber, AppColors.warningDeep);
   }
-  final d = DateTime.fromMillisecondsSinceEpoch(due!);
+  final d = DateTime.fromMillisecondsSinceEpoch(due);
   if (st == 'today') {
     return BoardPill('Due ${_clock(d)}', AppColors.bgChipGrey, AppColors.textLabelAlt);
   }

@@ -62,9 +62,12 @@ void main() {
       expect(t.pri, 'Urgent');
     });
 
-    test('maps issue type name onto the UI category set', () {
+    test('keeps the org issue type as the category', () {
       final t = TicketsRemoteDataSource.mapTicket(fullRow())!;
-      expect(t.cat, 'Complaint');
+      // The org's own vocabulary, not a fold onto three invented words — this
+      // org's types are Billing / Integration / Support, none of which survive
+      // a fold, so a category edit could never be shown back to the user.
+      expect(t.cat, 'Customer Complaint');
     });
 
     test('maps linkage: customer uuid, product name, project uuid', () {
@@ -137,12 +140,12 @@ void main() {
       expect(priOf(null), 'Medium');
     });
 
-    test('issue-type names map onto the UI category set', () {
+    test('issue-type names are kept verbatim; only a missing type folds', () {
       String catOf(String? name) => TicketsRemoteDataSource.mapTicket(
           {'issue_id': 'x', 'type_name': name})!.cat;
-      expect(catOf('Customer Complaint'), 'Complaint');
-      expect(catOf('Service Request'), 'Request');
-      expect(catOf('General Query'), 'Query');
+      expect(catOf('Customer Complaint'), 'Customer Complaint');
+      expect(catOf('Service Request'), 'Service Request');
+      expect(catOf('Integration'), 'Integration');
       expect(catOf(null), 'Query');
     });
   });

@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../application/providers/dashboard_providers.dart';
@@ -32,7 +33,14 @@ class DashboardScreen extends ConsumerWidget {
     final tab = GoRouterState.of(context).uri.queryParameters['tab'] ?? 'business';
     final phase = ref.watch(dashboardDataNotifierProvider);
 
-    final bool showTeam = tab != 'business';
+    // The `module` the Member dropdown needs, which also decides whether the
+    // team/member chips render at all. Business has no per-team view, and the
+    // Helpdesk widgets take neither param — see [ScopeChips.scopeModule].
+    final String? scopeModule = switch (tab) {
+      'crm' => 'crm',
+      'ops' => 'pmo',
+      _ => null,
+    };
     final Widget panel = switch (tab) {
       'crm' => const CrmPanel(),
       'ops' => const OpsPanel(),
@@ -61,12 +69,21 @@ class DashboardScreen extends ConsumerWidget {
         children: [
           const DashboardHeader(),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-              children: [
-                ScopeChips(showTeam: showTeam),
-                body,
-              ],
+            // One pull covers all four panels: the bundle behind business / crm
+            // / ops / help is a single fetch, and `reload` re-runs it against
+            // the period and team currently selected.
+            child: AppRefresh(
+              onRefresh: () => settle([
+                ref.read(dashboardDataNotifierProvider.notifier).reload(),
+              ]),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                children: [
+                  ScopeChips(scopeModule: scopeModule),
+                  body,
+                ],
+              ),
             ),
           ),
         ],

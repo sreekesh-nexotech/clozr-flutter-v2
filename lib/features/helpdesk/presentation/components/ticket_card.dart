@@ -56,7 +56,7 @@ class TicketCard extends ConsumerWidget {
                       ],
                     ),
                     SizedBox(height: 3.h),
-                    Text('${ticket.id} · ${ticket.cat}',
+                    Text('${ticket.displayRef} · ${ticket.cat}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
@@ -98,22 +98,40 @@ class TicketCard extends ConsumerWidget {
     );
   }
 
+  /// Overlapping assignee avatars.
+  ///
+  /// A [Stack], not a negative margin — `Container` asserts on one, so this
+  /// threw for any ticket with a second assignee, taking the whole list down
+  /// with it.
   Widget _avatars(List<String> ids, int more) {
+    final step = 24.w - 7.w; // each avatar sits 7px into the one before it
     return Row(
       children: [
-        for (int i = 0; i < ids.length; i++)
-          Container(
-            width: 24.w,
+        if (ids.isNotEmpty)
+          SizedBox(
+            width: step * (ids.length - 1) + 24.w,
             height: 24.w,
-            alignment: Alignment.center,
-            margin: EdgeInsets.only(left: i == 0 ? 0 : -7.w),
-            decoration: BoxDecoration(
-              color: MockUsers.of(ids[i]).color,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.white, width: 2),
+            child: Stack(
+              children: [
+                for (int i = 0; i < ids.length; i++)
+                  Positioned(
+                    left: step * i,
+                    child: Container(
+                      width: 24.w,
+                      height: 24.w,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: MockUsers.of(ids[i]).color,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.white, width: 2),
+                      ),
+                      child: Text(MockUsers.of(ids[i]).initials,
+                          style: AppText.custom(
+                              size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                    ),
+                  ),
+              ],
             ),
-            child: Text(MockUsers.of(ids[i]).initials,
-                style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
           ),
         if (more > 0) ...[
           SizedBox(width: 4.w),

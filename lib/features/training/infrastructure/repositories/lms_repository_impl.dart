@@ -1,6 +1,7 @@
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/entities/lms_activity.dart';
+import '../../domain/entities/lms_stats.dart';
 import '../../domain/repositories/lms_repository.dart';
 import '../data_sources/local/lms_mock_ds.dart';
 
@@ -19,6 +20,11 @@ class LmsRepositoryImpl implements LmsRepository {
 
   @override
   Future<List<LmsActivity>> getActivity() => Future.value(_local.fetchActivity());
+
+  /// No dashboard endpoint in mock mode; null keeps the prototype's derived
+  /// tiles exactly as they were.
+  @override
+  Future<LmsStats?> getStats() => Future.value();
 
   @override
   Future<void> setModuleProgress({

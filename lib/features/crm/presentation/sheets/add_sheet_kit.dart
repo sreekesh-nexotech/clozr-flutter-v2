@@ -3,10 +3,67 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../domain/entities/lead.dart';
+import '../../infrastructure/data_sources/remote/crm_tasks_remote_ds.dart';
 
 /// Shared building blocks for the CRM add sheets (Add customer / follow-up /
 /// task). Keeps the three focused-but-faithful forms consistent with the
 /// prototype's sheet chrome.
+
+// ── date & time pickers ──
+//
+// Due date / due time are chosen, never typed: a free-text box invites formats
+// the API rejects (which then get silently dropped on write, since both
+// `isoDateOrNull` and `apiTimeOrNull` answer null for anything unparseable).
+
+/// Opens the platform date picker seeded from [current], which may be ISO
+/// ("2026-06-24"), the display form ("24 Jun 2026"), or empty. Null if
+/// dismissed.
+Future<DateTime?> pickSheetDate(BuildContext context, String current) {
+  final iso = CrmTasksRemoteDataSource.isoDateOrNull(current);
+  final initial = iso == null ? DateTime.now() : DateTime.parse(iso);
+  return showDatePicker(
+    context: context,
+    initialDate: initial,
+    // Both directions: a task can be backdated (logging one already done) as
+    // readily as it is scheduled ahead.
+    firstDate: DateTime(initial.year - 2),
+    lastDate: DateTime(initial.year + 5),
+  );
+}
+
+/// Opens the platform time picker seeded from [current] ("10:00", "10:00:00",
+/// or empty). Null if dismissed.
+Future<TimeOfDay?> pickSheetTime(BuildContext context, String current) {
+  final api = CrmTasksRemoteDataSource.apiTimeOrNull(current);
+  final parts = api?.split(':');
+  return showTimePicker(
+    context: context,
+    initialTime: parts == null
+        ? TimeOfDay.now()
+        : TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1])),
+  );
+}
+
+/// "24 Jun 2026" — the form the sheets show and the entities carry.
+String sheetDateLabel(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')} ${_monthNames[d.month - 1]} ${d.year}';
+
+/// "2026-06-24" — the form the API stores.
+String sheetIsoDate(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// A stored time ("10:00:00", "10:00") as the sheets show it — "10:00". Null
+/// when empty or unparseable, which is what an unfilled field looks like.
+String? sheetTimeText(String raw) => CrmTasksRemoteDataSource.apiTimeOrNull(raw);
+
+/// "10:00" — shown and stored alike.
+String sheetTimeLabel(TimeOfDay t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+const _monthNames = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 
 /// Two-letter initials from a name (first letters of the first two words).
 String initialsOf(String name) {
@@ -168,11 +225,26 @@ class SelectChip extends StatelessWidget {
 }
 
 /// The sticky primary action button in the sheet footer.
+///
+/// Set [busy] while a save is in flight: the bar dims, reports progress and
+/// stops accepting taps. Every one of these sheets awaits a `POST` before it
+/// pops, so without it a second tap during that window creates the record
+/// twice — which is exactly what a lead's audit trail showed.
 class SheetSubmitBar extends StatelessWidget {
-  const SheetSubmitBar({super.key, required this.label, required this.icon, required this.onTap});
+  const SheetSubmitBar({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.busy = false,
+    this.busyLabel = 'Saving…',
+  });
+
   final String label;
   final IconData icon;
   final VoidCallback onTap;
+  final bool busy;
+  final String busyLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -181,18 +253,34 @@ class SheetSubmitBar extends StatelessWidget {
       decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          height: 48.h,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 15.sp, color: AppColors.white),
-              SizedBox(width: 8.w),
-              Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
-            ],
+        // Null rather than a no-op closure, so the tap is not merely swallowed
+        // here — it falls through to nothing and cannot re-enter the save.
+        onTap: busy ? null : onTap,
+        child: Opacity(
+          opacity: busy ? 0.6 : 1,
+          child: Container(
+            height: 48.h,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (busy)
+                  SizedBox(
+                    width: 15.sp,
+                    height: 15.sp,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppColors.white),
+                    ),
+                  )
+                else
+                  Icon(icon, size: 15.sp, color: AppColors.white),
+                SizedBox(width: 8.w),
+                Text(busy ? busyLabel : label,
+                    style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+              ],
+            ),
           ),
         ),
       ),

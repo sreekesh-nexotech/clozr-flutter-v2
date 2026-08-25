@@ -28,4 +28,8 @@ class InvoicesApiRepository implements InvoicesRepository {
       rethrow;
     }
   }
+
+  @override
+  Future<InvoiceSummary?> getInvoiceSummary(String paymentId) =>
+      _remote.fetchSummary(paymentId);
 }

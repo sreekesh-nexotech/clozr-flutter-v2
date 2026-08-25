@@ -41,16 +41,25 @@ class LmsOverviewScreen extends ConsumerWidget {
       ref.watch(lmsActivityControllerProvider),
     ]);
 
+    // The server's own figures when the dashboard answers; otherwise the
+    // derived ones. Counting locally under-reports on both ends: courses only
+    // count the page that loaded, and learners come from an admin-only endpoint
+    // that answers 403 — and therefore zero — for everyone else.
+    final server = ref.watch(lmsStatsProvider).valueOrNull;
     final learners = records.where((r) => r.rid != 'me').length;
     final allEntries = [for (final r in records) ...r.courses];
     final avgAll = allEntries.isEmpty
         ? 0
         : (allEntries.map(LmsLogic.pct).reduce((a, b) => a + b) / allEntries.length).round();
 
+    final totalCourses = server?.totalCourses ?? courses.length;
+    final totalLearners = server?.totalLearners ?? learners;
+    final avgCompletion = server?.avgCompletion ?? avgAll;
+
     final stats = <(IconData, String, String)>[
-      (PhosphorIconsFill.bookOpenText, courses.length.toString().padLeft(2, '0'), 'Total Courses'),
-      (PhosphorIconsFill.student, learners.toString().padLeft(2, '0'), 'Total Learners'),
-      (PhosphorIconsFill.chartLineUp, '$avgAll%', 'Avg. completion'),
+      (PhosphorIconsFill.bookOpenText, totalCourses.toString().padLeft(2, '0'), 'Total Courses'),
+      (PhosphorIconsFill.student, totalLearners.toString().padLeft(2, '0'), 'Total Learners'),
+      (PhosphorIconsFill.chartLineUp, '$avgCompletion%', 'Avg. completion'),
     ];
 
     final topCourses = [...courses]

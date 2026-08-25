@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
-import '../../../app/theme/app_text_styles.dart';
+import '../../../core/network/network_providers.dart';
+import '../../../core/widgets/keyboard_visibility.dart';
 import '../application/providers/shell_providers.dart';
 import 'app_drawer.dart';
 import 'clozr_bottom_nav.dart';
@@ -25,7 +24,29 @@ class ClozrShell extends ConsumerWidget {
     final location = GoRouterState.of(context).uri.toString();
     final meta = Routes.metaFor(location);
     final drawerOpen = ref.watch(drawerOpenProvider);
-    final toast = ref.watch(toastProvider);
+
+    // Every rejected write, and every permission refusal, gets said out loud
+    // once — here, rather than at each call site.
+    //
+    // Most reach a screen that reports them itself, but several deliberately do
+    // not: the best-effort fetches swallow theirs so an unreadable layout never
+    // blanks the page, and the notes composer keeps its optimistic entry rather
+    // than losing what was typed. Both are the right local choice and both used
+    // to end with the user seeing nothing at all. Listening at the shell covers
+    // them without changing what any screen does on its fallback path.
+    ref.listen(apiFailureProvider, (_, failure) {
+      if (failure == null) return;
+      // A screen that already reported this has said the same sentence;
+      // re-showing it would only restart the timer on a toast being read.
+      if (ref.read(toastProvider)?.text == failure.message) return;
+      ref.read(toastProvider.notifier).showError(failure.message);
+    });
+
+    // Read HERE, above the Scaffold: a Scaffold that resizes for the keyboard
+    // removes the bottom inset from the MediaQuery it gives its body, so this
+    // is the last point in the tree where the question can still be answered.
+    // Published to the routed screens via [KeyboardVisibility] below.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     // Handle the OS/hardware Back button (#11). Without this, screens reached
     // via context.go (bottom nav / drawer) flatten the stack, so Back exits the
@@ -51,22 +72,44 @@ class ClozrShell extends ConsumerWidget {
         }
         SystemNavigator.pop();
       },
-      child: Scaffold(
-        backgroundColor: AppColors.bgScreen,
-        body: Stack(
-          children: [
+      child: KeyboardVisibility(
+        visible: keyboardOpen,
+        child: Scaffold(
+          backgroundColor: AppColors.bgScreen,
+          body: Stack(
+            children: [
           // Routed screen. Headers stay edge-to-edge under the real status bar
           // (their own top padding clears it); the bottom SafeArea keeps every
           // screen's bottom-anchored content (sticky CTAs, list ends) above the
           // OS gesture/navigation bar on all device sizes. The simulated iOS
           // status bar and home-indicator from the design canvas are gone — the
           // real OS draws those.
+          //
+          // While the keyboard is up the screen also becomes tap-to-dismiss:
+          // otherwise there is no way out of a focused field except the search
+          // field's own × chip, and the keyboard sits over half the results.
+          // Translucent, so a tap that lands on something interactive is still
+          // claimed by that child — only dead space reaches this recogniser.
           Positioned.fill(
-            child: SafeArea(top: false, bottom: true, child: child),
+            child: SafeArea(
+              top: false,
+              bottom: true,
+              child: keyboardOpen
+                  ? GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                      child: child,
+                    )
+                  : child,
+            ),
           ),
 
           // Bottom nav (conditional) — lifts itself above the gesture inset.
-          if (meta.showNav)
+          // Hidden while the keyboard is up: the Scaffold shrinks the Stack by
+          // the inset, so a bottom-anchored nav is not covered by the keyboard,
+          // it is glued to the top of it — floating over the list on every
+          // search-open screen.
+          if (meta.showNav && !keyboardOpen)
             Positioned(
               left: 0,
               right: 0,
@@ -77,69 +120,10 @@ class ClozrShell extends ConsumerWidget {
           // Drawer.
           if (drawerOpen) Positioned.fill(child: AppDrawer(location: location)),
 
-          // Toast.
-          if (toast != null) _Toast(message: toast),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Toast extends StatelessWidget {
-  const _Toast({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      bottom: 106.h + MediaQuery.viewPaddingOf(context).bottom,
-      left: 0,
-      right: 0,
-      child: IgnorePointer(
-        // The toast carries whatever the backend said, and a validation error
-        // is a sentence, not a word ("A task must have at least one note
-        // before it can be completed."). Without a width bound the row simply
-        // grew past the screen and overflowed; it has to wrap instead.
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 24.w),
-          child: Center(
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 17.w, vertical: 12.h),
-              decoration: BoxDecoration(
-                color: AppColors.navy,
-                borderRadius: BorderRadius.circular(12.r),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.navy.withOpacity(0.34),
-                    blurRadius: 30,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(PhosphorIconsFill.checkCircle, size: 18.sp, color: AppColors.toastCheck),
-                  SizedBox(width: 9.w),
-                  // Flexible, not Expanded: a short message still gets a
-                  // snug pill rather than one stretched to the full width.
-                  Flexible(
-                    child: Text(
-                      message,
-                      // Bounded so a pathological message cannot cover the
-                      // screen, but generous enough that no realistic
-                      // validation error is cut off.
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(
-                              size: 13, weight: FontWeight.w600, color: AppColors.white)
-                          .copyWith(height: 1.35),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          // The toast is NOT here: it lives above the navigator (see
+          // [ToastOverlay] in app.dart), because bottom sheets open on the
+          // root navigator and would otherwise cover it.
+            ],
           ),
         ),
       ),

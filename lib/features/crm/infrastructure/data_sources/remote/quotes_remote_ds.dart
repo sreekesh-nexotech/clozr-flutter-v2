@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+
 import '../../../../../core/config/api_config.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
@@ -7,6 +11,9 @@ import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../domain/entities/quote.dart';
+import '../../../domain/entities/crm_catalog.dart';
+// `hexColor` — the shared `#RRGGBB` parser every org catalog colours through.
+import 'crm_catalog_remote_ds.dart' show hexColor;
 import '../../../domain/entities/view_schema.dart';
 import '../../../domain/repositories/quotes_repository.dart';
 
@@ -43,6 +50,58 @@ class QuotesRemoteDataSource {
     }
     return out;
   }
+
+  /// `GET /quotations/statuses/` — the org's own quote statuses.
+  ///
+  /// Shape per `docs-backend/quotation-schema-and-list-view-api.md` §4:
+  /// `{quotation_status_id, name, color, position, is_active, …}`. Only active
+  /// ones are offered — an archived status cannot be on a live quote.
+  ///
+  /// Best-effort: a failure yields the empty list, which the drawer reads as
+  /// "no org catalog" and falls back to the built-in vocabulary.
+  Future<List<CatalogOption>> fetchQuoteStatuses() async {
+    try {
+      final body = await _api.get(ApiEndpoints.quotationStatuses,
+          query: {'page_size': 100});
+      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final out = <CatalogOption>[];
+      for (final row in rows) {
+        if (row['is_active'] == false) continue;
+        final id = (row['quotation_status_id'] ?? '').toString();
+        final name = (row['name'] ?? '').toString();
+        if (id.isEmpty || name.isEmpty) continue;
+        out.add(CatalogOption(
+          id: id,
+          name: name,
+          color: hexColor(row['color']),
+          // Marks the org's "Accepted" lane — the target Accept & invoice
+          // writes to, and the one whose arrival makes the server raise the
+          // invoice (doc §4).
+          isConverted: row['is_converted'] == true,
+        ));
+      }
+      return out;
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// `PATCH /quotations/quotations/{quotation_id}/` — moves a quote to another
+  /// status.
+  ///
+  /// Sends `status_id`, never the nested `status` object (doc §3's note and §4).
+  /// Addressed by the **UUID**, not the display `quotation_number`.
+  ///
+  /// Deliberately not best-effort: a refused move must reach the user, because
+  /// entering a converted status is what raises the invoice — silently swallowing
+  /// that would leave the screen claiming an invoice exists when none does.
+  Future<void> updateQuoteStatus(String quotationId, String statusId) =>
+      _api.patch(ApiEndpoints.quotation(quotationId), body: {'status_id': statusId});
+
+  /// `PATCH /quotations/quotations/{id}/` — the detail card's inline edits.
+  /// Verified against the dev backend: a partial body is accepted and echoed.
+  Future<void> updateQuote(String quotationId, Map<String, dynamic> fields) =>
+      _api.patch(ApiEndpoints.quotation(quotationId), body: fields);
 
   /// The org's Quote layout, used to drive the New quote form.
   ///
@@ -104,7 +163,19 @@ class QuotesRemoteDataSource {
   /// Returns the created quote, or null when the response is not a row we can
   /// map (never a crash).
   Future<Quote?> createQuote(Map<String, dynamic> fields) async {
+    // The shared Dio logger keeps request bodies off in debug, because the auth
+    // calls' bodies are credentials. This one carries none, and what it sends —
+    // `line_items` above all — is the only way to tell an app-side amount bug
+    // from a server that is not deriving `total_amount`. Debug builds only.
+    assert(() {
+      debugPrint('POST ${ApiEndpoints.quotations} → ${jsonEncode(fields)}');
+      return true;
+    }());
     final body = await _api.post(ApiEndpoints.quotations, body: fields);
+    assert(() {
+      debugPrint('POST ${ApiEndpoints.quotations} ← ${jsonEncode(body)}');
+      return true;
+    }());
     if (body is! Map<String, dynamic>) return null;
     try {
       return quoteFromApi(body);
@@ -140,13 +211,21 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
     final total = parseAmount(row['total_amount']);
     return Quote(
       id: id,
+      uuid: _str(row['quotation_id']) ?? '',
+      title: _str(row['quotation_title']) ?? _str(row['title']),
       custId: _str(row['customer_id']) ?? _linkedId(row['customer'], 'customer_id'),
       leadId: _linkedId(row['lead'], 'lead_id') ?? _str(row['lead_id']),
       status: quoteStatusKey(
         name: statusName,
         validUntil: validUntil,
-        isConverted: row['is_converted'] == true,
+        // The list row flattens `status` to a name; only the detail row nests
+        // the object carrying `is_converted` (doc §2, §4).
+        isConverted: row['is_converted'] == true ||
+            (statusRaw is Map && statusRaw['is_converted'] == true),
       ),
+      // Kept verbatim beside the folded key so the tabs and the pill can show
+      // the org's own status name (see [Quote.statusName]).
+      statusName: statusName ?? '',
       amount: formatInr(total),
       amountNum: total.round(),
       issued: absoluteDate(parseApiDate(row['created_at'])),

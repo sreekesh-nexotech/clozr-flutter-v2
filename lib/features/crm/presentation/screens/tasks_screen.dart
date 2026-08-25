@@ -9,12 +9,14 @@ import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/api/status_keys.dart';
+import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/tasks_filter_spec.dart';
@@ -38,23 +40,52 @@ class TasksScreen extends ConsumerStatefulWidget {
 class _TasksScreenState extends ConsumerState<TasksScreen> {
   final _searchCtrl = TextEditingController();
 
-  /// Tabs that are not statuses at all — these stay built-in.
+  /// The one tab that is not a status: the unfiltered list.
+  ///
+  /// "My tasks" and "Overdue" used to sit here too. They are not statuses —
+  /// the backend has no such lane — so the row now shows the org's own statuses
+  /// and nothing else.
   static const _pseudoTabs = <(String, String)>[
     ('all', 'All'),
-    ('mine', 'My tasks'),
-    ('overdue', 'Overdue'),
   ];
 
-  /// The built-in lane vocabulary, used **only** until the org's own arrives.
+  /// Labels for the non-status views that are still reachable from elsewhere.
   ///
-  /// A fallback, not the source of truth: these are the four folded buckets, so
-  /// an org whose lanes are Open / In Progress / Completed / Cancelled would
-  /// read "To do" / "Blocked" / "Done" — names it does not use.
-  static const _builtinLaneTabs = <(String, String)>[
-    ('todo', 'To do'),
-    ('inprogress', 'In Progress'),
-    ('blocked', 'Blocked'),
-    ('done', 'Done'),
+  /// The CRM home "Tasks missed" card deep-links straight into `overdue`
+  /// (`crm_home_screen.dart:543`). That view has no chip of its own any more, so
+  /// without this the list would arrive filtered with nothing in the row
+  /// selected — a short list and no visible reason for it. When such a view is
+  /// active its chip is shown, selected, until the user picks another.
+  static const _deepLinkTabs = <String, String>{
+    'mine': 'My tasks',
+    'overdue': 'Overdue',
+  };
+
+  /// The lanes shown in **API mode** while `crm-task-statuses` is in flight.
+  ///
+  /// These are the four statuses the backend seeds on every org — verified live
+  /// against `GET /crm/crm-task-statuses/`, which returns exactly Open /
+  /// In Progress / Completed / Cancelled with these colours (see
+  /// `docs-flutter/task-schema-and-status-api.md` §2).
+  ///
+  /// Keyed by the **lane name**, not by the app's internal folded bucket: a
+  /// task row carries its status as a display name ("In Progress"), and
+  /// [crmTaskInTab] matches on that, so these chips filter correctly before the
+  /// catalog lands *and* stay selected once it replaces them. Keying them by
+  /// the folded buckets was what put the mock vocabulary on this row — and it
+  /// merged Cancelled into `blocked`, so two lanes shared one chip.
+  static const _seededLaneTabs = <(String, String, Color)>[
+    ('Open', 'Open', Color(0xFF3B82F6)),
+    ('In Progress', 'In Progress', Color(0xFFF59E0B)),
+    ('Completed', 'Completed', Color(0xFF10B981)),
+    ('Cancelled', 'Cancelled', Color(0xFF6B7280)),
+  ];
+
+  /// The lanes shown in **mock mode**, where rows carry no org lane name and
+  /// only the built-in folded buckets exist to filter on.
+  static final _mockLaneTabs = <(String, String, Color)>[
+    for (final k in const ['todo', 'inprogress', 'blocked', 'done'])
+      (k, StatusMeta$.task[k]!.label, StatusMeta$.task[k]!.color),
   ];
 
   /// Whether a chip should read as selected.
@@ -110,17 +141,20 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     ref.watch(taskPriorityOptionsProvider);
     final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
 
-    // The org's own lanes drive the tab row — names, order and count. Empty
-    // (mock mode, still loading, failed fetch) falls back to the built-in
-    // vocabulary, the same "empty schema is no opinion" contract used
-    // everywhere else.
+    // The org's own lanes drive the tab row — names, order, colour and count,
+    // straight from `GET /crm/crm-task-statuses/`. Empty (still loading, failed
+    // fetch, mock mode) falls back per mode: the seeded lane names in API mode,
+    // the built-in vocabulary only where there is no API to disagree with.
     final statuses = ref.watch(taskStatusOptionsProvider);
-    final tabs = [
-      ..._pseudoTabs,
-      if (statuses.isEmpty)
-        ..._builtinLaneTabs
+    final tabs = <(String, String, Color?)>[
+      for (final (k, lbl) in _pseudoTabs) (k, lbl, null),
+      if (_deepLinkTabs.containsKey(tab)) (tab, _deepLinkTabs[tab]!, null),
+      if (statuses.isNotEmpty)
+        for (final s in statuses) (s.name, s.name, crmTaskStatusColor(s))
+      else if (ApiConfig.apiEnabled)
+        ..._seededLaneTabs
       else
-        for (final s in statuses) (s.name, s.name),
+        ..._mockLaneTabs,
     ];
     // The org's list-card layout: which of the card's slots to render.
     final cardSchema = ref.watch(taskListSchemaProvider);
@@ -166,9 +200,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               height: 40.h,
               child: TabChipRow(
                 children: [
-                  for (final (k, lbl) in tabs)
+                  for (final (k, lbl, dot) in tabs)
                     TabChip(
                       label: '$lbl (${crmTaskTabCount(all, k)})',
+                      dotColor: dot,
                       active: _tabActive(tab, k, statuses),
                       onTap: () => ref.read(crmTaskTabProvider.notifier).state = k,
                     ),
@@ -184,10 +219,13 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
           child: AsyncStateView<List<CrmTask>>(
             value: async,
             onRetry: () => ref.invalidate(crmTasksProvider),
+            onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(visibleCrmTasksProvider);
               if (visible.isEmpty) {
                 return ListView(
+                  // So the gesture still works with nothing to scroll.
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     EmptyState(
                       icon: PhosphorIconsRegular.funnel,
@@ -201,6 +239,11 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 );
               }
               return ListView.separated(
+                // Scrolling the results puts the search keyboard away. Without
+                // it the only exit is the search field's own × chip, so the
+                // keyboard covered the rows the user had just searched for.
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 itemCount: visible.length,
                 separatorBuilder: (_, __) => SizedBox(height: 12.h),
@@ -242,7 +285,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
           rolled.remove(t.id);
         }
         ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        ref.read(toastProvider.notifier).show(e.message);
+        ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
     }
@@ -250,6 +293,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   }
 
   // ── Filter drawer ──
+  /// Pull-to-refresh: the rows, the org's lanes / types / priorities and the
+  /// card layout. All three of the latter are session-scoped and nothing else
+  /// invalidates them, so a pull is the only way to pick up an admin's change
+  /// without restarting.
+  Future<void> _refresh() async {
+    ref.invalidate(crmTasksProvider);
+    ref.invalidate(taskStatusCatalogProvider);
+    ref.invalidate(taskTypeCatalogProvider);
+    ref.invalidate(taskPriorityCatalogProvider);
+    ref.invalidate(taskListSchemaFutureProvider);
+    await settle([
+      ref.read(crmTasksProvider.future),
+      ref.read(taskStatusCatalogProvider.future),
+      ref.read(taskListSchemaFutureProvider.future),
+    ]);
+  }
+
   Future<void> _openFilters() async {
     final spec = ref.read(crmTasksFilterSpecProvider);
     final current = ref.read(crmTaskFiltersProvider);
