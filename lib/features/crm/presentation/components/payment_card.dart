@@ -44,7 +44,11 @@ class PaymentCard extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
                     SizedBox(height: 3.h),
-                    Text('${payment.id} · ${payment.label}',
+                    // The invoice number, not `payment.id`: a record's own id
+                    // is a uuid on a live backend, so the row read
+                    // "3f2601da-8a35-… · Installment 1 of 6". Falls back to the
+                    // id for seed rows, whose ids are short and meaningful.
+                    Text('${payment.invId ?? payment.id} · ${payment.label}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),

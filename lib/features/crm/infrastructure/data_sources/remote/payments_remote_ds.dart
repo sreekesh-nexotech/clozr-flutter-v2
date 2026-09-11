@@ -127,7 +127,13 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row, {String? invIdOverride})
     return Payment(
       id: id,
       custId: _str(row['customer_id']),
-      invId: invIdOverride ?? _str(row['invoice_id']),
+      // The parent's **display** id, because `invId` is shown on screen
+      // ("Invoice · QTN-00005"), routed on, and joined against `Invoice.id`.
+      // A `payment-records` row carries `quotation_number` itself, so the
+      // uuid in `invoice_id` is only a last resort.
+      invId: invIdOverride ??
+          _str(row['quotation_number']) ??
+          _str(row['invoice_id']),
       label: _str(row['notes']) ??
           'Installment ${installmentNumber is num ? installmentNumber.toInt() : 1}',
       amount: formatInr(amount),

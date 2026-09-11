@@ -17,6 +17,8 @@ import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_party_providers.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/app_error.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../../domain/entities/payment.dart';
@@ -131,6 +133,38 @@ class PaymentDetailScreen extends ConsumerWidget {
     );
   }
 
+  /// Settles this installment for real — `PATCH /quotations/payment-records/`,
+  /// the same call the Invoice screen's "Settle now" row and the Record payment
+  /// sheet make.
+  ///
+  /// This button used to be a bare toast: it said "Payment marked as paid" and
+  /// wrote nothing, so the pill still read unpaid after a reload. Two other
+  /// places in the app already did the real write, which made this the odd one
+  /// out rather than a deliberate stub.
+  Future<void> _markPaid(WidgetRef ref, Payment payment) async {
+    final prev = ref.read(paidOverrideProvider);
+    ref.read(paidOverrideProvider.notifier).state = {...prev, payment.id};
+
+    if (ApiConfig.apiEnabled) {
+      try {
+        await ref.read(paymentsRepositoryProvider).markRecordPaid(
+              payment.id,
+              amount: payment.amountNum > 0 ? payment.amountNum.toDouble() : null,
+            );
+      } on AppError catch (e) {
+        // Put the optimistic flip back, so the pill cannot claim a payment the
+        // server refused.
+        ref.read(paidOverrideProvider.notifier).state = {...prev};
+        ref.read(toastProvider.notifier).showError(e.message);
+        return;
+      }
+      // The server recalculates the parent invoice, so both lists are stale.
+      ref.invalidate(paymentsProvider);
+      ref.invalidate(invoicesProvider);
+    }
+    ref.read(toastProvider.notifier).show('Payment marked as paid');
+  }
+
   Widget _headerCard(WidgetRef ref, Payment payment, StatusMeta meta, bool canMarkPaid) {
     final lookup = ref.watch(crmPartyLookupProvider);
     return FinanceCard(
@@ -168,7 +202,7 @@ class PaymentDetailScreen extends ConsumerWidget {
           if (canMarkPaid) ...[
             const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
             GestureDetector(
-              onTap: () => ref.read(toastProvider.notifier).show('Payment marked as paid'),
+              onTap: () => _markPaid(ref, payment),
               child: Container(
                 height: 46.h,
                 alignment: Alignment.center,
