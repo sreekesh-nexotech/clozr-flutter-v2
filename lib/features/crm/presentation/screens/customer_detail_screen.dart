@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -621,6 +622,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
                   onAddReply: (noteId, body) =>
                       ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
+                  onTogglePin: (noteId) =>
+                      ref.read(crmNotesProvider(notesSeed).notifier).togglePin(noteId),
                 ),
                 SizedBox(height: 14.h),
                 _activityLogCard(cust),
@@ -651,6 +654,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         ? fromRow('address')
         : cust.location.trim();
     final subtitle = company.isNotEmpty ? company : location;
+    // Same reason as `company`/`location` above: `since` is mapped from
+    // `status_entered_at`, which this org's list config does not carry, so the
+    // entity's copy is empty and the line rendered as a bare "Customer since"
+    // with no date. The detail row does carry it.
+    final since = _monthYear(row?['status_entered_at']) ?? cust.since;
 
     return ClozrCard(
       radius: 18,
@@ -696,14 +704,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
                     ],
-                    SizedBox(height: 5.h),
-                    Row(
-                      children: [
-                        Icon(PhosphorIconsRegular.clock, size: 13.sp, color: AppColors.textPlaceholder),
-                        SizedBox(width: 5.w),
-                        Text('Customer since ${cust.since}', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted2)),
-                      ],
-                    ),
+                    // A record with no status date at all says nothing, rather
+                    // than labelling a blank.
+                    if (since.isNotEmpty) ...[
+                      SizedBox(height: 5.h),
+                      Row(
+                        children: [
+                          Icon(PhosphorIconsRegular.clock, size: 13.sp, color: AppColors.textPlaceholder),
+                          SizedBox(width: 5.w),
+                          Text('Customer since $since', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted2)),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -787,7 +799,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Widget _scoreCard(Customer cust) {
-    final score = cust.score;
+    // `score` is not in this org's list config, so the entity carries 0 and the
+    // card read "0 / 100" while the information row below it — fed by the
+    // detail row — showed the real figure. One screen, two answers for the same
+    // field. The detail row wins; the entity stays the fallback.
+    final row = ref.watch(customerRowProvider(cust.id)).valueOrNull;
+    final score = (row?['score'] as num?)?.toInt() ?? cust.score;
     final color = score >= 75 ? AppColors.success : (score >= 45 ? AppColors.warningDeep : AppColors.error);
     return ClozrCard(
       radius: 18,
@@ -914,10 +931,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final ownerId = _ownerOf(cust);
     final owner = MockUsers.of(ownerId);
     final assignees = cust.team.where((t) => t != ownerId).toList();
-    final teamName = () {
-      final parts = owner.role.split('·');
-      return parts.length > 1 ? parts[1].trim() : 'Team Kochi';
-    }();
+    // Was derived from the mock user directory's `role` string, with a literal
+    // 'Team Kochi' as the fallback — so a customer the API says has no team,
+    // in an org that has no teams at all, still showed a plausible team name.
+    // Read the field the backend actually models; say nothing when it is unset.
+    final teamName = _teamNameOf(row?['assigned_team']);
 
     return ClozrCard(
       radius: 18,
@@ -1022,7 +1040,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   children: [
                     Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: AppColors.textLabelAlt),
                     SizedBox(width: 7.w),
-                    Text(teamName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    if (teamName.isEmpty)
+                      Text('No team assigned', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
+                    else
+                      Text(teamName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
                   ],
                 ),
               ],
@@ -1031,6 +1052,35 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// "Dec 2025" from an API timestamp; null when there is no usable date, so
+  /// callers can fall back rather than render an empty label.
+  static String? _monthYear(Object? value) {
+    final at = parseApiDate(value);
+    return at == null ? null : DateFormat('MMM yyyy').format(at.toLocal());
+  }
+
+  /// The team's display name from `assigned_team`, which arrives either as a
+  /// nested object or as the bare id the schema describes (`foreignkey` →
+  /// `Team`). An id is resolved against the org's own team catalog; an id with
+  /// no match, and an unset field, both answer empty — the caller says "no team
+  /// assigned" rather than inventing one.
+  String _teamNameOf(Object? value) {
+    if (value == null) return '';
+    if (value is Map) {
+      for (final key in const ['name', 'team_name', 'title', 'label']) {
+        final v = value[key];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+      return '';
+    }
+    final id = value.toString().trim();
+    if (id.isEmpty) return '';
+    for (final option in ref.watch(teamOptionsProvider)) {
+      if (option.id == id) return option.name;
+    }
+    return '';
   }
 
   Widget _roundAction(IconData icon, VoidCallback onTap) {
