@@ -50,6 +50,7 @@ class TabChip extends StatelessWidget {
               label,
               style: TextStyle(
                 fontFamily: 'Manrope',
+                fontVariations: [FontVariation('wght', active ? 700.0 : 500.0)],
                 fontSize: 13.5.sp,
                 fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                 color: active ? AppColors.navy : AppColors.textLabelAlt,

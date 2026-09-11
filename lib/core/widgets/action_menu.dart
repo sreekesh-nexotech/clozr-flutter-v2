@@ -96,6 +96,7 @@ class ClozrActionMenu extends StatelessWidget {
                     Text(a.label,
                         style: TextStyle(
                           fontFamily: 'Manrope',
+                          fontVariations: const [FontVariation('wght', 600.0)],
                           fontSize: 15.sp,
                           fontWeight: FontWeight.w600,
                           color: color,
@@ -106,6 +107,7 @@ class ClozrActionMenu extends StatelessWidget {
                         child: Text(a.sublabel!,
                             style: TextStyle(
                               fontFamily: 'Manrope',
+                              fontVariations: const [FontVariation('wght', 500.0)],
                               fontSize: 12.sp,
                               fontWeight: FontWeight.w500,
                               color: AppColors.textMuted,

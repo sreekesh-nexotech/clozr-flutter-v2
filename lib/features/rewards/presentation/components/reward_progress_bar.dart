@@ -57,6 +57,7 @@ class RewardOverline extends StatelessWidget {
           label.toUpperCase(),
           style: TextStyle(
             fontFamily: 'Manrope',
+            fontVariations: const [FontVariation('wght', 700.0)],
             fontSize: 10.5.sp,
             fontWeight: FontWeight.w700,
             color: AppColors.textPlaceholder,

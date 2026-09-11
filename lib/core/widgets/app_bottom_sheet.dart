@@ -97,6 +97,7 @@ class SheetHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: 'Manrope',
+                  fontVariations: const [FontVariation('wght', 800.0)],
                   fontSize: 17.sp,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,

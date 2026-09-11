@@ -259,6 +259,7 @@ class ClozrBottomNav extends ConsumerWidget {
                 maxLines: 1,
                 style: TextStyle(
                   fontFamily: 'Manrope',
+                  fontVariations: [FontVariation('wght', on ? 700.0 : 500.0)],
                   fontSize: 10.5.sp,
                   height: 1,
                   fontWeight: on ? FontWeight.w700 : FontWeight.w500,

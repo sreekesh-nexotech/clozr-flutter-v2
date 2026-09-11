@@ -26,6 +26,12 @@ class AppText {
       fontFamily: fontFamily,
       fontSize: size.sp,
       fontWeight: weight,
+      // Manrope ships as a single variable face whose `wght` axis defaults to
+      // 200, so `fontWeight` alone only picks the face — it leaves the axis
+      // parked at ExtraLight and lets Flutter fake the heavier weights. This
+      // drives the axis itself. Both are needed: `fontWeight` still governs
+      // face selection and fallback fonts.
+      fontVariations: [FontVariation('wght', weight.value.toDouble())],
       color: color,
       letterSpacing: letterSpacing,
       height: height,

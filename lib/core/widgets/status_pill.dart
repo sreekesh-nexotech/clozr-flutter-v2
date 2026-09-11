@@ -37,6 +37,7 @@ class StatusPill extends StatelessWidget {
         maxLines: 1,
         style: TextStyle(
           fontFamily: 'Manrope',
+          fontVariations: const [FontVariation('wght', 700.0)],
           fontSize: fontSize.sp,
           fontWeight: FontWeight.w700,
           color: color,
@@ -62,6 +63,7 @@ class PriorityPill extends StatelessWidget {
         priority,
         style: TextStyle(
           fontFamily: 'Manrope',
+          fontVariations: const [FontVariation('wght', 700.0)],
           fontSize: fontSize.sp,
           fontWeight: FontWeight.w700,
           color: tone.fg,

@@ -40,6 +40,7 @@ class InitialsAvatar extends StatelessWidget {
         initials,
         style: TextStyle(
           fontFamily: 'Manrope',
+          fontVariations: const [FontVariation('wght', 700.0)],
           fontSize: (fontSize ?? (size > 26 ? 11 : 10)).sp,
           fontWeight: FontWeight.w700,
           color: foreground,
