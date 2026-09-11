@@ -55,6 +55,9 @@ class AppHeaderBar extends ConsumerWidget {
           onTap: () => ref.read(drawerOpenProvider.notifier).state = true,
           child: Row(
             children: [
+              // The drawer affordance. It reads as the tap target for the whole
+              // block, so it stays even though the lockup beside it also
+              // carries the brand mark.
               Container(
                 width: 40.w,
                 height: 40.w,
@@ -66,16 +69,18 @@ class AppHeaderBar extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text.rich(
-                    TextSpan(
-                      text: AppConstants.brandName,
-                      style: AppText.logo(),
-                      children: const [
-                        TextSpan(text: '.', style: TextStyle(color: AppColors.blueBright)),
-                      ],
-                    ),
+                  // Only the height is constrained — the width follows the
+                  // artwork's 1.89:1 ratio, so it can never distort.
+                  Image.asset(
+                    'assets/images/clozr_wordmark.png',
+                    height: 30.h,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                    // The wordmark replaced real text; without this the brand
+                    // name would disappear from the accessibility tree.
+                    semanticLabel: AppConstants.brandName,
                   ),
-                  SizedBox(height: 1.h),
+                  SizedBox(height: 2.h),
                   Text(workspace, style: AppText.caption()),
                 ],
               ),

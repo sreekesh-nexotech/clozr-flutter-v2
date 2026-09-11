@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.clozrapp"
+    namespace = "com.nexotech.clozrapp"
 
     // Pinned above Flutter's defaults because the plugins pinned in
     // `pubspec.lock` demand it. Both are backward compatible, so the rule is
@@ -31,8 +31,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.clozrapp"
+        // Permanent once published — Play ties the listing, reviews and install
+        // base to this string and it can never be changed for the same app.
+        applicationId = "com.nexotech.clozrapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

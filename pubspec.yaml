@@ -106,6 +106,29 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   mocktail: ^1.0.4
+  flutter_launcher_icons: ^0.14.3
+
+# Launcher icons. Regenerate with `dart run flutter_launcher_icons` after
+# changing the source art.
+#
+# The source lockup is a wide wordmark (1.9:1), so Android gets a separate
+# padded foreground: the adaptive-icon mask only guarantees the inner 66% of
+# the canvas, and the full-bleed art would lose its edges to the circle crop.
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  adaptive_icon_background: "#EDE8EF"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    background_color: "#EDE8EF"
+    theme_color: "#00113B"
+  macos:
+    generate: true
+  windows:
+    generate: true
 
 flutter:
   uses-material-design: true

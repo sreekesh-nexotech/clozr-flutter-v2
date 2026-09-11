@@ -1,4 +1,4 @@
-package com.example.clozrapp
+package com.nexotech.clozrapp
 
 import io.flutter.embedding.android.FlutterActivity
 
