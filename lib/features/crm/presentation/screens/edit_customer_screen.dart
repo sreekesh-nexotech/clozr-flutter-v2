@@ -106,6 +106,10 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                       LeadSchemaForm(
                         key: _formKey,
                         schema: schema,
+                        // Edit, not create: send only what changed, so an
+                        // untouched Save says "Nothing to save" rather than
+                        // rewriting all 12 configured columns.
+                        diffAgainstRow: true,
                         row: row.valueOrNull,
                         // The same two overrides the Add customer sheet needs.
                         // A customer writes its status as plain `status`, where

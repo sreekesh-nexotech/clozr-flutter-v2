@@ -35,6 +35,7 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
     this.optionsByColumn = const {},
     this.writeKey,
     this.writeMulti,
+    this.diffAgainstRow = false,
   });
 
   /// The org's detail layout. Only [ViewSchema.editableColumns] are rendered.
@@ -69,6 +70,19 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
   /// bare ids there is a 400 — *"Expected a dictionary, but got str"*.
   final Object? Function(ViewColumn column, List<String> ids)? writeMulti;
 
+  /// Whether [LeadSchemaFormState.payload] should carry **only the fields the
+  /// user actually changed**, measured against [row].
+  ///
+  /// Off by default, and deliberately opt-in rather than inferred from `row`
+  /// being non-null: the add-lead screen passes `row: {}` for a brand-new
+  /// record, so "has a row" does not mean "is an edit". A create wants every
+  /// box it rendered, an edit wants the difference.
+  ///
+  /// With it on, an untouched form yields an empty payload — which is what
+  /// lets a caller say "Nothing to save" instead of posting a no-op PATCH that
+  /// rewrites every configured column.
+  final bool diffAgainstRow;
+
   @override
   ConsumerState<LeadSchemaForm> createState() => LeadSchemaFormState();
 }
@@ -101,6 +115,13 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   /// Whether the record has been copied in yet — one-shot, so a late-arriving
   /// fetch never overwrites typing already in progress.
   bool _seeded = false;
+
+  /// What [_seed] put into the text and phone fields, kept so a later read can
+  /// tell an edited box from an untouched one. Choice columns need no entry:
+  /// `_choice`/`_multi` are only populated when the user picks something, and
+  /// the record's own value stays readable through `_raw`.
+  final Map<String, String> _seededText = {};
+  final Map<String, String?> _seededPhone = {};
 
   @override
   void initState() {
@@ -139,10 +160,12 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       final raw = row[c.name];
       if (_isPhoneColumn(c)) {
         _phoneController(c.name).setPendingSeed(raw?.toString());
+        _seededPhone[c.name] = raw?.toString();
       } else if (c.isChoice) {
         _raw[c.name] = raw;
       } else {
         _controller(c.name).text = _textOf(raw);
+        _seededText[c.name] = _controller(c.name).text;
       }
     }
   }
@@ -173,6 +196,32 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   TextEditingController _controller(String name) =>
       _text.putIfAbsent(name, TextEditingController.new);
 
+  /// Whether [c] now holds something other than what the record seeded it with.
+  ///
+  /// Choice columns compare **resolved ids**, not the raw record value, and
+  /// against the same fallback `_selectedId`/`_selectedIds` read through — so
+  /// re-picking the value that was already set reads as unchanged, and a
+  /// catalog arriving late does not register as an edit on its own.
+  bool _isChanged(ViewColumn c) {
+    if (_isPhoneColumn(c)) {
+      final seeded = _seededPhone[c.name];
+      final now = _phoneController(c.name).toE164();
+      // A prefill race can leave the box briefly empty; that is not an edit.
+      if (now == null) return false;
+      return now != seeded;
+    }
+    switch (c.type) {
+      case 'foreignkey':
+        return _selectedId(c) != _idOf(_raw[c.name], _optionsFor(c));
+      case 'manytomany':
+        final now = _selectedIds(c).toSet();
+        final was = _idsOf(_raw[c.name], _optionsFor(c)).toSet();
+        return now.length != was.length || !now.containsAll(was);
+      default:
+        return _controller(c.name).text != (_seededText[c.name] ?? '');
+    }
+  }
+
   /// The payload for `POST`/`PATCH`: every rendered field, under the name the
   /// API stores it as.
   ///
@@ -180,7 +229,12 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   /// the record, so an emptied box means "clear this".
   Map<String, dynamic> get payload {
     final out = <String, dynamic>{};
+    final diffing = widget.diffAgainstRow && _seeded;
     for (final c in widget.schema.editableColumns) {
+      // An untouched field is not an instruction. Sending it anyway rewrote
+      // every configured column on every save, and made an empty payload —
+      // the caller's "nothing changed" signal — unreachable.
+      if (diffing && !_isChanged(c)) continue;
       final key = widget.writeKey?.call(c) ?? LeadsRemoteDataSource.writeKeyFor(c);
       if (_isPhoneColumn(c)) {
         // Omitted rather than sent as null when blank: the field-emptied-vs-
