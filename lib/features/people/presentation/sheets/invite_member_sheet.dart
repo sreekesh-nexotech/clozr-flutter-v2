@@ -6,9 +6,11 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
-import '../../../../core/utils/phone_format.dart';
+import '../../../../core/utils/phone_rules.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/phone_controller.dart';
+import '../../../../core/widgets/phone_input_field.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/people_providers.dart';
@@ -57,7 +59,7 @@ class _InviteMemberSheet extends ConsumerStatefulWidget {
 class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
   final _name = TextEditingController();
   final _email = TextEditingController();
-  final _phone = TextEditingController();
+  final _phone = PhoneController();
   String _role = 'Sales executive';
 
   /// The chosen manager's `user_id` — what the create body sends. Empty means
@@ -79,8 +81,7 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
 
   /// Phone is optional — blank is fine. A half-typed number is not: it would
   /// be stored as something nobody can dial.
-  bool get _phoneOk =>
-      PhoneFormat.isBlank(_phone.text) || PhoneFormat.isComplete(_phone.text);
+  bool get _phoneOk => _phone.isBlank || _phone.isComplete;
 
   Future<void> _submit() async {
     setState(() => _showErrors = true);
@@ -89,7 +90,7 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
       return;
     }
     if (!_phoneOk) {
-      ref.read(toastProvider.notifier).show('Enter a 10-digit phone number');
+      ref.read(toastProvider.notifier).show(phoneDigitsMessage(_phone.rule));
       return;
     }
     final email = _email.text.trim();
@@ -113,9 +114,9 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
       await ref.read(peopleRepositoryProvider).inviteMember(
             email: email,
             name: _name.text.trim(),
-            // `+91XXXXXXXXXX`, matching how the backend stores numbers; null
-            // when the field is empty.
-            phone: PhoneFormat.forApi(_phone.text),
+            // Country + digits as the backend stores numbers; null when the
+            // field is empty.
+            phone: _phone.toE164(),
             roleId: roleId,
             // `manager_id` sets the reporting manager and its hierarchy row
             // (§Invite member). The picked manager was being collected and then
@@ -210,19 +211,13 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                   ),
                   SizedBox(width: 12.w),
                   Expanded(
-                    child: AppTextField(
+                    child: PhoneInputField(
                       label: 'Phone',
                       controller: _phone,
-                      // `+91` is a prefix, not text — it cannot be typed over,
-                      // duplicated, or lost when the field is cleared.
-                      prefix: PhoneFormat.dialCode,
                       hint: '98470 11001',
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: PhoneFormat.inputFormatters,
-                      errorText: _showErrors && !_phoneOk
-                          ? 'Enter 10 digits'
-                          : null,
-                      onChanged: (_) => setState(() {}),
+                      errorText:
+                          _showErrors && !_phoneOk ? phoneDigitsMessage(_phone.rule) : null,
+                      onChanged: () => setState(() {}),
                     ),
                   ),
                 ],

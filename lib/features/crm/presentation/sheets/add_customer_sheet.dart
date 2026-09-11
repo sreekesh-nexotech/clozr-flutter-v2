@@ -6,7 +6,8 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
-import '../../../../core/utils/phone_format.dart';
+import '../../../../core/widgets/phone_controller.dart';
+import '../../../../core/widgets/phone_input_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../domain/entities/customer.dart';
@@ -41,7 +42,7 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
 
   final _name = TextEditingController();
   final _company = TextEditingController();
-  final _phone = TextEditingController();
+  final _phone = PhoneController();
   final _email = TextEditingController();
   final _source = TextEditingController(text: 'Referral');
   final _value = TextEditingController();
@@ -54,9 +55,10 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
 
   @override
   void dispose() {
-    for (final c in [_name, _company, _phone, _email, _source, _value]) {
+    for (final c in [_name, _company, _email, _source, _value]) {
       c.dispose();
     }
+    _phone.dispose();
     super.dispose();
   }
 
@@ -93,7 +95,14 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
       return;
     }
     if (!mounted) return;
-    widget.ref.invalidate(customersProvider);
+    // `customersProvider` is a thin wrapper around one `customersScopedProvider`
+    // family member — invalidating it alone just re-reads that same (still
+    // cached, not refetched) member. The list screen watches a *different*
+    // member of the same family (`customersListProvider`, keyed by the
+    // drawer's filters), which this never touched at all — invalidating the
+    // family itself is what actually forces every cached query, list screen
+    // included, to refetch and pick up the new row.
+    widget.ref.invalidate(customersScopedProvider);
     widget.ref.read(toastProvider.notifier).show('Customer added');
     Navigator.of(context).pop();
   }
@@ -114,14 +123,16 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
           'name': name,
           'organization_name': _company.text.trim(),
           'email': _email.text.trim(),
-          'phone': PhoneFormat.forApi(_phone.text) ?? '',
+          'phone': _phone.toE164() ?? '',
           // The deal value. Collected on the form but never sent before, so
           // whatever the user typed here was silently discarded. `revenue` is
           // the writable field behind the "Deal value" row on the detail page.
           'revenue': _value.text.trim(),
         });
         if (!mounted) return;
-        widget.ref.invalidate(customersProvider);
+        // See the matching comment in `_submitSchemaForm` — the family itself
+        // has to be invalidated for the list screen to actually refetch.
+        widget.ref.invalidate(customersScopedProvider);
         widget.ref.read(toastProvider.notifier).show('Customer added');
         Navigator.of(context).pop();
       } on AppError catch (e) {
@@ -149,7 +160,7 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
       source: _source.text.trim().isEmpty ? 'Referral' : _source.text.trim(),
       owner: 'me',
       team: const ['me'],
-      phone: PhoneFormat.forApi(_phone.text) ?? '—',
+      phone: _phone.toE164() ?? '—',
       email: _email.text.trim().isEmpty ? '—' : _email.text.trim(),
       website: '',
       industry: '—',
@@ -167,12 +178,27 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // Watched so the form swaps from the built-in fields to the org's own the
-    // moment the schema resolves, even with the sheet already open.
-    final schema = widget.ref.watch(customerDetailSchemaProvider);
-    widget.ref.watch(customerStatusCatalogProvider);
-    if (schema.editableColumns.isNotEmpty) return _schemaSheet(schema);
+    // Wrapped in its own [Consumer]: `widget.ref` — handed down from the
+    // screen that opened this sheet — reads the *current* provider value on
+    // every rebuild, but is not the ref Riverpod ties this element's
+    // subscriptions to, so watching through it never actually triggers a
+    // rebuild on its own. The schema swap below used to happen only by
+    // accident, whenever some unrelated `setState()` elsewhere in this
+    // sheet (a text field's `onChanged`) happened to also re-run `build()`
+    // after the fetch had already resolved in the background — which is
+    // why the built-in fields sometimes stuck around long after the org's
+    // own layout was ready. A `Consumer`'s own ref is the one that actually
+    // rebuilds this subtree the moment the schema (or the status catalog)
+    // resolves.
+    return Consumer(builder: (context, ref, _) {
+      final schema = ref.watch(customerDetailSchemaProvider);
+      ref.watch(customerStatusCatalogProvider);
+      if (schema.editableColumns.isNotEmpty) return _schemaSheet(context, ref, schema);
+      return _builtInSheet(context);
+    });
+  }
 
+  Widget _builtInSheet(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -201,13 +227,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: AppTextField(
-                          label: 'Mobile',
-                          controller: _phone,
-                          prefix: PhoneFormat.dialCode,
-                          hint: '98470 11001',
-                          keyboardType: TextInputType.phone,
-                          inputFormatters: PhoneFormat.inputFormatters),
+                      child: PhoneInputField(
+                          label: 'Mobile', controller: _phone, hint: '98470 11001'),
                     ),
                     SizedBox(width: 10.w),
                     Expanded(
@@ -273,8 +294,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
   /// * **`status` options** — the shared form resolves a foreign key by its
   ///   `relatedModel`, and it knows `LeadStatus` but not `CustomerStatus`. Without
   ///   this the picker would open empty on the one field most likely to be set.
-  Widget _schemaSheet(ViewSchema schema) {
-    final statuses = widget.ref.watch(customerStatusesProvider);
+  Widget _schemaSheet(BuildContext context, WidgetRef ref, ViewSchema schema) {
+    final statuses = ref.watch(customerStatusesProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

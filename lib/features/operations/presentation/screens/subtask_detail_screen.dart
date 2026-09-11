@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -49,6 +50,7 @@ class SubtaskDetailScreen extends ConsumerWidget {
             child: AsyncStateView<List<OpsTask>>(
               value: tasksAsync,
               onRetry: () => ref.invalidate(opsTasksProvider),
+              onRefresh: () => _refresh(ref, taskId),
               loading: () => const DetailSkeleton(),
               data: (_) {
                 if (task == null || !valid) {
@@ -65,6 +67,7 @@ class SubtaskDetailScreen extends ConsumerWidget {
                 final notesKey = s.id;
 
                 return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
                     ClozrCard(
@@ -138,6 +141,21 @@ class SubtaskDetailScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Pull-to-refresh. Reloads the org-wide task list (for the parent's title
+  /// and the subtask row itself), this subtask's own notes thread, and the
+  /// subtasks notifier that both this screen and the parent task detail share.
+  Future<void> _refresh(WidgetRef ref, String taskId) async {
+    ref.invalidate(opsTasksProvider);
+    // Whole family: the notifier loads in its constructor, so dropping it is
+    // what re-reads the thread. Not awaited — nothing exposes that future —
+    // but the task-list fetch below outlasts it comfortably.
+    ref.invalidate(subtaskNotesProvider);
+    await settle([
+      ref.read(opsTasksProvider.future),
+      ref.read(opsSubtasksProvider(taskId).notifier).load(),
+    ]);
   }
 
   Widget _appBar(BuildContext context, String? name) {

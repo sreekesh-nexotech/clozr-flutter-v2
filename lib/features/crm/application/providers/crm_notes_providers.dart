@@ -133,10 +133,12 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
   /// Uploads each pending file against [noteId], one at a time.
   ///
   /// Returns the attachments to display: an upload that succeeds swaps in its
-  /// hosted url, one that fails keeps the local entry so the chip does not
-  /// vanish from a note the user can see. Sequential rather than parallel —
-  /// these are phone uploads on a mobile connection, and a burst of them
-  /// competes for the same bandwidth.
+  /// hosted url, one that fails keeps the local entry — so the chip does not
+  /// vanish from a note the user can see — but flagged [NoteAttachment.failed]
+  /// rather than left looking identical to a successful upload (a large file
+  /// hitting the send timeout used to fail this way with no visible sign at
+  /// all). Sequential rather than parallel — these are phone uploads on a
+  /// mobile connection, and a burst of them competes for the same bandwidth.
   Future<List<NoteAttachment>> _uploadAttachments(
     String noteId,
     List<NoteAttachment> attachments,
@@ -151,7 +153,7 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
       try {
         out.add(await _repo!.addAttachment(noteId: noteId, attachment: a) ?? a);
       } on Object {
-        out.add(a); // upload failed — keep showing what the user attached
+        out.add(a.copyWith(localPath: a.localPath, failed: true));
       }
     }
     return out;

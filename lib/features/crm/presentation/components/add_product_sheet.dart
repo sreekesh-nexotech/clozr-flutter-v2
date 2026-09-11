@@ -9,8 +9,13 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/product_form.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/product.dart';
+import '../../domain/entities/view_schema.dart';
+import 'lead_schema_form.dart';
 
 /// The prototype's `#35507C` info-banner text — no design token exists for it.
 const Color _bannerText = Color(0xFF35507C);
@@ -38,6 +43,9 @@ class _AddProductSheet extends ConsumerStatefulWidget {
 }
 
 class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
+  /// Reads the schema-driven form's values at submit time.
+  final _schemaFormKey = GlobalKey<LeadSchemaFormState>();
+
   final _name = TextEditingController();
   final _sku = TextEditingController();
   final _hsn = TextEditingController();
@@ -55,6 +63,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
   int _gst = 0;
   bool _active = true;
   int _seq = 1;
+  bool _saving = false;
 
   /// The rates the serializer accepts — anything else is a 400 (§3).
   static const List<int> _gstOptions = [0, 5, 12, 18, 28];
@@ -139,13 +148,96 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     });
   }
 
+  /// The org's own Product layout — `GET /crm/products/schema/?view_type=detail`,
+  /// which `products.md` §1 says also backs the add/edit modal — minus the
+  /// fields this sheet owns rather than the schema. See [productFormSchema].
+  ///
+  /// Empty in mock mode, on a failed fetch, or for an org with no config, which
+  /// is the signal to render the built-in form.
+  ViewSchema _formSchema(ViewSchema schema) =>
+      productFormSchema(schema, isPackage: widget.isPackage);
+
+  /// Read, not watched: this is called from the submit handler as well as from
+  /// `build`, and `ref.watch` outside a build is an error.
+  bool get _schemaDriven => _formSchema(ref.read(productDetailSchemaProvider))
+      .editableColumns
+      .isNotEmpty;
+
+  /// Options for the columns whose value set the schema cannot name itself.
+  ///
+  /// * **`product_type`** is a foreign key to the org's own categories, which
+  ///   live at `/crm/product-types/` (§8) — a model the shared form has no
+  ///   case for, so without this the picker would open empty.
+  /// * **`billing_unit`** is a free text label on the model ("per sq.ft."), so
+  ///   nothing in the schema offers the vocabulary the prototype's dropdown had.
+  /// * **`tax_rate`** accepts exactly `0, 5, 12, 18, 28` — enforced in the
+  ///   serializer, not on the model, so it arrives as a plain decimal with no
+  ///   `choices` and would otherwise render as a box that happily takes 17 and
+  ///   comes back `400` (§3).
+  ///
+  /// The labels are the values on purpose: a picked option is written through
+  /// [schemaWriteValue], so "18%" would fail to parse as a decimal and the key
+  /// would be dropped — silently saving 0% instead of 18%.
+  Map<String, List<CatalogOption>> get _optionsByColumn => {
+        'product_type': ref.watch(productTypeOptionsProvider),
+        'billing_unit': [
+          for (final u in _unitOptions) CatalogOption(id: u, name: u),
+        ],
+        'tax_rate': [
+          for (final r in _gstOptions) CatalogOption(id: '$r', name: '$r'),
+        ],
+      };
+
+  /// Creates the item from the org-configured form.
+  ///
+  /// The payload is whatever the schema said the form owns, under the names the
+  /// API stores them as — so a field an admin adds tomorrow is saved with no
+  /// code change — plus the two keys the modal owns itself:
+  ///
+  /// * **`product_name`**, which §1 excludes from the schema's form fields
+  ///   precisely because the modal renders it explicitly as the first input;
+  /// * **`item_type`**, which the Products/Packages toggle decides and which
+  ///   cannot be changed afterwards (§4).
+  Future<void> _submitSchemaForm() async {
+    final form = _schemaFormKey.currentState;
+    if (form == null) return;
+    if (_name.text.trim().isEmpty) {
+      ref.read(toastProvider.notifier).show('Enter the product / service name');
+      return;
+    }
+    final payload = productCreatePayload(
+      form.payload,
+      name: _name.text,
+      isPackage: widget.isPackage,
+    );
+    try {
+      await ref.read(productsRepositoryProvider).createProduct(payload);
+    } on AppError catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ref.read(toastProvider.notifier).showError(e.message);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(productsProvider);
+    Navigator.of(context).pop();
+    ref.read(toastProvider.notifier)
+        .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
+  }
+
   Future<void> _submit() async {
+    if (_saving) return;
+    if (_schemaDriven) {
+      setState(() => _saving = true);
+      return _submitSchemaForm();
+    }
     if (_name.text.trim().isEmpty) {
       ref.read(toastProvider.notifier).show('Enter the product / service name');
       return;
     }
     final price = int.tryParse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     if (ApiConfig.apiEnabled) {
+      setState(() => _saving = true);
       try {
         // Every field the form collects, under the names the serializer uses
         // (`products.md` §3). SKU, category, billing unit and HSN used to be
@@ -174,6 +266,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
             .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
       } on AppError catch (e) {
         if (!mounted) return;
+        setState(() => _saving = false);
         ref.read(toastProvider.notifier).showError(e.message);
       }
       return;
@@ -209,6 +302,10 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched, not read: the sheet swaps from the built-in fields to the org's
+    // own the moment the schema resolves, even with the sheet already open.
+    final schema = _formSchema(ref.watch(productDetailSchemaProvider));
+    if (schema.editableColumns.isNotEmpty) return _schemaSheet(schema);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -222,21 +319,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (widget.isPackage) ...[
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 5.h),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFF3EAFF), borderRadius: BorderRadius.circular(8.r)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(PhosphorIconsFill.package, size: 13.sp, color: const Color(0xFF890DB6)),
-                        SizedBox(width: 6.w),
-                        Text('Package / bundle',
-                            style: AppText.custom(
-                                size: 11.5, weight: FontWeight.w700, color: const Color(0xFF890DB6))),
-                      ],
-                    ),
-                  ),
+                  _packageChip(),
                   SizedBox(height: 13.h),
                 ],
                 _field('Product / service name', _name, 'e.g. Reception joinery', required: true),
@@ -313,24 +396,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                   ],
                 ),
                 SizedBox(height: 14.h),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-                  decoration:
-                      BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(10.r)),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.blueBright),
-                      SizedBox(width: 8.w),
-                      Expanded(
-                        child: Text(
-                            "Editing a price won't change existing quotes — quotes snapshot product names and prices when generated.",
-                            style: AppText.custom(
-                                size: 12, weight: FontWeight.w500, color: _bannerText, height: 1.5)),
-                      ),
-                    ],
-                  ),
-                ),
+                _priceNote(),
                 SizedBox(height: 14.h),
                 _field('Description', _desc, 'What this product or service covers…', multiline: true),
                 SizedBox(height: 14.h),
@@ -372,24 +438,133 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     );
   }
 
+  /// The org-configured form: the name input the modal always owns, then the
+  /// schema's own fields in the org's order.
+  ///
+  /// The two banners survive the swap because neither is a field — one states
+  /// the quote-snapshot rule the API guarantees (§3), the other says why a
+  /// package cannot be created active (§7).
+  Widget _schemaSheet(ViewSchema schema) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SheetHeader(
+            title: widget.isPackage ? 'Add package' : 'Add product',
+            onClose: () => Navigator.of(context).maybePop()),
+        Flexible(
+          child: SingleChildScrollView(
+            // Typing in the last row hides the fields above it; dragging the
+            // sheet is how you get them back.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 12.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.isPackage) ...[
+                  _packageChip(),
+                  SizedBox(height: 13.h),
+                ],
+                // Always first, always present: `product_name` is deliberately
+                // absent from the schema's form fields (§1).
+                _field('Product / service name', _name,
+                    'e.g. Reception joinery', required: true),
+                SizedBox(height: 14.h),
+                LeadSchemaForm(
+                  key: _schemaFormKey,
+                  schema: schema,
+                  // A create has no record to prefill from.
+                  row: null,
+                  optionsByColumn: _optionsByColumn,
+                  // Products rename nothing on write — the Lead default would
+                  // post `status_id`, a key this serializer has never had.
+                  writeKey: (c) => c.name,
+                ),
+                _priceNote(),
+                if (widget.isPackage) ...[
+                  SizedBox(height: 7.h),
+                  Text(
+                      'A package starts inactive — add its components, then activate it.',
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
+                ],
+                SizedBox(height: 6.h),
+              ],
+            ),
+          ),
+        ),
+        _footer(),
+      ],
+    );
+  }
+
+  /// The violet "Package / bundle" chip — `item_type` is set once, at create
+  /// (§4), so the sheet says which one it is making.
+  Widget _packageChip() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 5.h),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF3EAFF), borderRadius: BorderRadius.circular(8.r)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIconsFill.package, size: 13.sp, color: const Color(0xFF890DB6)),
+          SizedBox(width: 6.w),
+          Text('Package / bundle',
+              style: AppText.custom(
+                  size: 11.5, weight: FontWeight.w700, color: const Color(0xFF890DB6))),
+        ],
+      ),
+    );
+  }
+
+  /// Quotes snapshot the product name and price when generated, so a later
+  /// price edit does not retro-change issued quotes (§3). True of both forms.
+  Widget _priceNote() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
+      decoration: BoxDecoration(
+          color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(10.r)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.blueBright),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(
+                "Editing a price won't change existing quotes — quotes snapshot product names and prices when generated.",
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w500, color: _bannerText, height: 1.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _footer() {
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 24.h),
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _submit,
+        onTap: _saving ? null : _submit,
         child: Container(
           height: 48.h,
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
+          decoration: BoxDecoration(
+              color: _saving ? AppColors.navy.withOpacity(0.4) : AppColors.navy,
+              borderRadius: BorderRadius.circular(12.r)),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(PhosphorIconsBold.check, size: 15.sp, color: AppColors.white),
               SizedBox(width: 8.w),
-              Text(widget.isPackage ? 'Add package' : 'Add product',
+              Text(
+                  _saving
+                      ? 'Saving…'
+                      : (widget.isPackage ? 'Add package' : 'Add product'),
                   style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
             ],
           ),

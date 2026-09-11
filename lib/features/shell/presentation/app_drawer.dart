@@ -3,14 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../app/config/constants.dart';
-import '../../../app/router/routes.dart';
 import '../../../core/config/api_config.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_text_styles.dart';
+import '../../../core/widgets/list_skeleton.dart';
 import '../../../data/api/user_directory.dart';
 import '../../auth/application/providers/auth_providers.dart';
 import '../application/providers/shell_providers.dart';
+import '../domain/nav_catalog.dart';
 
 /// Shown until `/me` resolves and in mock mode, where there is no session —
 /// keeps the prototype build reading exactly as it did.
@@ -19,132 +21,11 @@ const _seedInitials = 'MV';
 const _seedRole = 'System Admin';
 const _seedWorkspaceSub = 'Clozr workspace';
 
-class _NavGroupChild {
-  final String label;
-  final String path;
-
-  /// Backend module keys (`docs-flutter/permissions.md`) that make this row
-  /// visible. Empty = never gated.
-  final List<String> modules;
-  const _NavGroupChild(this.label, this.path, {this.modules = const []});
-}
-
-class _NavEntry {
-  final String key;
-  final String label;
-  final IconData icon;
-  final String? path; // for direct items (and the group "home")
-  final List<_NavGroupChild> children;
-
-  /// Backend module keys that make this entry visible. A group lists every key
-  /// its children use, so the parent disappears only when all of them do.
-  final List<String> modules;
-  const _NavEntry({
-    required this.key,
-    required this.label,
-    required this.icon,
-    this.path,
-    this.children = const [],
-    this.modules = const [],
-  });
-
-  bool get isGroup => children.isNotEmpty;
-}
-
 /// Left module drawer (312px). Mirrors the prototype's sidebar structure.
 class AppDrawer extends ConsumerWidget {
   const AppDrawer({super.key, required this.location});
 
   final String location;
-
-  static final List<_NavEntry> _entries = [
-    _NavEntry(
-        key: 'dashboard',
-        label: 'Dashboard',
-        icon: PhosphorIconsRegular.layout,
-        path: Routes.dashboard,
-        modules: const ['dashboard']),
-    _NavEntry(
-        key: 'crm',
-        label: 'CRM',
-        icon: PhosphorIconsRegular.usersThree,
-        path: Routes.home,
-        modules: const [
-          'lead',
-          'customer',
-          'quotation',
-          'payment',
-          'task',
-          'followup',
-          'contact',
-          'call_log',
-        ],
-        children: const [
-          _NavGroupChild('Customers', Routes.customers, modules: ['customer']),
-          _NavGroupChild('Quotes', Routes.quotes, modules: ['quotation']),
-          _NavGroupChild('Payments', Routes.payments, modules: ['payment']),
-        ]),
-    _NavEntry(
-        key: 'ops',
-        label: 'Operations',
-        icon: PhosphorIconsRegular.kanban,
-        path: Routes.opsHome,
-        modules: const ['project', 'project_task']),
-    _NavEntry(
-        key: 'helpdesk',
-        label: 'Helpdesk',
-        icon: PhosphorIconsRegular.headset,
-        path: Routes.helpHome,
-        modules: const ['issue']),
-    _NavEntry(
-        key: 'rewards',
-        label: 'My Rewards',
-        icon: PhosphorIconsRegular.trophy,
-        path: Routes.rewards,
-        modules: const ['milestone']),
-    _NavEntry(
-        key: 'training',
-        label: 'Training',
-        icon: PhosphorIconsRegular.graduationCap,
-        modules: const ['course', 'lms_module', 'quiz', 'course_enrollment'],
-        children: const [
-          _NavGroupChild('Overview', Routes.lmsOverview, modules: ['course']),
-          _NavGroupChild('Learners', Routes.lmsLearners,
-              modules: ['course_enrollment']),
-          _NavGroupChild('My courses', Routes.lmsMy,
-              modules: ['course_enrollment']),
-        ]),
-    _NavEntry(
-        key: 'products',
-        label: 'Products',
-        icon: PhosphorIconsRegular.package,
-        path: Routes.products,
-        modules: const ['product']),
-    _NavEntry(
-        key: 'users',
-        label: 'People',
-        icon: PhosphorIconsRegular.users,
-        modules: const ['user_management', 'team', 'role'],
-        children: const [
-          _NavGroupChild('Members', Routes.members,
-              modules: ['user_management']),
-          _NavGroupChild('Teams', Routes.teams, modules: ['team']),
-          _NavGroupChild('Roles & permissions', Routes.roles,
-              modules: ['role']),
-        ]),
-    _NavEntry(
-        key: 'reports',
-        label: 'Reports',
-        icon: PhosphorIconsRegular.chartBar,
-        path: Routes.reports,
-        modules: const ['report']),
-    _NavEntry(
-        key: 'billing',
-        label: 'Billing',
-        icon: PhosphorIconsRegular.creditCard,
-        path: Routes.billing,
-        modules: const ['payment']),
-  ];
 
   void _close(WidgetRef ref) => ref.read(drawerOpenProvider.notifier).state = false;
 
@@ -158,9 +39,17 @@ class AppDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final expanded = ref.watch(drawerExpandedProvider);
-    // Null until /auth/me/modules/ resolves (and always in mock mode), which
-    // `canAny` treats as "not gated" — the menu never collapses on a blip.
-    final access = ref.watch(moduleAccessProvider).asData?.value;
+    final accessAsync = ref.watch(moduleAccessProvider);
+    // The *first* fetch — no cached value to fall back on yet — is the one
+    // case worth waiting on: rendering every entry now only to snatch most of
+    // them away a moment later is a worse first impression than a brief
+    // skeleton. A settled fetch (data or error) always renders for real, even
+    // an error one — see the fail-open reasoning below.
+    final stillLoading = accessAsync.isLoading && !accessAsync.hasValue;
+    // Resolves to null on mock mode, an unauthenticated gap, or a genuinely
+    // failed fetch, which `canAny` then treats as "not gated" — the menu
+    // never collapses over a network blip the backend will enforce anyway.
+    final access = accessAsync.valueOrNull;
     bool visible(List<String> modules) =>
         access == null || access.canAny(modules);
 
@@ -197,9 +86,12 @@ class AppDrawer extends ConsumerWidget {
                                 color: AppColors.textPlaceholder,
                                 letterSpacing: 0.6)),
                       ),
-                      for (final e in _entries)
-                        if (visible(e.modules))
-                          ..._row(context, ref, e, expanded, visible),
+                      if (stillLoading)
+                        const _MenuSkeleton()
+                      else
+                        for (final e in navCatalog)
+                          if (visible(e.modules))
+                            ..._row(context, ref, e, expanded, visible),
                     ],
                   ),
                 ),
@@ -267,7 +159,7 @@ class AppDrawer extends ConsumerWidget {
   List<Widget> _row(
     BuildContext context,
     WidgetRef ref,
-    _NavEntry e,
+    NavEntry e,
     Map<String, bool> expanded,
     bool Function(List<String>) visible,
   ) {
@@ -359,8 +251,10 @@ class AppDrawer extends ConsumerWidget {
     final name = hasName ? user!.fullName : _seedName;
     final initials =
         hasName ? UserDirectory.initialsOf(user!.fullName) : _seedInitials;
-    final roleLabel =
-        (user?.roleLabel.isNotEmpty ?? false) ? user!.roleLabel : _seedRole;
+    // Only the true no-session state (mock mode / not yet resolved) gets the
+    // seed placeholder. A resolved session with no assigned role is a real,
+    // meaningful empty state — showing "System Admin" there would be a lie.
+    final roleLabel = user == null ? _seedRole : user.roleLabel;
     final avatarUrl = user?.avatarUrl ?? '';
 
     return Container(
@@ -380,22 +274,26 @@ class AppDrawer extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.bodyStrong().copyWith(fontWeight: FontWeight.w700)),
-                Text(roleLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.caption(color: AppColors.textPlaceholder)),
+                if (roleLabel.isNotEmpty)
+                  Text(roleLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.caption(color: AppColors.textPlaceholder)),
               ],
             ),
           ),
-          _footerIcon(
-            PhosphorIconsRegular.gearSix,
-            AppColors.textLabelAlt,
-            () {
-              _close(ref);
-              ref.read(toastProvider.notifier).show('Settings — coming soon');
-            },
-          ),
-          SizedBox(width: 8.w),
+          // Settings — hidden until there is a settings screen to open. The
+          // gear only ever raised a "coming soon" toast, which reads as a
+          // broken button rather than a feature that isn't built yet.
+          // _footerIcon(
+          //   PhosphorIconsRegular.gearSix,
+          //   AppColors.textLabelAlt,
+          //   () {
+          //     _close(ref);
+          //     ref.read(toastProvider.notifier).show('Settings — coming soon');
+          //   },
+          // ),
+          // SizedBox(width: 8.w),
           _footerIcon(
             PhosphorIconsRegular.signOut,
             AppColors.error,
@@ -460,6 +358,30 @@ class AppDrawer extends ConsumerWidget {
           border: Border.all(color: AppColors.borderChip),
         ),
         child: Icon(icon, size: 17.sp, color: color),
+      ),
+    );
+  }
+}
+
+/// Placeholder rows shown only while the very first `/auth/me/modules/` fetch
+/// of the session is in flight — sized like real entries so the menu doesn't
+/// jump when the actual (filtered) list replaces it.
+class _MenuSkeleton extends StatelessWidget {
+  const _MenuSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: AppColors.borderCardSoft,
+      highlightColor: AppColors.bgScreen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < 5; i++) ...[
+            SkeletonBox(height: 44.h, radius: 10),
+            SizedBox(height: 12.h),
+          ],
+        ],
       ),
     );
   }

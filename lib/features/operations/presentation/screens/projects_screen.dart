@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -143,6 +144,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
           child: AsyncStateView<List<Project>>(
             value: projectsAsync,
             onRetry: () => ref.invalidate(projectsScopedProvider),
+            onRefresh: _refresh,
             data: (_) {
               final tabVisible = ref.watch(visibleProjectsProvider);
               final visible = filters.isEmpty
@@ -153,6 +155,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                       .toList();
               return visible.isEmpty
                   ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       children: const [
                         EmptyState(
                           icon: PhosphorIconsRegular.briefcase,
@@ -162,6 +165,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                       ],
                     )
                   : ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                       itemCount: visible.length,
                       separatorBuilder: (_, __) => SizedBox(height: 12.h),
@@ -178,6 +182,24 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
         ),
       ],
     );
+  }
+
+  /// Pull-to-refresh. Reloads the currently filtered rows together with the
+  /// status/type catalogs and tab counts, so a pull also picks up an admin's
+  /// change to the org's own pipeline while the app is running.
+  Future<void> _refresh() async {
+    ref.invalidate(projectsScopedProvider(ProjectListQuery(
+      filters: ref.read(projectFilterParamsProvider),
+    )));
+    ref.invalidate(projectStatusCatalogProvider);
+    ref.invalidate(projectTypeCatalogProvider);
+    ref.invalidate(projectStatusCountsProvider);
+    await settle([
+      ref.read(projectsFilteredProvider.future),
+      ref.read(projectStatusCatalogProvider.future),
+      ref.read(projectTypeCatalogProvider.future),
+      ref.read(projectStatusCountsProvider.future),
+    ]);
   }
 
   // ── Filter drawer ──
@@ -217,6 +239,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       initial: current,
       previewCount: (draft) => base.where((p) => projectMatchesFilters(p, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(projectSavedFiltersProvider).filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;

@@ -223,6 +223,7 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
           .where((q) => quoteMatchesFilters(q, draft, ref.read(crmPartyLookupProvider)))
           .length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(quoteSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(quoteSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

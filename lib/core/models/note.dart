@@ -13,6 +13,7 @@ class NoteAttachment {
     this.size,
     this.url,
     this.localPath,
+    this.failed = false,
   });
 
   /// 'image' or 'file'.
@@ -25,17 +26,25 @@ class NoteAttachment {
   /// this is what tells the notifier there is something to send.
   final String? localPath;
 
+  /// Set when the upload this attachment was queued for came back an error
+  /// (timed out, rejected, connection dropped) — the note itself still posted,
+  /// but this file never reached the server. Kept distinct from [isPending] so
+  /// the thread can say so instead of rendering it identically to a file that
+  /// simply hasn't been sent yet.
+  final bool failed;
+
   bool get isImage => kind == 'image';
 
   /// Whether this attachment still needs uploading.
   bool get isPending => localPath != null && url == null;
 
-  NoteAttachment copyWith({String? url, String? localPath}) => NoteAttachment(
+  NoteAttachment copyWith({String? url, String? localPath, bool? failed}) => NoteAttachment(
         name: name,
         kind: kind,
         size: size,
         url: url ?? this.url,
         localPath: localPath,
+        failed: failed ?? this.failed,
       );
 }
 

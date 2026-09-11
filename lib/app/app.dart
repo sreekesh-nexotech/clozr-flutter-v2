@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../features/shell/presentation/offline_banner.dart';
 import '../features/shell/presentation/toast_overlay.dart';
 import 'config/constants.dart';
 import 'router/app_router.dart';
@@ -34,6 +35,7 @@ class ClozrApp extends StatelessWidget {
             child: Stack(
               children: [
                 child ?? const SizedBox.shrink(),
+                const OfflineBanner(),
                 const ToastOverlay(),
               ],
             ),

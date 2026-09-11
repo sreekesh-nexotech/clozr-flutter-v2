@@ -322,6 +322,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       initial: current,
       previewCount: (draft) => base.where((t) => crmTaskMatchesFilters(t, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(crmTaskSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(crmTaskSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

@@ -23,6 +23,20 @@ abstract class MessagesRepository {
   Future<ChatMessage?> sendTemplate(
       String conversationId, String templateId, String body);
 
+  /// Uploads and sends an image (24h window open). Returns the sent message,
+  /// or null when the send could not be performed.
+  Future<ChatMessage?> sendImage(String conversationId, String path, String filename);
+
+  /// Uploads and sends any other file as a document attachment (24h window
+  /// open). Returns the sent message, or null when the send could not be
+  /// performed.
+  Future<ChatMessage?> sendDocument(String conversationId, String path, String filename);
+
   /// Approved WhatsApp templates for the closed-window picker.
   Future<List<WhatsappTemplate>> getTemplates();
+
+  /// Downloads an attachment's bytes through the authenticated media proxy,
+  /// for opening a message whose local file is no longer on the device. Null
+  /// when the fetch failed (expired media, wrong org, network).
+  Future<(List<int> bytes, String? contentType)?> fetchMedia(String mediaId);
 }

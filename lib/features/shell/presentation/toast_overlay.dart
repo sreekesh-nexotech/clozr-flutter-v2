@@ -62,40 +62,47 @@ class ToastOverlay extends ConsumerWidget {
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 24.w),
           child: Center(
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 17.w, vertical: 12.h),
-              decoration: BoxDecoration(
-                color: AppColors.navy,
-                borderRadius: BorderRadius.circular(12.r),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.navy.withOpacity(0.34),
-                    blurRadius: 30,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 18.sp, color: tint),
-                  SizedBox(width: 9.w),
-                  // Flexible, not Expanded: a short message still gets a
-                  // snug pill rather than one stretched to the full width.
-                  Flexible(
-                    child: Text(
-                      toast.text,
-                      // Bounded so a pathological message cannot cover the
-                      // screen, but generous enough that no realistic
-                      // validation error is cut off.
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(
-                              size: 13, weight: FontWeight.w600, color: AppColors.white)
-                          .copyWith(height: 1.35),
+            // This overlay sits in `MaterialApp.builder`, outside any Scaffold —
+            // without a Material ancestor the toast's Text falls back to
+            // Flutter's debug-only placeholder style (a yellow/black dashed
+            // underline) since there is no DefaultTextStyle to inherit.
+            child: Material(
+              type: MaterialType.transparency,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 17.w, vertical: 12.h),
+                decoration: BoxDecoration(
+                  color: AppColors.navy,
+                  borderRadius: BorderRadius.circular(12.r),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.navy.withOpacity(0.34),
+                      blurRadius: 30,
+                      offset: const Offset(0, 12),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 18.sp, color: tint),
+                    SizedBox(width: 9.w),
+                    // Flexible, not Expanded: a short message still gets a
+                    // snug pill rather than one stretched to the full width.
+                    Flexible(
+                      child: Text(
+                        toast.text,
+                        // Bounded so a pathological message cannot cover the
+                        // screen, but generous enough that no realistic
+                        // validation error is cut off.
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(
+                                size: 13, weight: FontWeight.w600, color: AppColors.white)
+                            .copyWith(height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

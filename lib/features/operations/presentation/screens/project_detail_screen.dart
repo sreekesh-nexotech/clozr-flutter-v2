@@ -9,6 +9,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -81,6 +82,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             child: AsyncStateView<List<Project>>(
               value: projectsAsync,
               onRetry: () => ref.invalidate(projectsProvider),
+              onRefresh: () => _refresh(id),
               loading: () => const DetailSkeleton(),
               data: (_) {
                 if (project == null) {
@@ -109,6 +111,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                     tasks.where((t) => t.projId == project.id).toList();
 
                 return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
                     _summaryCard(project, meta, priColor, mgr, overdue),
@@ -126,6 +129,28 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Pull-to-refresh. Reloads the enriched record, the org-wide list (for the
+  /// list-row fallback), this project's tasks, its attachments and its notes
+  /// and audit log together.
+  Future<void> _refresh(String id) async {
+    ref.invalidate(projectDetailProvider(id));
+    ref.invalidate(projectsProvider);
+    ref.invalidate(projectTasksProvider(id));
+    ref.invalidate(projectAttachmentsProvider(id));
+    ref.invalidate(projectActivityLogProvider(id));
+    // Whole family: the notifier loads in its constructor, so dropping it is
+    // what re-reads the thread. Not awaited — nothing exposes that future —
+    // but the record fetches below outlast it comfortably.
+    ref.invalidate(crmNotesProvider);
+    await settle([
+      ref.read(projectDetailProvider(id).future),
+      ref.read(projectsProvider.future),
+      ref.read(projectTasksProvider(id).future),
+      ref.read(projectAttachmentsProvider(id).future),
+      ref.read(projectActivityLogProvider(id).future),
+    ]);
   }
 
   Widget _appBar(String section, String? name) {

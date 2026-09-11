@@ -29,6 +29,9 @@ class ApiEndpoints {
   static const industries = '/crm/industries/';
   static const territories = '/crm/territories/';
 
+  // ── CRM: country codes (the phone country-code picker) ──
+  static const countryCodes = '/crm/country-codes/';
+
   // ── CRM: Exotel telephony (click-to-call) ──
   static const exotelStatus = '/crm/exotel/status/';
   static const exotelCall = '/crm/exotel/call/';
@@ -232,6 +235,13 @@ class ApiEndpoints {
       '/whatsapp/conversations/$conversationId/read/';
   static const whatsappSendText = '/whatsapp/send/text/';
   static const whatsappSendTemplate = '/whatsapp/send/template/';
+  static const whatsappSendImage = '/whatsapp/send/image/';
+  static const whatsappSendDocument = '/whatsapp/send/document/';
   static const whatsappTemplates = '/whatsapp/templates/';
   static const whatsappBadge = '/whatsapp/badge/';
+
+  /// Binary proxy for a sent/received attachment — Meta's own media URLs are
+  /// short-lived and need the org's own token, so this is the only way to
+  /// open one (`whatsapp.md` §5).
+  static String whatsappMedia(Object mediaId) => '/whatsapp/media/$mediaId/';
 }

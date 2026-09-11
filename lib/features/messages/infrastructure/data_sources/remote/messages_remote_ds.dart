@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../../core/config/api_config.dart';
@@ -19,6 +20,16 @@ String? _str(Object? v) {
   if (v is! String) return null;
   final t = v.trim();
   return t.isEmpty ? null : t;
+}
+
+/// A related object's pk as a string, whichever way the API serialises it
+/// (int, uuid string, or a nested `{id: ...}` object). Null when absent.
+String? _pk(Object? v) {
+  if (v == null) return null;
+  if (v is Map) return _pk(v['id']);
+  if (v is String) return _str(v);
+  if (v is num) return v.toString();
+  return null;
 }
 
 String _clockLabel(DateTime? time) =>
@@ -83,7 +94,11 @@ Conversation? conversationFromJson(Map<String, dynamic> row, {DateTime? now}) {
 
   return Conversation(
     id: id,
-    leadId: _str(row['lead']),
+    // `lead` is the linked CRM record. It is a pk, not necessarily a string —
+    // an int one used to map to null here, which quietly cost every
+    // integer-keyed org the lead ⇄ conversation link.
+    leadId: _pk(row['lead']),
+    phone: waDigits(_str(row['wa_contact_phone']) ?? ''),
     name: name,
     company: company,
     initials: UserDirectory.initialsOf(name),
@@ -119,6 +134,9 @@ ChatMessage? chatMessageFromJson(Map<String, dynamic> row) {
     time: _clockLabel(parseApiDate(row['timestamp'] ?? row['created_at'])),
     status: status,
     tpl: type == 'template' || _str(row['template_name']) != null,
+    // Never populated on a fresh optimistic send — only a fetched row carries
+    // this (`whatsapp.md` §5: outbound rows store `media_id`, never `media_url`).
+    mediaId: (type == 'image' || type == 'document') ? _str(row['media_id']) : null,
   );
 }
 
@@ -130,18 +148,25 @@ ChatMessage? chatMessageFromJson(Map<String, dynamic> row) {
 /// thread rather than another endpoint. It used to be filled only by the
 /// prototype seed, which meant every real conversation reported "No media
 /// shared" however many files had been exchanged.
+///
+/// `media_url` is checked first but is empty on nearly every real row —
+/// WhatsApp inbound messages arrive with only a `media_id`, resolved later
+/// through the authenticated media proxy (same id [chatMessageFromJson]
+/// stores for the chat bubble). Falling back to it here is what makes the
+/// tab actually list anything on a real conversation.
 ChatMedia? chatMediaFromJson(Map<String, dynamic> row, {DateTime? now}) {
   final url = _str(row['media_url']);
-  if (url == null) return null;
+  final mediaId = _str(row['media_id']);
+  if (url == null && mediaId == null) return null;
   final type = _str(row['message_type'])?.toLowerCase() ?? '';
   final mime = _str(row['media_mime_type']) ?? '';
   final sent = parseApiDate(row['timestamp'] ?? row['created_at']);
 
   // The caption is the human name when WhatsApp sends one; otherwise the file
-  // name off the URL; otherwise the kind of thing it is.
+  // name off the URL when there is one; otherwise the kind of thing it is.
   final name = _str(row['caption']) ??
       _str(row['file_name']) ??
-      _fileNameOf(url) ??
+      (url != null ? _fileNameOf(url) : null) ??
       (type.isEmpty ? 'Attachment' : '${type[0].toUpperCase()}${type.substring(1)}');
 
   final kind = mime.isNotEmpty
@@ -152,6 +177,7 @@ ChatMedia? chatMediaFromJson(Map<String, dynamic> row, {DateTime? now}) {
     kind: mediaKind(type, mime),
     name: name,
     meta: [kind, relativeTime(sent, now: now)].where((s) => s.isNotEmpty).join(' · '),
+    mediaId: mediaId,
   );
 }
 
@@ -412,6 +438,62 @@ class MessagesRemoteDataSource {
         status: 'sent',
         tpl: true);
   }
+
+  /// `POST /whatsapp/send/image/` (multipart). The window is checked
+  /// server-side *before* the upload — a closed window still costs no
+  /// bandwidth on the server's end, but the file leaves the device regardless.
+  Future<ChatMessage?> sendImage(
+    String conversationId,
+    String path,
+    String filename, {
+    String caption = '',
+  }) async {
+    final meta = await _metaFor(conversationId);
+    if (meta == null || meta.accountId == null || meta.phone.isEmpty) {
+      return null;
+    }
+    final form = FormData.fromMap({
+      'whatsapp_account_id': meta.accountId,
+      'to': meta.phone,
+      if (caption.isNotEmpty) 'caption': caption,
+      'image': await MultipartFile.fromFile(path, filename: filename),
+    });
+    await _api.postForm(ApiEndpoints.whatsappSendImage, form);
+    return ChatMessage(
+        mine: true, text: filename, time: _clockLabel(DateTime.now()), status: 'sent');
+  }
+
+  /// `POST /whatsapp/send/document/` (multipart). `document` is a plain
+  /// `FileField` server-side — any file type uploads, including audio/video
+  /// (they arrive as a file attachment, not an inline player).
+  Future<ChatMessage?> sendDocument(
+    String conversationId,
+    String path,
+    String filename, {
+    String caption = '',
+  }) async {
+    final meta = await _metaFor(conversationId);
+    if (meta == null || meta.accountId == null || meta.phone.isEmpty) {
+      return null;
+    }
+    final form = FormData.fromMap({
+      'whatsapp_account_id': meta.accountId,
+      'to': meta.phone,
+      'filename': filename,
+      if (caption.isNotEmpty) 'caption': caption,
+      'document': await MultipartFile.fromFile(path, filename: filename),
+    });
+    await _api.postForm(ApiEndpoints.whatsappSendDocument, form);
+    return ChatMessage(
+        mine: true, text: filename, time: _clockLabel(DateTime.now()), status: 'sent');
+  }
+
+  /// `GET /whatsapp/media/<media_id>/` (whatsapp.md §5). 404 means no message
+  /// in this org carries that id; 502 means Meta refused the fetch (usually
+  /// media older than 30 days, which Meta purges) — both surface as [AppError]
+  /// through the normal request path, not a special case here.
+  Future<(List<int> bytes, String? contentType)> fetchMediaBytes(String mediaId) =>
+      _api.getBytes(ApiEndpoints.whatsappMedia(mediaId));
 
   // ── Templates ──
 

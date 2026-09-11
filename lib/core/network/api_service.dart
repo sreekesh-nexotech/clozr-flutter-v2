@@ -132,6 +132,24 @@ class ApiService {
   Future<dynamic> postForm(String path, FormData form) =>
       _run(() => _dio.post<dynamic>(path, data: form));
 
+  /// Authenticated binary download (the WhatsApp media proxy and similar) —
+  /// separate from [_run] because a caller here needs the response headers
+  /// (`Content-Type`, to pick a file extension), which `_run` discards by
+  /// only threading back `res.data`.
+  Future<(List<int> bytes, String? contentType)> getBytes(String path) async {
+    try {
+      final res = await _dio.get<List<int>>(
+        path,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return (res.data ?? const <int>[], res.headers.value('content-type'));
+    } on DioException catch (e) {
+      final error = AppError.fromDio(e);
+      if (!error.isAuthError) _failures.value = error;
+      throw error;
+    }
+  }
+
   Future<dynamic> _run(Future<Response<dynamic>> Function() call) async {
     try {
       final res = await call();

@@ -125,7 +125,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         Expanded(
           child: AsyncStateView<List<Customer>>(
             value: async,
-            onRetry: () => ref.invalidate(customersProvider),
+            onRetry: () => ref.invalidate(customersScopedProvider),
             onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(visibleCustomersProvider);
@@ -170,8 +170,16 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 
   // ── Filter drawer ──
   /// Pull-to-refresh: the customer rows and the saved views over them.
+  ///
+  /// Invalidates the `customersScopedProvider` **family**, not the thin
+  /// `customersProvider` wrapper around one of its members: invalidating the
+  /// wrapper alone leaves the family member it reads uninvalidated, so it
+  /// resolves again with the same stale cached list — no real refetch, just a
+  /// same-data rebuild. The rendered rows come from `visibleCustomersProvider`
+  /// (→ `customersListProvider`, a *different* family member keyed by the
+  /// drawer's filters), so only invalidating the family itself reaches them.
   Future<void> _refresh() async {
-    ref.invalidate(customersProvider);
+    ref.invalidate(customersScopedProvider);
     ref.invalidate(customerListSchemaFutureProvider);
     await settle([
       ref.read(customersProvider.future),
@@ -213,6 +221,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       previewCount: (draft) =>
           previewBase.where((c) => customerMatchesFilters(c, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(customerSavedViewsProvider).filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;

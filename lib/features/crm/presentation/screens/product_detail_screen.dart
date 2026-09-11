@@ -19,7 +19,10 @@ import '../../../notes/application/providers/notes_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/utils/relative_time.dart';
 import '../../application/providers/audit_log_providers.dart';
+import '../../application/product_columns.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
+import '../../application/record_rows.dart';
 import '../../../../core/utils/inr_format.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/package_composition.dart';
@@ -40,11 +43,15 @@ class ProductDetailScreen extends ConsumerWidget {
     ref.invalidate(productDetailProvider(id));
     ref.invalidate(productNotesProvider(id));
     ref.invalidate(productActivityLogProvider(id));
+    // The org's own detail layout drives the Details card, and an admin can
+    // change it while the app is open — a pull is the moment to re-read it.
+    ref.invalidate(productDetailSchemaFutureProvider);
     await settle([
       ref.read(productsProvider.future),
       ref.read(productDetailProvider(id).future),
       ref.read(productNotesProvider(id).future),
       ref.read(productActivityLogProvider(id).future),
+      ref.read(productDetailSchemaFutureProvider.future),
     ]);
   }
 
@@ -154,21 +161,10 @@ class ProductDetailScreen extends ConsumerWidget {
                   _compositionCard(comp)
                 else
                   _pricingCard(product),
-                SizedBox(height: 14.h),
-                FinanceCard(
-                  title: 'Details',
-                  child: Column(
-                    children: [
-                      // A field the org's Product layout does not expose comes
-                      // back absent; an empty value cell reads as a rendering
-                      // fault rather than as "not set".
-                      MetaRow(label: 'Category', value: _orDash(product.cat)),
-                      MetaRow(label: 'Billing unit', value: _orDash(product.unit)),
-                      MetaRow(label: 'SKU / code', value: _orDash(product.code)),
-                      MetaRow(label: 'HSN / SAC', value: _orDash(product.hsn), last: true),
-                    ],
-                  ),
-                ),
+                if (_detailsCard(ref, product) case final card?) ...[
+                  SizedBox(height: 14.h),
+                  card,
+                ],
                 SizedBox(height: 14.h),
                 NotesCard(
                   title: 'Notes',
@@ -188,6 +184,57 @@ class ProductDetailScreen extends ConsumerWidget {
       ),
     );
   }
+
+  /// The "Details" readout, rendered from the org's own Product layout
+  /// (`GET /crm/products/schema/?view_type=detail`) rather than a fixed list.
+  ///
+  /// Which fields, in what order, under what labels — including the org's
+  /// custom product fields, which live under `custom_fields.*` and had no way
+  /// of reaching this page before. The record is [Product.raw], the untrimmed
+  /// row the serializer already returned (`products.md` §2), so the panel costs
+  /// no extra call.
+  ///
+  /// An empty schema — mock mode, a failed fetch, an org with no config — falls
+  /// back to the four built-in rows, per the house contract: empty means "no
+  /// opinion", never "show nothing".
+  Widget? _detailsCard(WidgetRef ref, Product product) {
+    final schema = ref.watch(productDetailSchemaProvider);
+    final raw = product.raw;
+    final rows = (schema.isEmpty || raw.isEmpty)
+        ? _fallbackDetailRows(product)
+        : [
+            for (final r in recordRows(raw, schema,
+                skip: kProductDetailChromeColumns))
+              (label: r.label, value: r.value),
+          ];
+    // An org whose whole detail layout is chrome the page already draws leaves
+    // nothing to head — a card with a title and no rows is worse than no card.
+    if (rows.isEmpty) return null;
+    return FinanceCard(
+      title: 'Details',
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++)
+            MetaRow(
+                label: rows[i].label,
+                value: rows[i].value,
+                last: i == rows.length - 1),
+        ],
+      ),
+    );
+  }
+
+  /// The pre-schema layout, kept as the fallback.
+  ///
+  /// A field the org's Product layout does not expose comes back absent; an
+  /// empty value cell reads as a rendering fault rather than as "not set",
+  /// which is why every row here dashes rather than blanks.
+  List<({String label, String value})> _fallbackDetailRows(Product product) => [
+        (label: 'Category', value: _orDash(product.cat)),
+        (label: 'Billing unit', value: _orDash(product.unit)),
+        (label: 'SKU / code', value: _orDash(product.code)),
+        (label: 'HSN / SAC', value: _orDash(product.hsn)),
+      ];
 
   Widget _headerCard(WidgetRef ref, Product product) {
     return FinanceCard(

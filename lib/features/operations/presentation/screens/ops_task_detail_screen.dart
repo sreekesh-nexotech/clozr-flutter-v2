@@ -19,6 +19,7 @@ import '../../../crm/domain/entities/audit_entry.dart' as crm_audit show AuditEn
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -88,6 +89,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
             child: AsyncStateView<List<OpsTask>>(
               value: gate,
               onRetry: () => ref.invalidate(opsTasksProvider),
+              onRefresh: () => _refresh(id),
               loading: () => const DetailSkeleton(),
               data: (_) {
                 if (task == null) {
@@ -122,6 +124,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 final progress = task.computedProgress(subtasks);
 
                 return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
                     _summaryCard(task, meta, priColor, project?.name ?? '—', overdue),
@@ -144,6 +147,27 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Pull-to-refresh. Reloads the enriched record, the org-wide list (for the
+  /// list-row fallback), this task's subtasks, its activity log and its notes
+  /// together.
+  Future<void> _refresh(String id) async {
+    ref.invalidate(opsTaskDetailProvider(id));
+    ref.invalidate(opsTasksProvider);
+    ref.invalidate(opsTaskActivityProvider(id));
+    // Whole family: the notifier loads in its constructor, so dropping it is
+    // what re-reads the thread. Not awaited — nothing exposes that future —
+    // but the record fetches below outlast it comfortably.
+    ref.invalidate(crmNotesProvider);
+    await settle([
+      ref.read(opsTaskDetailProvider(id).future),
+      ref.read(opsTasksProvider.future),
+      ref.read(opsTaskActivityProvider(id).future),
+      // The subtasks notifier isn't a FutureProvider — its own `load()` is the
+      // equivalent reload.
+      ref.read(opsSubtasksProvider(id).notifier).load(),
+    ]);
   }
 
   Widget _appBar(String section, String? name) {

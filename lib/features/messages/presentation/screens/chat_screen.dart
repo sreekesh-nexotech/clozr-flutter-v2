@@ -1,12 +1,21 @@
+import 'dart:io';
+
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../crm/application/providers/lead_call_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/whatsapp_template.dart';
@@ -33,9 +42,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    ref.read(chatTabProvider.notifier).state = 'chats';
     _draftCtrl.addListener(() => setState(() {}));
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(chatTabProvider.notifier).state = 'chats';
+      _scrollToEnd();
+    });
   }
 
   @override
@@ -58,6 +69,196 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     ref.read(conversationsProvider.notifier).sendMessage(_id, text);
     _draftCtrl.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+  }
+
+  /// Places a call to the contact: Exotel click-to-call when the org has
+  /// telephony connected and this user is a configured agent (server rings the
+  /// agent, then bridges to the contact and logs it itself); otherwise falls
+  /// back to the device dialler. Mirrors [LeadCallService], but a WhatsApp
+  /// contact may have no linked lead — Exotel still places and logs the call
+  /// via reverse number resolution in that case; the dialler fallback simply
+  /// has nothing to attach a manual CRM log to.
+  Future<void> _call(Conversation chat) async {
+    final toast = ref.read(toastProvider.notifier);
+    final firstName = chat.name.split(' ').first;
+    final to = normaliseCallNumber(chat.phone.isEmpty ? '' : '+${chat.phone}');
+    if (to.isEmpty) {
+      toast.show('No phone number for this contact');
+      return;
+    }
+
+    final exotel = ref.read(exotelRemoteDataSourceProvider);
+    final status = ref.read(exotelStatusValueProvider);
+    final blocked = ref.read(exotelBlockedProvider);
+
+    if (exotel != null && blocked == null && (status.usable || !status.known)) {
+      try {
+        await exotel.placeCall(leadId: chat.leadId, toNumber: to);
+        if (mounted) toast.show('Calling $firstName…');
+        return;
+      } on Object catch (e) {
+        // Refused — nothing was dialled; fall through to the device dialler.
+        if (e is AppError && isExotelConfigRefusal(e.message)) {
+          ref.read(exotelBlockedProvider.notifier).state = e.message;
+        }
+      }
+    }
+
+    final opened = await launchUrl(Uri(scheme: 'tel', path: to));
+    if (!mounted) return;
+    toast.show(opened ? 'Calling $firstName…' : 'Could not start the call.');
+  }
+
+  /// Lets the user pick a photo or a document, client-side size checks it
+  /// against the same caps the backend enforces (`whatsapp.md` §4.5 — 5 MB
+  /// images, 10 MB documents), then hands it to the composer as an optimistic
+  /// outgoing bubble.
+  Future<void> _pickAttachment() async {
+    final kind = await showClozrSheet<String>(
+      context: context,
+      builder: (_) => const _AttachmentPickerSheet(),
+    );
+    if (kind == null || !mounted) return;
+    final isImage = kind == 'image';
+
+    final result = await FilePicker.platform.pickFiles(
+      type: isImage ? FileType.image : FileType.any,
+      withData: false, // path only — a large file should not sit in memory
+    );
+    final file = result?.files.firstOrNull;
+    final path = file?.path;
+    if (path == null || !mounted) return; // cancelled
+
+    final limit = isImage ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file!.size > limit) {
+      ref.read(toastProvider.notifier).show(
+          isImage ? 'Image too large — max 5 MB' : 'File too large — max 10 MB');
+      return;
+    }
+
+    ref.read(conversationsProvider.notifier).sendAttachment(_id, path, file.name, isImage: isImage);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+  }
+
+  /// Opens the emoji picker in a sheet. Emoji are ordinary Unicode characters
+  /// inserted into the composer's text — there is no backend endpoint for
+  /// this and none is needed (`whatsapp.md` §4.1); handing the picker the
+  /// same [_draftCtrl] the text field uses makes it insert at the caret (and
+  /// back up on the picker's own backspace key) with no manual splicing.
+  void _openEmojiPicker() {
+    FocusScope.of(context).unfocus(); // drop the keyboard so the sheet has room
+    showClozrSheet<void>(
+      context: context,
+      builder: (_) => SizedBox(
+        height: 380.h,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SheetHeader(title: 'Emoji'),
+            Expanded(
+              child: EmojiPicker(
+                textEditingController: _draftCtrl,
+                config: Config(
+                  height: 320.h,
+                  emojiViewConfig: EmojiViewConfig(emojiSizeMax: 26.sp),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens an image/document bubble in the OS viewer.
+  ///
+  /// Just sent → the local file is still on the device, so it opens straight
+  /// off [ChatMessage.attachmentPath] (whatsapp.md §5: "the optimistic bubble
+  /// should render the local File object URL"). Otherwise — a later session,
+  /// a cleared cache — it falls back to the authenticated media proxy via
+  /// [ChatMessage.mediaId], writes the bytes to a temp file, then opens that.
+  Future<void> _openAttachment(ChatMessage m) async {
+    final toast = ref.read(toastProvider.notifier);
+    final localPath = m.attachmentPath;
+    if (localPath != null && await File(localPath).exists()) {
+      await _launchLocalFile(localPath, toast);
+      return;
+    }
+
+    final mediaId = m.mediaId;
+    if (mediaId == null) {
+      toast.show('This attachment is no longer available.');
+      return;
+    }
+    await _fetchAndOpenMedia(mediaId, toast);
+  }
+
+  /// The Medias tab's download row — same proxy fetch as [_openAttachment]'s
+  /// fallback, since a media-tab row never has a local file to open straight
+  /// off (it did not necessarily originate on this device).
+  Future<void> _downloadMedia(ChatMedia f) async {
+    final toast = ref.read(toastProvider.notifier);
+    final mediaId = f.mediaId;
+    if (mediaId == null) {
+      toast.show('This attachment is no longer available.');
+      return;
+    }
+    await _fetchAndOpenMedia(mediaId, toast);
+  }
+
+  /// Authenticated media proxy → temp file → OS viewer. Shared tail for
+  /// [_openAttachment] and [_downloadMedia] once each has settled on a
+  /// `mediaId` to fetch.
+  Future<void> _fetchAndOpenMedia(String mediaId, ToastController toast) async {
+    final fetched = await ref.read(conversationsProvider.notifier).fetchMedia(mediaId);
+    if (!mounted) return;
+    if (fetched == null) {
+      toast.show('Could not open this file — it may have expired.');
+      return;
+    }
+    final (bytes, contentType) = fetched;
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/wa_$mediaId${_extensionForMime(contentType)}');
+    await file.writeAsBytes(bytes);
+    if (!mounted) return;
+    await _launchLocalFile(file.path, toast);
+  }
+
+  Future<void> _launchLocalFile(String path, ToastController toast) async {
+    final result = await OpenFile.open(path);
+    if (result.type != ResultType.done && mounted) {
+      toast.show(result.message.isNotEmpty ? result.message : 'No app on this device can open this file.');
+    }
+  }
+
+  /// A file extension guess from the media proxy's `Content-Type` — the
+  /// filename WhatsApp gave the row isn't always present, but the OS viewer
+  /// still needs *an* extension to pick an app.
+  String _extensionForMime(String? mime) {
+    switch ((mime ?? '').split(';').first.trim().toLowerCase()) {
+      case 'image/jpeg':
+        return '.jpg';
+      case 'image/png':
+        return '.png';
+      case 'image/webp':
+        return '.webp';
+      case 'application/pdf':
+        return '.pdf';
+      case 'application/msword':
+        return '.doc';
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        return '.docx';
+      case 'application/vnd.ms-excel':
+        return '.xls';
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        return '.xlsx';
+      case 'text/csv':
+        return '.csv';
+      case 'application/zip':
+        return '.zip';
+      default:
+        return '';
+    }
   }
 
   /// Open the "Template messages" picker sheet (closed 24-hour window). Tapping a
@@ -160,7 +361,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   SizedBox(width: 10.w),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => ref.read(toastProvider.notifier).show('Calling ${chat.name.split(' ').first}…'),
+                    onTap: () => _call(chat),
                     child: Container(
                       width: 38.w,
                       height: 38.w,
@@ -256,6 +457,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         onRetry: m.failed
                             ? () => ref.read(conversationsProvider.notifier).retryMessage(chat.id, m)
                             : null,
+                        onOpenAttachment: m.isAttachment ? () => _openAttachment(m) : null,
                       ),
                   ],
                 ),
@@ -296,7 +498,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           children: [
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => ref.read(toastProvider.notifier).show('Emoji picker — coming soon'),
+              onTap: _openEmojiPicker,
               child: Icon(PhosphorIconsRegular.smiley, size: 24.sp, color: MessagesColors.muted),
             ),
             SizedBox(width: 9.w),
@@ -316,10 +518,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   textInputAction: TextInputAction.send,
                   style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
                   cursorColor: AppColors.navy,
+                  // The backend caps `body` at 4096 chars (whatsapp.md §4.1)
+                  // and measures the decoded string, not UTF-16 code units —
+                  // Flutter's own maxLength enforcement is grapheme-aware
+                  // (via `characters`), so a flag emoji counts as one, matching.
+                  maxLength: 4096,
                   decoration: InputDecoration(
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                     border: InputBorder.none,
+                    counterText: '',
                     hintText: 'Type a message…',
                     hintStyle: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textPlaceholder),
                   ),
@@ -329,7 +537,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             SizedBox(width: 9.w),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => ref.read(toastProvider.notifier).show('Attach — file picker coming soon'),
+              onTap: _pickAttachment,
               child: Icon(PhosphorIconsRegular.paperclip, size: 22.sp, color: MessagesColors.muted),
             ),
             SizedBox(width: 9.w),
@@ -464,7 +672,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             title: f.name,
             sub: f.meta,
             subColor: AppColors.textPlaceholder,
-            trailing: Icon(PhosphorIconsRegular.downloadSimple, size: 18.sp, color: MessagesColors.muted),
+            trailing: GestureDetector(
+              onTap: () => _downloadMedia(f),
+              child: Icon(PhosphorIconsRegular.downloadSimple, size: 18.sp, color: MessagesColors.muted),
+            ),
           ),
       ],
     );
@@ -781,6 +992,90 @@ class _TemplatePickerSheet extends ConsumerWidget {
           Text('APPROVED',
               style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.success, letterSpacing: 0.4)),
         ],
+      ),
+    );
+  }
+}
+
+/// The paperclip's "Photo / Document" picker. Only these two, matching what
+/// the backend can actually send (`whatsapp.md` §4.4) — no camera, sticker,
+/// location, or contact-card options, since there is no endpoint behind them.
+class _AttachmentPickerSheet extends StatelessWidget {
+  const _AttachmentPickerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SheetHeader(title: 'Attach'),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 30.h),
+          child: Column(
+            children: [
+              _row(
+                context,
+                icon: PhosphorIconsRegular.image,
+                label: 'Photo',
+                sub: 'Images up to 5 MB',
+                value: 'image',
+              ),
+              SizedBox(height: 10.h),
+              _row(
+                context,
+                icon: PhosphorIconsRegular.file,
+                label: 'Document',
+                sub: 'Any file up to 10 MB',
+                value: 'document',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String sub,
+    required String value,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).pop(value),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 12.w),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(color: AppColors.borderCardSoft),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38.w,
+              height: 38.w,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.tintBlue, borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(icon, size: 18.sp, color: AppColors.blueBright),
+            ),
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  SizedBox(height: 2.h),
+                  Text(sub, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                ],
+              ),
+            ),
+            Icon(PhosphorIconsRegular.caretRight, size: 16.sp, color: AppColors.textPlaceholder),
+          ],
+        ),
       ),
     );
   }

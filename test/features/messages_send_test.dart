@@ -53,6 +53,15 @@ class _FakeRepo implements MessagesRepository {
   Future<ChatMessage?> sendTemplate(String id, String templateId, String body) async => null;
 
   @override
+  Future<ChatMessage?> sendImage(String id, String path, String filename) async => null;
+
+  @override
+  Future<ChatMessage?> sendDocument(String id, String path, String filename) async => null;
+
+  @override
+  Future<(List<int>, String?)?> fetchMedia(String mediaId) async => null;
+
+  @override
   Future<List<WhatsappTemplate>> getTemplates() async => const [];
 }
 

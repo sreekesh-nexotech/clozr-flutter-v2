@@ -61,11 +61,16 @@ class ConversationsController extends StateNotifier<ConversationsState> {
       {List<WhatsappTemplate> Function()? templates})
       : _templates = templates,
         super(ConversationsState(loading: ApiConfig.apiEnabled)) {
-    _load();
+    _start();
   }
 
   final MessagesRepository _repo;
   final List<WhatsappTemplate> Function()? _templates;
+
+  /// The load in flight, so a caller that needs the list *now* — opening a
+  /// lead's WhatsApp thread from the CRM, where nothing has rendered the
+  /// Messages tab yet — can await the same fetch instead of racing it.
+  Future<void>? _inFlight;
 
   int _localSeq = 0;
   String _nextLocalId() => 'local-${_localSeq++}';
@@ -89,7 +94,21 @@ class ConversationsController extends StateNotifier<ConversationsState> {
   }
 
   /// Retry the conversation-list fetch (used by the error-state Retry CTA).
-  void reload() => _load();
+  void reload() => _start();
+
+  Future<void> _start() =>
+      _inFlight ??= _load().whenComplete(() => _inFlight = null);
+
+  /// Resolves once the conversation list has been loaded at least once.
+  ///
+  /// Returns immediately when rows are already in hand; otherwise it joins the
+  /// load in flight, or starts one (which is also what happens after a failed
+  /// or genuinely empty fetch — a lead opened minutes later deserves a fresh
+  /// look before the UI concludes there is no thread).
+  Future<void> ensureLoaded() {
+    if (state.conversations.isNotEmpty) return Future.value();
+    return _start();
+  }
 
   void markRead(String id) {
     state = state.copyWith(conversations: [
@@ -115,13 +134,42 @@ class ConversationsController extends StateNotifier<ConversationsState> {
     unawaited(_dispatchTemplate(id, localId, body));
   }
 
+  /// Uploads and sends a picked file. [isImage] picks `/send/image/` vs
+  /// `/send/document/` — the two are separate endpoints server-side, each with
+  /// its own size/type validation, so the caller must already know which kind
+  /// of file it staged.
+  void sendAttachment(String id, String path, String filename, {required bool isImage}) {
+    final localId = _nextLocalId();
+    _append(
+      id,
+      ChatMessage(
+        mine: true,
+        text: filename,
+        time: 'Now',
+        status: 'sent',
+        localId: localId,
+        attachmentPath: path,
+        attachmentKind: isImage ? 'image' : 'document',
+      ),
+    );
+    unawaited(_dispatchAttachment(id, localId, path, filename, isImage: isImage));
+  }
+
   /// Re-fire a bubble that came back rejected. Resets it to optimistic, then
-  /// dispatches again on the same path (text vs template).
+  /// dispatches again on the same path (text vs template vs attachment).
   void retryMessage(String conversationId, ChatMessage failed) {
     final localId = failed.localId;
     if (localId == null) return;
     _setStatus(conversationId, localId, 'sent');
-    if (failed.tpl) {
+    if (failed.isAttachment) {
+      unawaited(_dispatchAttachment(
+        conversationId,
+        localId,
+        failed.attachmentPath!,
+        failed.text,
+        isImage: failed.attachmentKind == 'image',
+      ));
+    } else if (failed.tpl) {
       unawaited(_dispatchTemplate(conversationId, localId, failed.text));
     } else {
       unawaited(_dispatchText(conversationId, localId, failed.text));
@@ -136,6 +184,21 @@ class ConversationsController extends StateNotifier<ConversationsState> {
 
   Future<void> _dispatchTemplate(String id, String localId, String body) async {
     final sent = await _repo.sendTemplate(id, _templateIdForBody(id, body), body);
+    if (!mounted) return;
+    _setStatus(id, localId, sent != null ? _statusOf(sent) : 'failed');
+  }
+
+  /// Downloads an attachment through the authenticated media proxy, for
+  /// opening a message whose local file is gone (a later session, a cleared
+  /// cache) — see [ChatMessage.mediaId].
+  Future<(List<int>, String?)?> fetchMedia(String mediaId) => _repo.fetchMedia(mediaId);
+
+  Future<void> _dispatchAttachment(
+      String id, String localId, String path, String filename,
+      {required bool isImage}) async {
+    final sent = isImage
+        ? await _repo.sendImage(id, path, filename)
+        : await _repo.sendDocument(id, path, filename);
     if (!mounted) return;
     _setStatus(id, localId, sent != null ? _statusOf(sent) : 'failed');
   }
@@ -231,6 +294,29 @@ final conversationByIdProvider = Provider.family<Conversation?, String>((ref, id
   }
   return null;
 });
+
+/// The conversation for a CRM record, matched the two ways the API allows:
+/// its `lead` link first, then the contact's number.
+///
+/// The number matters as much as the link — WhatsApp threads are created by the
+/// inbound webhook from a phone number, and `lead` is only set once the backend
+/// has matched that number to a record. A thread that started before the lead
+/// existed (or against a second number on the same lead) carries no link at all
+/// and would otherwise look like "no conversation".
+Conversation? findConversationForLead(
+  List<Conversation> conversations, {
+  required String leadId,
+  required String phone,
+}) {
+  for (final c in conversations) {
+    if (c.leadId != null && c.leadId == leadId) return c;
+  }
+  if (phone.trim().isEmpty) return null;
+  for (final c in conversations) {
+    if (c.phone.isNotEmpty && sameWaNumber(c.phone, phone)) return c;
+  }
+  return null;
+}
 
 /// Search query on the Messages list.
 final chatSearchProvider = StateProvider<String>((ref) => '');

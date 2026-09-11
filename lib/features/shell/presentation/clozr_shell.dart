@@ -4,8 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
+import '../../../core/network/app_error.dart';
+import '../../../core/network/connectivity_provider.dart';
 import '../../../core/network/network_providers.dart';
 import '../../../core/widgets/keyboard_visibility.dart';
+import '../../auth/application/providers/auth_providers.dart';
+import '../application/providers/contextual_add_provider.dart';
 import '../application/providers/shell_providers.dart';
 import 'app_drawer.dart';
 import 'clozr_bottom_nav.dart';
@@ -24,6 +28,17 @@ class ClozrShell extends ConsumerWidget {
     final location = GoRouterState.of(context).uri.toString();
     final meta = Routes.metaFor(location);
     final drawerOpen = ref.watch(drawerOpenProvider);
+    // Started here, not just by [AppDrawer], so the role is known — and the
+    // router's landing-screen redirect can act on it — the moment any
+    // authenticated screen builds, not only once the user happens to open
+    // the drawer.
+    ref.watch(moduleAccessProvider);
+
+    // Reset the bottom nav's `+` action on every real navigation, so a screen
+    // that registers nothing (a section's Home, Helpdesk Boards) falls
+    // through to the nav's own default instead of keeping whatever the last
+    // registering screen set.
+    clearAddActionOnRouteChange(ref, location.split('?').first);
 
     // Every rejected write, and every permission refusal, gets said out loud
     // once — here, rather than at each call site.
@@ -36,10 +51,31 @@ class ClozrShell extends ConsumerWidget {
     // them without changing what any screen does on its fallback path.
     ref.listen(apiFailureProvider, (_, failure) {
       if (failure == null) return;
+      // The persistent [OfflineBanner] already says this, off the device's
+      // own connectivity state rather than a failed request — a toast on top
+      // would just repeat it a beat later for every write attempted while
+      // offline, one after another.
+      if (failure.type == AppErrorType.network) return;
       // A screen that already reported this has said the same sentence;
       // re-showing it would only restart the timer on a toast being read.
       if (ref.read(toastProvider)?.text == failure.message) return;
       ref.read(toastProvider.notifier).showError(failure.message);
+    });
+
+    // Reconnecting should replace stale data, not just recolor the banner.
+    // Every repository-backed provider reaches the network through
+    // `apiServiceProvider` (`ref.watch`, not `ref.read`), so invalidating it
+    // here cascades into a live refetch of all of them — the same mechanic
+    // `SessionController._resetApiScopedProviders` already uses on logout,
+    // just without touching the session. Only fires on a genuine
+    // offline→online transition, never on the steady "still online" ticks the
+    // connectivity stream can also emit.
+    ref.listen(isOnlineProvider, (previous, next) {
+      final wasOnline = previous?.valueOrNull;
+      final isOnline = next.valueOrNull;
+      if (isOnline == true && wasOnline == false) {
+        ref.invalidate(apiServiceProvider);
+      }
     });
 
     // Read HERE, above the Scaffold: a Scaffold that resizes for the keyboard

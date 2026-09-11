@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../../core/utils/phone_rules.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/phone_controller.dart';
+import '../../../../core/widgets/phone_input_field.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../application/providers/crm_catalog_providers.dart';
@@ -74,6 +77,11 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   /// Text values, one controller per string/number/date column.
   final Map<String, TextEditingController> _text = {};
 
+  /// Country + national-digits state, one per phone column (`mobile_no`,
+  /// `whatsapp_no`) — kept separate from [_text] since a phone box carries a
+  /// selected country alongside its digits, not just a string.
+  final Map<String, PhoneController> _phone = {};
+
   /// Id explicitly chosen by the user, per `foreignkey` column. Absent until
   /// they pick one — which is what lets the record's own value show through.
   final Map<String, String?> _choice = {};
@@ -112,6 +120,9 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     for (final c in _text.values) {
       c.dispose();
     }
+    for (final c in _phone.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -126,13 +137,29 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
 
     for (final c in columns) {
       final raw = row[c.name];
-      if (c.isChoice) {
+      if (_isPhoneColumn(c)) {
+        _phoneController(c.name).setPendingSeed(raw?.toString());
+      } else if (c.isChoice) {
         _raw[c.name] = raw;
       } else {
         _controller(c.name).text = _textOf(raw);
       }
     }
   }
+
+  /// `mobile_no` / `whatsapp_no` (Lead) and `phone` (Customer) — every
+  /// contact-number column this shared form is asked to render, across the
+  /// modules that reuse it. Each rendered as a country-code phone field
+  /// instead of a plain text box, regardless of the generic `type: 'string'`
+  /// the schema reports them as. Customer's own schema names its column
+  /// `phone`, not `mobile_no` — confirmed against a live
+  /// `GET /crm/customers/schema/?view_type=detail` response — so both names
+  /// have to be recognised here for the two modules to behave alike.
+  bool _isPhoneColumn(ViewColumn c) =>
+      c.name == 'mobile_no' || c.name == 'whatsapp_no' || c.name == 'phone';
+
+  PhoneController _phoneController(String name) =>
+      _phone.putIfAbsent(name, PhoneController.new);
 
   /// The id currently selected for a choice column — the user's pick if they
   /// made one, otherwise whatever the record holds.
@@ -155,6 +182,17 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     final out = <String, dynamic>{};
     for (final c in widget.schema.editableColumns) {
       final key = widget.writeKey?.call(c) ?? LeadsRemoteDataSource.writeKeyFor(c);
+      if (_isPhoneColumn(c)) {
+        // Omitted rather than sent as null when blank: the field-emptied-vs-
+        // never-touched distinction other columns lean on `schemaWriteValue`
+        // for doesn't apply the same way here — a blank optional phone box
+        // (whatsapp_no) omitting the key is the safer default than clearing
+        // a number the record already had, should a prefill race leave it
+        // looking empty for a frame.
+        final value = _phoneController(c.name).toE164();
+        if (value != null) out[key] = value;
+        continue;
+      }
       switch (c.type) {
         case 'foreignkey':
           // An id that no longer matches a catalog option is a value we could
@@ -183,6 +221,50 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       }
     }
     return out;
+  }
+
+  /// Friendly, field-level validation the schema itself does not encode.
+  ///
+  /// `is_fixed` covers most org-mandated boxes, but two gaps are hard API
+  /// requirements no flag names: `first_name` (written from `lead_name`) is
+  /// required on every create regardless of the org's layout, and a contact
+  /// number the org bothered to configure should be a real one. Left
+  /// unchecked, both used to surface only after a round trip, as the
+  /// backend's raw `"first_name: This field is required."` / `"Enter a valid
+  /// phone number (at least 7 digits)."`.
+  ///
+  /// Returns one message per problem field, in schema order, so a caller can
+  /// show the first or all of them.
+  List<String> validate() {
+    final errors = <String>[];
+    for (final c in widget.schema.editableColumns) {
+      if (_isPhoneColumn(c)) {
+        final phone = _phoneController(c.name);
+        final required = c.isFixed || c.name == 'mobile_no';
+        if (required && phone.isBlank) {
+          errors.add('${c.label} is required');
+        } else if (!phone.isBlank && !phone.isComplete) {
+          errors.add('${c.label}: ${phoneDigitsMessage(phone.rule)}');
+        }
+        continue;
+      }
+      final required = c.isFixed || c.name == 'lead_name';
+      if (required && _isBlank(c)) {
+        errors.add('${c.label} is required');
+      }
+    }
+    return errors;
+  }
+
+  bool _isBlank(ViewColumn c) {
+    switch (c.type) {
+      case 'foreignkey':
+        return _selectedId(c) == null;
+      case 'manytomany':
+        return _selectedIds(c).isEmpty;
+      default:
+        return _controller(c.name).text.trim().isEmpty;
+    }
   }
 
   /// The stored value for a **model choice** column, given what the box shows.
@@ -476,6 +558,15 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       (widget.optionsByColumn.containsKey(c.name) || c.hasChoices);
 
   Widget _field(ViewColumn c) {
+    if (_isPhoneColumn(c)) {
+      return PhoneInputField(
+        label: c.label,
+        controller: _phoneController(c.name),
+        required: c.isFixed || c.name == 'mobile_no',
+        hint: 'Enter ${c.label.toLowerCase()}…',
+        onChanged: () => setState(() {}),
+      );
+    }
     if (_isTextChoice(c)) {
       return AppTextField(
         label: c.label,

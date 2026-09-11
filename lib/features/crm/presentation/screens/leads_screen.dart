@@ -244,6 +244,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       // trip. Apply is authoritative — that is what re-queries the server.
       previewCount: (draft) => previewBase.where((l) => leadMatchesFilters(l, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(leadSavedFiltersProvider).filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;

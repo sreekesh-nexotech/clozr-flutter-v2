@@ -10,6 +10,7 @@ import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -115,10 +116,12 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
           child: AsyncStateView<List<Team>>(
             value: teamsAsync,
             onRetry: () => ref.invalidate(teamsProvider),
+            onRefresh: _refresh,
             data: (_) {
               final visible = ref.watch(filteredTeamsProvider);
               final byId = ref.watch(membersByIdProvider);
               return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 children: [
                   const InfoBanner(
@@ -155,6 +158,17 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
     );
   }
 
+  /// Pull-to-refresh. Team cards resolve member names/initials off the roster,
+  /// so both are reloaded together.
+  Future<void> _refresh() async {
+    ref.invalidate(teamsProvider);
+    ref.invalidate(membersProvider);
+    await settle([
+      ref.read(teamsProvider.future),
+      ref.read(membersProvider.future),
+    ]);
+  }
+
   // ── Filter drawer ──
   Future<void> _openFilters() async {
     final spec = ref.read(teamsFilterSpecProvider);
@@ -168,6 +182,7 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
       initial: current,
       previewCount: (draft) => base.where((t) => teamMatchesFilters(t, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(teamSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(teamSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

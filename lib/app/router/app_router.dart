@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../core/auth/module_access_gate.dart';
 import '../../core/auth/session_gate.dart';
 import '../../core/config/api_config.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/shell/domain/nav_catalog.dart';
 import '../../features/shell/presentation/clozr_shell.dart';
 import 'routes.dart';
 
@@ -104,8 +106,10 @@ final GoRouter appRouter = GoRouter(
   // instead of one per screen.
   observers: [SentryNavigatorObserver(enableAutoTransactions: false)],
   // Auth gate — active only when a backend is configured. Mock mode keeps the
-  // original boot-straight-into-the-shell behavior.
-  refreshListenable: SessionGate.instance,
+  // original boot-straight-into-the-shell behavior. Merged with
+  // [ModuleAccessGate] so the redirect below re-runs the moment the signed-in
+  // user's role is actually known, not just on auth transitions.
+  refreshListenable: Listenable.merge([SessionGate.instance, ModuleAccessGate.instance]),
   redirect: (context, state) {
     if (!ApiConfig.apiEnabled) return null;
     final status = SessionGate.instance.status;
@@ -119,8 +123,22 @@ final GoRouter appRouter = GoRouter(
     final loggedIn = status == SessionStatus.authenticated;
     final atAuthRoute = loc == Routes.login || loc == Routes.splash;
     if (!loggedIn) return loc == Routes.login ? null : Routes.login;
-    // A signed-in user lands on the Dashboard, not the CRM home.
-    return atAuthRoute ? Routes.dashboard : null;
+
+    // A signed-in user lands on the Dashboard — but only a role that can
+    // actually see it. [landingPathFor] falls back to Dashboard itself while
+    // the role is still loading (`!gate.loaded`), so this is a no-op until
+    // the real answer is in.
+    final gate = ModuleAccessGate.instance;
+    final landing = gate.loaded ? landingPathFor(gate.access) : Routes.dashboard;
+    if (atAuthRoute) return landing;
+    // Self-correct even off the auth route: someone parked on Dashboard while
+    // their role was still resolving is moved the instant it resolves, rather
+    // than waiting for their next manual navigation (or worse, staying put
+    // long enough for the screen's own fetch to 403).
+    if (loc == Routes.dashboard && gate.loaded && landing != Routes.dashboard) {
+      return landing;
+    }
+    return null;
   },
   routes: [
     GoRoute(

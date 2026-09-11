@@ -10,6 +10,7 @@ class MessagesMockDataSource {
         Conversation(
           id: 'ch1',
           leadId: 'L1001',
+          phone: '919410011000',
           name: 'Ramesh Pillai',
           company: 'Kalyan Silks',
           initials: 'RP',
@@ -34,6 +35,7 @@ class MessagesMockDataSource {
         Conversation(
           id: 'ch2',
           leadId: 'L1002',
+          phone: '914844058890',
           name: 'Aboobacker Haji',
           company: 'Lulu Fashion Store',
           initials: 'AH',
@@ -53,6 +55,7 @@ class MessagesMockDataSource {
         Conversation(
           id: 'ch3',
           leadId: 'L1003',
+          phone: '914782862345',
           name: 'Jose Kuriakose',
           company: 'Marari Sands Resort',
           initials: 'JK',
@@ -68,6 +71,7 @@ class MessagesMockDataSource {
         Conversation(
           id: 'ch4',
           leadId: 'L1004',
+          phone: '914846671234',
           name: 'Nikhil Menon',
           company: 'Taj Gateway Annexe',
           initials: 'NM',
@@ -83,6 +87,7 @@ class MessagesMockDataSource {
         Conversation(
           id: 'ch5',
           leadId: 'L1005',
+          phone: '914846699000',
           name: 'Priya Varma',
           company: 'Aster Medcity OPD',
           initials: 'PV',

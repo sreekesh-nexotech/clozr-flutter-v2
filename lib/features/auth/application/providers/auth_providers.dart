@@ -3,8 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/auth/module_access_gate.dart';
 import '../../../../core/auth/session_gate.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/monitoring/app_monitoring.dart';
 import '../../../../core/network/api_service.dart';
 import '../../../../core/network/network_providers.dart';
@@ -116,12 +118,19 @@ class SessionController extends StateNotifier<SessionState> {
   }
 
   Future<void> _refreshProfileInBackground() async {
+    await _refreshProfile();
+    _hydrateRoster();
+  }
+
+  /// Pulls the full `User` serializer from `GET /auth/me/` over whatever
+  /// identity we already hold. Never throws: offline/transient failures keep
+  /// the identity we have, and a real 401 force-logs-out via the interceptor.
+  Future<void> _refreshProfile() async {
     try {
       _adoptUser(await _repo.me());
     } on Object {
-      // Offline/transient — keep the cached session; a real 401 force-logs-out.
+      // Offline/transient — keep the identity we have.
     }
-    _hydrateRoster();
   }
 
   void _hydrateRoster() => UserDirectory.hydrate(_ref.read(apiServiceProvider));
@@ -204,6 +213,12 @@ class SessionController extends StateNotifier<SessionState> {
       _set(SessionStatus.authenticated);
       _hydrateRoster();
     }
+    // Login returns a *thin* user — id, email, full_name and organizations
+    // only (login.md §1a). Everything under `profile` — phone, designation,
+    // avatar — and `roles` arrive on `GET /auth/me/`. Without this the session
+    // stays profile-less until the next cold start, which is why a freshly
+    // signed-in user has no `from_number` to log a call with.
+    unawaited(_refreshProfile());
   }
 
   void _adoptUser(SessionUser user) {
@@ -238,6 +253,13 @@ class SessionController extends StateNotifier<SessionState> {
       // next person to sign in on this device — are not attributed to them.
       await AppMonitoring.forget();
       _resetApiScopedProviders();
+      // Plain UI-state providers — which drawer groups are expanded, whether
+      // it's open — sit outside the `apiServiceProvider` cascade above, so
+      // they survive it untouched. Without this, the next sign-in (the same
+      // person or someone else on a shared device) opens the drawer to
+      // whatever the previous session last expanded.
+      _ref.invalidate(drawerExpandedProvider);
+      _ref.invalidate(drawerOpenProvider);
       state = const SessionState(status: SessionStatus.unauthenticated);
       SessionGate.instance.set(SessionStatus.unauthenticated);
     } finally {
@@ -278,11 +300,19 @@ final moduleAccessProvider = FutureProvider<ModuleAccess?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
   if (ref.watch(sessionControllerProvider).status !=
       SessionStatus.authenticated) {
+    // Unknown, not "fetched and empty" — the router shouldn't act on this
+    // until a real answer lands, so it's a reset, not a resolved null.
+    ModuleAccessGate.instance.reset();
     return null;
   }
   try {
-    return await ref.watch(authRepositoryProvider).modules();
+    final access = await ref.watch(authRepositoryProvider).modules();
+    // Mirrors the result onto the router's plain-Dart bridge — see
+    // [ModuleAccessGate] for why the router can't just watch this provider.
+    ModuleAccessGate.instance.set(access);
+    return access;
   } on Object {
+    ModuleAccessGate.instance.set(null);
     return null;
   }
 });

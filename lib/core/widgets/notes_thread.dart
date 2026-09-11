@@ -109,6 +109,13 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     'pdf', 'xls', 'xlsx', 'csv', 'md',
   ];
 
+  /// Same caps as the WhatsApp composer (`whatsapp.md` §4.5), kept consistent
+  /// here so a "too large" file behaves the same everywhere in the app rather
+  /// than queuing silently and only failing — invisibly — once the note is
+  /// posted and the upload hits the send timeout.
+  static const _imageSizeLimit = 5 * 1024 * 1024;
+  static const _fileSizeLimit = 10 * 1024 * 1024;
+
   /// Picks real files off the device and queues them for upload.
   ///
   /// Multi-select: the composer already renders a chip per pending file, and
@@ -138,18 +145,34 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     final picked = result;
     if (picked == null || !mounted) return; // cancelled
 
+    final tooLarge = <String>[];
     setState(() {
       for (final f in picked.files) {
         final path = f.path;
         if (path == null) continue;
+        final kind = _kindOf(f.extension);
+        final limit = kind == 'image' ? _imageSizeLimit : _fileSizeLimit;
+        if (f.size > limit) {
+          tooLarge.add(f.name);
+          continue;
+        }
         _pending.add(NoteAttachment(
           name: f.name,
-          kind: _kindOf(f.extension),
+          kind: kind,
           size: _formatBytes(f.size),
           localPath: path,
         ));
       }
     });
+    // Said now, at pick time, rather than discovered after the note has
+    // already posted and the upload silently times out — which is what
+    // happened before this check existed.
+    if (tooLarge.isNotEmpty && mounted) {
+      final limitLabel = type == FileType.image ? '5 MB' : '10 MB';
+      ref.read(toastProvider.notifier).showError(tooLarge.length == 1
+          ? '${tooLarge.first} is too large — max $limitLabel'
+          : '${tooLarge.length} files are too large — max $limitLabel');
+    }
   }
 
   static String _kindOf(String? extension) {
@@ -451,6 +474,11 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   /// nothing reads as a broken attachment rather than one that has not been
   /// sent yet.
   Future<void> _openAttachment(NoteAttachment a) async {
+    if (a.failed) {
+      ref.read(toastProvider.notifier).showError(
+          "This file didn't upload — it may be too large, or the connection dropped. Remove it and try attaching it again.");
+      return;
+    }
     final url = a.url;
     // An image previews in-app — including one only just picked, which is read
     // from disk. Waiting until it is posted to see what you attached was the
@@ -478,19 +506,25 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   }
 
   Widget _attachmentChip(NoteAttachment a, {VoidCallback? onRemove}) {
+    final failed = a.failed;
     final chip = Container(
       padding: EdgeInsets.fromLTRB(8.w, 6.h, onRemove != null ? 6.w : 10.w, 6.h),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F5F8),
+        color: failed ? AppColors.tintRed : const Color(0xFFF3F5F8),
         borderRadius: BorderRadius.circular(9.r),
-        border: Border.all(color: const Color(0xFFE6E7EA)),
+        border: Border.all(color: failed ? AppColors.error : const Color(0xFFE6E7EA)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // A failed upload gets its own glyph regardless of file type — the
+          // point is to catch the eye as "something's wrong here", not to say
+          // what kind of file it was.
+          if (failed)
+            Icon(PhosphorIconsFill.warningCircle, size: 15.sp, color: AppColors.error)
           // The photo itself, not a generic glyph — a row of identically
           // named camera files is otherwise impossible to tell apart.
-          if (attachmentImage(a) case final img?)
+          else if (attachmentImage(a) case final img?)
             ClipRRect(
               borderRadius: BorderRadius.circular(4.r),
               child: Image(
@@ -513,7 +547,10 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontFamily: 'Manrope', fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textBody)),
           ),
-          if (a.size != null) ...[
+          if (failed) ...[
+            SizedBox(width: 6.w),
+            Text('Failed', style: TextStyle(fontFamily: 'Manrope', fontSize: 10.5.sp, fontWeight: FontWeight.w700, color: AppColors.error)),
+          ] else if (a.size != null) ...[
             SizedBox(width: 6.w),
             Text(a.size!, style: TextStyle(fontFamily: 'Manrope', fontSize: 10.5.sp, color: AppColors.textPlaceholder)),
           ],

@@ -30,13 +30,17 @@ class ExotelRemoteDataSource {
     }
   }
 
-  /// `POST /crm/exotel/call/` — starts a click-to-call against a lead.
+  /// `POST /crm/exotel/call/` — starts a click-to-call against a lead, or any
+  /// other number when [leadId] is null (e.g. a WhatsApp contact not yet
+  /// linked to a lead).
   ///
   /// `related_to` / `related_to_id` are both-or-neither by contract, and pin
   /// the resulting log to *this* lead even when the number also matches another
-  /// record. `from_number` and `caller_id` are deliberately omitted: the server
-  /// fills them from the caller's telephony-agent row, which is the only place
-  /// those numbers exist.
+  /// record. Omitted entirely when [leadId] is null — the backend then falls
+  /// back to reverse-resolving the dialled number (Contact → Lead → Customer).
+  /// `from_number` and `caller_id` are deliberately omitted: the server fills
+  /// them from the caller's telephony-agent row, which is the only place those
+  /// numbers exist.
   ///
   /// **The backend creates the call log itself**, at dial time, and returns its
   /// id — so a caller must not also post to `/crm/call-logs/`, or the call
@@ -45,13 +49,13 @@ class ExotelRemoteDataSource {
   /// Throws on refusal (integration off, caller not an agent, upstream error);
   /// no call is placed in any of those cases.
   Future<String?> placeCall({
-    required String leadId,
+    String? leadId,
     required String toNumber,
   }) async {
     final body = await _api.post(ApiEndpoints.exotelCall, body: {
       'to_number': toNumber,
-      'related_to': 'lead',
-      'related_to_id': leadId,
+      if (leadId != null) 'related_to': 'lead',
+      if (leadId != null) 'related_to_id': leadId,
     });
     return body is Map ? body['call_log_id']?.toString() : null;
   }

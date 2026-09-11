@@ -145,6 +145,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               return visible.isEmpty
                   ? _empty()
                   : ListView.separated(
+                      // So the gesture still works on a short list that fits
+                      // the viewport without scrolling.
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                       itemCount: visible.length,
                       separatorBuilder: (_, __) => SizedBox(height: 12.h),
@@ -209,6 +212,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       initial: current,
       previewCount: (draft) => base.where((t) => ticketMatchesFilters(t, draft, dir)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(ticketSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(ticketSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

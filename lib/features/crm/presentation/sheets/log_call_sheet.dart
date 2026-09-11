@@ -8,7 +8,9 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
-import '../../../../core/utils/phone_format.dart';
+import '../../../../core/utils/phone_rules.dart';
+import '../../../../core/widgets/phone_controller.dart';
+import '../../../../core/widgets/phone_input_field.dart';
 import '../../../auth/application/providers/auth_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/call_logs_providers.dart';
@@ -51,10 +53,9 @@ class _LogCallSheet extends StatefulWidget {
 class _LogCallSheetState extends State<_LogCallSheet> {
   final _minutes = TextEditingController();
   final _seconds = TextEditingController();
-  /// Prefilled with the lead's number as ten national digits — the stored value
-  /// carries the country code, which the field now renders as a prefix.
-  late final TextEditingController _toNumber =
-      TextEditingController(text: PhoneFormat.national(widget.lead.phone));
+  /// Prefilled with the lead's own country + national digits, split from the
+  /// stored E.164 value.
+  late final PhoneController _toNumber = PhoneController(initialE164: widget.lead.phone);
 
   bool _incoming = false;
   _Outcome _outcome = _Outcome.connected;
@@ -63,9 +64,10 @@ class _LogCallSheetState extends State<_LogCallSheet> {
 
   @override
   void dispose() {
-    for (final c in [_minutes, _seconds, _toNumber]) {
+    for (final c in [_minutes, _seconds]) {
       c.dispose();
     }
+    _toNumber.dispose();
     super.dispose();
   }
 
@@ -75,7 +77,7 @@ class _LogCallSheetState extends State<_LogCallSheet> {
   String get _myNumber =>
       widget.ref.read(sessionControllerProvider).user?.phone.trim() ?? '';
 
-  bool get _toOk => PhoneFormat.isComplete(_toNumber.text);
+  bool get _toOk => _toNumber.isComplete;
 
   Duration get _duration => Duration(
         minutes: int.tryParse(_minutes.text.trim()) ?? 0,
@@ -104,7 +106,7 @@ class _LogCallSheetState extends State<_LogCallSheet> {
             // E.164 with the code, which is what `normaliseCallNumber` and
             // Exotel's `to_number` expect — a bare ten digits would be dialled
             // without a country.
-            toNumber: PhoneFormat.forApi(_toNumber.text) ?? '',
+            toNumber: _toNumber.toE164() ?? '',
             incoming: _incoming,
             isMissed: _outcome == _Outcome.missed,
             // A call that never connected has no duration to report, whatever
@@ -142,6 +144,17 @@ class _LogCallSheetState extends State<_LogCallSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 LinkedLeadField(lead: widget.lead),
+                if (noNumber) ...[
+                  SizedBox(height: 12.h),
+                  Text(
+                    'Your own phone number is missing from your profile. Every '
+                    'call log records the caller — that is you, not the number '
+                    'below — so add one to your profile before logging calls.',
+                    style: AppText.custom(
+                            size: 11.5, weight: FontWeight.w500, color: AppColors.error)
+                        .copyWith(height: 1.4),
+                  ),
+                ],
                 SizedBox(height: 16.h),
                 const SheetFieldLabel('Direction'),
                 Wrap(
@@ -214,27 +227,14 @@ class _LogCallSheetState extends State<_LogCallSheet> {
                   ),
                 ],
                 SizedBox(height: 14.h),
-                AppTextField(
+                PhoneInputField(
                   label: _incoming ? 'Number that called' : 'Number called',
                   required: true,
                   controller: _toNumber,
-                  prefix: PhoneFormat.dialCode,
                   hint: '98470 00000',
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: PhoneFormat.inputFormatters,
-                  errorText: _showErrors && !_toOk ? 'Enter 10 digits' : null,
-                  onChanged: (_) => setState(() {}),
+                  errorText: _showErrors && !_toOk ? phoneDigitsMessage(_toNumber.rule) : null,
+                  onChanged: () => setState(() {}),
                 ),
-                if (noNumber) ...[
-                  SizedBox(height: 10.h),
-                  Text(
-                    'Your profile has no phone number. The API records it as the '
-                    'caller, so add one before logging calls.',
-                    style: AppText.custom(
-                            size: 11.5, weight: FontWeight.w500, color: AppColors.error)
-                        .copyWith(height: 1.4),
-                  ),
-                ],
                 SizedBox(height: 8.h),
                 Text(
                   'Notes about a call go on a note — the call record itself only '

@@ -26,8 +26,9 @@ class OrgSummary extends Equatable {
 }
 
 /// The signed-in user. `GET /auth/me/` returns the full User serializer, so the
-/// role, designation and avatar travel with the profile — see
-/// `docs-flutter/members.md` for the payload.
+/// role, designation and avatar travel with the profile. Note this endpoint's
+/// `roles` is a plural list of name strings, unlike the single `role` object
+/// documented for the admin member-detail endpoint in `docs-flutter/members.md`.
 class SessionUser extends Equatable {
   const SessionUser({
     required this.id,
@@ -45,7 +46,10 @@ class SessionUser extends Equatable {
   final String fullName;
   final List<OrgSummary> organizations;
 
-  /// `role.name` — e.g. "Manager", "System Admin".
+  /// `roles` — the user's assigned role name(s), joined for display (e.g.
+  /// "Manager"). Empty when the account has no assigned role — the backend
+  /// sends `"roles": []` in that case rather than omitting the key, and that
+  /// is a real, meaningful empty state, not a payload we failed to parse.
   final String roleName;
 
   /// `profile.designation` — the free-text job title, e.g. "Business Owner".
@@ -54,7 +58,9 @@ class SessionUser extends Equatable {
   /// `profile.profile_picture` — absolute or relative URL, empty when unset.
   final String avatarUrl;
 
-  /// `profile.phone` — the signed-in user's own number.
+  /// `profile.phone`, falling back to `profile.mobile` — the signed-in user's
+  /// own number. The User serializer carries both and an account may have only
+  /// the mobile filled in (`members.md` Part 2).
   ///
   /// Empty on an account whose profile was never filled in, which matters:
   /// it is the `from_number` a call log requires, so without it a placed call
@@ -70,7 +76,6 @@ class SessionUser extends Equatable {
   String get roleLabel => roleName.isNotEmpty ? roleName : designation;
 
   factory SessionUser.fromJson(Map<String, dynamic> json) {
-    final role = json['role'];
     final profile = json['profile'];
     String profileField(String key) =>
         profile is Map ? (profile[key] as String? ?? '') : '';
@@ -83,10 +88,17 @@ class SessionUser extends Equatable {
           .whereType<Map<String, dynamic>>()
           .map(OrgSummary.fromJson)
           .toList(),
-      roleName: role is Map ? (role['name'] as String? ?? '') : '',
+      // `roles` is a list of name strings (not a single `role` object) — an
+      // account with no assigned role sends `"roles": []`, which joins to ''.
+      roleName: (json['roles'] as List? ?? const [])
+          .whereType<String>()
+          .where((r) => r.isNotEmpty)
+          .join(', '),
       designation: profileField('designation'),
       avatarUrl: profileField('profile_picture'),
-      phone: profileField('phone'),
+      phone: profileField('phone').isNotEmpty
+          ? profileField('phone')
+          : profileField('mobile'),
     );
   }
 
@@ -105,7 +117,7 @@ class SessionUser extends Equatable {
               'is_primary': o.isPrimary,
             },
         ],
-        'role': {'name': roleName},
+        'roles': roleName.isEmpty ? const [] : [roleName],
         'profile': {
           'designation': designation,
           'profile_picture': avatarUrl,

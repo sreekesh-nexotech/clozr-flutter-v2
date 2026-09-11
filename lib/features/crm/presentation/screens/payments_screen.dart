@@ -183,6 +183,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       previewCount: (draft) =>
           base.where((p) => paymentMatchesFilters(p, draft, lookup)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(paymentSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(paymentSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

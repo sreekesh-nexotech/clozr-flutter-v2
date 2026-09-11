@@ -257,6 +257,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
       initial: current,
       previewCount: (draft) => base.where((f) => followupMatchesFilters(f, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(followupSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(followupSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

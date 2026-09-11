@@ -135,3 +135,25 @@ final productListSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
 
 final productListSchemaProvider = Provider<ViewSchema>((ref) =>
     ref.watch(productListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty);
+
+/// The product **detail** layout — which fields the readout shows, in what
+/// order, under what labels — and the field list the Add-product form renders.
+///
+/// `detail`, not `form`: `products.md` §1 states `?view_type=detail` "also
+/// backs the add/edit modal", the same pairing the customer, follow-up and
+/// quote sheets already use. Products carry their own custom-field set under
+/// the `product` schema (§1), so these columns include `custom_fields.*`.
+///
+/// There is deliberately no `productRowProvider` beside this one, unlike the
+/// other modules: `ProductSerializer` is `fields = "__all__"` (§2) and the
+/// mapper keeps the whole row on [Product.raw], so the record the panel renders
+/// is already in hand — a second GET would fetch what the screen just read.
+final productDetailSchemaFutureProvider =
+    FutureProvider<ViewSchema>((ref) async {
+  final ds = _source(ref, ApiEndpoints.productSchema);
+  return ds == null ? ViewSchema.empty : ds.fetchDetailSchema();
+});
+
+final productDetailSchemaProvider = Provider<ViewSchema>((ref) =>
+    ref.watch(productDetailSchemaFutureProvider).valueOrNull ??
+    ViewSchema.empty);

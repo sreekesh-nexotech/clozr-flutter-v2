@@ -6,6 +6,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -60,9 +61,11 @@ class RolesScreen extends ConsumerWidget {
           child: AsyncStateView<List<Role>>(
             value: rolesAsync,
             onRetry: () => ref.invalidate(rolesProvider),
+            onRefresh: () => _refresh(ref),
             data: (roles) {
               final members = ref.watch(membersProvider).valueOrNull ?? const [];
               return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 children: [
                   const InfoBanner(
@@ -105,6 +108,17 @@ class RolesScreen extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// Pull-to-refresh. The card counts each role's members off the roster, so
+  /// both are reloaded together.
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(rolesProvider);
+    ref.invalidate(membersProvider);
+    await settle([
+      ref.read(rolesProvider.future),
+      ref.read(membersProvider.future),
+    ]);
   }
 
   /// The card's trash icon — `DELETE /management/roles/{role_id}/`

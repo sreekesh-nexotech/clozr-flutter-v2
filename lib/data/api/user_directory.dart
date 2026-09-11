@@ -172,14 +172,25 @@ class UserDirectory {
     return role is Map ? (role['name'] as String? ?? '') : '';
   }
 
+  /// Sliced by grapheme cluster, not UTF-16 code unit — a display name is
+  /// arbitrary user/WhatsApp-contact text and often carries an emoji or a
+  /// character outside the Basic Multilingual Plane (both stored as a
+  /// surrogate *pair*). `String.substring`/`[]` cut on code-unit boundaries,
+  /// so slicing there can split a pair and hand Flutter's text layout an
+  /// unpaired surrogate — `ArgumentError: string is not well-formed UTF-16`,
+  /// thrown from `TextSpan`/`RenderParagraph`, crashing the screen the
+  /// initials are painted on. `Characters` (`package:characters`) always
+  /// cuts on a whole grapheme.
   static String initialsOf(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty || parts.first.isEmpty) return '?';
     if (parts.length == 1) {
-      final word = parts.first;
-      return word.length >= 2 ? word.substring(0, 2).toUpperCase() : word.toUpperCase();
+      final chars = parts.first.characters;
+      return (chars.length >= 2 ? chars.take(2) : chars).string.toUpperCase();
     }
-    return (parts.first[0] + parts.last[0]).toUpperCase();
+    final first = parts.first.characters.take(1).string;
+    final last = parts.last.characters.take(1).string;
+    return (first + last).toUpperCase();
   }
 
   /// Clears session-specific state on logout. The known-user set goes with it:

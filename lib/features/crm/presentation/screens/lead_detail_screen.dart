@@ -30,6 +30,8 @@ import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/call_logs_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/lead_call_providers.dart';
+import '../../../messages/application/providers/messages_providers.dart';
+import '../../application/providers/lead_whatsapp_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../../../core/utils/relative_time.dart';
@@ -211,7 +213,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       context,
       actions: [
         MenuAction(icon: PhosphorIconsFill.phone, label: 'Call lead', onTap: () => _callLead(lead)),
-        MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => toast.show('Opening WhatsApp…')),
+        MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => _openWhatsapp(lead)),
         MenuAction(icon: PhosphorIconsRegular.envelopeSimple, label: 'Send email', onTap: () => toast.show('Composing email…')),
         MenuAction(
           icon: PhosphorIconsRegular.handshake,
@@ -350,6 +352,42 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (parts.isNotEmpty) {
       ref.read(toastProvider.notifier).show(parts.join(' · '));
     }
+  }
+
+  /// Opens WhatsApp for the lead. [LeadWhatsappService] picks the route — the
+  /// CRM's own thread when one exists, the WhatsApp app otherwise — and this
+  /// only navigates and reports.
+  ///
+  /// The in-app route marks the thread read on open, which is the step the API
+  /// reference calls out as the one that is easy to miss: rendering messages
+  /// has no side effect, so the header's unread badge only clears because
+  /// `POST /conversations/<id>/read/` was fired here.
+  Future<void> _openWhatsapp(Lead lead) async {
+    final outcome = await ref
+        .read(leadWhatsappServiceProvider)
+        .open(leadId: lead.id, phone: lead.phone);
+    if (!mounted) return;
+
+    final note = switch (outcome.result) {
+      LeadWhatsappResult.openedThread => null,
+      LeadWhatsappResult.handedToWhatsapp => 'Opening WhatsApp…',
+      LeadWhatsappResult.noNumber => 'This lead has no phone number.',
+      LeadWhatsappResult.whatsappUnavailable =>
+        'Could not open WhatsApp on this device.',
+      LeadWhatsappResult.lookupFailed => null,
+    };
+    final parts = [
+      if (outcome.message != null) outcome.message!,
+      if (note != null) note,
+    ];
+    if (parts.isNotEmpty) {
+      ref.read(toastProvider.notifier).show(parts.join(' · '));
+    }
+
+    final conversationId = outcome.conversationId;
+    if (conversationId == null) return;
+    ref.read(conversationsProvider.notifier).markRead(conversationId);
+    context.push('${Routes.chat}?id=$conversationId');
   }
 
   /// Reassigns the lead to another user.
@@ -1630,7 +1668,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 ),
               ),
               SizedBox(width: 10.w),
-              _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
+              _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => _openWhatsapp(lead), border: const Color(0xFFC9DCF5)),
               SizedBox(width: 10.w),
               // Same destination as the overflow menu's Edit lead, and the same
               // lock: a converted lead is frozen server-side (403), so offering

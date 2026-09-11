@@ -17,7 +17,9 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
-import '../../../../core/utils/phone_format.dart';
+import '../../../../core/utils/phone_rules.dart';
+import '../../../../core/widgets/phone_controller.dart';
+import '../../../../core/widgets/phone_input_field.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
@@ -42,7 +44,7 @@ class AddLeadScreen extends ConsumerStatefulWidget {
 
 class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   final _name = TextEditingController();
-  final _phone = TextEditingController();
+  final _phone = PhoneController();
   final _email = TextEditingController();
   final _company = TextEditingController();
   final _project = TextEditingController();
@@ -86,9 +88,10 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     if (_prefilled || lead == null) return;
     _prefilled = true;
     _name.text = lead.name;
-    // The field holds the ten national digits; the stored value carries the
-    // country code ("+917045090267"), so it is stripped back on the way in.
-    _phone.text = PhoneFormat.national(lead.phone);
+    // The record's own country + national digits, split from the stored
+    // E.164 value ("+917045090267") once the country catalog has loaded —
+    // see [PhoneController.seedOnce].
+    _phone.setPendingSeed(lead.phone);
     _email.text = lead.email;
     _company.text = lead.company ?? '';
     _project.text = lead.project;
@@ -107,16 +110,17 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _email, _company, _project, _value, _industry, _website, _employees, _revenue, _territory, _fitout, _nextFu, _expClose, _source, _note]) {
+    for (final c in [_name, _email, _company, _project, _value, _industry, _website, _employees, _revenue, _territory, _fitout, _nextFu, _expClose, _source, _note]) {
       c.dispose();
     }
+    _phone.dispose();
     super.dispose();
   }
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
-  /// Required here, so a complete ten digits — `length >= 6` used to accept
-  /// half a number and any punctuation typed into it.
-  bool get _phoneOk => PhoneFormat.isComplete(_phone.text);
+  /// Required here, so a complete number for whichever country is selected —
+  /// see [PhoneController.isComplete] / [PhoneRules].
+  bool get _phoneOk => _phone.isComplete;
   bool get _projectOk => _project.text.trim().isNotEmpty;
 
   Future<void> _submit() async {
@@ -133,6 +137,16 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     if (!dynamicForm && (!_nameOk || !_phoneOk || !_projectOk)) {
       ref.read(toastProvider.notifier).show('Please complete the required fields');
       return;
+    }
+    // The schema-driven layout has no boxes of its own to validate — it just
+    // renders whatever the org configured — so the same friendly checks are
+    // asked of the form itself, which knows which of its fields are name/phone.
+    if (dynamicForm) {
+      final errors = _formKey.currentState?.validate() ?? const <String>[];
+      if (errors.isNotEmpty) {
+        ref.read(toastProvider.notifier).show(errors.first);
+        return;
+      }
     }
 
     final editingId = _editingId;
@@ -154,7 +168,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
             name: _name.text,
             company: _company.text,
             email: _email.text,
-            phone: PhoneFormat.forApi(_phone.text) ?? '',
+            phone: _phone.toE164() ?? '',
             website: _website.text,
           );
     if (fields.isEmpty) {
@@ -347,7 +361,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                   title: 'Contact',
                   children: [
                     AppTextField(label: 'Full name', required: true, controller: _name, hint: 'e.g. Anagha Menon', errorText: _showErrors && !_nameOk ? "Please enter the contact's name" : null, onChanged: (_) => setState(() {})),
-                    AppTextField(label: 'Phone', required: true, controller: _phone, prefix: PhoneFormat.dialCode, hint: '98470 00000', keyboardType: TextInputType.phone, inputFormatters: PhoneFormat.inputFormatters, errorText: _showErrors && !_phoneOk ? 'Enter 10 digits' : null, onChanged: (_) => setState(() {})),
+                    PhoneInputField(label: 'Phone', required: true, controller: _phone, hint: '98470 00000', errorText: _showErrors && !_phoneOk ? phoneDigitsMessage(_phone.rule) : null, onChanged: () => setState(() {})),
                     AppTextField(label: 'Email', controller: _email, hint: 'name@email.com', keyboardType: TextInputType.emailAddress),
                     AppTextField(label: 'Company', controller: _company, hint: 'e.g. Kalyan Silks'),
                   ],

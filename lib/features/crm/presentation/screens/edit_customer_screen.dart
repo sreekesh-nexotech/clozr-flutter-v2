@@ -46,9 +46,14 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     try {
       await ref.read(customersRepositoryProvider).updateCustomer(id, payload);
       if (!mounted) return;
-      // The record and every list holding a copy are now stale.
+      // The record and every list holding a copy are now stale. Invalidating
+      // the `customersScopedProvider` family — not just the thin
+      // `customersProvider` wrapper around one of its members — is what
+      // actually reaches the Customers list screen, which watches a
+      // different family member (`customersListProvider`, keyed by the
+      // drawer's own filters).
       ref.invalidate(customerRowProvider(id));
-      ref.invalidate(customersProvider);
+      ref.invalidate(customersScopedProvider);
       ref.read(toastProvider.notifier).show('Customer updated');
       context.pop();
     } on AppError catch (e) {

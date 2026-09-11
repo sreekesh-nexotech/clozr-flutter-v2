@@ -19,6 +19,10 @@ import 'filter_models.dart';
 ///   stays open).
 /// * [activeViewName] — name of the saved view currently applied, if any;
 ///   prefills the save field and relabels the action "Update".
+/// * [existingViewNames] — every other saved view's name. Typing one of these
+///   (that isn't [activeViewName]) asks for confirmation before saving, since
+///   the save call updates a same-named view in place rather than rejecting it
+///   — silent otherwise, so a typo could clobber someone else's view unseen.
 Future<FilterValues?> showFilterSheet({
   required BuildContext context,
   required FilterSpec spec,
@@ -26,6 +30,7 @@ Future<FilterValues?> showFilterSheet({
   FilterValues? initial,
   void Function(String name, FilterValues draft)? onSaveView,
   String? activeViewName,
+  Set<String> existingViewNames = const {},
 }) {
   return showClozrSheet<FilterValues>(
     context: context,
@@ -35,6 +40,7 @@ Future<FilterValues?> showFilterSheet({
       previewCount: previewCount,
       onSaveView: onSaveView,
       activeViewName: activeViewName,
+      existingViewNames: existingViewNames,
     ),
   );
 }
@@ -46,6 +52,7 @@ class _FilterSheet extends StatefulWidget {
     required this.previewCount,
     required this.onSaveView,
     required this.activeViewName,
+    required this.existingViewNames,
   });
 
   final FilterSpec spec;
@@ -53,6 +60,7 @@ class _FilterSheet extends StatefulWidget {
   final int Function(FilterValues draft) previewCount;
   final void Function(String name, FilterValues draft)? onSaveView;
   final String? activeViewName;
+  final Set<String> existingViewNames;
 
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
@@ -627,9 +635,30 @@ class _FilterSheetState extends State<_FilterSheet> {
                 SizedBox(width: 8.w),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () {
+                  onTap: () async {
                     final name = _viewName.text.trim();
                     if (name.isEmpty) return;
+                    if (name != widget.activeViewName && widget.existingViewNames.contains(name)) {
+                      final overwrite = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('View already exists'),
+                          content: Text(
+                            'A view named "$name" already exists. Saving will replace its filters.',
+                          ),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(false),
+                                child: const Text('Cancel')),
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: Text('Replace', style: TextStyle(color: AppColors.error)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (overwrite != true || !mounted) return;
+                    }
                     widget.onSaveView!(name, _draft.copy());
                     setState(() => _savePanel = false);
                   },

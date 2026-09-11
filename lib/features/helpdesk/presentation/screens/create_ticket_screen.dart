@@ -38,6 +38,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   String? _productId; // what the write sends
   String? _projId;
   String? _projName;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -181,7 +182,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               ],
             ),
           ),
-          _cta('Create Ticket', PhosphorIconsBold.plus, _valid, _submit),
+          _cta(_saving ? 'Creating…' : 'Create Ticket', PhosphorIconsBold.plus, _valid && !_saving, _submit),
         ],
       ),
     );
@@ -190,11 +191,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   /// Mock mode keeps the original toast-and-pop; API mode persists the ticket
   /// and refreshes the list before popping.
   Future<void> _submit() async {
+    if (_saving) return;
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show('Ticket created');
       context.pop();
       return;
     }
+    setState(() => _saving = true);
     try {
       await ref.read(ticketsRepositoryProvider).createTicket({
         'subject': _subjectCtrl.text.trim(),
@@ -213,6 +216,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
+      setState(() => _saving = false);
       ref.read(toastProvider.notifier).showError(e.message);
     }
   }

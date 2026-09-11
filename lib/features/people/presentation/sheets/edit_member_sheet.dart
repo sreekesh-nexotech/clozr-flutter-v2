@@ -6,9 +6,11 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
-import '../../../../core/utils/phone_format.dart';
+import '../../../../core/utils/phone_rules.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/phone_controller.dart';
+import '../../../../core/widgets/phone_input_field.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/people_providers.dart';
@@ -41,10 +43,9 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
   late final _name = TextEditingController(text: widget.member.name);
   late final _email = TextEditingController(text: widget.member.email);
 
-  /// Stored E.164 (`+919847011001`); the field edits the national digits only,
-  /// with `+91` rendered as a prefix.
-  late final _phone =
-      TextEditingController(text: PhoneFormat.national(widget.member.phone));
+  /// Stored E.164 (`+919847011001`); split into the member's own country +
+  /// national digits.
+  late final _phone = PhoneController(initialE164: widget.member.phone);
 
   late String _role = widget.member.role;
   late String _managerId = widget.member.managerId;
@@ -62,8 +63,7 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
   bool get _emailOk => _email.text.trim().contains('@');
-  bool get _phoneOk =>
-      PhoneFormat.isBlank(_phone.text) || PhoneFormat.isComplete(_phone.text);
+  bool get _phoneOk => _phone.isBlank || _phone.isComplete;
 
   Future<void> _submit() async {
     if (_saving) return;
@@ -71,12 +71,12 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
     final toast = ref.read(toastProvider.notifier);
     if (!_nameOk) return toast.show('Enter a full name');
     if (!_emailOk) return toast.show('Enter a valid email');
-    if (!_phoneOk) return toast.show('Enter 10 digits');
+    if (!_phoneOk) return toast.show(phoneDigitsMessage(_phone.rule));
 
     final m = widget.member;
     final name = _name.text.trim();
     final email = _email.text.trim();
-    final phone = PhoneFormat.forApi(_phone.text) ?? '';
+    final phone = _phone.toE164() ?? '';
 
     // Only what changed. Sending the whole form would rewrite a role and a
     // manager the user never touched — and `manager_id` recalculates the
@@ -113,6 +113,11 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
     if (!mounted) return;
     ref.invalidate(membersProvider);
     ref.invalidate(memberDetailProvider(m.id));
+    // A role's card shows the count of members holding it, and the delete
+    // guard on Roles & Permissions is keyed off that same stale count — leave
+    // it uninvalidated and a role just vacated here still reports its old
+    // occupant and refuses to delete.
+    if (roleId != null) ref.invalidate(rolesProvider);
     Navigator.of(context).pop();
     toast.show('Member updated');
   }
@@ -167,14 +172,11 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
                   ),
                   SizedBox(width: 12.w),
                   Expanded(
-                    child: AppTextField(
+                    child: PhoneInputField(
                       label: 'Phone',
                       controller: _phone,
-                      prefix: PhoneFormat.dialCode,
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: PhoneFormat.inputFormatters,
-                      errorText: _showErrors && !_phoneOk ? 'Enter 10 digits' : null,
-                      onChanged: (_) => setState(() {}),
+                      errorText: _showErrors && !_phoneOk ? phoneDigitsMessage(_phone.rule) : null,
+                      onChanged: () => setState(() {}),
                     ),
                   ),
                 ],

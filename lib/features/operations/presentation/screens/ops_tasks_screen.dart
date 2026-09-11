@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
@@ -140,6 +141,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
           child: AsyncStateView<List<OpsTask>>(
             value: opsTasksAsync,
             onRetry: () => ref.invalidate(opsTasksScopedProvider),
+            onRefresh: _refresh,
             data: (_) {
               final tabVisible = ref.watch(visibleOpsTasksProvider);
               final visible = filters.isEmpty
@@ -150,6 +152,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
                       .toList();
               return visible.isEmpty
                   ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       children: const [
                         EmptyState(
                           icon: PhosphorIconsRegular.listChecks,
@@ -159,6 +162,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
                       ],
                     )
                   : ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                       itemCount: visible.length,
                       separatorBuilder: (_, __) => SizedBox(height: 12.h),
@@ -177,6 +181,22 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
         ),
       ],
     );
+  }
+
+  /// Pull-to-refresh. Reloads the currently filtered rows together with the
+  /// status catalog and tab counts, so a pull also picks up an admin's change
+  /// to the org's own task statuses while the app is running.
+  Future<void> _refresh() async {
+    ref.invalidate(opsTasksScopedProvider(OpsTaskListQuery(
+      filters: ref.read(opsTaskFilterParamsProvider),
+    )));
+    ref.invalidate(opsTaskStatusCatalogProvider);
+    ref.invalidate(opsTaskStatusCountsProvider);
+    await settle([
+      ref.read(opsTasksFilteredProvider.future),
+      ref.read(opsTaskStatusCatalogProvider.future),
+      ref.read(opsTaskStatusCountsProvider.future),
+    ]);
   }
 
   // ── Filter drawer ──
@@ -209,6 +229,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
       initial: current,
       previewCount: (draft) => base.where((t) => opsTaskMatchesFilters(t, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(opsTaskSavedFiltersProvider).filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;

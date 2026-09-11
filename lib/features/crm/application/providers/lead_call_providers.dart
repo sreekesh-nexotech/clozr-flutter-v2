@@ -123,8 +123,13 @@ class LeadCallService {
   /// comes back, so it is remembered for the session.
   final void Function(String reason)? _onBlocked;
 
+  /// [leadId] is null for a caller with no CRM record to attach the call to —
+  /// e.g. a WhatsApp conversation not yet linked to a lead. Exotel still
+  /// places and logs the call in that case (reverse-resolving the dialled
+  /// number server-side); only the dialler fallback's manual log is skipped,
+  /// since [CallLogsRepository.logOutgoingCall] requires a lead to attach to.
   Future<LeadCallOutcome> call({
-    required String leadId,
+    required String? leadId,
     required String toNumber,
     required ExotelStatus status,
   }) async {
@@ -161,7 +166,7 @@ class LeadCallService {
       return LeadCallOutcome(LeadCallResult.diallerUnavailable, message: exotelNote);
     }
 
-    if (_myNumber.trim().isEmpty) {
+    if (leadId == null || _myNumber.trim().isEmpty) {
       return LeadCallOutcome(LeadCallResult.dialledNotLogged, message: exotelNote);
     }
 

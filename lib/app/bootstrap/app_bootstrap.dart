@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../core/config/api_config.dart';
 import '../../core/monitoring/app_monitoring.dart';
 import '../../core/monitoring/sentry_config.dart';
+import '../../core/services/in_app_update_service.dart';
 import '../../core/storage/app_cache.dart';
 import '../../features/auth/application/providers/auth_providers.dart';
 import '../app.dart';
@@ -34,6 +36,13 @@ Future<void> bootstrap({List<Override> overrides = const []}) async {
 
 Future<void> _startApp(List<Override> overrides) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Every screen is a pixel-precise recreation of a portrait-only design
+  // (fixed ScreenUtil sizing throughout, no landscape variant anywhere) — the
+  // bottom nav and other fixed-height chrome overflow if the device rotates,
+  // so the app declares its actual constraint instead of rendering broken.
+  await SystemChrome.setPreferredOrientations(
+      [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
 
   // Fail fast on an insecure production misconfiguration: a token-bearing
   // client must not talk cleartext to a non-local host.
@@ -69,4 +78,9 @@ Future<void> _startApp(List<Override> overrides) async {
       child: const ClozrApp(),
     ),
   );
+
+  // Not awaited: a Play Store check has no bearing on first paint, and an
+  // immediate update takes over the screen with its own UI whenever it does
+  // resolve — there is nothing here for the app to wait on.
+  unawaited(InAppUpdateService.checkAndPrompt());
 }

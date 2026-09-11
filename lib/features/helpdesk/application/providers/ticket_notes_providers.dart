@@ -106,7 +106,9 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
   }
 
   /// Uploads each pending file against [noteId]. A failed upload keeps the
-  /// local chip rather than dropping it from a note already on screen.
+  /// local chip rather than dropping it from a note already on screen, but
+  /// flagged [NoteAttachment.failed] so it doesn't look identical to one that
+  /// actually made it to the server.
   Future<List<NoteAttachment>> _uploadAttachments(
     String noteId,
     List<NoteAttachment> attachments,
@@ -121,7 +123,7 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
       try {
         out.add(await _repo!.addAttachment(noteId: noteId, attachment: a) ?? a);
       } on Object {
-        out.add(a);
+        out.add(a.copyWith(localPath: a.localPath, failed: true));
       }
     }
     return out;

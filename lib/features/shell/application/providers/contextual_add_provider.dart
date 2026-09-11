@@ -20,6 +20,11 @@ class AddAction {
 /// Holds the current screen's add action, or null when none is registered.
 final contextualAddProvider = StateProvider<AddAction?>((ref) => null);
 
+/// The route path [ClozrShell] last cleared [contextualAddProvider] for.
+/// Internal bookkeeping for [clearAddActionOnRouteChange] — not read
+/// anywhere else.
+final _lastAddRoutePathProvider = StateProvider<String?>((ref) => null);
+
 /// Mixin helper for screens: call [registerAdd] from build to publish the
 /// screen's add action, and it self-clears is unnecessary because the next
 /// screen overwrites it. Kept as a free function for use in both stateless and
@@ -32,5 +37,28 @@ void registerAdd(WidgetRef ref, AddAction? action) {
     if (current != action) {
       ref.read(contextualAddProvider.notifier).state = action;
     }
+  });
+}
+
+/// Clears the `+` action on a real route change, called once from
+/// [ClozrShell]'s build with the current path.
+///
+/// [registerAdd] only ever sets the action — nothing ever cleared it, so a
+/// screen that registers nothing (every dashboard/home screen, Helpdesk
+/// Boards) kept showing whatever the *last* registering screen set, however
+/// unrelated. Clearing it here first and letting a registering screen's own
+/// [registerAdd] call — scheduled after this one, since the shell builds
+/// before the routed child — put its action back is what makes a
+/// non-registering screen actually fall through to the nav's route-based
+/// default instead of showing stale state.
+void clearAddActionOnRouteChange(WidgetRef ref, String path) {
+  if (ref.read(_lastAddRoutePathProvider) == path) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Re-check inside the callback: a rapid rebuild before this one fires
+    // would otherwise queue a second clear that wipes the very action the
+    // first callback's screen just registered.
+    if (ref.read(_lastAddRoutePathProvider) == path) return;
+    ref.read(_lastAddRoutePathProvider.notifier).state = path;
+    ref.read(contextualAddProvider.notifier).state = null;
   });
 }

@@ -210,6 +210,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       initial: current,
       previewCount: (draft) => base.where((p) => productMatchesFilters(p, draft)).length,
       activeViewName: activeView?.name,
+      existingViewNames: ref.read(productSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(productSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');

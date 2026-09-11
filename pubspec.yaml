@@ -57,6 +57,7 @@ dependencies:
   # Networking (per Technical_stack.md)
   dio: ^5.7.0
   pretty_dio_logger: ^1.4.0
+  connectivity_plus: ^6.1.5
 
   # Local storage / caching (per Technical_stack.md)
   hive: ^2.2.3
@@ -85,12 +86,20 @@ dependencies:
   sentry_flutter: ^8.14.2
   sentry_dio: ^8.14.2
 
+  # Play Store in-app update prompts (Android only — no-ops on iOS/mock).
+  # Pinned below 5.x, which needs Dart ^3.12 — this repo is pinned to Flutter
+  # 3.24.5 / Dart 3.5.4 (see the Toolchain note in README.md).
+  in_app_update: ^4.2.5
+
   # Not used directly — constrained because sentry_flutter asks only for
   # `>=1.0.0` and pub would take 9.x, whose Gradle script hits the same
   # `flutter.compileSdkVersion` wall described above. 8.3.1 hardcodes
   # `compileSdk 34` and builds on 3.24.5. Drop this line when the toolchain pin
   # is lifted.
   package_info_plus: ^8.3.1
+  path_provider: ^2.1.5
+  open_file: ^3.5.11
+  emoji_picker_flutter: ^4.4.0
 
 dev_dependencies:
   flutter_test:

@@ -124,6 +124,9 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               ]);
             },
             data: (_) => ListView(
+              // So the gesture still works when the content is short enough
+              // to fit the viewport without scrolling.
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
               children: [
                 Padding(

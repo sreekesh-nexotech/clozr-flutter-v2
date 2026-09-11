@@ -10,16 +10,22 @@ import '../messages_tokens.dart';
 /// optional TEMPLATE badge and, for outgoing messages, read/sent ticks.
 /// Mirrors design lines 5780–5789.
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message, this.onRetry});
+  const MessageBubble({super.key, required this.message, this.onRetry, this.onOpenAttachment});
 
   final ChatMessage message;
 
   /// Tapped when an outgoing bubble that the server rejected offers a retry.
   final VoidCallback? onRetry;
 
+  /// Tapped to open an image/document message — set whenever
+  /// [ChatMessage.isAttachment] is true, since a rejected upload has nothing
+  /// to open yet (audit: attachments were sendable but not viewable).
+  final VoidCallback? onOpenAttachment;
+
   @override
   Widget build(BuildContext context) {
     final m = message;
+    final openable = m.isAttachment && !m.failed && onOpenAttachment != null;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 3.h),
       child: Row(
@@ -27,7 +33,10 @@ class MessageBubble extends StatelessWidget {
         children: [
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 282.w),
-            child: Container(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: openable ? onOpenAttachment : null,
+              child: Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 9.h),
               decoration: BoxDecoration(
                 color: m.mine ? AppColors.tintBlue : AppColors.white,
@@ -46,9 +55,29 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(m.text,
-                      style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody)
-                          .copyWith(height: 1.5)),
+                  if (m.isAttachment)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          m.attachmentKind == 'image' ? PhosphorIconsRegular.image : PhosphorIconsRegular.filePdf,
+                          size: 15.sp,
+                          color: AppColors.blueBright,
+                        ),
+                        SizedBox(width: 6.w),
+                        Text(m.text,
+                            style: AppText.custom(
+                                    size: 13.5,
+                                    weight: FontWeight.w500,
+                                    color: openable ? AppColors.blueBright : AppColors.textBody)
+                                .copyWith(height: 1.5, decoration: openable ? TextDecoration.underline : null)),
+                      ],
+                    )
+                  else
+                    Text(m.text,
+                        style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody)
+                            .copyWith(height: 1.5)),
                   if (m.tpl) ...[
                     SizedBox(height: 6.h),
                     _templateBadge(),
@@ -73,6 +102,7 @@ class MessageBubble extends StatelessWidget {
                 ],
               ),
             ),
+          ),
           ),
         ],
       ),

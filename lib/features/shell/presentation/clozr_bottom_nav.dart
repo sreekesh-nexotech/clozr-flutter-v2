@@ -121,7 +121,7 @@ class ClozrBottomNav extends ConsumerWidget {
             child: ClipRect(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                child: Container(color: const Color(0xFFF9FAFB).withOpacity(0.72)),
+                child: Container(color: const Color(0xFFF9FAFB).withOpacity(0.38)),
               ),
             ),
           ),
@@ -136,10 +136,24 @@ class ClozrBottomNav extends ConsumerWidget {
                   height: 64.h,
                   padding: EdgeInsets.symmetric(horizontal: 14.w),
                   decoration: BoxDecoration(
-                    color: AppColors.white.withOpacity(0.66),
+                    color: AppColors.white.withOpacity(0.42),
                     borderRadius: BorderRadius.circular(14.r),
-                    border: Border.all(
-                        color: const Color(0xFFD2D4DA).withOpacity(0.5), width: 1.5),
+                    // The top edge is the one line that sits directly against
+                    // whatever's blurred behind it, so at the same weight as
+                    // the other three sides it read as a hard seam cutting
+                    // through the glass — barely there instead, while the
+                    // sides/bottom keep enough definition to still read as a
+                    // distinct card.
+                    border: Border(
+                      top: BorderSide(
+                          color: const Color(0xFFD2D4DA).withOpacity(0.12), width: 1.5),
+                      left: BorderSide(
+                          color: const Color(0xFFD2D4DA).withOpacity(0.45), width: 1.5),
+                      right: BorderSide(
+                          color: const Color(0xFFD2D4DA).withOpacity(0.45), width: 1.5),
+                      bottom: BorderSide(
+                          color: const Color(0xFFD2D4DA).withOpacity(0.45), width: 1.5),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: const Color(0xFF101828).withOpacity(0.08),
@@ -177,32 +191,36 @@ class ClozrBottomNav extends ConsumerWidget {
       },
       child: SizedBox(
         width: it.width.w,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 22.w,
-              height: 3.h,
-              margin: EdgeInsets.only(bottom: 5.h),
-              decoration: BoxDecoration(
-                color: on ? AppColors.navy : Colors.transparent,
-                borderRadius: BorderRadius.circular(2.r),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 22.w,
+                height: 3.h,
+                margin: EdgeInsets.only(bottom: 5.h),
+                decoration: BoxDecoration(
+                  color: on ? AppColors.navy : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2.r),
+                ),
               ),
-            ),
-            Icon(on ? it.fill : it.regular, size: 22.sp, color: color),
-            SizedBox(height: 4.h),
-            Text(
-              it.label,
-              maxLines: 1,
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontSize: 10.5.sp,
-                height: 1,
-                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
-                color: color,
+              Icon(on ? it.fill : it.regular, size: 22.sp, color: color),
+              SizedBox(height: 4.h),
+              Text(
+                it.label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontSize: 10.5.sp,
+                  height: 1,
+                  fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                  color: color,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

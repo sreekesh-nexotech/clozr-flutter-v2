@@ -81,6 +81,35 @@ class MessagesApiRepository implements MessagesRepository {
   }
 
   @override
+  Future<ChatMessage?> sendImage(
+      String conversationId, String path, String filename) async {
+    try {
+      return await _remote.sendImage(conversationId, path, filename);
+    } on AppError {
+      return null;
+    }
+  }
+
+  @override
+  Future<ChatMessage?> sendDocument(
+      String conversationId, String path, String filename) async {
+    try {
+      return await _remote.sendDocument(conversationId, path, filename);
+    } on AppError {
+      return null;
+    }
+  }
+
+  @override
+  Future<(List<int>, String?)?> fetchMedia(String mediaId) async {
+    try {
+      return await _remote.fetchMediaBytes(mediaId);
+    } on AppError {
+      return null;
+    }
+  }
+
+  @override
   Future<List<WhatsappTemplate>> getTemplates() async {
     try {
       final rows = await _remote.fetchTemplateRows();

@@ -242,7 +242,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       return;
     }
     if (!mounted) return;
-    ref.invalidate(customersProvider);
+    // The `customersScopedProvider` **family**, not the thin `customersProvider`
+    // wrapper around one of its members — the family is what the Customers
+    // list screen's own query (`customersListProvider`, a different member,
+    // keyed by the drawer's filters) actually needs invalidated to refetch.
+    ref.invalidate(customersScopedProvider);
     // Leave first: this record is gone from the list this screen was opened
     // from, and its own providers would keep refetching a row nothing lists.
     context.pop();
@@ -329,7 +333,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       return;
     }
     if (!mounted) return;
-    ref.invalidate(customersProvider);
+    ref.invalidate(customersScopedProvider);
     ref.invalidate(customerRowProvider(cust.id));
     toast.show('Status updated');
   }
@@ -378,7 +382,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     setState(() => _upselling = false);
     // The status, the linked leads, this page's Leads tab and every lead list
     // all moved.
-    ref.invalidate(customersProvider);
+    ref.invalidate(customersScopedProvider);
     ref.invalidate(customerRowProvider(cust.id));
     ref.invalidate(customerLeadsProvider(cust.id));
     ref.invalidate(leadsScopedProvider);
@@ -429,7 +433,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     // [customerOwnerOverrideProvider].
     ref.read(customerOwnerOverrideProvider.notifier).update(
         (state) => {...state, cust.id: UserDirectory.mapUserId(id)});
-    ref.invalidate(customersProvider);
+    ref.invalidate(customersScopedProvider);
     ref.invalidate(customerRowProvider(cust.id));
     toast.show('Owner reassigned');
   }
@@ -474,7 +478,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       return;
     }
     if (!mounted) return;
-    ref.invalidate(customersProvider);
+    ref.invalidate(customersScopedProvider);
     ref.invalidate(customerRowProvider(cust.id));
     toast.show(ids.isEmpty ? 'Assignees cleared' : 'Assignees updated');
   }
@@ -498,7 +502,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     return async.when(
       loading: () => _stateScaffold(const DetailSkeleton()),
       error: (e, _) => _stateScaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(customersProvider)),
+        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(customersScopedProvider)),
       ),
       data: (_) => _buildCustomer(context, id),
     );
@@ -508,7 +512,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   /// tasks, follow-ups and leads its activity tabs read. Those three are global
   /// lists filtered down to this customer, so none of them refetches on its own.
   Future<void> _refresh(String id) async {
-    ref.invalidate(customersProvider);
+    ref.invalidate(customersScopedProvider);
     ref.invalidate(customerDetailSchemaFutureProvider);
     ref.invalidate(customerRowProvider(id));
     ref.invalidate(crmTasksProvider);
@@ -872,7 +876,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           .updateCustomer(cust.id, {key: value});
       if (!mounted) return;
       ref.invalidate(customerRowProvider(cust.id));
-      ref.invalidate(customersProvider);
+      ref.invalidate(customersScopedProvider);
       ref.read(toastProvider.notifier).show('$label updated');
     } on AppError catch (e) {
       if (!mounted) return;

@@ -39,5 +39,18 @@ class MessagesRepositoryImpl implements MessagesRepository {
       ChatMessage(mine: true, text: body, time: 'Now', status: 'sent', tpl: true);
 
   @override
+  Future<ChatMessage?> sendImage(
+          String conversationId, String path, String filename) async =>
+      ChatMessage(mine: true, text: filename, time: 'Now', status: 'sent');
+
+  @override
+  Future<ChatMessage?> sendDocument(
+          String conversationId, String path, String filename) async =>
+      ChatMessage(mine: true, text: filename, time: 'Now', status: 'sent');
+
+  @override
+  Future<(List<int>, String?)?> fetchMedia(String mediaId) async => null;
+
+  @override
   Future<List<WhatsappTemplate>> getTemplates() async => kWhatsappTemplates;
 }

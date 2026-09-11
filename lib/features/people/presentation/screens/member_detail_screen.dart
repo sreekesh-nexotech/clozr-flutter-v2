@@ -11,6 +11,7 @@ import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -52,6 +53,7 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
             child: AsyncStateView<List<Member>>(
               value: membersAsync,
               onRetry: () => ref.invalidate(membersProvider),
+              onRefresh: () => _refresh(id),
               loading: () => const DetailSkeleton(),
               data: (_) {
                 if (member == null) {
@@ -62,6 +64,7 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                   );
                 }
                 return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
                     _profileCard(member),
@@ -81,6 +84,21 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Pull-to-refresh. Reloads the enriched record, the roster (for the list-row
+  /// fallback), the performance card and the activity feed together.
+  Future<void> _refresh(String id) async {
+    ref.invalidate(membersProvider);
+    ref.invalidate(memberDetailProvider(id));
+    ref.invalidate(memberWithPerformanceProvider(id));
+    ref.invalidate(memberActivityProvider(id));
+    await settle([
+      ref.read(membersProvider.future),
+      ref.read(memberDetailProvider(id).future),
+      ref.read(memberWithPerformanceProvider(id).future),
+      ref.read(memberActivityProvider(id).future),
+    ]);
   }
 
   Widget _header(String? name) {
