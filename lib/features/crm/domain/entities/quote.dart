@@ -7,10 +7,24 @@ class QuoteItem extends Equatable {
   final String rate; // display, e.g. "₹9L"
   final String amt; // display, e.g. "₹9L"
 
-  const QuoteItem({required this.name, required this.qty, required this.rate, required this.amt});
+  /// The line total in rupees, for arithmetic.
+  ///
+  /// [amt] is a *display* string that `formatInr` abbreviates ("₹1.8L"), so
+  /// summing it back by stripping non-digits reads 1.8 as 18 — the same trap
+  /// that once had quotes raised at a fraction of their value. Anything adding
+  /// lines up must use this.
+  final int amtNum;
+
+  const QuoteItem({
+    required this.name,
+    required this.qty,
+    required this.rate,
+    required this.amt,
+    this.amtNum = 0,
+  });
 
   @override
-  List<Object?> get props => [name, qty, rate, amt];
+  List<Object?> get props => [name, qty, rate, amt, amtNum];
 }
 
 /// A CRM quote. Fields mirror the prototype's `quotes` seed 1:1 so the mock data

@@ -27,7 +27,9 @@ import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_party_providers.dart';
+import '../../../../core/utils/inr_format.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
+import '../../infrastructure/data_sources/remote/quotes_remote_ds.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../../application/record_rows.dart';
@@ -145,7 +147,7 @@ class QuoteDetailScreen extends ConsumerWidget {
                 ],
                 _detailsCard(ref, quote),
                 SizedBox(height: 14.h),
-                _lineItemsCard(quote, owner),
+                _lineItemsCard(ref, quote, owner),
                 if (quote.note != null && quote.note!.isNotEmpty) ...[
                   SizedBox(height: 14.h),
                   FinanceCard(
@@ -409,14 +411,35 @@ class QuoteDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _lineItemsCard(Quote quote, AppUser owner) {
-    final sub = quote.amountNum.toDouble();
+  Widget _lineItemsCard(WidgetRef ref, Quote quote, AppUser owner) {
+    // `quote` comes from the list, whose projection has no `line_items` at all,
+    // so this card used to render as three zeros and no rows however many items
+    // the quote carried. The detail row does have them; until it lands the card
+    // falls back to the list entity's (empty) list rather than blocking.
+    final detail = ref.watch(quoteRowProvider(quote.uuid)).valueOrNull;
+    final items =
+        detail == null ? quote.items : (quoteFromApi(detail)?.items ?? quote.items);
+    // The line items are the only figures on this record the server actually
+    // computes per row (`total_price`), so the subtotal is their sum.
+    //
+    // `total_amount` is **not** used: the backend leaves it at 0.00 on quotes
+    // raised through the app (confirmed against a live org — a quote with
+    // ₹25,490 of line items saves `total_amount: "0.00"`), so reading it here
+    // showed a quote with three visible lines and a total of nothing.
+    //
+    // There is also no GST line any more. It used to be `subtotal * 0.18` with
+    // a hardcoded "GST (18%)" label, which was invented: a quotation record
+    // carries no tax rate or tax amount at all, and the New Quote screen that
+    // created it says plainly "Tax-free — product amounts only". The two
+    // screens now report the same number for the same quote.
+    final sub =
+        items.fold<int>(0, (total, it) => total + it.amtNum).toDouble();
     return FinanceCard(
       title: 'Line items',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final it in quote.items)
+          for (final it in items)
             Container(
               padding: EdgeInsets.symmetric(vertical: 11.h),
               decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
@@ -440,8 +463,6 @@ class QuoteDetailScreen extends ConsumerWidget {
             ),
           SizedBox(height: 13.h),
           _totalRow('Subtotal', _fmt(sub), muted: true),
-          SizedBox(height: 7.h),
-          _totalRow('GST (18%)', _fmt(sub * 0.18), muted: true),
           SizedBox(height: 10.h),
           Container(
             padding: EdgeInsets.only(top: 10.h),
@@ -450,10 +471,10 @@ class QuoteDetailScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Text('TOTAL',
+                Text('TOTAL · TAX-FREE',
                     style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
                 const Spacer(),
-                Text(_fmt(sub * 1.18),
+                Text(_fmt(sub),
                     style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
               ],
             ),
@@ -739,14 +760,11 @@ class QuoteDetailScreen extends ConsumerWidget {
   }
 
   /// The prototype's `fmt` for the totals block: Cr above ₹1Cr, else L.
+  /// Had no branch below a lakh, so it divided **everything** by 100000 and
+  /// suffixed "L": a ₹0 total read "₹0L" and a ₹50,000 subtotal read "₹0.5L".
+  /// [formatInr] already steps through K / L / Cr and is what the line-item
+  /// amounts in this same card use, so the two agree now.
   String _fmt(double v) {
-    if (v >= 10000000) {
-      var s = (v / 10000000).toStringAsFixed(2);
-      if (s.endsWith('.00')) s = s.substring(0, s.length - 3);
-      return '₹${s}Cr';
-    }
-    var s = (v / 100000).toStringAsFixed(1);
-    if (s.endsWith('.0')) s = s.substring(0, s.length - 2);
-    return '₹${s}L';
+    return formatInr(v);
   }
 }

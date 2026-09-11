@@ -257,6 +257,7 @@ List<QuoteItem> _items(Object? raw) {
       qty: qty,
       rate: formatInr(rate),
       amt: formatInr(amt),
+      amtNum: amt.round(),
     ));
   }
   return out;
