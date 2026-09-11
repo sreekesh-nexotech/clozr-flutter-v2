@@ -8,6 +8,7 @@ import '../../../../core/models/note.dart';
 import '../../../notes/application/providers/notes_providers.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/product.dart';
+import '../../domain/entities/product_usage.dart';
 import '../../domain/repositories/products_repository.dart';
 import '../../infrastructure/data_sources/local/products_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/products_remote_ds.dart';
@@ -43,6 +44,16 @@ final productDetailProvider =
 });
 
 /// The org's own product categories (`GET /crm/product-types/`).
+/// The item's usage — leads and quotes it appears on.
+///
+/// `autoDispose` and keyed by id, like [productDetailProvider]: this is a
+/// per-product side fetch, not org-wide state worth keeping alive.
+final productUsageProvider =
+    FutureProvider.autoDispose.family<ProductUsage, String>((ref, id) {
+  ref.watch(apiWriteTickProvider);
+  return ref.watch(productsRepositoryProvider).getUsage(id);
+});
+
 final productTypeCatalogProvider = FutureProvider<List<CatalogOption>>(
   (ref) => ref.watch(productsRepositoryProvider).getProductTypes(),
 );

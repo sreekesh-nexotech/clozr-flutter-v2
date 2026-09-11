@@ -2,6 +2,7 @@ import '../../../../app/config/constants.dart';
 import '../../../../core/utils/inr_format.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/product.dart';
+import '../../domain/entities/product_usage.dart';
 import '../../domain/repositories/products_repository.dart';
 import '../data_sources/local/products_mock_ds.dart';
 
@@ -30,6 +31,11 @@ class ProductsRepositoryImpl implements ProductsRepository {
   /// Mock write: no-op — the catalog seed is immutable here.
   @override
   Future<Product?> updateProduct(String id, Map<String, dynamic> fields) async => null;
+
+  /// Mock mode reports no activity, so the usage section stays hidden rather
+  /// than showing invented counts for a seeded catalog.
+  @override
+  Future<ProductUsage> getUsage(String id) async => const ProductUsage();
 
   /// Mock write: no-op — the catalog seed is immutable here.
   @override

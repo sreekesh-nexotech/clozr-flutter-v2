@@ -73,6 +73,11 @@ class ApiEndpoints {
   /// category chips on the Products list read this, not a built-in list.
   static const productTypes = '/crm/product-types/';
 
+  /// `GET /crm/products/{id}/usage/` — the leads and quotes this catalog item
+  /// actually appears on, with counts. Separate from the product record, which
+  /// carries no usage figures at all.
+  static String productUsage(String id) => '/crm/products/$id/usage/';
+
   /// The org's Product layout (`org-view-settings-api.md` — `model_name:
   /// product`, list/detail/mobile; there is no kanban for this module).
   static const productSchema = '/crm/products/schema/';

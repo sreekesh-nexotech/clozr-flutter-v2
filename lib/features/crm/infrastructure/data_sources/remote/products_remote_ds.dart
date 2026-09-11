@@ -6,6 +6,7 @@ import '../../../../../core/utils/inr_format.dart';
 import '../../../domain/entities/crm_catalog.dart';
 import '../../../domain/entities/package_composition.dart';
 import '../../../domain/entities/product.dart';
+import '../../../domain/entities/product_usage.dart';
 
 /// Raw catalog endpoints (`/crm/products/`). HTTP + JSON→entity mapping only —
 /// caching lives in the API repository.
@@ -95,6 +96,18 @@ class ProductsRemoteDataSource {
   /// Not swallowed: the interesting case is the `400` raised when the product
   /// is a component of a package (the FK is `PROTECT`), and the caller has to
   /// show that reason rather than report a delete that did not happen.
+  /// `GET /crm/products/{id}/usage/` — the leads/quotes this item appears on.
+  ///
+  /// Best-effort: a failure answers "no activity", which hides the usage
+  /// section rather than blocking the whole product page over a side panel.
+  Future<ProductUsage> fetchUsage(String id) async {
+    try {
+      return ProductUsage.fromJson(await _api.get(ApiEndpoints.productUsage(id)));
+    } on Object {
+      return const ProductUsage();
+    }
+  }
+
   Future<void> deleteProduct(String id) => _api.delete(ApiEndpoints.product(id));
 
   /// `POST /crm/products/` — sends only non-empty fields; maps the created row

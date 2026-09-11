@@ -1,5 +1,6 @@
 import '../entities/crm_catalog.dart';
 import '../entities/product.dart';
+import '../entities/product_usage.dart';
 
 /// Abstract contract for product/catalog data. The presentation layer depends
 /// only on this; whether products come from a mock source or a REST API is an
@@ -21,6 +22,10 @@ abstract class ProductsRepository {
 
   /// Deletes a catalog item. Throws when the backend refuses — a product used
   /// as a package component cannot be removed.
+  /// How much this item is used — leads and quotes it appears on. Answers
+  /// zero counts on failure, which reads as "no activity".
+  Future<ProductUsage> getUsage(String id);
+
   Future<void> deleteProduct(String id);
 
   /// Creates a catalog product from the Add-product sheet's [fields]

@@ -147,6 +147,10 @@ class ProductDetailScreen extends ConsumerWidget {
                       style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.6)),
                 ),
                 SizedBox(height: 14.h),
+                if (_usageCard(ref, product) case final usage?) ...[
+                  usage,
+                  SizedBox(height: 14.h),
+                ],
                 if (_performanceCard(product) case final card?) ...[
                   card,
                   SizedBox(height: 14.h),
@@ -329,12 +333,54 @@ class ProductDetailScreen extends ConsumerWidget {
     );
   }
 
-  /// Usage stats — hidden entirely when nothing backs them.
+  /// How much this item is actually used — `GET /crm/products/{id}/usage/`.
   ///
-  /// No endpoint reports deals or revenue per catalog item, so on a live
-  /// backend this card was three big blue zeros: "0 deals, ₹0 lifetime revenue,
-  /// — avg", which reads as a product nobody ever sold rather than as a figure
-  /// the server does not publish.
+  /// Only the two counts that endpoint reports. Deals value, lifetime revenue
+  /// and average-per-deal are still not published anywhere, so they stay with
+  /// [_performanceCard] and stay hidden; putting a "₹0" beside a real quote
+  /// count would make the whole card read as invented.
+  ///
+  /// Hidden entirely when there is no activity, so an unused item shows no
+  /// section at all rather than a row of zeros — which matters most right
+  /// before someone deletes it.
+  Widget? _usageCard(WidgetRef ref, Product product) {
+    final usage = ref.watch(productUsageProvider(product.id)).valueOrNull;
+    if (usage == null || !usage.hasActivity) return null;
+    final stats = <(String, String)>[
+      ('${usage.quotes}', usage.quotes == 1 ? 'Quote using this' : 'Quotes using this'),
+      ('${usage.leads}', usage.leads == 1 ? 'Lead interested' : 'Leads interested'),
+    ];
+    return FinanceCard(
+      title: 'Usage',
+      child: Padding(
+        padding: EdgeInsets.only(top: 6.h),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final st in stats)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(st.$1, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.blueBright, letterSpacing: -0.3)),
+                    SizedBox(height: 3.h),
+                    Text(st.$2, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.35)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Deals value and revenue — hidden entirely when nothing backs them.
+  ///
+  /// No endpoint reports deals *value* or revenue per catalog item, so on a
+  /// live backend this card was three big blue zeros: "0 deals, ₹0 lifetime
+  /// revenue, — avg", which reads as a product nobody ever sold rather than as
+  /// a figure the server does not publish. Item *usage* now has its own card
+  /// above, fed by the endpoint that does exist.
   Widget? _performanceCard(Product product) {
     if (product.deals == 0 && product.revNum == 0) return null;
     final perf = <(String, String)>[
