@@ -9,6 +9,13 @@ import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../application/providers/contextual_add_provider.dart';
 
+/// Per-band blur sigmas for the strip's soft top edge, top band first.
+///
+/// Cumulative strength after n overlapping bands is sqrt(s0^2 + ... + sn^2),
+/// so these are derived from a target curve of 32 * (i / 5) ^ 1.5 — gentle at
+/// the top edge, reaching the strip's original 32 once all five overlap.
+const List<double> _fadeSigmas = [2.9, 7.6, 12.5, 17.4, 22.3];
+
 /// A single tab spec.
 class _NavItem {
   final String key;
@@ -102,32 +109,85 @@ class ClozrBottomNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Two-layer frosted stack (#1): an 88px strip that heavily blurs whatever
-    // scrolls beneath it — strongest across its full height from the top edge
-    // down — with a floating rounded pill that adds its own stronger blur so it
-    // reads as a distinct frosted-glass card rather than a flat bar.
+    // Two-layer frosted stack (#1): an 88px strip that blurs whatever scrolls
+    // beneath it, with a floating rounded pill that adds its own stronger blur
+    // so it reads as a distinct frosted-glass card rather than a flat bar.
     //
     // The strip extends the full real bottom inset so the blur reaches the very
     // edge, while the pill is lifted clear of the OS gesture/navigation bar —
     // responsive to any device from XS to XL (safeBottom is 0 on hardware-key
     // devices, ~24–48px on gesture-nav phones).
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    // Where the pill's own top edge falls inside this box. The strip starts on
+    // the same line rather than above it: run higher, it showed a band of grey
+    // standing clear of the pill, reading as a second, separate edge.
+    final pillTop = 8.h;
+    final stripHeight = 88.h + safeBottom;
+    // How far it takes the strip to reach full strength, measured down from
+    // [pillTop]. Everything below this is fully blurred and fully tinted.
+    final fade = 34.h;
+
     return SizedBox(
-      height: 88.h + safeBottom,
+      height: stripHeight,
       child: Stack(
         children: [
-          // Outer blur strip (covers the gesture area too).
-          Positioned.fill(
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                child: Container(color: const Color(0xFFF9FAFB).withOpacity(0.38)),
+          // The strip used to be a single full-height [BackdropFilter], which
+          // gave it a hard top edge: a line right across the screen with sharp
+          // content above it and blurred, tinted content a pixel below. That
+          // seam is what read as a "border" on the card holding the nav.
+          //
+          // A blur cannot be ramped within one filter — [ImageFilter.blur]
+          // takes a single sigma — so the ramp is built from overlapping
+          // layers instead. Each band starts a little lower than the last and
+          // all of them run to the bottom, so they stack up: the top of the
+          // strip is covered by one gentle blur, and every band below adds
+          // another pass until the full depth is reached. Blurs compound in
+          // quadrature, so these sigmas are spaced to land on the original 32
+          // where they all overlap (sqrt of the sum of the squares), rising on
+          // a curve that starts very soft rather than linearly.
+          for (var i = 0; i < _fadeSigmas.length; i++)
+            Positioned(
+              top: pillTop + fade * i / _fadeSigmas.length,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: _fadeSigmas[i],
+                    sigmaY: _fadeSigmas[i],
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+
+          // The tint is ramped over the same distance, for the same reason —
+          // at full opacity from the first pixel it put a tone step across the
+          // screen even where the blur had nothing to bite on.
+          Positioned(
+            top: pillTop,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFFF9FAFB).withOpacity(0),
+                    const Color(0xFFF9FAFB).withOpacity(0.72),
+                  ],
+                  stops: [0.0, (fade / (stripHeight - pillTop)).clamp(0.0, 1.0)],
+                ),
               ),
             ),
           ),
+
           // Floating frosted pill — sits above the gesture inset.
           Padding(
-            padding: EdgeInsets.only(top: 8.h, left: 14.w, right: 14.w, bottom: safeBottom),
+            padding: EdgeInsets.only(top: pillTop, left: 14.w, right: 14.w, bottom: safeBottom),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14.r),
               child: BackdropFilter(
@@ -136,24 +196,10 @@ class ClozrBottomNav extends ConsumerWidget {
                   height: 64.h,
                   padding: EdgeInsets.symmetric(horizontal: 14.w),
                   decoration: BoxDecoration(
-                    color: AppColors.white.withOpacity(0.42),
+                    color: AppColors.white.withOpacity(0.66),
                     borderRadius: BorderRadius.circular(14.r),
-                    // The top edge is the one line that sits directly against
-                    // whatever's blurred behind it, so at the same weight as
-                    // the other three sides it read as a hard seam cutting
-                    // through the glass — barely there instead, while the
-                    // sides/bottom keep enough definition to still read as a
-                    // distinct card.
-                    border: Border(
-                      top: BorderSide(
-                          color: const Color(0xFFD2D4DA).withOpacity(0.12), width: 1.5),
-                      left: BorderSide(
-                          color: const Color(0xFFD2D4DA).withOpacity(0.45), width: 1.5),
-                      right: BorderSide(
-                          color: const Color(0xFFD2D4DA).withOpacity(0.45), width: 1.5),
-                      bottom: BorderSide(
-                          color: const Color(0xFFD2D4DA).withOpacity(0.45), width: 1.5),
-                    ),
+                    border: Border.all(
+                        color: const Color(0xFFD2D4DA).withOpacity(0.5), width: 1.5),
                     boxShadow: [
                       BoxShadow(
                         color: const Color(0xFF101828).withOpacity(0.08),
