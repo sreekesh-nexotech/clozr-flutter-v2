@@ -324,29 +324,50 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     final resMs = t.resolveByISO != null ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch - now : null;
     final resBreached = t.resolved == null && resMs != null && resMs < 0;
 
+    // "met" only when it actually beat the deadline. This used to say "met",
+    // in green with a tick, for **any** answered ticket — including one
+    // responded to or resolved days after its deadline had already passed,
+    // which reported an SLA breach as compliance. `null` means one of the two
+    // timestamps is missing, i.e. we cannot tell; that keeps the neutral
+    // wording rather than claiming either way.
+    final respLate = t.respondedLate;
+    final respWhen = t.responded == null
+        ? ''
+        : (t.responded!.contains(', ')
+            ? t.responded!.split(', ')[1]
+            : t.responded!);
     final respLabel = t.responded != null
-        ? 'met ${t.responded!.contains(', ') ? t.responded!.split(', ')[1] : t.responded}'
+        ? (respLate == true ? 'late $respWhen' : (respLate == false ? 'met $respWhen' : respWhen))
         : (paused ? 'paused' : (respMs != null && respMs < 0 ? 'breached' : 'due ${t.respByLabel ?? ''}'));
     final respTone = t.responded != null
-        ? AppColors.success
+        ? (respLate == true ? AppColors.error : AppColors.success)
         : (respMs != null && respMs < 0 && !paused ? AppColors.error : AppColors.textMuted2);
     final respIcon = t.responded != null
-        ? PhosphorIconsFill.checkCircle
+        ? (respLate == true
+            ? PhosphorIconsFill.warningCircle
+            : PhosphorIconsFill.checkCircle)
         : (paused ? PhosphorIconsFill.pause : PhosphorIconsRegular.clock);
 
+    final resLate = t.resolvedLate;
     final resLabel = t.resolved != null
-        ? 'met ${t.resolved}'
+        ? (resLate == true
+            ? 'late ${t.resolved}'
+            : (resLate == false ? 'met ${t.resolved}' : '${t.resolved}'))
         : (paused
             ? 'frozen — waiting on customer'
             : '${t.resolveByLabel ?? '—'}${resMs != null ? (resMs < 0 ? ' — breached ${fmtLeft(resMs)} ago' : ' — ${fmtLeft(resMs)} left') : ''}');
     final resTone = t.resolved != null
-        ? AppColors.success
+        ? (resLate == true ? AppColors.error : AppColors.success)
         : (resBreached && !paused ? AppColors.error : AppColors.textMuted2);
     final resIcon = t.resolved != null
-        ? PhosphorIconsFill.checkCircle
+        ? (resLate == true
+            ? PhosphorIconsFill.warningCircle
+            : PhosphorIconsFill.checkCircle)
         : (paused ? PhosphorIconsFill.pause : (resBreached ? PhosphorIconsFill.warningCircle : PhosphorIconsRegular.clock));
 
-    final bg = paused ? AppColors.bgChipGrey : (resBreached ? AppColors.tintRed : AppColors.bgScreen);
+    final bg = paused
+        ? AppColors.bgChipGrey
+        : ((resBreached || resLate == true) ? AppColors.tintRed : AppColors.bgScreen);
 
     return Container(
       margin: EdgeInsets.only(top: 14.h),
@@ -911,7 +932,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       // By id when the sheet knows it — folding to a built-in key first would
       // lose any status the vocabulary has no name for.
       if (statusId != null && statusId.isNotEmpty) {
-        await repo.updateTicket(t.id, {'status': statusId});
+        await repo.updateTicket(t.id, {'status_id': statusId});
       } else {
         await repo.setTicketStatusByKey(t.id, key);
       }

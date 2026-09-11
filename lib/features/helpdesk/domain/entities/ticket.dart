@@ -67,6 +67,25 @@ class Ticket extends Equatable {
   /// to [resolveByISO] cannot say whether an SLA measured in hours was met.
   final String? resolvedISO;
 
+  /// When the first response actually went out, as the API sent it. Same
+  /// reasoning as [resolvedISO]: [responded] is day-precision, so only this can
+  /// say whether the response beat [respByISO].
+  final String? respondedISO;
+
+  /// Whether the first response landed after its deadline. Null when either
+  /// side is unknown — "we cannot tell", which must not read as "on time".
+  bool? get respondedLate => _after(respondedISO, respByISO);
+
+  /// Whether the resolution landed after its deadline.
+  bool? get resolvedLate => _after(resolvedISO, resolveByISO);
+
+  static bool? _after(String? actual, String? deadline) {
+    final a = DateTime.tryParse(actual ?? '');
+    final d = DateTime.tryParse(deadline ?? '');
+    if (a == null || d == null) return null;
+    return a.isAfter(d);
+  }
+
   const Ticket({
     required this.id,
     this.reference = '',
@@ -96,6 +115,7 @@ class Ticket extends Equatable {
     required this.resolveByLabel,
     required this.desc,
     this.resolvedISO,
+    this.respondedISO,
   });
 
   /// Whether the ticket was resolved after its resolution SLA expired. Null
@@ -142,6 +162,7 @@ class Ticket extends Equatable {
         resolveByLabel: resolveByLabel,
         desc: desc,
         resolvedISO: resolvedISO,
+        respondedISO: respondedISO,
       );
 
   @override

@@ -422,6 +422,7 @@ class TicketsRemoteDataSource {
         // Kept beside the display form: the resolved-grid's within/after-SLA
         // split needs the real instant, not the day.
         resolvedISO: resolvedAt?.toIso8601String(),
+        respondedISO: respondedAt?.toIso8601String(),
         respByISO: respByISO,
         respByLabel: _slaLabel(respByISO),
         resolveByISO: resolveByISO,
@@ -573,6 +574,20 @@ class TicketsRemoteDataSource {
     // The org's issue type, which the category chips now offer verbatim.
     final type = _str(fields['issue_type']);
     if (type != null && _uuidRe.hasMatch(type)) out['issue_type'] = type;
+    // The status, under the serializer's **write** name.
+    //
+    // Nested `status` is read-only, and this builder used to have no case for
+    // it at all — so a caller passing `{'status': <uuid>}` produced an *empty*
+    // body. `PATCH {}` answers 200 and only bumps `updated_at`, so the status
+    // chip reported success, changed nothing, and reverted on the next read.
+    // Worse, it hid the backend's own rules: placing a ticket on hold is
+    // refused with "A mandatory note must be added to the issue before placing
+    // it on hold", which the user never saw because the request carried no
+    // status to refuse.
+    final statusId = _str(fields['status_id']) ?? _str(fields['status']);
+    if (statusId != null && _uuidRe.hasMatch(statusId)) {
+      out['status_id'] = statusId;
+    }
     for (final key in const ['product_id', 'project_id']) {
       if (!fields.containsKey(key)) continue;
       final id = _str(fields[key]);

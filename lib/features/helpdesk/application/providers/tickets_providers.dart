@@ -276,8 +276,16 @@ final ticketSearchProvider = StateProvider<String>((ref) => '');
 /// Whether the search field is expanded.
 final ticketSearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// "My Tickets" default view — assignees include me (the prototype's default).
-final ticketMineProvider = StateProvider<bool>((ref) => true);
+/// "My Tickets" quick view — assignees include me.
+///
+/// Off by default. It used to default **on**, carried over from the prototype
+/// where the seed user was an assignee on everything. Against a live backend a
+/// signed-in user is often assigned to none, so the Tickets screen opened
+/// showing "All (0)" over a workspace holding 27 tickets — and a ticket the
+/// user had just raised disappeared the moment it saved, because a new ticket
+/// is unassigned. Opening on the full list and letting the user narrow is the
+/// safer default: an empty list then means the workspace is empty.
+final ticketMineProvider = StateProvider<bool>((ref) => false);
 
 /// "Breaching soon" chip — filter to tickets due within the next hour.
 final ticketBreachingProvider = StateProvider<bool>((ref) => false);
