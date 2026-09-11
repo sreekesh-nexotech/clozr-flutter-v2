@@ -152,8 +152,37 @@ class NotesRemoteDataSource {
       time: relativeTime(parseApiDate(json['created_at']), now: now),
       body: _str(json['content']) ?? '',
       via: (typeName == 'Call' || typeName == 'Email') ? typeName : null,
+      pinned: _asPinned(json['is_pinned']),
       attachments: attachments,
     );
+  }
+
+  /// `is_pinned` → bool. The field arrives as an **integer** (0/1), so a plain
+  /// `== true` reads every pinned note as unpinned; both shapes are accepted
+  /// here in case the serializer is ever changed to a real bool.
+  static bool _asPinned(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) return value == '1' || value.toLowerCase() == 'true';
+    return false;
+  }
+
+  /// `PATCH /crm/notes/{id}/` — pins or unpins one note.
+  ///
+  /// The payload is `{'is_pinned': 1 | 0}`, an **integer**: the field is an
+  /// integer column server-side and a bool is rejected outright with
+  /// `{"is_pinned": ["A valid integer is required."]}` (verified against a live
+  /// org). There is no dedicated pin action — `/pin/` and `/toggle-pin/` are
+  /// both 404 — so the plain PATCH is the mechanism.
+  Future<bool> setPinned(String noteId, bool pinned) async {
+    try {
+      await _api.patch(ApiEndpoints.note(noteId), body: {
+        'is_pinned': pinned ? 1 : 0,
+      });
+      return true;
+    } on Object {
+      return false;
+    }
   }
 
   /// One API reply → [NoteReply].

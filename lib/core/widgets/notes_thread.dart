@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -24,6 +25,7 @@ class NotesThread extends ConsumerStatefulWidget {
     required this.onAddNote,
     required this.onAddReply,
     required this.author,
+    this.onTogglePin,
   });
 
   final List<NoteEntry> notes;
@@ -35,6 +37,14 @@ class NotesThread extends ConsumerStatefulWidget {
 
   /// Called when the user replies to note [noteId].
   final void Function(String noteId, String body) onAddReply;
+
+  /// Called when the user pins or unpins note [noteId].
+  ///
+  /// Optional, and the pin control is hidden entirely when it is null — the
+  /// thread is shared by every module's detail screen, and a pin that does
+  /// nothing is worse than no pin at all. Ordering is the host's job: this
+  /// widget renders [notes] in the order it is handed them.
+  final void Function(String noteId)? onTogglePin;
 
   @override
   ConsumerState<NotesThread> createState() => NotesThreadState();
@@ -205,6 +215,7 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             Text(label,
                 style: TextStyle(
                     fontFamily: 'Manrope',
+                    fontVariations: const [FontVariation('wght', 600.0)],
                     fontSize: 15.sp,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary)),
@@ -235,10 +246,10 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text('Notes',
-                  style: TextStyle(fontFamily: 'Manrope', fontSize: 15.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
+                  style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 15.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
               SizedBox(width: 8.w),
               Text('${widget.notes.length}',
-                  style: TextStyle(fontFamily: 'Manrope', fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                  style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textPlaceholder)),
             ],
           ),
           SizedBox(height: 13.h),
@@ -273,12 +284,12 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                     focusNode: _noteFocus,
                     onSubmitted: (_) => _send(),
                     textInputAction: TextInputAction.send,
-                    style: TextStyle(fontFamily: 'Manrope', fontSize: 14.sp, color: AppColors.textBody),
+                    style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 14.sp, color: AppColors.textBody),
                     decoration: InputDecoration(
                       isCollapsed: true,
                       border: InputBorder.none,
                       hintText: 'Add a note…',
-                      hintStyle: TextStyle(fontFamily: 'Manrope', fontSize: 14.sp, color: AppColors.textPlaceholder),
+                      hintStyle: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 14.sp, color: AppColors.textPlaceholder),
                     ),
                   ),
                 ),
@@ -339,16 +350,17 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(n.author,
-                        style: TextStyle(fontFamily: 'Manrope', fontSize: 13.5.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
+                        style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 13.5.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
                     if (n.via != null) _viaPill(n.via!),
-                    Text(n.time, style: TextStyle(fontFamily: 'Manrope', fontSize: 11.sp, fontWeight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    if (n.pinned) _pinnedPill(),
+                    Text(n.time, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 500.0)], fontSize: 11.sp, fontWeight: FontWeight.w500, color: AppColors.textPlaceholder)),
                   ],
                 ),
                 if (n.body.isNotEmpty)
                   Padding(
                     padding: EdgeInsets.only(top: 4.h),
                     child: Text(n.body,
-                        style: TextStyle(fontFamily: 'Manrope', fontSize: 14.sp, height: 1.55, color: const Color(0xFF363636))),
+                        style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 14.sp, height: 1.55, color: const Color(0xFF363636))),
                   ),
                 if (n.attachments.isNotEmpty)
                   Padding(
@@ -374,7 +386,7 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                           _openReplyFor == n.id
                               ? 'Cancel'
                               : (n.replies.isEmpty ? 'Reply' : 'Reply (${n.replies.length})'),
-                          style: TextStyle(fontFamily: 'Manrope', fontSize: 12.5.sp, fontWeight: FontWeight.w600, color: const Color(0xFF6B6B6B)),
+                          style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 12.5.sp, fontWeight: FontWeight.w600, color: const Color(0xFF6B6B6B)),
                         ),
                       ],
                     ),
@@ -383,8 +395,48 @@ class NotesThreadState extends ConsumerState<NotesThread> {
               ],
             ),
           ),
+          if (widget.onTogglePin != null) _pinButton(n),
         ],
       ),
+    );
+  }
+
+  /// Tap target for pinning. Filled and navy while pinned, hairline outline
+  /// while not, so the current state reads without a legend.
+  Widget _pinButton(NoteEntry n) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        widget.onTogglePin!(n.id);
+      },
+      child: Padding(
+        padding: EdgeInsets.only(left: 6.w, top: 2.h),
+        child: Icon(
+          n.pinned ? PhosphorIconsFill.pushPin : PhosphorIconsRegular.pushPin,
+          size: 16.sp,
+          color: n.pinned ? AppColors.navy : AppColors.textPlaceholder,
+        ),
+      ),
+    );
+  }
+
+  /// "Pinned" marker beside the byline, so the reason a note leads the thread
+  /// is stated rather than inferred from its position.
+  Widget _pinnedPill() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
+      decoration: BoxDecoration(
+        color: AppColors.navy.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(6.r),
+      ),
+      child: Text('Pinned',
+          style: TextStyle(
+              fontFamily: 'Manrope',
+              fontVariations: const [FontVariation('wght', 700.0)],
+              fontSize: 10.sp,
+              fontWeight: FontWeight.w700,
+              color: AppColors.navy)),
     );
   }
 
@@ -406,13 +458,13 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                   spacing: 7.w,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(r.author, style: TextStyle(fontFamily: 'Manrope', fontSize: 12.5.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
-                    Text(r.time, style: TextStyle(fontFamily: 'Manrope', fontSize: 10.5.sp, fontWeight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    Text(r.author, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 12.5.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
+                    Text(r.time, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 500.0)], fontSize: 10.5.sp, fontWeight: FontWeight.w500, color: AppColors.textPlaceholder)),
                   ],
                 ),
                 Padding(
                   padding: EdgeInsets.only(top: 3.h),
-                  child: Text(r.body, style: TextStyle(fontFamily: 'Manrope', fontSize: 13.sp, height: 1.5, color: const Color(0xFF444444))),
+                  child: Text(r.body, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 13.sp, height: 1.5, color: const Color(0xFF444444))),
                 ),
               ],
             ),
@@ -442,12 +494,12 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                 autofocus: true,
                 onSubmitted: (_) => _sendReply(noteId),
                 textInputAction: TextInputAction.send,
-                style: TextStyle(fontFamily: 'Manrope', fontSize: 13.sp, color: AppColors.textBody),
+                style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 13.sp, color: AppColors.textBody),
                 decoration: InputDecoration(
                   isCollapsed: true,
                   border: InputBorder.none,
                   hintText: 'Write a reply…',
-                  hintStyle: TextStyle(fontFamily: 'Manrope', fontSize: 13.sp, color: AppColors.textPlaceholder),
+                  hintStyle: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 13.sp, color: AppColors.textPlaceholder),
                 ),
               ),
             ),
@@ -545,14 +597,14 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             child: Text(a.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontFamily: 'Manrope', fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textBody)),
+                style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textBody)),
           ),
           if (failed) ...[
             SizedBox(width: 6.w),
-            Text('Failed', style: TextStyle(fontFamily: 'Manrope', fontSize: 10.5.sp, fontWeight: FontWeight.w700, color: AppColors.error)),
+            Text('Failed', style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 10.5.sp, fontWeight: FontWeight.w700, color: AppColors.error)),
           ] else if (a.size != null) ...[
             SizedBox(width: 6.w),
-            Text(a.size!, style: TextStyle(fontFamily: 'Manrope', fontSize: 10.5.sp, color: AppColors.textPlaceholder)),
+            Text(a.size!, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 10.5.sp, color: AppColors.textPlaceholder)),
           ],
           if (onRemove != null) ...[
             SizedBox(width: 4.w),
@@ -581,7 +633,7 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         children: [
           Icon(isCall ? PhosphorIconsFill.phone : PhosphorIconsFill.envelope, size: 11.sp, color: AppColors.navy),
           SizedBox(width: 4.w),
-          Text(via, style: TextStyle(fontFamily: 'Manrope', fontSize: 11.sp, fontWeight: FontWeight.w600, color: AppColors.navy)),
+          Text(via, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 11.sp, fontWeight: FontWeight.w600, color: AppColors.navy)),
         ],
       ),
     );
@@ -594,7 +646,7 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       alignment: Alignment.center,
       child: Text(initials,
-          style: TextStyle(fontFamily: 'Manrope', fontSize: (size * 0.34).sp, fontWeight: FontWeight.w700, color: AppColors.white)),
+          style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: (size * 0.34).sp, fontWeight: FontWeight.w700, color: AppColors.white)),
     );
   }
 }

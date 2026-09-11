@@ -75,6 +75,7 @@ class NoteEntry {
     required this.body,
     this.via,
     this.avatarColor,
+    this.pinned = false,
     List<NoteReply>? replies,
     List<NoteAttachment>? attachments,
   })  : replies = replies ?? [],
@@ -88,10 +89,30 @@ class NoteEntry {
   /// Source tag: 'Call' or 'Email' → renders a small pill. Null = plain note.
   final String? via;
   final Color? avatarColor;
+
+  /// Whether this note is pinned to the top of its thread.
+  ///
+  /// The API stores it as an **integer** `is_pinned` (0/1), not a bool — see
+  /// [NotesRemoteDataSource.setPinned].
+  final bool pinned;
   final List<NoteReply> replies;
   final List<NoteAttachment> attachments;
 
   String get initials => _initials(author);
+
+  /// The same note with [pinned] flipped to [value]; every other field, and
+  /// the live `replies`/`attachments` lists, carried over untouched.
+  NoteEntry withPinned(bool value) => NoteEntry(
+        id: id,
+        author: author,
+        time: time,
+        body: body,
+        via: via,
+        avatarColor: avatarColor,
+        pinned: value,
+        replies: replies,
+        attachments: attachments,
+      );
 }
 
 String _initials(String name) {

@@ -30,6 +30,13 @@ class NotesApiRepository implements NotesRepository {
       _remote.addReply(noteId, body);
 
   @override
+  Future<bool> setPinned({
+    required String noteId,
+    required bool pinned,
+  }) =>
+      _remote.setPinned(noteId, pinned);
+
+  @override
   Future<NoteAttachment?> addAttachment({
     required String noteId,
     required NoteAttachment attachment,

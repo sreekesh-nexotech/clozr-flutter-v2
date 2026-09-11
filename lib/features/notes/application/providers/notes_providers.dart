@@ -40,6 +40,15 @@ class _NoopNotesRepository implements NotesRepository {
   }) async =>
       null;
 
+  /// True so mock mode still reorders the thread; there is no server to reject
+  /// it, and refusing would make the pin look broken rather than offline.
+  @override
+  Future<bool> setPinned({
+    required String noteId,
+    required bool pinned,
+  }) async =>
+      true;
+
   /// Null keeps the picked file showing as a local chip — mock mode has nowhere
   /// to upload it to.
   @override

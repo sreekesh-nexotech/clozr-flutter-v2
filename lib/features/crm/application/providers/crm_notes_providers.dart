@@ -74,11 +74,47 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
     if (!_remoteWired) return;
     try {
       final fetched = await _repo!.fetchNotes(_apiModel!, _apiRecordId);
-      if (mounted) state = fetched;
+      if (mounted) state = _pinnedFirst(fetched);
     } on Object {
       // Offline / error → the panel simply starts empty; adds still work
       // optimistically.
     }
+  }
+
+  /// [notes] reordered so pinned entries lead, each group keeping the order it
+  /// came in (newest-first, as the API returns it).
+  ///
+  /// Done here because the server does not do it: `is_pinned` is stored and
+  /// returned faithfully, but the list endpoint orders by recency only and
+  /// ignores `?ordering=-is_pinned` (verified against a live org). The whole
+  /// thread is already in memory, so a stable partition is enough.
+  static List<NoteEntry> _pinnedFirst(List<NoteEntry> notes) => [
+        ...notes.where((n) => n.pinned),
+        ...notes.where((n) => !n.pinned),
+      ];
+
+  /// Flips the pin on [noteId] and moves it, optimistically.
+  ///
+  /// Reverted if the server refuses, so a failed pin does not leave the thread
+  /// claiming an order the record does not have.
+  void togglePin(String noteId) {
+    final index = state.indexWhere((n) => n.id == noteId);
+    if (index < 0) return;
+    final wanted = !state[index].pinned;
+    state = _pinnedFirst([
+      for (final n in state) n.id == noteId ? n.withPinned(wanted) : n,
+    ]);
+    if (!_remoteWired) return;
+    // A note posted a moment ago still carries its local id; the PATCH would
+    // 404. It reaches the server on the next load, pinned state included.
+    if (noteId.startsWith('note-new-')) return;
+    unawaited(() async {
+      final ok = await _repo!.setPinned(noteId: noteId, pinned: wanted);
+      if (ok || !mounted) return;
+      state = _pinnedFirst([
+        for (final n in state) n.id == noteId ? n.withPinned(!wanted) : n,
+      ]);
+    }());
   }
 
   /// Prepends a note authored by [author] with any pending [attachments].

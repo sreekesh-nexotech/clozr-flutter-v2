@@ -25,6 +25,13 @@ abstract class NotesRepository {
     required String body,
   });
 
+  /// Pins or unpins one note. Returns whether the server accepted it, so a
+  /// caller that flipped its state optimistically can put it back on failure.
+  Future<bool> setPinned({
+    required String noteId,
+    required bool pinned,
+  });
+
   /// Uploads one picked file against an existing note.
   ///
   /// Separate from [addNote] because the API requires it: the upload points at
