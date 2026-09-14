@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'shell_providers.dart';
 
 /// A page-supplied "add" action for the bottom-nav `+` button (#14).
 ///
@@ -60,5 +61,8 @@ void clearAddActionOnRouteChange(WidgetRef ref, String path) {
     if (ref.read(_lastAddRoutePathProvider) == path) return;
     ref.read(_lastAddRoutePathProvider.notifier).state = path;
     ref.read(contextualAddProvider.notifier).state = null;
+    // A failure the previous screen rendered in full is that screen's; the
+    // next one gets the shell's toast again.
+    ref.read(pageReportedFailureProvider.notifier).state = null;
   });
 }

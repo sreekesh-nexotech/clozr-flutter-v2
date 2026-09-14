@@ -1,3 +1,4 @@
+import '../../../core/config/api_config.dart';
 import 'entities/course.dart';
 import 'entities/learner_record.dart';
 
@@ -8,9 +9,19 @@ import 'entities/learner_record.dart';
 class LmsLogic {
   LmsLogic._();
 
-  /// The prototype pins "now" to this instant so overdue/deadline states are
-  /// deterministic against the seed. Mirrored here for identical results.
-  static final DateTime now = DateTime.parse('2026-07-09T09:41:00');
+  /// The instant deadlines are judged against.
+  ///
+  /// The prototype pins this to a fixed date so overdue states are
+  /// deterministic against the seed, and mock mode keeps that. Against a live
+  /// backend it has to be the real clock: with the pin, a course whose
+  /// deadline had passed weeks ago still read "Not started" and the Overdue
+  /// tile said 0, while `/lms/learners/` for the same enrolment said
+  /// `status: overdue`. Every other module's clock already switches on
+  /// [ApiConfig.apiEnabled]; this one had been left behind.
+  static DateTime get now =>
+      ApiConfig.apiEnabled ? DateTime.now() : _mockNow;
+
+  static final DateTime _mockNow = DateTime.parse('2026-07-09T09:41:00');
 
   /// Average completion of a course entry (0–100).
   static int pct(CourseProgress e) {
@@ -35,6 +46,9 @@ class LmsLogic {
 
   /// Aggregate status across all a learner's courses.
   static String aggStatus(LearnerRecord rec, Course? Function(String) courseOf) {
+    // The server already judged this learner; its verdict has the deadlines
+    // the aggregate rows lack.
+    if (rec.serverStatus case final st?) return st;
     final sts = rec.courses.map((e) => statusOf(e, courseOf(e.courseId))).toList();
     if (sts.contains('overdue')) return 'overdue';
     if (sts.contains('inprogress')) return 'inprogress';

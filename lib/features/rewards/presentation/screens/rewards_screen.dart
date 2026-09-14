@@ -183,17 +183,23 @@ class RewardsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: 10.h),
-          Row(
-            children: [
-              Icon(PhosphorIconsBold.arrowElbowDownRight, size: 11.sp, color: AppColors.textPlaceholder),
-              SizedBox(width: 5.w),
-              Text('Reports to ',
-                  style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-              Text(p.reportsTo,
-                  style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textSecondary)),
-            ],
-          ),
+          // Nothing reports a manager in API mode, and the track may have no
+          // level cleared yet. A label beside a blank reads as a bug, so each
+          // line is skipped when it has nothing to show.
+          if (p.reportsTo.isNotEmpty) ...[
+            SizedBox(height: 10.h),
+            Row(
+              children: [
+                Icon(PhosphorIconsBold.arrowElbowDownRight, size: 11.sp, color: AppColors.textPlaceholder),
+                SizedBox(width: 5.w),
+                Text('Reports to ',
+                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text(p.reportsTo,
+                    style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textSecondary)),
+              ],
+            ),
+          ],
+          if (p.currentLevel.isNotEmpty) ...[
           SizedBox(height: 12.h),
           Container(
             padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 10.h),
@@ -224,6 +230,7 @@ class RewardsScreen extends ConsumerWidget {
               ],
             ),
           ),
+          ],
         ],
       ),
     );

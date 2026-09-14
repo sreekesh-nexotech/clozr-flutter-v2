@@ -63,6 +63,50 @@ class BillingLineItem {
 /// `limit_*` and `percent` are **null on an unlimited plan**, which is what the
 /// dev org is on — so a card that renders "14 GB / 50 GB" is inventing both
 /// halves of the fraction.
+/// The workspace's subscription — `GET /billing/subscriptions/`.
+///
+/// The Billing screen used to leave its plan header out in API mode on the
+/// note "there is no subscription endpoint to fill them". There is; this is
+/// its row. Only the fields the header shows are kept.
+class BillingSubscription {
+  const BillingSubscription({
+    required this.planName,
+    required this.status,
+    required this.isTrial,
+    required this.billingFrequency,
+    required this.licensedUsers,
+    required this.activeUsers,
+    required this.freeSeats,
+    required this.pricePerUser,
+    required this.periodEnd,
+    required this.autoRenew,
+    required this.mandateVerified,
+    required this.gracePeriodDays,
+  });
+
+  final String planName;
+
+  /// The server's word: `trial`, `active`, `past_due`, `cancelled`, …
+  final String status;
+  final bool isTrial;
+  final String billingFrequency; // 'monthly' | 'annual'
+  final int licensedUsers;
+  final int activeUsers;
+  final int freeSeats;
+
+  /// Rupees per user per period, as the server priced it.
+  final double pricePerUser;
+  final DateTime? periodEnd;
+  final bool autoRenew;
+  final bool mandateVerified;
+  final int gracePeriodDays;
+
+  /// Whether the paid-for period has already ended, so the org is inside its
+  /// grace window or beyond it.
+  bool get periodLapsed =>
+      periodEnd != null && periodEnd!.isBefore(DateTime.now());
+}
+
 class StorageUsage {
   const StorageUsage({
     this.usedDisplay = '',

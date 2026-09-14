@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
-import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/entities/lms_activity.dart';
@@ -267,6 +267,16 @@ final lmsRecordsControllerProvider =
 final lmsRecordsProvider = Provider<List<LearnerRecord>>(
   (ref) => ref.watch(lmsRecordsControllerProvider).items,
 );
+
+/// Everyone enrolled on one course — `/lms/learners/?course_id=…`.
+///
+/// Refetched off the write tick so an assignment made from the course detail
+/// shows up in its own tiles and learner list without a restart.
+final lmsCourseLearnersProvider =
+    FutureProvider.autoDispose.family<List<LearnerRecord>, String>((ref, courseId) {
+  ref.watch(apiWriteTickProvider);
+  return ref.watch(lmsRepositoryProvider).getCourseLearners(courseId);
+});
 
 /// Single learner record by id (empty record if none).
 final lmsRecordByIdProvider = Provider.family<LearnerRecord, String>((ref, rid) {

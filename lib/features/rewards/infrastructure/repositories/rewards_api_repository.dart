@@ -27,10 +27,26 @@ class RewardsApiRepository implements RewardsRepository {
     } on AppError {
       // Not readable for this user — goals simply keep generic reward copy.
     }
+    // The Closer Track's three definition lists. Best-effort as a group: a
+    // permission gap on any of them leaves the card hidden, exactly as it was
+    // before, rather than failing the goals that did load.
+    var trackRows = const <Map<String, dynamic>>[];
+    var stepRows = const <Map<String, dynamic>>[];
+    var milestoneRows = const <Map<String, dynamic>>[];
+    try {
+      trackRows = await _remote.fetchTrackRows();
+      stepRows = await _remote.fetchStepRows();
+      milestoneRows = await _remote.fetchMilestoneRows();
+    } on AppError {
+      trackRows = const [];
+    }
     return RewardsRemoteDataSource.mapRewards(
       base: base,
       progressRows: progressRows,
       grantRows: grantRows,
+      trackRows: trackRows,
+      stepRows: stepRows,
+      milestoneRows: milestoneRows,
     );
   }
 }

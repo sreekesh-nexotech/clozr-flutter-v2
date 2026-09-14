@@ -51,6 +51,7 @@ Map<String, dynamic> build({
     );
 
 void main() {
+  costParsingTests();
   group('the always-sent basics', () {
     test('name and description are trimmed', () {
       final body = build();
@@ -199,6 +200,45 @@ void main() {
             .containsKey('percent_complete'),
         isFalse,
       );
+    });
+  });
+}
+
+// The Estimated cost box's hint says "e.g. 18L", but the parser used to strip
+// every non-digit and keep the rest — so "18L" was stored as ₹18 and "20K" as
+// ₹20, silently. These pin the Indian short forms the hint invites, and that
+// junk is refused rather than saved as a wrong number.
+void costParsingTests() {
+  group('cost short forms', () {
+    test('K, L and Cr expand to rupees', () {
+      expect(parseCostAmount('20K'), '20000');
+      expect(parseCostAmount('18L'), '1800000');
+      expect(parseCostAmount('1.5Cr'), '15000000');
+      expect(parseCostAmount('2 lakh'), '200000');
+    });
+
+    test('plain and grouped numbers still pass through', () {
+      expect(parseCostAmount('2500000'), '2500000');
+      expect(parseCostAmount('₹25,00,000'), '2500000');
+      expect(parseCostAmount('12.5'), '12.5');
+    });
+
+    test('case and spacing do not matter', () {
+      expect(parseCostAmount('20k'), '20000');
+      expect(parseCostAmount('18 L'), '1800000');
+      expect(parseCostAmount(' 1.5 cr '), '15000000');
+    });
+
+    test('junk is refused, not stored as whatever digits were left', () {
+      expect(parseCostAmount('twenty'), isNull);
+      expect(parseCostAmount('20 dollars'), isNull);
+      expect(parseCostAmount('20K5'), isNull);
+      expect(isValidCostAmount('twenty'), isFalse);
+    });
+
+    test('empty is valid — the field is optional', () {
+      expect(isValidCostAmount(''), isTrue);
+      expect(isValidCostAmount('   '), isTrue);
     });
   });
 }

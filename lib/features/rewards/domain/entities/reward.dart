@@ -131,8 +131,9 @@ class CloserTrack extends Equatable {
   final List<RewardLevel> levels;
 
   /// True when there is nothing to show — the timeline has no levels. The
-  /// screen hides the whole Closer Track card in that case (the level data is
-  /// not derivable from the milestone endpoints, so it is empty in API mode).
+  /// screen hides the whole Closer Track card in that case: an org with no
+  /// active track, or a track with no steps, gets no card rather than a fake
+  /// one.
   bool get isEmpty => levels.isEmpty;
 
   @override

@@ -297,7 +297,7 @@ class DashboardMockDataSource {
             trend: '8.4%',
             arrow: DashTrendArrow.down,
             spark: [5, 5, 4, 4, 3, 3, 2],
-            route: Routes.opsTasks,
+            route: '${Routes.opsTasks}?due=overdue',
           ),
           DashKpi(
             icon: PhosphorIconsFill.clock,

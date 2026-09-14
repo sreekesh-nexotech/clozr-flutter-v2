@@ -1,7 +1,7 @@
 name: clozrapp
 description: "Clozr — mobile-first B2B CRM. Presentation layer."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+6
 
 # NOTE: Technical_stack.md pins Flutter 3.24.5 / Dart 3.5.4. The generated
 # scaffold declared `sdk: ^3.11.0`; that constraint is lowered here to match

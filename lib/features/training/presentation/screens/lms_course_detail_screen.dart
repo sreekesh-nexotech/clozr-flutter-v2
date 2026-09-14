@@ -18,6 +18,7 @@ import '../../application/providers/lms_providers.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/lms_logic.dart';
+import '../lms_assign.dart';
 import '../../infrastructure/data_sources/local/lms_people.dart';
 import '../components/lms_footer.dart';
 import '../components/lms_header.dart';
@@ -63,9 +64,18 @@ class LmsCourseDetailScreen extends ConsumerWidget {
       );
     }
 
+    // Who is on this course. The org-wide records only carry a real course id
+    // for the signed-in user (everyone else is aggregate counts), so against
+    // the API the per-course fetch is the source of truth; the org-wide join
+    // is kept as the mock-mode path and as a fallback while it loads.
+    final perCourse = ref.watch(lmsCourseLearnersProvider(course.id)).valueOrNull;
     final entries = <(String, CourseProgress)>[
-      for (final r in records)
-        if (r.entryFor(course.id) != null) (r.rid, r.entryFor(course.id)!),
+      if (perCourse != null && perCourse.isNotEmpty)
+        for (final r in perCourse)
+          if (r.entryFor(course.id) != null) (r.rid, r.entryFor(course.id)!)
+      else
+        for (final r in records)
+          if (r.entryFor(course.id) != null) (r.rid, r.entryFor(course.id)!),
     ];
     int countOf(String st) => entries.where((e) => LmsLogic.statusOf(e.$2, course) == st).length;
     final avg = entries.isEmpty
@@ -185,7 +195,10 @@ class LmsCourseDetailScreen extends ConsumerWidget {
                 SizedBox(width: 10.w),
                 Expanded(
                   flex: 12,
-                  child: LmsCtaButton(label: 'Assign course', onTap: () => toast('Assign course')),
+                  child: LmsCtaButton(
+                      label: 'Assign course',
+                      onTap: () => assignCourse(context, ref,
+                          courseId: course.id, courseTitle: course.title)),
                 ),
               ],
             ),
@@ -365,7 +378,8 @@ class LmsCourseDetailScreen extends ConsumerWidget {
               SizedBox(width: 8.w),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => toast('Reminder sent to ${person.firstName}'),
+                onTap: () => nudgeLearner(context, ref,
+                    rid: rid, courseId: course.id, firstName: person.firstName),
                 child: Container(
                   height: 30.h,
                   padding: EdgeInsets.symmetric(horizontal: 12.w),

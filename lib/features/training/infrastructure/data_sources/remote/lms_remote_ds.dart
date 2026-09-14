@@ -31,6 +31,25 @@ class LmsRemoteDataSource {
   static const String _learners = '/lms/learners/';
   static const String _recentActivity = '/lms/dashboard/recent-activity/';
   static const String _dashboardStats = '/lms/dashboard/stats/';
+  static String _assign(String courseId) => '/lms/courses/$courseId/assign/';
+
+  /// `POST /lms/courses/{id}/assign/ {"user_ids": [...]}` → `{enrolled, skipped}`.
+  /// Verified against the dev backend; a user already on the course counts as
+  /// skipped rather than failing the whole call.
+  Future<int> assignCourse(String courseId, List<String> userIds) async {
+    final body = await _api.post(_assign(courseId), body: {'user_ids': userIds});
+    final enrolled = body is Map ? body['enrolled'] : null;
+    return enrolled is num ? enrolled.toInt() : 0;
+  }
+
+  static String _nudge(String userId) => '/lms/learners/$userId/nudge/';
+
+  /// `POST /lms/learners/{user_id}/nudge/ {"course_id": …}` → `{"nudged": 1}`.
+  /// Verified against the dev backend: it writes an `LMSNudge` notification
+  /// for that learner, so this is a real reminder rather than a toast.
+  Future<void> nudgeLearner(String userId, String courseId) =>
+      _api.post(_nudge(userId), body: {'course_id': courseId});
+
   static String _videoProgress(String videoResourceId) =>
       '/lms/video-resources/$videoResourceId/progress/';
 
@@ -122,6 +141,47 @@ class LmsRemoteDataSource {
         final rec = mapLearnerRow(row);
         if (rec != null) out.add(rec);
       }
+    }
+    return out;
+  }
+
+  /// GET /lms/learners/?course_id={id} → everyone enrolled on **one** course,
+  /// each carrying a real [CourseProgress] for it.
+  ///
+  /// The unfiltered `/lms/learners/` returns only aggregate counts per person,
+  /// so [mapLearnerRow] has to invent `agg-N` course ids — which means a
+  /// course detail asking "who is on *this* course" could only ever match the
+  /// signed-in user's own record. Everyone else assigned to the course was
+  /// invisible, and the Enrolled tile stayed at 1 however many were added.
+  /// The server filters by `course_id` (verified: an unknown id returns an
+  /// empty list), so this reads the answer it actually gives.
+  Future<List<LearnerRecord>> fetchCourseLearners(String courseId) async {
+    if (courseId.isEmpty) return const [];
+    final body = await _api.get(_learners, query: {'course_id': courseId});
+    final rows = body is Map<String, dynamic> ? body['results'] : body;
+    final out = <LearnerRecord>[];
+    if (rows is! List) return out;
+    for (final row in rows) {
+      if (row is! Map<String, dynamic>) continue;
+      final userId = row['user_id'] as String? ?? '';
+      if (userId.isEmpty) continue;
+      final rid = UserDirectory.mapUserId(userId);
+      final name = row['name'] as String? ?? '';
+      final role = row['role'];
+      final roleName = role is Map ? (role['name'] as String? ?? '') : '';
+      LmsPeople.register(rid: rid, name: name, role: roleName);
+      UserDirectory.register(userId: userId, fullName: name, role: roleName);
+      // The row is scoped to this one course, so its aggregate *is* the
+      // per-course figure. A completed course reads 100; one in flight reads
+      // its percentage (floored to 1 so it counts as started).
+      final completed = ((row['completed_courses'] as num?)?.toInt() ?? 0) > 0;
+      final overall = ((row['overall_progress_percentage'] as num?)?.round() ?? 0);
+      final started = (row['status'] as String? ?? '') != 'not_started';
+      final pct = completed ? 100 : (started ? (overall > 0 ? overall.clamp(1, 99) : 1) : 0);
+      out.add(LearnerRecord(
+        rid: rid,
+        courses: [CourseProgress(courseId: courseId, mods: [pct])],
+      ));
     }
     return out;
   }
@@ -371,15 +431,30 @@ class LmsRemoteDataSource {
     final assigned = (row['assigned_courses'] as num?)?.toInt() ?? 0;
     final completed = ((row['completed_courses'] as num?)?.toInt() ?? 0).clamp(0, assigned);
     final overall = ((row['overall_progress_percentage'] as num?)?.round() ?? 0).clamp(0, 99);
-    final started = (row['status'] as String? ?? '') != 'not_started';
-    return LearnerRecord(rid: rid, courses: [
-      for (var i = 0; i < assigned; i++)
-        CourseProgress(
-          courseId: 'agg-$i',
-          mods: [if (i < completed) 100 else if (started) (overall > 0 ? overall : 1) else 0],
-        ),
-    ]);
+    final serverStatus = row['status'] as String?;
+    final started = (serverStatus ?? '') != 'not_started';
+    return LearnerRecord(
+      rid: rid,
+      serverStatus: _statusKey(serverStatus),
+      courses: [
+        for (var i = 0; i < assigned; i++)
+          CourseProgress(
+            courseId: 'agg-$i',
+            mods: [if (i < completed) 100 else if (started) (overall > 0 ? overall : 1) else 0],
+          ),
+      ],
+    );
   }
+
+  /// `in_progress` → `inprogress`, `not_started` → `notstarted`; the other two
+  /// are already the app's keys. Unknown → null, so the derived status is used.
+  static String? _statusKey(String? raw) => switch (raw) {
+        'in_progress' => 'inprogress',
+        'not_started' => 'notstarted',
+        'completed' => 'completed',
+        'overdue' => 'overdue',
+        _ => null,
+      };
 
   /// Maps one recent-activity row. Server colours (green/yellow/red/violet)
   /// map onto the mock palette; unknown → the neutral blue.
@@ -388,9 +463,16 @@ class LmsRemoteDataSource {
     final description = row['description'] as String? ?? '';
     final action = row['action'] as String? ?? '';
     final courseTitle = row['course_title'] as String? ?? '';
-    final what = description.isNotEmpty
+    var what = description.isNotEmpty
         ? description
         : [action.replaceAll('_', ' '), courseTitle].where((s) => s.isNotEmpty).join(' ');
+    // The server's `description` already leads with the learner's name
+    // ("Admin Acme was enrolled in test"), and the overview renders `who`
+    // in bold before `what` — so the row read "Admin Acme Admin Acme was
+    // enrolled in test". Strip the leading name when the sentence carries it.
+    if (who.isNotEmpty && what.startsWith('$who ')) {
+      what = what.substring(who.length + 1);
+    }
     if (who.isEmpty && what.isEmpty) return null;
     return LmsActivity(
       dot: switch (row['color'] as String? ?? '') {

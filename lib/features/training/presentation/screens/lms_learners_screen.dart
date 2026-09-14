@@ -8,8 +8,8 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
-import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/lms_providers.dart';
+import '../lms_assign.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/lms_logic.dart';
@@ -31,10 +31,15 @@ class _LearnerVM {
   final String agg;
   final int pct;
   final String coursesLabel;
+
+  /// The first course this learner has not finished — the one a Nudge is
+  /// about. Empty when every course is complete (the button is hidden then).
+  final String nudgeCourseId;
   final String deadlineLabel;
   final bool overdue;
   const _LearnerVM(this.rid, this.name, this.initials, this.color, this.role, this.agg, this.pct,
-      this.coursesLabel, this.deadlineLabel, this.overdue);
+      this.coursesLabel, this.deadlineLabel, this.overdue,
+      {this.nudgeCourseId = ''});
 }
 
 /// Learners — search, role + status filters, progress cards, Nudge, and the
@@ -77,8 +82,14 @@ class _LmsLearnersScreenState extends ConsumerState<LmsLearnersScreen> {
     ]..sort((a, b) => a.deadlineISO.compareTo(b.deadlineISO));
     final dlLabel = dls.isNotEmpty ? 'Deadline: ${dls.first.deadline}' : 'No deadline';
     final coursesLabel = '${r.courses.length} ${r.courses.length == 1 ? 'course' : 'courses'}';
+    // The course a Nudge is about: the soonest-due unfinished one, else any
+    // unfinished one, else none.
+    final unfinished = [for (final e in r.courses) if (!LmsLogic.done(e)) e.courseId];
+    final nudgeCourseId =
+        dls.isNotEmpty ? dls.first.id : (unfinished.isNotEmpty ? unfinished.first : '');
     return _LearnerVM(r.rid, person.name, person.initials, person.color, person.role, agg, pct,
-        coursesLabel, dlLabel, agg == 'overdue');
+        coursesLabel, dlLabel, agg == 'overdue',
+        nudgeCourseId: nudgeCourseId);
   }
 
   @override
@@ -93,19 +104,26 @@ class _LmsLearnersScreenState extends ConsumerState<LmsLearnersScreen> {
     final statusF = ref.watch(lmsStatusFilterProvider);
     final query = ref.watch(lmsLearnerSearchProvider).trim().toLowerCase();
 
-    var rows = records.where((r) => r.rid != 'me').map((r) => _vm(r, courseOf)).toList();
+    final all = records.where((r) => r.rid != 'me').map((r) => _vm(r, courseOf)).toList();
+    var rows = all;
     if (roleF != 'all') rows = rows.where((x) => x.role == roleF).toList();
     if (statusF != 'all') rows = rows.where((x) => x.agg == statusF).toList();
     if (query.isNotEmpty) {
       rows = rows.where((x) => '${x.name} ${x.role}'.toLowerCase().contains(query)).toList();
     }
 
+    // The org's own roles, read off the learners that loaded. These were four
+    // prototype constants ("Manager", "Sales rep", …) that no live org uses —
+    // Acme's learners are "CRM User" and "System Admin" — so every role chip
+    // filtered the list to nothing. Derived from the data, a chip can only
+    // ever name a role someone actually holds.
+    final roleNames = <String>{
+      for (final r in all) if (r.role.trim().isNotEmpty) r.role.trim(),
+    }.toList()
+      ..sort();
     final roleChips = <(String, String)>[
       ('all', 'All roles'),
-      ('Manager', 'Manager'),
-      ('Sales rep', 'Sales rep'),
-      ('Project associate', 'Project associate'),
-      ('Viewer', 'Viewer'),
+      for (final r in roleNames) (r, r),
     ];
     final statusChips = <(String, String)>[
       ('all', 'All status'),
@@ -115,7 +133,6 @@ class _LmsLearnersScreenState extends ConsumerState<LmsLearnersScreen> {
       ('overdue', 'Overdue'),
     ];
 
-    void toast(String m) => ref.read(toastProvider.notifier).show(m);
 
     return Container(
       color: AppColors.bgScreen,
@@ -204,13 +221,17 @@ class _LmsLearnersScreenState extends ConsumerState<LmsLearnersScreen> {
                         deadlineLabel: x.deadlineLabel,
                         overdue: x.overdue,
                         onTap: () => context.push('${Routes.lmsLearnerDetail}?id=${x.rid}'),
-                        onNudge: () => toast('Reminder sent to ${x.name.split(' ').first}'),
+                        onNudge: () => nudgeLearner(context, ref,
+                            rid: x.rid,
+                            courseId: x.nudgeCourseId,
+                            firstName: x.name.split(' ').first),
                       );
                     },
                   ),
           ),
           LmsFooter(
-            child: LmsCtaButton(label: 'Assign course', onTap: () => toast('Assign course')),
+            child: LmsCtaButton(
+                label: 'Assign course', onTap: () => assignCourse(context, ref)),
           ),
         ],
       ),

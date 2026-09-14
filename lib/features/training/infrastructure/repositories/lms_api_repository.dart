@@ -52,6 +52,16 @@ class LmsApiRepository implements LmsRepository {
   }
 
   @override
+  Future<List<LearnerRecord>> getCourseLearners(String courseId) async {
+    try {
+      return await _remote.fetchCourseLearners(courseId);
+    } on AppError catch (e) {
+      if (e.type == AppErrorType.forbidden) return const [];
+      rethrow;
+    }
+  }
+
+  @override
   Future<LmsStats?> getStats() async {
     try {
       return await _remote.fetchStats();
@@ -74,6 +84,20 @@ class LmsApiRepository implements LmsRepository {
       rethrow;
     }
   }
+
+  @override
+  Future<int> assignCourse({
+    required String courseId,
+    required List<String> userIds,
+  }) =>
+      _remote.assignCourse(courseId, userIds);
+
+  @override
+  Future<void> nudgeLearner({
+    required String userId,
+    required String courseId,
+  }) =>
+      _remote.nudgeLearner(userId, courseId);
 
   @override
   Future<void> setModuleProgress({

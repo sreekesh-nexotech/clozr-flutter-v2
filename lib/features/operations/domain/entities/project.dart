@@ -16,6 +16,10 @@ class Project extends Equatable {
   final String name;
   final String type;
   final String? company;
+
+  /// The linked customer's `customer_id`. The filter drawer matches on this,
+  /// not on [company]: customer names are not unique within an org.
+  final String? customerId;
   final bool internal;
   final String status; // key into StatusMeta$.project
 
@@ -72,6 +76,7 @@ class Project extends Equatable {
     required this.name,
     required this.type,
     required this.company,
+    this.customerId,
     required this.internal,
     required this.status,
     this.statusName = '',
@@ -104,6 +109,7 @@ class Project extends Equatable {
         name: name,
         type: type,
         company: company,
+        customerId: customerId,
         internal: internal,
         status: status ?? this.status,
         statusName: statusName,

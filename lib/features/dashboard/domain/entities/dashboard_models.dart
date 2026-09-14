@@ -401,8 +401,11 @@ class DashboardData {
       // ── Operations ──
       opsKpis: [
         kpi(icon: PhosphorIconsFill.briefcase, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Active Projects', sub: 'In delivery right now', route: Routes.opsProjects),
-        kpi(icon: PhosphorIconsFill.flag, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Projects Overdue', sub: 'Past their end date', route: Routes.opsProjects),
-        kpi(icon: PhosphorIconsFill.listChecks, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Tasks Overdue', sub: 'Across all projects', route: Routes.opsTasks),
+        // A KPI that counts a *slice* of a list links to that slice, not the
+        // whole list: the tap on "3 tasks overdue" must land on those three.
+        // The target screens read these query params on entry.
+        kpi(icon: PhosphorIconsFill.flag, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Projects Overdue', sub: 'Past their end date', route: '${Routes.opsProjects}?end=overdue'),
+        kpi(icon: PhosphorIconsFill.listChecks, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Tasks Overdue', sub: 'Across all projects', route: '${Routes.opsTasks}?due=overdue'),
         kpi(icon: PhosphorIconsFill.clock, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Avg Project Cycle', unit: 'days', sub: 'Start to handover', route: Routes.opsProjects),
       ],
       opsStatus: const [],
@@ -412,7 +415,7 @@ class DashboardData {
       // ── Helpdesk ──
       helpKpis: [
         kpi(icon: PhosphorIconsFill.ticket, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Open Tickets', sub: 'New, open & pending', route: Routes.tickets),
-        kpi(icon: PhosphorIconsFill.warningCircle, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'SLA Breaches', sub: 'Response or resolution', route: Routes.tickets),
+        kpi(icon: PhosphorIconsFill.warningCircle, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'SLA Breaches', sub: 'Response or resolution', route: '${Routes.tickets}?breaching=1'),
         kpi(icon: PhosphorIconsFill.timer, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Avg Resolution', unit: 'hours', sub: 'Median, this period', route: Routes.tickets),
         kpi(icon: PhosphorIconsFill.lightning, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'First Response', unit: 'min', sub: 'Median, this period', route: Routes.tickets),
       ],

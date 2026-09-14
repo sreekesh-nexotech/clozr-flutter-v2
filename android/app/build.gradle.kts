@@ -1,8 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Release signing material. `key.properties` is gitignored (see
+// android/.gitignore) — copy key.properties.example and fill it in. Without it
+// the release build falls back to debug keys, which Play rejects, so the
+// fallback shouts rather than passing silently.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+val keystoreProperties = Properties().apply {
+    if (hasReleaseKeystore) keystorePropertiesFile.inputStream().use { load(it) }
 }
 
 android {
@@ -37,16 +49,46 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Pinned, not inherited. `flutter.targetSdkVersion` is 34 on the SDK
+        // this project pins (3.24.5), and Play rejects anything below 36:
+        // "Your app currently targets API level 34 and must target at least
+        // API level 36". Raising the Flutter pin would change this number
+        // silently, so it is stated here instead.
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                // `flutter run --release` still works on a dev machine; an
+                // artifact built this way can never be uploaded to Play.
+                // `println` rather than `logger.warn` on purpose — Flutter's
+                // Gradle wrapper filters warn-level output, and a silently
+                // debug-signed release is the whole failure mode this guards.
+                println(
+                    "\n**************************************************************\n" +
+                    "  android/key.properties not found - signing with DEBUG keys.\n" +
+                    "  This build CANNOT be uploaded to the Play Store.\n" +
+                    "  See android/key.properties.example to set up signing.\n" +
+                    "**************************************************************\n"
+                )
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

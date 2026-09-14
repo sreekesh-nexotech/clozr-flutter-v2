@@ -229,6 +229,10 @@ class ApiEndpoints {
   // ── Rewards / milestones ──
   static const milestoneProgress = '/milestones/progress/';
   static const milestoneRewards = '/milestones/rewards/';
+  /// The Closer Track: a track's ordered steps, each pointing at a milestone.
+  static const milestoneTracks = '/milestones/tracks/';
+  static const milestoneSteps = '/milestones/steps/';
+  static const milestoneCatalog = '/milestones/milestones/';
 
   // ── WhatsApp messages ──
   static const whatsappConversations = '/whatsapp/conversations/';

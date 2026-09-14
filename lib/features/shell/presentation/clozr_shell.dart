@@ -59,6 +59,8 @@ class ClozrShell extends ConsumerWidget {
       // A screen that already reported this has said the same sentence;
       // re-showing it would only restart the timer on a toast being read.
       if (ref.read(toastProvider)?.text == failure.message) return;
+      // Likewise a screen that rendered the refusal as its whole body.
+      if (ref.read(pageReportedFailureProvider) == failure.message) return;
       ref.read(toastProvider.notifier).showError(failure.message);
     });
 

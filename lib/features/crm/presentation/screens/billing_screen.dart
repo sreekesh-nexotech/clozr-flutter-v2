@@ -39,10 +39,11 @@ class BillingScreen extends ConsumerWidget {
         ),
         Expanded(
           // In API mode only the cards with an endpoint behind them are shown:
-          // storage, invoice history and the plans list. The plan header,
-          // seats, mandate and account-state cards are still the prototype's
-          // static figures — there is no subscription endpoint to fill them —
-          // so they stay out rather than being dressed up as real.
+          // the subscription header (`/billing/subscriptions/`), storage,
+          // invoice history and the plans list. The prototype's licence,
+          // mandate and account-state cards carry static figures with no
+          // endpoint behind them, so they stay out rather than being dressed
+          // up as real.
           //
           // This used to be a blanket "Billing coming soon" for the whole
           // screen, which hid the three collections that do answer.
@@ -50,6 +51,14 @@ class BillingScreen extends ConsumerWidget {
               ? ListView(
                   padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                   children: [
+                    // The workspace's own subscription, when the server has
+                    // one. Left out entirely otherwise — never the prototype
+                    // "Business · 8 seats" figures.
+                    if (ref.watch(billingSubscriptionProvider).valueOrNull
+                        case final sub?) ...[
+                      _liveSubscriptionCard(context, ref, sub, toast),
+                      SizedBox(height: 14.h),
+                    ],
                     _storageCard(ref),
                     SizedBox(height: 14.h),
                     _invoicesCard(ref, toast),
@@ -77,6 +86,98 @@ class BillingScreen extends ConsumerWidget {
                 ),
         ),
       ],
+    );
+  }
+
+  /// The plan header from the live subscription: plan, seats, cycle, the
+  /// period end, and the per-period total. Trial and lapsed states are said
+  /// plainly — a trial whose end date has passed is the case that matters
+  /// most to the person looking at this screen.
+  Widget _liveSubscriptionCard(
+      BuildContext context, WidgetRef ref, BillingSubscription sub, void Function(String) toast) {
+    final cycle = sub.billingFrequency == 'annual' ? 'annual' : 'monthly';
+    final per = cycle == 'annual' ? '/yr' : '/mo';
+    final total = sub.pricePerUser * sub.licensedUsers;
+    final endLabel = sub.periodEnd == null ? null : absoluteDate(sub.periodEnd!);
+    final String stateLine;
+    if (sub.isTrial) {
+      stateLine = sub.periodLapsed
+          ? 'Trial ended${endLabel != null ? ' $endLabel' : ''}'
+          : 'Trial${endLabel != null ? ' · ends $endLabel' : ''}';
+    } else if (sub.periodLapsed) {
+      stateLine = 'Period ended${endLabel != null ? ' $endLabel' : ''}';
+    } else {
+      stateLine = '${sub.autoRenew ? 'renews' : 'ends'}${endLabel != null ? ' $endLabel' : ''}';
+    }
+    final seats = '${sub.licensedUsers} ${sub.licensedUsers == 1 ? 'seat' : 'seats'}'
+        '${sub.freeSeats > 0 ? ' (${sub.freeSeats} free)' : ''}';
+    final lapsed = sub.periodLapsed;
+
+    return Container(
+      padding: EdgeInsets.all(18.r),
+      decoration: BoxDecoration(
+        color: AppColors.navy,
+        borderRadius: BorderRadius.circular(18.r),
+        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.28), blurRadius: 26, offset: const Offset(0, 12))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('CURRENT PLAN',
+                  style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: const Color(0xFFB9C2D8), letterSpacing: 1)),
+              const Spacer(),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                decoration: BoxDecoration(
+                  color: (lapsed ? AppColors.error : AppColors.success).withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(6.r),
+                ),
+                child: Text(
+                  lapsed ? (sub.isTrial ? 'TRIAL ENDED' : 'LAPSED') : sub.status.toUpperCase(),
+                  style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.white, letterSpacing: 0.6),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 6.h),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(sub.planName,
+                        style: AppText.custom(size: 23, weight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.4)),
+                    SizedBox(height: 3.h),
+                    Text('$seats · billed $cycle · $stateLine',
+                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.white.withOpacity(0.66))),
+                  ],
+                ),
+              ),
+              if (total > 0)
+                Text.rich(
+                  TextSpan(
+                    text: formatInr(total),
+                    style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.4),
+                    children: [
+                      TextSpan(text: per, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.white.withOpacity(0.6))),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          SizedBox(height: 10.h),
+          Text(
+            '${sub.activeUsers} of ${sub.licensedUsers} seats in use · '
+            '${sub.mandateVerified ? 'payment mandate verified' : 'no payment mandate'}'
+            '${lapsed && sub.gracePeriodDays > 0 ? ' · ${sub.gracePeriodDays}-day grace period' : ''}',
+            style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.white.withOpacity(0.6)),
+          ),
+        ],
+      ),
     );
   }
 

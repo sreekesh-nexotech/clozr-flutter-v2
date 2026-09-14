@@ -82,8 +82,13 @@ FilterSpec buildProjectsFilterSpec(
   // loaded rows. Derived alone, the facet could only offer a customer some
   // already-visible project has — so you could not filter *to* one whose
   // projects were off the current page, which is the whole point of filtering.
+  //
+  // Keyed by the customer's **id**, not its name. Names are not unique — this
+  // org has three customers called "customer test02" — and a name-keyed option
+  // resolved to whichever the catalog listed first, so filtering by one of
+  // them silently showed another's projects.
   final companies = customerCatalog.isNotEmpty
-      ? [for (final c in customerCatalog) FilterOption(id: c.name, label: c.name)]
+      ? [for (final c in customerCatalog) FilterOption(id: c.id, label: c.name)]
       : (projects
               .where((p) => !p.internal && (p.company ?? '').isNotEmpty)
               .map((p) => p.company!)
@@ -206,8 +211,11 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
       return false;
     }
     if (!FilterMatch.matchAnyOf(v.choice('pri'), [p.pri])) return false;
-    if (!FilterMatch.matchAnyOf(v.choice('customer'),
-        [p.internal ? '__internal' : (p.company ?? '')])) {
+    if (!FilterMatch.matchAnyOf(v.choice('customer'), [
+      if (p.internal) '__internal',
+      if (p.customerId case final id? when id.isNotEmpty) id,
+      if (p.company case final name? when name.isNotEmpty) name,
+    ])) {
       return false;
     }
     if (!FilterMatch.matchAnyOf(v.choice('managers'), [p.manager])) return false;

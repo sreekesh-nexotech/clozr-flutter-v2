@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/app_error.dart';
 
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
@@ -24,6 +25,18 @@ final billingStorageProvider = FutureProvider<StorageUsage?>((ref) async {
   final ds = ref.watch(billingRemoteDataSourceProvider);
   if (ds == null) return null;
   return ds.fetchStorage();
+});
+
+/// `GET /billing/subscriptions/` — the plan header. Null when unreadable or
+/// absent, and the screen leaves the header out rather than inventing one.
+final billingSubscriptionProvider = FutureProvider<BillingSubscription?>((ref) async {
+  final ds = ref.watch(billingRemoteDataSourceProvider);
+  if (ds == null) return null;
+  try {
+    return await ds.fetchSubscription();
+  } on AppError {
+    return null;
+  }
 });
 
 /// `GET /billing/plans/` — what the Change-plan sheet lists.

@@ -23,6 +23,12 @@ class LmsRepositoryImpl implements LmsRepository {
 
   /// No dashboard endpoint in mock mode; null keeps the prototype's derived
   /// tiles exactly as they were.
+  /// Mock records already carry real course ids, so the screen's own join
+  /// over [getRecords] finds everyone; nothing extra to fetch.
+  @override
+  Future<List<LearnerRecord>> getCourseLearners(String courseId) async =>
+      const [];
+
   @override
   Future<LmsStats?> getStats() => Future.value();
 
@@ -34,4 +40,21 @@ class LmsRepositoryImpl implements LmsRepository {
     required int value,
   }) =>
       Future.value(); // Mock progress lives in the notifier only.
+
+  /// Mock mode has no server to enrol on; report everyone as enrolled so the
+  /// flow completes the same way it does live.
+  /// Nothing to notify in mock mode; the toast alone is the whole effect.
+  @override
+  Future<void> nudgeLearner({
+    required String userId,
+    required String courseId,
+  }) =>
+      Future.value();
+
+  @override
+  Future<int> assignCourse({
+    required String courseId,
+    required List<String> userIds,
+  }) async =>
+      userIds.length;
 }

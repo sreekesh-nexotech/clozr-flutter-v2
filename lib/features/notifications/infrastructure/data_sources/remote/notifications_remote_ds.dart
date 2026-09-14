@@ -115,14 +115,17 @@ bool notificationUrgentForType(String type) {
 /// deep link is not derivable. What the type does say is which *module* the
 /// event happened in, so the row opens that list instead of nothing at all,
 /// which is where every CRM and PMO notification used to land.
-(String, String?) _targetFor(String type) {
+(String, String?) _targetFor(String type, String? category) {
   final t = type.toLowerCase();
   if (t.startsWith('lms')) return ('list', 'lmsMy');
   if (t.startsWith('payment') ||
       t.startsWith('dunning') ||
       t.startsWith('mandate') ||
-      t.startsWith('license')) {
-    return ('list', 'billing');
+      t.startsWith('license') ||
+      t.startsWith('invoice')) {
+    // A subscription event (`PaymentSucceeded` for the plan, a licence change)
+    // belongs on Billing; a customer payment belongs on the CRM Payments list.
+    return ('list', category == 'billing' ? 'billing' : 'payments');
   }
   if (t.startsWith('lead')) return ('list', 'leads');
   if (t.startsWith('followup')) return ('list', 'followups');
@@ -133,7 +136,8 @@ bool notificationUrgentForType(String type) {
   if (t.contains('ticket') || t.contains('issue') || t.contains('sla')) {
     return ('list', 'tickets');
   }
-  if (t.startsWith('quote')) return ('list', 'quotes');
+  // The live type is `QuotationExpiryReminder` — match the stem, not `quote`.
+  if (t.startsWith('quot')) return ('list', 'quotes');
   if (t.startsWith('user')) return ('list', 'members');
   return ('none', null);
 }
@@ -170,7 +174,7 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
       readFlag is bool ? !readFlag : _str(row['status'])?.toLowerCase() == 'unread';
 
   final created = parseApiDate(row['created_at']);
-  final target = _targetFor(type);
+  final target = _targetFor(type, _str(row['category'])?.toLowerCase());
 
   return AppNotification(
     id: id,

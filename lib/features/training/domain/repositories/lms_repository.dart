@@ -11,6 +11,11 @@ import '../entities/lms_stats.dart';
 abstract class LmsRepository {
   Future<List<Course>> getCourses();
   Future<List<LearnerRecord>> getRecords();
+
+  /// Everyone enrolled on one course, with their progress on it. Empty in
+  /// mock mode (the seed records already carry real course ids) and on a
+  /// permission refusal.
+  Future<List<LearnerRecord>> getCourseLearners(String courseId);
   Future<List<LmsActivity>> getActivity();
 
   /// The Overview's headline figures. Null when unavailable (mock mode, or the
@@ -26,5 +31,20 @@ abstract class LmsRepository {
     required String moduleId,
     required int index,
     required int value,
+  });
+
+  /// Enrols [userIds] on [courseId]. Returns how many were newly enrolled —
+  /// the server skips anyone already on the course. Throws on refusal so the
+  /// caller can say why rather than toast a success that never happened.
+  Future<int> assignCourse({
+    required String courseId,
+    required List<String> userIds,
+  });
+
+  /// Sends [userId] a reminder about [courseId]. A real notification on the
+  /// learner's side (`LMSNudge`), not a local toast. Throws on refusal.
+  Future<void> nudgeLearner({
+    required String userId,
+    required String courseId,
   });
 }

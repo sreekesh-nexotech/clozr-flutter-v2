@@ -7,6 +7,8 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import '../../../shell/domain/nav_catalog.dart';
 import '../../application/providers/dashboard_providers.dart';
 import '../components/dashboard_header.dart';
 import '../components/panels/business_panel.dart';
@@ -30,7 +32,11 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tab = GoRouterState.of(context).uri.queryParameters['tab'] ?? 'business';
+    // A `?tab=` the role cannot see (a stale deep link, or a module removed
+    // since) falls back to the first panel it can, matching the bottom nav.
+    final tabs = visibleDashboardTabs(ref.watch(moduleAccessProvider).valueOrNull);
+    final requested = GoRouterState.of(context).uri.queryParameters['tab'] ?? 'business';
+    final tab = tabs.contains(requested) ? requested : (tabs.firstOrNull ?? 'business');
     final phase = ref.watch(dashboardDataNotifierProvider);
 
     // The `module` the Member dropdown needs, which also decides whether the

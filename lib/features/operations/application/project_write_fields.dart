@@ -113,8 +113,38 @@ String? _idFor(List<CatalogOption> options, String? label) {
   return null;
 }
 
-/// A typed cost as the decimal string the API wants — "₹25,00,000" → "2500000".
-String _amount(String raw) {
-  final digits = raw.replaceAll(RegExp(r'[^0-9.]'), '');
-  return digits.isEmpty ? '0' : digits;
+/// A typed cost as the decimal string the API wants, or null when the text
+/// is not an amount.
+///
+/// Accepts the forms the field's own hint invites: a plain or grouped number
+/// ("2500000", "₹25,00,000") and the Indian short forms the rest of the app
+/// displays ("18L", "20K", "1.5Cr", case-insensitive, optional space). This
+/// used to strip every non-digit and keep whatever was left — so "20K" was
+/// stored as ₹20 and "18L" as ₹18, silently, under a hint that said "e.g. 18L".
+///
+/// Null rather than "0" for anything else, so the caller can refuse the save
+/// and say so instead of writing a wrong number.
+String? parseCostAmount(String raw) {
+  var s = raw.trim().replaceAll('₹', '').replaceAll(',', '').replaceAll(' ', '');
+  if (s.isEmpty) return null;
+  final m = RegExp(r'^(\d+(?:\.\d+)?)(k|l|lac|lakh|cr|crore)?$', caseSensitive: false)
+      .firstMatch(s);
+  if (m == null) return null;
+  final n = double.parse(m.group(1)!);
+  final mult = switch ((m.group(2) ?? '').toLowerCase()) {
+    'k' => 1000.0,
+    'l' || 'lac' || 'lakh' => 100000.0,
+    'cr' || 'crore' => 10000000.0,
+    _ => 1.0,
+  };
+  final v = n * mult;
+  // Whole rupees stay integral on the wire; only a genuine fraction keeps
+  // its decimals.
+  return v == v.roundToDouble() ? v.round().toString() : v.toString();
 }
+
+/// Whether [raw] is something [parseCostAmount] can read.
+bool isValidCostAmount(String raw) =>
+    raw.trim().isEmpty || parseCostAmount(raw) != null;
+
+String _amount(String raw) => parseCostAmount(raw) ?? '0';

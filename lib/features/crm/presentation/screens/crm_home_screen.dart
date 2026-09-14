@@ -8,6 +8,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/utils/inr_format.dart';
 import '../../../../core/widgets/app_header_bar.dart';
@@ -97,9 +98,26 @@ class CrmHomeScreen extends ConsumerWidget {
             ? e
             : const AppError(
                 type: AppErrorType.unknown, message: 'Something went wrong. Please try again.');
+        // Every widget here is a `dashboard-crm/*` call, and those are gated
+        // on the `dashboard` module even at `scope=own` — a plain CRM User is
+        // refused with "…view the admin dashboard", which reads as a broken
+        // screen when all they opened was Home. Say what it is, and that
+        // Retry will not change it.
+        final forbidden = err.type == AppErrorType.forbidden;
+        if (forbidden) reportFailureOnPage(ref, err.message);
         return ListView(
           children: [
-            ErrorState.forError(err, onRetry: () => ref.invalidate(crmHomeProvider)),
+            if (forbidden)
+              const ErrorState(
+                icon: PhosphorIconsFill.lock,
+                iconColor: AppColors.textMuted,
+                iconBg: AppColors.bgLight,
+                title: 'Overview not included in your role',
+                body: 'The CRM overview needs the Dashboard permission. '
+                    'Your leads, follow-ups and tasks are in the bar below.',
+              )
+            else
+              ErrorState.forError(err, onRetry: () => ref.invalidate(crmHomeProvider)),
           ],
         );
       },

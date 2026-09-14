@@ -44,6 +44,18 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
   void initState() {
     super.initState();
     _searchCtrl.text = ref.read(otSearchProvider);
+    // A dashboard KPI that counts a slice of the tasks (overdue, due today, …)
+    // links here with `?due=<chip>` so the list opens on that slice. Applied
+    // after the first frame: the filter state is a provider the build below
+    // reads, so it cannot be set while this widget is still being inserted.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final due = GoRouterState.of(context).uri.queryParameters['due'];
+      if (due == null || due.isEmpty) return;
+      final values = ref.read(opsTaskFiltersProvider).copy();
+      values['due'] = DateValue(chip: due);
+      _applyFilters(values);
+    });
   }
 
   @override

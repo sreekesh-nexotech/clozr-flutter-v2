@@ -142,12 +142,14 @@ Map<String, dynamic> projectFilterParamsFor({
   required FilterValues values,
   required ProjectFilterCodec codec,
   required bool mine,
+  bool archived = false,
   String search = '',
   String statusTab = 'all',
 }) {
   if (!ApiConfig.apiEnabled) return const {};
   return {
     if (mine) 'ownership': 'me',
+    if (archived) 'is_archived': 'true',
     if (search.trim().isNotEmpty) 'search': search.trim(),
     if (statusTab != 'all' && statusTab.isNotEmpty) 'status_name__in': statusTab,
     ...codec.encode(values),
@@ -159,6 +161,7 @@ final projectFilterParamsProvider = Provider<Map<String, dynamic>>(
     values: ref.watch(projectFiltersProvider),
     codec: ref.watch(projectFilterCodecProvider),
     mine: ref.watch(myProjectsProvider),
+    archived: ref.watch(archivedProjectsProvider),
     search: ref.watch(projSearchDebouncedProvider),
     statusTab: ref.watch(projTabProvider),
   ),
@@ -340,9 +343,23 @@ final projTabProvider = StateProvider<String>((ref) => 'all');
 final projSearchProvider = StateProvider<String>((ref) => '');
 final projSearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// "My Projects" saved-view default (on, mirroring the prototype's
-/// `myProjects: true`).
-final myProjectsProvider = StateProvider<bool>((ref) => true);
+/// "My Projects" saved-view chip — projects I own or am assigned to.
+///
+/// Off by default. It used to default on, mirroring the prototype's
+/// `myProjects: true` where the seed user was on every project. Against a live
+/// org that opened the list at "All (3)" over a workspace of 19, and a project
+/// the user had just created but not assigned themselves to vanished from the
+/// list the moment it saved.
+final myProjectsProvider = StateProvider<bool>((ref) => false);
+
+/// "Archived" saved-view chip — show archived projects instead of live ones.
+///
+/// Without this there was no way back to an archived project: archiving hid it
+/// from the default list, and no filter, tab or search could surface it, so
+/// "Restore project" could never be reached. The server takes
+/// `is_archived=true` (verified against the dev backend; the list otherwise
+/// returns live projects only).
+final archivedProjectsProvider = StateProvider<bool>((ref) => false);
 
 /// The base list before the status tab (respects the My/All view).
 final projBaseProvider = Provider<List<Project>>((ref) {

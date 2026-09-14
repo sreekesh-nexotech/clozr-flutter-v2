@@ -40,6 +40,38 @@ class RewardsRemoteDataSource {
   /// repository treats that as "no grants".
   Future<List<Map<String, dynamic>>> fetchGrantRows() => _pages(ApiEndpoints.milestoneRewards);
 
+  /// The org's milestone tracks, their steps, and the milestone catalog the
+  /// steps point at — the three pieces the Closer Track is built from.
+  ///
+  /// These used to be documented as "not part of this slice", so the card was
+  /// hidden in API mode on the assumption the data was underivable. It is not:
+  /// all three endpoints exist (verified against the dev backend) and the
+  /// first active track has two ordered steps.
+  Future<List<Map<String, dynamic>>> fetchTrackRows() =>
+      _pagesUnscoped(ApiEndpoints.milestoneTracks);
+  Future<List<Map<String, dynamic>>> fetchStepRows() =>
+      _pagesUnscoped(ApiEndpoints.milestoneSteps);
+  Future<List<Map<String, dynamic>>> fetchMilestoneRows() =>
+      _pagesUnscoped(ApiEndpoints.milestoneCatalog);
+
+  /// Like [_pages] but without the `participant_user` scope — tracks, steps
+  /// and milestones are org-wide definitions, not per-person rows.
+  Future<List<Map<String, dynamic>>> _pagesUnscoped(String path) async {
+    final rows = <Map<String, dynamic>>[];
+    int? page;
+    for (var i = 0; i < _maxPages; i++) {
+      final body = await _api.get(path, query: {
+        'page_size': ApiConfig.defaultPageSize,
+        if (page != null) 'page': page,
+      });
+      final paged = Paginated.fromAny<Map<String, dynamic>>(body, (row) => row);
+      rows.addAll(paged.results);
+      page = _pageOf(paged.next);
+      if (page == null) break;
+    }
+    return rows;
+  }
+
   Future<List<Map<String, dynamic>>> _pages(String path) async {
     final uid = UserDirectory.currentUserId;
     final rows = <Map<String, dynamic>>[];
@@ -85,6 +117,9 @@ class RewardsRemoteDataSource {
     required RewardsData base,
     required List<dynamic> progressRows,
     List<dynamic> grantRows = const [],
+    List<dynamic> trackRows = const [],
+    List<dynamic> stepRows = const [],
+    List<dynamic> milestoneRows = const [],
     DateTime? now,
   }) {
     final ref = now ?? DateTime.now();
@@ -142,13 +177,24 @@ class RewardsRemoteDataSource {
     // these endpoints → copied from [base] (empty in API mode).
     final self = MockUsers.of('me');
     final selfRole = self.role.replaceAll(RegExp(r'\s*·\s*You$'), '').trim();
+    final closerTrack = mapCloserTrack(
+      trackRows: trackRows,
+      stepRows: stepRows,
+      milestoneRows: milestoneRows,
+      progressRows: progressRows,
+      fallback: base.closerTrack,
+    );
     final profile = RewardProfile(
       name: self.name,
       initials: self.initials,
       role: selfRole.isEmpty ? base.profile.role : selfRole,
       milestones: achievedMilestones.length,
+      // No endpoint reports a manager, so this stays empty and the header
+      // skips the line rather than printing "Reports to" beside nothing.
       reportsTo: base.profile.reportsTo,
-      currentLevel: base.profile.currentLevel,
+      // The highest level cleared on the track — the one a "current level"
+      // badge means. Empty until the first level is achieved.
+      currentLevel: _highestAchieved(closerTrack) ?? base.profile.currentLevel,
     );
 
     return RewardsData(
@@ -157,11 +203,193 @@ class RewardsRemoteDataSource {
           ? base.lastUpdated
           : DateFormat('d MMM yyyy, HH:mm').format(lastSwept.toLocal()),
       goals: goals,
-      // Closer Track levels live on /milestones/tracks/ + /steps/ (not part
-      // of this slice) → copied from [base] (empty in API mode, so the screen
-      // hides the whole card).
-      closerTrack: base.closerTrack,
+      // Built from the track/step/milestone rows when they are there; the
+      // screen still hides the card when they are not (no track, no steps),
+      // so an org without a track set up sees nothing rather than a fake one.
+      closerTrack: closerTrack,
     );
+  }
+
+  /// The title of the highest level marked done, or null when none is.
+  static String? _highestAchieved(CloserTrack track) {
+    // Levels are rendered highest-first, so the first done one is the top.
+    for (final l in track.levels) {
+      if (l.kind == RewardLevelKind.done) return l.title;
+    }
+    return null;
+  }
+
+  /// The Closer Track from the org's first active track.
+  ///
+  /// Levels are the track's steps in `sequence` order. A step whose milestone
+  /// the signed-in user has an `achieved` (or later) grant for is done; the
+  /// first step that is not done is the current level and gets "YOU ARE
+  /// HERE"; everything after it is locked. Rendered highest-first, matching
+  /// the timeline's top-down reading, with the connector dropped on the last
+  /// (lowest) level.
+  ///
+  /// Empty — so the card hides — when there is no active track or it has no
+  /// steps. That is the honest state for an org that has not set one up.
+  static CloserTrack mapCloserTrack({
+    required List<dynamic> trackRows,
+    required List<dynamic> stepRows,
+    required List<dynamic> milestoneRows,
+    required List<dynamic> progressRows,
+    required CloserTrack fallback,
+  }) {
+    Map<String, dynamic>? track;
+    for (final t in trackRows) {
+      if (t is Map<String, dynamic> && (t['status'] as String? ?? 'active') == 'active') {
+        track = t;
+        break;
+      }
+    }
+    if (track == null) return fallback;
+    final trackId = track['track_id'] as String? ?? '';
+
+    final steps = <Map<String, dynamic>>[
+      for (final s in stepRows)
+        if (s is Map<String, dynamic> && s['track'] == trackId) s,
+    ]..sort((a, b) => ((a['sequence'] as num?) ?? 0).compareTo((b['sequence'] as num?) ?? 0));
+    if (steps.isEmpty) return fallback;
+
+    final milestoneById = <String, Map<String, dynamic>>{
+      for (final m in milestoneRows)
+        if (m is Map<String, dynamic> && m['milestone_id'] is String)
+          m['milestone_id'] as String: m,
+    };
+    // The signed-in user's progress row per milestone. `/milestones/progress/`
+    // is already scoped to them by `participant_user`, and a row says
+    // `achieved: true` once the target is met — plus `current_value` /
+    // `target_snapshot`, which is what the "up next" bar is measured from.
+    final progressByMilestone = <String, Map<String, dynamic>>{
+      for (final p in progressRows)
+        if (p is Map<String, dynamic> && p['milestone'] is String)
+          p['milestone'] as String: p,
+    };
+    final done = <String>{
+      for (final e in progressByMilestone.entries)
+        if (e.value['achieved'] == true) e.key,
+    };
+
+    final ordered = <RewardLevel>[]; // sequence order, lowest first
+    var reachedCurrent = false;
+    String upNextTitle = '', upNextSub = '';
+    String progLeft = '', progRight = '';
+    int? upNextPct;
+    for (final step in steps) {
+      final mid = step['milestone'] as String? ?? '';
+      final m = milestoneById[mid];
+      final name = (m?['name'] as String?)?.trim();
+      final title = (name == null || name.isEmpty) ? 'Level ${step['sequence']}' : name;
+      final measure = _measureLabel(
+          m?['measure'] as String?, m?['target_value'] ?? m?['condition']);
+      final isDone = done.contains(mid);
+      final RewardLevelKind kind;
+      var here = false;
+      if (isDone) {
+        kind = RewardLevelKind.done;
+      } else if (!reachedCurrent) {
+        kind = RewardLevelKind.current;
+        here = true;
+        reachedCurrent = true;
+        upNextTitle = title;
+        upNextSub = measure.isEmpty ? 'Next level on the track' : 'Needs $measure to unlock';
+        // The bar reads this level's own progress row: how far along the
+        // measure the user is, against the target the milestone snapshotted.
+        final row = progressByMilestone[mid];
+        if (row != null) {
+          final cur = parseAmount(row['current_value']);
+          final target = parseAmount(row['target_snapshot']);
+          final p = ((row['pct'] is num
+                      ? (row['pct'] as num).toDouble()
+                      : double.tryParse('${row['pct'] ?? ''}') ?? 0) *
+                  100)
+              .clamp(0, 100)
+              .round();
+          progLeft = '${_short(cur)} / ${_short(target)}';
+          progRight = '$p%';
+          upNextPct = p;
+        }
+      } else {
+        kind = RewardLevelKind.locked;
+      }
+      ordered.add(RewardLevel(
+        title: title,
+        sub: switch (kind) {
+          RewardLevelKind.done => measure.isEmpty ? '' : '$measure · ',
+          RewardLevelKind.current => measure.isEmpty ? 'In progress' : '$measure · In progress',
+          RewardLevelKind.locked => measure.isEmpty ? 'Locked' : '$measure · Locked',
+        },
+        subTail: kind == RewardLevelKind.done ? 'Achieved' : '',
+        kind: kind,
+        here: here,
+      ));
+    }
+    // Every level cleared: the top one is "here" so the timeline still has a
+    // marker, and there is nothing up next.
+    if (!reachedCurrent && ordered.isNotEmpty) {
+      final top = ordered.last;
+      ordered[ordered.length - 1] = RewardLevel(
+        title: top.title, sub: top.sub, subTail: top.subTail, kind: top.kind, here: true);
+      upNextTitle = 'All levels achieved';
+      upNextSub = 'You have cleared every level on this track';
+    }
+
+    final doneCount = ordered.where((l) => l.kind == RewardLevelKind.done).length;
+    // The bar shows progress *toward the next level* when its row is known,
+    // else how many levels are cleared.
+    final pct = upNextPct ?? (doneCount * 100 / ordered.length).round();
+    if (progLeft.isEmpty) {
+      progLeft = '$doneCount / ${ordered.length}';
+      progRight = '$pct%';
+    }
+    // Highest level on top; the connector line runs down to the last (lowest).
+    final levels = [
+      for (var i = ordered.length - 1; i >= 0; i--)
+        RewardLevel(
+          title: ordered[i].title,
+          sub: ordered[i].sub,
+          subTail: ordered[i].subTail,
+          kind: ordered[i].kind,
+          here: ordered[i].here,
+          hasLine: i != 0,
+        ),
+    ];
+    return CloserTrack(
+      upNextTitle: upNextTitle,
+      upNextSub: upNextSub,
+      progLeft: progLeft,
+      progRight: progRight,
+      pct: pct,
+      levels: levels,
+    );
+  }
+
+  /// A count or amount as the bar's short form: whole numbers plain
+  /// ("2", "14"), money in the app's K/L/Cr shorthand ("₹10K").
+  static String _short(double v) {
+    if (v >= 1000) return formatInr(v);
+    return v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
+  }
+
+  /// "10 conversions", "₹25L won value" — a milestone's measure and condition
+  /// as a short phrase, or '' when the catalog row did not carry them.
+  static String _measureLabel(String? measure, Object? condition) {
+    if (measure == null || measure.isEmpty) return '';
+    // The catalog row carries the target as `target_value` ("10000.00");
+    // `condition` is `{}` there. Both shapes are accepted.
+    final raw = condition is Map ? (condition['value'] ?? condition['target']) : condition;
+    final n = raw == null ? null : parseAmount(raw);
+    final target = n == null || n == 0 ? null : _short(n);
+    final noun = switch (measure) {
+      'conversions_count' => 'conversions',
+      'deals_won_count' => 'deals won',
+      'won_deal_value' => 'won value',
+      'cash_collected_amount' => 'cash collected',
+      _ => measure.replaceAll('_', ' '),
+    };
+    return target == null ? noun : '$target $noun';
   }
 
   /// Maps one open-period progress row onto a [RewardGoal]. Returns null when

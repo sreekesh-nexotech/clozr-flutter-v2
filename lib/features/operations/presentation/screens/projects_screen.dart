@@ -43,6 +43,16 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   void initState() {
     super.initState();
     _searchCtrl.text = ref.read(projSearchProvider);
+    // A dashboard KPI counting a slice of the projects (overdue, ending this
+    // week, …) links here with `?end=<chip>` so the list opens on that slice.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final end = GoRouterState.of(context).uri.queryParameters['end'];
+      if (end == null || end.isEmpty) return;
+      final values = ref.read(projectFiltersProvider).copy();
+      values['end'] = DateValue(chip: end);
+      _applyFilters(values);
+    });
   }
 
   @override
@@ -286,6 +296,18 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
             // query key rather than re-filtering rows already on screen.
             onTap: () {
               ref.read(myProjectsProvider.notifier).state = !mine;
+              _applyFilters(ref.read(projectFiltersProvider));
+            },
+          ),
+          SizedBox(width: 8.w),
+          OpsSavedChip(
+            label: 'Archived',
+            active: ref.watch(archivedProjectsProvider),
+            // Also a server scope (`is_archived=true`); the only way to reach
+            // an archived project and offer "Restore project".
+            onTap: () {
+              final n = ref.read(archivedProjectsProvider.notifier);
+              n.state = !n.state;
               _applyFilters(ref.read(projectFiltersProvider));
             },
           ),

@@ -134,6 +134,25 @@ const List<NavEntry> navCatalog = [
       modules: ['settings']),
 ];
 
+/// The Dashboard's panel tabs (`?tab=`) and the module keys that unlock each.
+/// They are the same keys that gate the matching drawer entry, so a role that
+/// cannot open the Helpdesk module does not get an (empty) Helpdesk panel on
+/// the Dashboard either. Business is the org overview: it is gated only by
+/// `dashboard` itself, which the whole screen already needs.
+const Map<String, List<String>> dashboardPanelModules = {
+  'business': [],
+  'crm': ['lead', 'customer', 'quotation', 'payment', 'followup'],
+  'ops': ['project', 'project_task'],
+  'help': ['issue'],
+};
+
+/// The Dashboard tabs [access] may see, in nav order. `null` access (mock
+/// mode, still loading, failed fetch) is not gated — same rule as the drawer.
+List<String> visibleDashboardTabs(ModuleAccess? access) => [
+      for (final e in dashboardPanelModules.entries)
+        if (access == null || access.canAny(e.value)) e.key,
+    ];
+
 /// The first screen a signed-in user should actually land on.
 ///
 /// [access] is `null` while it hasn't loaded yet, or for mock mode / a failed

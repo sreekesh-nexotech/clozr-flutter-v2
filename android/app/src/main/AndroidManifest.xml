@@ -1,12 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Note attachments: the picker reads images and documents the user
-         chooses. READ_MEDIA_IMAGES is the Android 13+ (API 33) permission;
-         READ_EXTERNAL_STORAGE covers API 32 and below, where the granular
-         media permissions do not exist. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <!-- The app is API-backed, so it needs the network in RELEASE too. Flutter's
+         template declares INTERNET only in src/debug/ and src/profile/ (for hot
+         reload), which is why a release build silently ships with no network
+         permission and every request fails on a real install. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Attachments are chosen through file_picker, which uses the system
+         document picker (Storage Access Framework). That hands the app a
+         content URI for the chosen file only, so no storage or media
+         permission is needed. Do not add READ_MEDIA_IMAGES /
+         READ_EXTERNAL_STORAGE here: Google Play rejects them unless broad
+         photo access is the app's core purpose. -->
 
     <application
         android:label="Clozr"

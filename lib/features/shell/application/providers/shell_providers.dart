@@ -55,3 +55,18 @@ class ToastController extends StateNotifier<ToastMessage?> {
 
 final toastProvider = StateNotifierProvider<ToastController, ToastMessage?>(
     (ref) => ToastController());
+
+/// The backend message a screen has already put on the page as its whole
+/// body (a permission refusal rendered as the screen's state), so the shell's
+/// catch-all failure toast has nothing to add. Cleared on every navigation;
+/// set by screens via [reportFailureOnPage].
+final pageReportedFailureProvider = StateProvider<String?>((ref) => null);
+
+/// Screens call this from the build that renders [message] in full. Deferred
+/// so provider state is never mutated during a build.
+void reportFailureOnPage(WidgetRef ref, String message) {
+  Future<void>.microtask(() {
+    if (!ref.context.mounted) return;
+    ref.read(pageReportedFailureProvider.notifier).state = message;
+  });
+}

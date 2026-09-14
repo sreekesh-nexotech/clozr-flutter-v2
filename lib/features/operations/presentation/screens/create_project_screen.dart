@@ -99,6 +99,13 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     // Without this a second tap during the round trip makes a second project —
     // the same duplicate-create already seen on tasks, customers and upsells.
     if (_saving) return;
+    // A cost the parser cannot read must not be saved as whatever digits were
+    // left in it — "20K" used to land as ₹20 with no warning.
+    if (!isValidCostAmount(_cost.text)) {
+      ref.read(toastProvider.notifier)
+          .show('Enter the cost as a number, or a short form like 18L, 20K or 1.5Cr');
+      return;
+    }
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show('Project created');
       context.pop();
@@ -311,7 +318,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
             },
           ),
           SizedBox(height: 14.h),
-          AppTextField(label: 'Estimated cost', controller: _cost, hint: 'e.g. 18L'),
+          AppTextField(label: 'Estimated cost', controller: _cost, hint: 'e.g. 18L, 20K or 2500000'),
         ],
       ],
     );

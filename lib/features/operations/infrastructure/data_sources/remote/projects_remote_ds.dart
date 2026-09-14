@@ -138,7 +138,14 @@ class ProjectsRemoteDataSource {
   Future<Project?> fetchProject(String id) async {
     if (id.isEmpty) return null;
     try {
-      final body = await _api.get(ApiEndpoints.project(id));
+      // `include_archived`: the bare detail route 404s for an archived project,
+      // so opening one from the Archived view rendered "Project not found" and
+      // "Restore project" could never be reached. With the flag the same route
+      // answers 200 (verified against the dev backend).
+      final body = await _api.get(
+        ApiEndpoints.project(id),
+        query: {'include_archived': 'true'},
+      );
       return body is Map<String, dynamic> ? mapProject(body) : null;
     } on AppError {
       return null;
@@ -243,6 +250,7 @@ class ProjectsRemoteDataSource {
       name: row['project_name'] as String? ?? '',
       type: row['project_type_name'] as String? ?? '',
       company: row['customer_name'] as String?,
+      customerId: row['customer'] is String ? row['customer'] as String : null,
       internal: row['customer'] == null,
       status: projectStatusKey(name: row['status_name'] as String?),
       statusName: (row['status_name'] as String? ?? '').trim(),

@@ -7,7 +7,10 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
+import '../../auth/application/providers/auth_providers.dart';
+import '../../auth/domain/entities/module_access.dart';
 import '../application/providers/contextual_add_provider.dart';
+import '../domain/nav_catalog.dart';
 
 /// Per-band blur sigmas for the strip's soft top edge, top band first.
 ///
@@ -36,7 +39,7 @@ class ClozrBottomNav extends ConsumerWidget {
 
   NavContext get _ctx => Routes.metaFor(location).nav;
 
-  List<_NavItem> get _items {
+  List<_NavItem> _items(ModuleAccess? access) {
     switch (_ctx) {
       case NavContext.ops:
         return [
@@ -51,11 +54,18 @@ class ClozrBottomNav extends ConsumerWidget {
           _NavItem('boards', 'Boards', PhosphorIconsRegular.kanban, PhosphorIconsFill.kanban, Routes.helpBoards, 46),
         ];
       case NavContext.dash:
+        // Gated on the same module keys as the drawer, so a role without the
+        // Helpdesk module sees no Helpdesk panel tab here either.
+        final tabs = visibleDashboardTabs(access);
         return [
-          _NavItem('business', 'Business', PhosphorIconsRegular.chartPieSlice, PhosphorIconsFill.chartPieSlice, Routes.dashboard, 64),
-          _NavItem('crm', 'CRM', PhosphorIconsRegular.usersThree, PhosphorIconsFill.usersThree, '${Routes.dashboard}?tab=crm', 64),
-          _NavItem('ops', 'Operations', PhosphorIconsRegular.briefcase, PhosphorIconsFill.briefcase, '${Routes.dashboard}?tab=ops', 64),
-          _NavItem('help', 'Helpdesk', PhosphorIconsRegular.headset, PhosphorIconsFill.headset, '${Routes.dashboard}?tab=help', 64),
+          if (tabs.contains('business'))
+            _NavItem('business', 'Business', PhosphorIconsRegular.chartPieSlice, PhosphorIconsFill.chartPieSlice, Routes.dashboard, 64),
+          if (tabs.contains('crm'))
+            _NavItem('crm', 'CRM', PhosphorIconsRegular.usersThree, PhosphorIconsFill.usersThree, '${Routes.dashboard}?tab=crm', 64),
+          if (tabs.contains('ops'))
+            _NavItem('ops', 'Operations', PhosphorIconsRegular.briefcase, PhosphorIconsFill.briefcase, '${Routes.dashboard}?tab=ops', 64),
+          if (tabs.contains('help'))
+            _NavItem('help', 'Helpdesk', PhosphorIconsRegular.headset, PhosphorIconsFill.headset, '${Routes.dashboard}?tab=help', 64),
         ];
       case NavContext.crm:
       case NavContext.none:
@@ -109,6 +119,7 @@ class ClozrBottomNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final access = ref.watch(moduleAccessProvider).valueOrNull;
     // Two-layer frosted stack (#1): an 88px strip that blurs whatever scrolls
     // beneath it, with a floating rounded pill that adds its own stronger blur
     // so it reads as a distinct frosted-glass card rather than a flat bar.
@@ -211,7 +222,7 @@ class ClozrBottomNav extends ConsumerWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      for (final it in _items) _tab(context, it),
+                      for (final it in _items(access)) _tab(context, it),
                       if (_hasAdd) _addButton(context, ref),
                     ],
                   ),

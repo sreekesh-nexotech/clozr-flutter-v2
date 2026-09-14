@@ -80,6 +80,13 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
   /// API mode: PATCH the edited fields, refresh the list, toast + pop as
   /// before. Mock mode: exactly the previous local toast-and-pop behavior.
   Future<void> _save() async {
+    // A cost the parser cannot read must not be saved as whatever digits were
+    // left in it — "20K" used to land as ₹20 with no warning.
+    if (!isValidCostAmount(_cost.text)) {
+      ref.read(toastProvider.notifier)
+          .show('Enter the cost as a number, or a short form like 18L, 20K or 1.5Cr');
+      return;
+    }
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show('Changes saved');
       context.pop();
@@ -346,7 +353,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
         else
           _calculatedProgress(),
         SizedBox(height: 14.h),
-        AppTextField(label: 'Estimated cost', controller: _cost, hint: 'e.g. ₹48L', onChanged: (_) => _dirtied()),
+        AppTextField(label: 'Estimated cost', controller: _cost, hint: 'e.g. 48L, 20K or 4800000', onChanged: (_) => _dirtied()),
       ],
     );
   }

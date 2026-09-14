@@ -18,6 +18,7 @@ class BillingRemoteDataSource {
 
   static const String _storage = '/billing/storage/';
   static const String _plans = '/billing/plans/';
+  static const String _subscriptions = '/billing/subscriptions/';
 
   /// `GET /billing/invoices/` — the billing-history list, newest first.
   Future<List<BillingInvoice>> fetchInvoices() async {
@@ -52,6 +53,36 @@ class BillingRemoteDataSource {
     ];
     out.sort((a, b) => a.monthlyPerUser.compareTo(b.monthlyPerUser));
     return out;
+  }
+
+  /// `GET /billing/subscriptions/` — the workspace's own subscription. One row
+  /// per org; null when the org has none (a fresh workspace) or the caller may
+  /// not read it.
+  Future<BillingSubscription?> fetchSubscription() async {
+    final body = await _api.get(_subscriptions, query: {'page_size': 5});
+    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    if (rows.isEmpty) return null;
+    return subscriptionFromJson(rows.first);
+  }
+
+  static BillingSubscription subscriptionFromJson(Map<String, dynamic> r) {
+    int i(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
+    return BillingSubscription(
+      planName: (r['base_plan_name'] as String?)?.trim().isNotEmpty == true
+          ? (r['base_plan_name'] as String).trim()
+          : 'Plan',
+      status: (r['status'] as String? ?? '').trim(),
+      isTrial: r['is_trial'] == true,
+      billingFrequency: (r['billing_frequency'] as String? ?? 'monthly').trim(),
+      licensedUsers: i(r['licensed_user_count']),
+      activeUsers: i(r['active_user_count']),
+      freeSeats: i(r['free_seats']),
+      pricePerUser: parseAmount(r['current_price_per_user'] ?? r['monthly_price_per_user']),
+      periodEnd: parseApiDate(r['current_period_end'] ?? r['trial_end_date']),
+      autoRenew: r['auto_renew'] == true,
+      mandateVerified: r['mandate_verified'] == true,
+      gracePeriodDays: i(r['grace_period_days']),
+    );
   }
 
   // ── mapping ──

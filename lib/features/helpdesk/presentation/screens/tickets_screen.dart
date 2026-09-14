@@ -46,6 +46,15 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   void initState() {
     super.initState();
     _searchCtrl.text = ref.read(ticketSearchProvider);
+    // The dashboard's "SLA Breaches" KPI links here with `?breaching=1` so
+    // the list opens on the Breaching-soon view rather than every ticket.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final b = GoRouterState.of(context).uri.queryParameters['breaching'];
+      if (b == '1' || b == 'true') {
+        ref.read(ticketBreachingProvider.notifier).state = true;
+      }
+    });
   }
 
   @override

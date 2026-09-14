@@ -85,6 +85,14 @@ void main() {
       expect(make('ProjectAssigned', 'pmo').targetId, 'projects');
       expect(make('FollowUpDueReminder', 'crm').targetId, 'followups');
       expect(make('UserAdded', 'system').targetId, 'members');
+      // Live Acme type: `Quotation…`, which `quote` never matched, so the row
+      // opened nothing.
+      expect(make('QuotationExpiryReminder', 'crm').targetId, 'quotes');
+      // A payment event is a plan payment only when the server says billing;
+      // a CRM one belongs on the customer Payments list.
+      expect(make('PaymentSucceeded', 'billing').targetId, 'billing');
+      expect(make('PaymentReceived', 'crm').targetId, 'payments');
+      expect(make('LicenseAdded', 'billing').targetId, 'billing');
 
       // A type in no known module still has nowhere to go.
       expect(make('SomethingElse', 'system').targetKind, 'none');

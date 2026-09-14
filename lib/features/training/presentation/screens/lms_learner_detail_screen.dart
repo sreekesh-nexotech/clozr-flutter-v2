@@ -12,8 +12,8 @@ import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
-import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/lms_providers.dart';
+import '../lms_assign.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/learner_record.dart';
 import '../../domain/lms_logic.dart';
@@ -54,7 +54,6 @@ class LmsLearnerDetailScreen extends ConsumerWidget {
       ('Overdue', '${record.courses.where((e) => LmsLogic.statusOf(e, courseOf(e.courseId)) == 'overdue').length}'),
     ];
 
-    void toast(String m) => ref.read(toastProvider.notifier).show(m);
 
     return Container(
       color: AppColors.bgScreen,
@@ -137,13 +136,22 @@ class LmsLearnerDetailScreen extends ConsumerWidget {
           LmsFooter(
             child: Row(
               children: [
-                Expanded(child: LmsGhostButton(label: 'Assign course', onTap: () => toast('Assign course'))),
+                Expanded(
+                    child: LmsGhostButton(
+                        label: 'Assign course',
+                        onTap: () => assignCourse(context, ref))),
                 SizedBox(width: 10.w),
                 Expanded(
                   child: LmsCtaButton(
                     label: 'Nudge',
                     icon: PhosphorIconsFill.bellRinging,
-                    onTap: () => toast('Reminder sent to ${person.firstName}'),
+                    onTap: () => nudgeLearner(context, ref,
+                        rid: rid,
+                        courseId: [
+                          for (final e in record.courses)
+                            if (!LmsLogic.done(e)) e.courseId
+                        ].firstOrNull ?? '',
+                        firstName: person.firstName),
                   ),
                 ),
               ],

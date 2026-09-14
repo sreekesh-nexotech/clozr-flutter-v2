@@ -95,7 +95,7 @@ class AppDrawer extends ConsumerWidget {
                     ],
                   ),
                 ),
-                _footer(ref),
+                _footer(context, ref),
               ],
             ),
           ),
@@ -245,7 +245,7 @@ class AppDrawer extends ConsumerWidget {
     return rows;
   }
 
-  Widget _footer(WidgetRef ref) {
+  Widget _footer(BuildContext context, WidgetRef ref) {
     final user = ref.watch(sessionControllerProvider).user;
     final hasName = user?.fullName.trim().isNotEmpty ?? false;
     final name = hasName ? user!.fullName : _seedName;
@@ -297,7 +297,7 @@ class AppDrawer extends ConsumerWidget {
           _footerIcon(
             PhosphorIconsRegular.signOut,
             AppColors.error,
-            () => _signOut(ref),
+            () => _signOut(context, ref),
           ),
         ],
       ),
@@ -336,7 +336,37 @@ class AppDrawer extends ConsumerWidget {
   /// Ends the session for real: blacklists the refresh token, purges the cached
   /// tenant data and drops the gate, which sends the router to /login. Mock
   /// mode has no session to end, so it keeps the toast-only behavior.
-  Future<void> _signOut(WidgetRef ref) async {
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    // Confirm first, with the drawer still open behind the prompt — cancelling
+    // then leaves the user exactly where they were. Styling mirrors
+    // `confirmDiscard` in the ops form scaffold (white sheet, 16r corners, the
+    // same title/body scale) so this reads as part of the app rather than a
+    // stock Material dialog.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text('Log out?',
+            style: AppText.custom(
+                size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+        content: Text('You will need to sign in again to get back in.',
+            style: AppText.body(color: AppColors.textMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel',
+                style: AppText.bodyStrong(color: AppColors.textLabelAlt)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Log out', style: AppText.bodyStrong(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     _close(ref);
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show('Signed out');
