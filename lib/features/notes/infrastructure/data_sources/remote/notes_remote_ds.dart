@@ -111,7 +111,10 @@ class NotesRemoteDataSource {
     final res = await _api.postForm(ApiEndpoints.attachments, form);
     if (res is! Map<String, dynamic>) return null;
 
-    final url = _str(res['file']);
+    // `file_url` is the CDN link **signed** with a token; `file` is the same
+    // object unsigned and answers 403. Prefer the signed one, keeping `file` as
+    // the fallback for a serializer that does not send `file_url`.
+    final url = _str(res['file_url']) ?? _str(res['file']);
     if (url == null) return null;
     return attachment.copyWith(url: url);
   }
@@ -208,7 +211,8 @@ class NotesRemoteDataSource {
 
   /// One API attachment → [NoteAttachment]; kind inferred from the extension.
   static NoteAttachment attachmentFromJson(Map<String, dynamic> json) {
-    final url = _str(json['file']);
+    // Signed link first — see addAttachment; the unsigned `file` is a 403.
+    final url = _str(json['file_url']) ?? _str(json['file']);
     final name = _str(json['name']) ?? _lastSegment(url) ?? 'Attachment';
     final probe = (url != null && url.isNotEmpty) ? url : name;
     return NoteAttachment(

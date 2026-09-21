@@ -119,6 +119,10 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
 
   /// Prepends a note authored by [author] with any pending [attachments].
   void addNote(String body, List<NoteAttachment> attachments, NoteAuthor author) {
+    // An image posted with no caption still needs non-blank content, or the
+    // POST 400s and the attachment — which uploads against the created note —
+    // never goes out at all. See [noteBodyForApi].
+    body = noteBodyForApi(body, attachments);
     final localId = 'note-new-${_seq++}';
     state = [
       NoteEntry(

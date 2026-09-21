@@ -44,6 +44,8 @@ class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
   Future<void> reload() => _remoteWired ? _load() : Future.value();
 
   void addNote(String body, List<NoteAttachment> attachments) {
+    // Blank content is rejected by the API — see [noteBodyForApi].
+    body = noteBodyForApi(body, attachments);
     final entry = NoteEntry(
       id: 'note-${DateTime.now().microsecondsSinceEpoch}',
       author: _me.name,

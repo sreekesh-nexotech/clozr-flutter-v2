@@ -208,7 +208,18 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
     final statusName =
         statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw);
     final validUntil = parseApiDate(row['valid_until']);
-    final total = parseAmount(row['total_amount']);
+    final items = _items(row['items'] ?? row['line_items']);
+    // The server now derives `total_amount` from the line items on create and
+    // on every line-item edit (verified on the dev org: ₹14,997 + ₹10,493
+    // saves 25490.00, and the invoice it raises inherits it). Quotes written
+    // before that fix still carry the 0.00 it used to store, so a zero on a
+    // row that does have line items falls back to their sum — the same
+    // derivation the server applies — rather than heading a priced quote
+    // with ₹0. A list row has no `line_items`, so this only helps the detail.
+    final stored = parseAmount(row['total_amount']);
+    final total = stored == 0 && items.isNotEmpty
+        ? items.fold<double>(0, (sum, it) => sum + it.amtNum)
+        : stored;
     return Quote(
       id: id,
       uuid: _str(row['quotation_id']) ?? '',
@@ -235,7 +246,7 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
       currency: _str(row['currency']) ?? 'INR',
       dueDate: absoluteDate(parseApiDate(row['next_due_date'] ?? row['due_date'])),
       owner: _ownerId(row),
-      items: _items(row['items'] ?? row['line_items']),
+      items: items,
       note: _str(row['notes']) ?? _str(row['note']),
     );
   } on Object {
@@ -250,7 +261,13 @@ List<QuoteItem> _items(Object? raw) {
     if (m is! Map) continue;
     final qty = _int(m['quantity']) ?? _int(m['qty']) ?? 1;
     final rate = parseAmount(m['unit_price'] ?? m['price'] ?? m['rate']);
-    final amtRaw = m['amount'] ?? m['total'] ?? m['line_total'] ?? m['subtotal'];
+    // `total_price` is the live serializer's per-line figure; the rest are
+    // older shapes kept for other deployments.
+    final amtRaw = m['total_price'] ??
+        m['amount'] ??
+        m['total'] ??
+        m['line_total'] ??
+        m['subtotal'];
     final amt = amtRaw != null ? parseAmount(amtRaw) : rate * qty;
     out.add(QuoteItem(
       name: _str(m['product_name']) ?? _str(m['name']) ?? _str(m['description']) ?? 'Item',

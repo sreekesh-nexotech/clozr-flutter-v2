@@ -106,6 +106,9 @@ class ApiEndpoints {
   /// The org's Payment layout. `model_name: payment` in the view-settings engine
   /// is this collection — the invoice header — not `payment-records/`.
   static const paymentSchema = '/quotations/payments/schema/';
+  /// Every installment in the org, flat. The backend confirmed this is the
+  /// collection for "all installments" — the header list above never embeds
+  /// `records` (only `payment(id)` does).
   static const paymentRecords = '/quotations/payment-records/';
   static String paymentRecord(String id) => '/quotations/payment-records/$id/';
 

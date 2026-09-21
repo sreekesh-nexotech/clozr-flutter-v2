@@ -142,3 +142,23 @@ class NoteAuthor {
   final String name;
   final Color color;
 }
+
+/// Content stored for a note whose whole payload is an attachment.
+///
+/// `POST /crm/notes/` rejects a blank `content` outright —
+/// `{"content": ["This field may not be blank."]}` — and DRF trims the value
+/// before that check, so whitespace is refused too (a single space returns 400;
+/// verified against the live dev org). A photo posted with no caption therefore
+/// has to carry *something*, or the note is never created and the attachment,
+/// which uploads against the created note's id, is never sent either.
+const String kAttachmentOnlyNoteBody = '📎';
+
+/// [body] as it should be stored: unchanged, unless it is empty and the note
+/// exists only to carry [attachments], in which case the placeholder stands in.
+///
+/// Applied to the optimistic entry *and* the POST so the thread reads the same
+/// before and after a refetch.
+String noteBodyForApi(String body, List<NoteAttachment> attachments) =>
+    body.trim().isEmpty && attachments.isNotEmpty
+        ? kAttachmentOnlyNoteBody
+        : body.trim();

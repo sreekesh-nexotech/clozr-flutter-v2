@@ -48,7 +48,14 @@ android {
         applicationId = "com.nexotech.clozrapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Pinned, not inherited. `flutter.minSdkVersion` is 21 on the SDK this
+        // project pins (3.24.5), and Play refuses the upload outright: "Play
+        // automatic protection requires a minimum SDK version of 24 or higher.
+        // The uploaded App Bundle has a minimum SDK version of 21." Nothing in
+        // `pubspec.lock` asks for more than 21, so 24 is the binding floor.
+        // Raising the Flutter pin would change this number silently, so it is
+        // stated here instead — same reasoning as targetSdk below.
+        minSdk = 24
         // Pinned, not inherited. `flutter.targetSdkVersion` is 34 on the SDK
         // this project pins (3.24.5), and Play rejects anything below 36:
         // "Your app currently targets API level 34 and must target at least

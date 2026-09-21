@@ -419,13 +419,15 @@ class QuoteDetailScreen extends ConsumerWidget {
     final detail = ref.watch(quoteRowProvider(quote.uuid)).valueOrNull;
     final items =
         detail == null ? quote.items : (quoteFromApi(detail)?.items ?? quote.items);
-    // The line items are the only figures on this record the server actually
-    // computes per row (`total_price`), so the subtotal is their sum.
+    // The subtotal is the sum of the server's per-line `total_price`.
     //
-    // `total_amount` is **not** used: the backend leaves it at 0.00 on quotes
-    // raised through the app (confirmed against a live org — a quote with
-    // ₹25,490 of line items saves `total_amount: "0.00"`), so reading it here
-    // showed a quote with three visible lines and a total of nothing.
+    // `total_amount` is deliberately not read here. The backend now derives it
+    // from the line items (fixed after we reported ₹25,490 of lines saving
+    // `total_amount: "0.00"`), but quotes written before that fix still store
+    // the old 0.00 — and one legacy row (QTN-00022) stores 449997.00 against
+    // a single line of 2 × 149999. The line sum is the one figure that is
+    // right on every quote, and it equals `total_amount` on every quote the
+    // fixed server has written.
     //
     // There is also no GST line any more. It used to be `subtotal * 0.18` with
     // a hardcoded "GST (18%)" label, which was invented: a quotation record

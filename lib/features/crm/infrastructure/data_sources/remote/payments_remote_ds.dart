@@ -10,7 +10,9 @@ import '../../../../../data/api/status_keys.dart';
 import '../../../domain/entities/payment.dart';
 
 /// Raw payment-record endpoints. `/quotations/payment-records/` rows ARE the
-/// UI's payments (installment rows). HTTP + JSON→entity mapping only —
+/// UI's payments (installment rows) — the backend has confirmed it as the
+/// collection for "all installments"; the `/quotations/payments/` header list
+/// deliberately does not embed `records`. HTTP + JSON→entity mapping only —
 /// caching lives in the API repository.
 class PaymentsRemoteDataSource {
   const PaymentsRemoteDataSource(this._api);
@@ -24,27 +26,6 @@ class PaymentsRemoteDataSource {
     var page = 1;
     while (page <= 50) {
       final body = await _api.get(ApiEndpoints.paymentRecords, query: {
-        'page': page,
-        'page_size': ApiConfig.defaultPageSize,
-      });
-      final paged = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
-      out.addAll(paged.results);
-      if (!paged.hasMore) break;
-      page++;
-    }
-    return out;
-  }
-
-  /// Raw `/quotations/payments/` invoice-header rows (each embeds its full
-  /// `records` list), following `next` up to 3 pages. Payments are flattened
-  /// from these via [paymentsFromInvoiceRows] so each record's `invId` carries
-  /// the parent's display id (`quotation_number`) — the same value the Invoice
-  /// mapper uses for `Invoice.id`, so the installment-schedule join lines up.
-  Future<List<Map<String, dynamic>>> fetchInvoiceHeaderRows() async {
-    final out = <Map<String, dynamic>>[];
-    var page = 1;
-    while (page <= 50) {
-      final body = await _api.get(ApiEndpoints.payments, query: {
         'page': page,
         'page_size': ApiConfig.defaultPageSize,
       });
@@ -76,7 +57,7 @@ class PaymentsRemoteDataSource {
 // ── JSON → entity mapping (public so the repository and tests reuse it) ──
 
 /// Maps a list of raw `/quotations/payment-records/` rows, skipping malformed
-/// and cancelled entries. Here each record's `invId` is the parent's uuid.
+/// and cancelled entries.
 List<Payment> paymentsFromApiRows(List<dynamic> rows) {
   final out = <Payment>[];
   for (final r in rows) {
@@ -88,31 +69,9 @@ List<Payment> paymentsFromApiRows(List<dynamic> rows) {
   return out;
 }
 
-/// Flattens `/quotations/payments/` invoice-header rows into the flat payment
-/// list, stamping each embedded record's `invId` with the parent's display id
-/// (`quotation_number`, matching [Invoice.id]) so the installment-schedule
-/// join in `paymentsForInvoiceProvider` resolves.
-List<Payment> paymentsFromInvoiceRows(List<dynamic> invoiceRows) {
-  final out = <Payment>[];
-  for (final inv in invoiceRows) {
-    if (inv is! Map<String, dynamic>) continue;
-    final parentId = _str(inv['quotation_number']) ?? _str(inv['payment_id']);
-    final records = inv['records'];
-    if (records is! List) continue;
-    for (final r in records) {
-      if (r is! Map<String, dynamic>) continue;
-      final p = paymentRecordFromApi(r, invIdOverride: parentId);
-      if (p != null) out.add(p);
-    }
-  }
-  return out;
-}
-
 /// Maps one `/quotations/payment-records/` row → [Payment]. Returns null for
 /// unusable (no id) and `cancelled` rows — both are skipped, never fatal.
-/// [invIdOverride] stamps the parent's display id when flattening from an
-/// invoice header (the record itself only carries the parent uuid).
-Payment? paymentRecordFromApi(Map<String, dynamic> row, {String? invIdOverride}) {
+Payment? paymentRecordFromApi(Map<String, dynamic> row) {
   final id = _str(row['record_id']);
   if (id == null) return null;
   final rawStatus = _str(row['status']);
@@ -131,9 +90,7 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row, {String? invIdOverride})
       // ("Invoice · QTN-00005"), routed on, and joined against `Invoice.id`.
       // A `payment-records` row carries `quotation_number` itself, so the
       // uuid in `invoice_id` is only a last resort.
-      invId: invIdOverride ??
-          _str(row['quotation_number']) ??
-          _str(row['invoice_id']),
+      invId: _str(row['quotation_number']) ?? _str(row['invoice_id']),
       label: _str(row['notes']) ??
           'Installment ${installmentNumber is num ? installmentNumber.toInt() : 1}',
       amount: formatInr(amount),

@@ -95,6 +95,48 @@ void main() {
       expect(p.avg, '₹2L');
     });
 
+    test('server-computed gst_amount / price_incl win over the app\'s own math', () {
+      // The live list row on the dev org: `tax_rate` is dropped by the org's
+      // view config, but the serializer still sends its computed tax figures.
+      final p = productFromApi({
+        'product_id': 'uuid-live',
+        'product_name': 'product 01',
+        'price': '150.000000',
+        'price_excl': '150.00',
+        'gst_amount': '27.00',
+        'price_incl': '177.00',
+      })!;
+      expect(p.gstKnown, isTrue);
+      expect(p.gst, 18);
+      expect(p.gstAmt, '₹27');
+      expect(p.gross, '₹177');
+
+      // Detail row: rate and computed figures both present, and they agree.
+      final d = productFromApi({
+        'product_id': 'uuid-live',
+        'price': '150.000000',
+        'tax_rate': '18.00',
+        'price_excl': '150.00',
+        'gst_amount': '27.00',
+        'price_incl': '177.00',
+      })!;
+      expect(d.gst, 18);
+      expect(d.gross, '₹177');
+
+      // A 0%-rated product with the computed figures: nothing invented.
+      final z = productFromApi({
+        'product_id': 'uuid-zero',
+        'price': '14999.000000',
+        'price_excl': '14999.00',
+        'gst_amount': '0.00',
+        'price_incl': '14999.00',
+      })!;
+      expect(z.gstKnown, isTrue);
+      expect(z.gst, 0);
+      expect(z.gstAmt, '₹0');
+      expect(z.gross, '₹15K');
+    });
+
     test('rows without product_id are skipped, never fatal', () {
       expect(productFromApi({'product_name': 'No id'}), isNull);
       final list = productsFromApiRows([

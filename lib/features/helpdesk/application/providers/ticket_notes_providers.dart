@@ -59,6 +59,9 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
 
   void addNote(String body, List<NoteAttachment> attachments) {
     if (body.trim().isEmpty && attachments.isEmpty) return;
+    // Blank content is rejected by the API, which would also strand the
+    // attachment upload — see [noteBodyForApi].
+    body = noteBodyForApi(body, attachments);
     final localId = 'tnote-$ticketId-${_seq++}-${DateTime.now().microsecondsSinceEpoch}';
     state = [
       NoteEntry(

@@ -12,11 +12,16 @@ class PaymentsApiRepository implements PaymentsRepository {
 
   final PaymentsRemoteDataSource _remote;
 
-  // Payments are flattened from the invoice headers (which embed their
-  // records) so each row's invId is the parent's display id — the key the
-  // installment-schedule join uses. Cached under the invoices key since it is
-  // literally the same `/quotations/payments/` payload.
-  static const String _cacheKey = 'invoices';
+  // Its own key. This used to share `'invoices'` with the invoices repository
+  // from when both read the same `/quotations/payments/` payload; now that
+  // payments come from `payment-records/`, the two lists would have kept
+  // overwriting each other's offline copy with rows the other mapper cannot
+  // read.
+  static const String _cacheKey = 'payment_records';
+
+  /// The invoices repository's key — `markRecordPaid` evicts it too, because
+  /// the server recalculates the parent invoice on every settlement.
+  static const String _invoicesCacheKey = 'invoices';
 
   @override
   Future<List<Payment>> getPayments() async {
@@ -27,11 +32,12 @@ class PaymentsApiRepository implements PaymentsRepository {
       // per-invoice detail does — so flattening the list yielded **nothing**:
       // the Payments screen was empty against a backend holding 127 records,
       // and every "next open installment" lookup that reads this list came
-      // back null ("No open installments on this invoice").
+      // back null ("No open installments on this invoice"). The backend has
+      // since confirmed `payment-records/` as the collection for "all
+      // installments", so this is the contract, not a workaround.
       //
-      // The records endpoint returns them directly, and each row carries its
-      // own `quotation_number`, so `invId` stays the display id the invoice
-      // join and the Related links expect.
+      // Each row carries its own `quotation_number`, so `invId` stays the
+      // display id the invoice join and the Related links expect.
       final rows = await _remote.fetchPaymentRecordRows();
       await AppCache.put(AppCache.crmCache, _cacheKey, rows);
       return paymentsFromApiRows(rows);
@@ -52,8 +58,9 @@ class PaymentsApiRepository implements PaymentsRepository {
     String method = 'upi',
   }) async {
     await _remote.markRecordPaid(recordId, amount: amount, method: method);
-    // The server recalculates the parent invoice; the payments list and the
-    // invoices list share the same cached payload, so one eviction covers both.
+    // The server recalculates the parent invoice (amount_paid, next_due_date,
+    // completion), so both offline copies are stale.
     await AppCache.remove(AppCache.crmCache, _cacheKey);
+    await AppCache.remove(AppCache.crmCache, _invoicesCacheKey);
   }
 }

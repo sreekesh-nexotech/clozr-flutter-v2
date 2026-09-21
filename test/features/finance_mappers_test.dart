@@ -83,6 +83,50 @@ void main() {
       expect(q.owner, 'me');
     });
 
+    test('the live detail row: server total and per-line total_price', () {
+      // As `GET /quotations/quotations/{id}/` serves QTN-00057 on the dev org
+      // after the backend started deriving `total_amount`.
+      final q = quoteFromApi({
+        'quotation_id': '4dddbf6e',
+        'quotation_number': 'QTN-00057',
+        'total_amount': '25490.00',
+        'line_items': [
+          {'description': 'NexoCRM Pro', 'quantity': 1, 'unit_price': '14997.00', 'total_price': '14997.00'},
+          {'description': 'Analytics Add-on', 'quantity': 1, 'unit_price': '10493.00', 'total_price': '10493.00'},
+        ],
+      })!;
+      expect(q.amountNum, 25490);
+      expect(q.items.map((it) => it.amtNum), [14997, 10493]);
+    });
+
+    test('a legacy 0.00 total falls back to the line sum; a list row does not', () {
+      // Quotes written before the fix still store `total_amount: "0.00"`.
+      final legacy = quoteFromApi({
+        'quotation_number': 'QTN-00053',
+        'total_amount': '0.00',
+        'line_items': [
+          {'description': 'A', 'quantity': 2, 'unit_price': '100.00', 'total_price': '200.00'},
+          {'description': 'B', 'quantity': 1, 'unit_price': '50.00', 'total_price': '50.00'},
+        ],
+      })!;
+      expect(legacy.amountNum, 250);
+
+      // The list projection has no line items, so a zero stays a zero.
+      final listRow = quoteFromApi({'quotation_number': 'QTN-00053', 'total_amount': '0.00'})!;
+      expect(listRow.amountNum, 0);
+
+      // A non-zero stored total is the server's word, even when it disagrees
+      // with the lines (QTN-00022 stores 449997 against 2 × 149999).
+      final odd = quoteFromApi({
+        'quotation_number': 'QTN-00022',
+        'total_amount': '449997.00',
+        'line_items': [
+          {'description': 'L', 'quantity': 2, 'unit_price': '149999.00', 'total_price': '299998.00'},
+        ],
+      })!;
+      expect(odd.amountNum, 449997);
+    });
+
     test('defensive defaults + id fallback; no id at all is skipped', () {
       final q = quoteFromApi({'quotation_id': 'uuid-only'})!;
       expect(q.id, 'uuid-only');
@@ -261,66 +305,59 @@ void main() {
     });
   });
 
-  group('paymentsFromInvoiceRows (installment-schedule join)', () {
-    test('stamps each record invId with the parent quotation_number', () {
-      // The invoice header carries the display id; embedded records carry only
-      // the parent uuid. After flattening, invId must equal what
-      // invoiceFromApi assigns to Invoice.id so the detail-screen join works.
-      final invoiceRows = [
+  group('paymentsFromApiRows (installment-schedule join)', () {
+    test('a payment-records row joins its invoice by quotation_number', () {
+      // `/quotations/payment-records/` is the confirmed source for "all
+      // installments"; each row carries the parent's display id itself, and
+      // that is what `invoiceFromApi` assigns to Invoice.id, so the
+      // detail-screen join needs no flattening step.
+      final invoice = invoiceFromApi({
+        'payment_id': 'pay-uuid-1',
+        'quotation_number': 'QTN-2051',
+        'total_amount': '300000.00',
+        'amount_paid': '100000.00',
+        'amount_remaining': '200000.00',
+        'status': 'active',
+        'payment_type': 'installment_even',
+      })!;
+      final payments = paymentsFromApiRows([
         {
-          'payment_id': 'pay-uuid-1',
+          'record_id': 'rec-1',
+          'invoice_id': 'pay-uuid-1',
           'quotation_number': 'QTN-2051',
-          'total_amount': '300000.00',
+          'installment_number': 1,
+          'amount_expected': '100000.00',
           'amount_paid': '100000.00',
-          'amount_remaining': '200000.00',
-          'status': 'active',
-          'payment_type': 'installment_even',
-          'records': [
-            {
-              'record_id': 'rec-1',
-              'invoice_id': 'pay-uuid-1',
-              'installment_number': 1,
-              'amount_expected': '100000.00',
-              'amount_paid': '100000.00',
-              'status': 'paid',
-              'paid_date': '2026-05-01',
-              'payment_method': 'upi',
-            },
-            {
-              'record_id': 'rec-2',
-              'invoice_id': 'pay-uuid-1',
-              'installment_number': 2,
-              'amount_expected': '200000.00',
-              'due_date': '2026-08-01',
-              'status': 'pending',
-            },
-            {'record_id': 'rec-3', 'status': 'cancelled'},
-          ],
+          'status': 'paid',
+          'paid_date': '2026-05-01',
+          'payment_method': 'upi',
         },
-      ];
+        {
+          'record_id': 'rec-2',
+          'invoice_id': 'pay-uuid-1',
+          'quotation_number': 'QTN-2051',
+          'installment_number': 2,
+          'amount_expected': '200000.00',
+          'due_date': '2026-08-01',
+          'status': 'pending',
+        },
+        {'record_id': 'rec-3', 'quotation_number': 'QTN-2051', 'status': 'cancelled'},
+        'garbage',
+        <String, dynamic>{},
+      ]);
 
-      final invoice = invoiceFromApi(invoiceRows.first)!;
-      final payments = paymentsFromInvoiceRows(invoiceRows);
-
-      // Cancelled record dropped; both live records carry the display id.
+      // Cancelled and junk rows dropped; both live records carry the display id.
       expect(payments, hasLength(2));
-      expect(payments.every((p) => p.invId == invoice.id), isTrue);
       expect(invoice.id, 'QTN-2051');
+      expect(payments.every((p) => p.invId == invoice.id), isTrue);
       // This is exactly the filter paymentsForInvoiceProvider applies.
       final schedule = payments.where((p) => p.invId == invoice.id).toList();
       expect(schedule.map((p) => p.id), ['rec-1', 'rec-2']);
     });
 
-    test('falls back to payment_id when no quotation_number, tolerates junk', () {
-      final rows = paymentsFromInvoiceRows([
-        {
-          'payment_id': 'pay-9',
-          'records': [
-            {'record_id': 'r1', 'amount_expected': '500.00', 'status': 'pending'},
-          ],
-        },
-        'garbage',
-        <String, dynamic>{},
+    test('falls back to the parent uuid when no quotation_number', () {
+      final rows = paymentsFromApiRows([
+        {'record_id': 'r1', 'invoice_id': 'pay-9', 'amount_expected': '500.00', 'status': 'pending'},
       ]);
       expect(rows.single.invId, 'pay-9');
     });

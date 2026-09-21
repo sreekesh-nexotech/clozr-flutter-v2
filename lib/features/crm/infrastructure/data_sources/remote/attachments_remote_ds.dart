@@ -111,7 +111,9 @@ class AttachmentsRemoteDataSource {
     final id = _str(json['attachment_id']);
     if (id == null) return null;
 
-    final url = _str(json['file']) ?? _str(json['file_url']) ?? '';
+    // `file_url` carries the CDN signature; bare `file` answers 403, so the
+    // signed link has to be preferred rather than merely accepted as a fallback.
+    final url = _str(json['file_url']) ?? _str(json['file']) ?? '';
     final uploader = json['uploaded_by'] ?? json['created_by'];
     UserDirectory.registerJson(uploader);
 

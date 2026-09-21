@@ -164,11 +164,25 @@ Product? productFromApi(Map<String, dynamic> row) {
         (itemType.isEmpty && hasPackageTotals) ||
         '$cat ${_str(row['kind']) ?? ''}'.toLowerCase().contains('package');
     final price = parseAmount(row['price']);
+    // The serializer now computes the tax itself: `price_excl`, `gst_amount`
+    // and `price_incl` ride on every row (list and detail), so those are the
+    // figures to show — the app's own `price × rate` is only the fallback for
+    // a deployment that has not got them.
+    final serverGst =
+        row['gst_amount'] != null ? parseAmount(row['gst_amount']) : null;
+    final serverGross =
+        row['price_incl'] != null ? parseAmount(row['price_incl']) : null;
     // `tax_rate` is the live field and arrives as a string ("18.00"). Reading
     // only `gst`/`tax_percent` meant every row fell through to the 18% default,
     // so a 0%-rated product was shown as 18% — with a gross price to match.
-    final rate =
-        _int(row['gst']) ?? _int(row['tax_percent']) ?? _rate(row['tax_rate']);
+    //
+    // The list projection omits `tax_rate` on this org while still carrying
+    // `gst_amount`, so when the rate is missing but the amount is there, the
+    // rate is what the server's own amount implies (₹27 on ₹150 → 18%).
+    final rate = _int(row['gst']) ??
+        _int(row['tax_percent']) ??
+        _rate(row['tax_rate']) ??
+        (serverGst != null && price > 0 ? (serverGst / price * 100).round() : null);
     // Absent ≠ zero ≠ 18. The org's Product view config can drop `tax_rate`
     // from the payload entirely, and a card that then prints "18% GST" is
     // stating a tax rate the server never sent.
@@ -201,8 +215,8 @@ Product? productFromApi(Map<String, dynamic> row) {
       priceNum: price,
       gst: gst,
       gstKnown: rate != null,
-      gstAmt: formatInr(price * gst / 100),
-      gross: formatInr(price * (1 + gst / 100)),
+      gstAmt: formatInr(serverGst ?? price * gst / 100),
+      gross: formatInr(serverGross ?? price * (1 + gst / 100)),
       deals: deals,
       revenue: revenue > 0 ? formatInr(revenue) : '₹0',
       revNum: revenue.round(),
