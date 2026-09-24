@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/utils/inr_format.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
@@ -119,7 +120,7 @@ class InvoiceDetailScreen extends ConsumerWidget {
     // to a non-zero PAID total, because the two came from different sources.
     final statusKey = summary == null
         ? invoice.status
-        : invoiceStatusKey(status: summary.status, amountPaid: summary.paidNum.toDouble());
+        : invoiceStatusKey(status: summary.status, amountPaid: summary.settledNum.toDouble());
     final meta = StatusMeta$.invoice[statusKey] ?? StatusMeta$.invoice['partial']!;
 
     return Container(
@@ -189,6 +190,13 @@ class InvoiceDetailScreen extends ConsumerWidget {
       'lead_name',
       'status',
       'total_amount',
+      // The payload names these `records` / `num_installments` /
+      // `remaining_installments`. The two below never matched anything, so if
+      // an org made `records` visible it rendered as a comma-joined wall of em
+      // dashes. The old names cost nothing to keep.
+      'records',
+      'num_installments',
+      'remaining_installments',
       'installments',
       'payment_records',
     });
@@ -229,6 +237,16 @@ class InvoiceDetailScreen extends ConsumerWidget {
 
   Widget _headerCard(BuildContext context, WidgetRef ref, Invoice invoice,
       StatusMeta meta, CrmParty? cust, int paidNum, InvoiceSummary? summary) {
+    // SETTLED, not cash. `amount_remaining` drives completion and now counts
+    // withheld tax, so a plan can be fully settled with less cash than its
+    // total. Taking BALANCE from one snapshot and PAID from another is what let
+    // this row read "TOTAL ₹1L · PAID ₹90K · BALANCE ₹0" with nothing on screen
+    // accounting for the difference. All three come from the same source.
+    final settledNum = summary?.settledNum ?? invoice.settledNum;
+    // Falls back to the invoice's own display string when neither source
+    // reported an outstanding balance, rather than claiming zero.
+    final remainingNum = summary?.remainingNum ?? invoice.remainingNum;
+    final nonCashNum = summary?.nonCashNum ?? invoice.nonCashNum;
     return FinanceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,9 +276,18 @@ class InvoiceDetailScreen extends ConsumerWidget {
                     SizedBox(height: 3.h),
                     // Counts prefer the server's, which apply the org's own
                     // overdue rule — something the app cannot reproduce.
-                    Text('${invoice.type} · ${summary?.paidRecords ?? invoice.settled}'
-                        ' of ${summary?.totalRecords ?? invoice.of} settled',
-                        style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    // Only when there are real counts behind it: the plan LIST
+                    // carries no `records` array, so this read "0 of 0 settled"
+                    // on any invoice whose summary had not loaded yet.
+                    Builder(builder: (_) {
+                      final done = summary?.paidRecords ?? invoice.settled;
+                      final all = summary?.totalRecords ?? invoice.of;
+                      final text = all > 0
+                          ? '${invoice.type} · $done of $all settled'
+                          : invoice.type;
+                      return Text(text,
+                          style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder));
+                    }),
                     if (summary != null && _scheduleNote(summary) != null) ...[
                       SizedBox(height: 3.h),
                       Text(_scheduleNote(summary)!,
@@ -280,8 +307,16 @@ class InvoiceDetailScreen extends ConsumerWidget {
           Row(
             children: [
               _stat('TOTAL', invoice.total, AppColors.textPrimary),
-              _stat('PAID', paidNum == 0 ? '₹0L' : _fmtAmt(paidNum), AppColors.success),
-              _stat('BALANCE', invoice.balance, AppColors.error),
+              _stat('SETTLED', settledNum == 0 ? '₹0' : _fmtAmt(settledNum), AppColors.success,
+                  // Only when cash and settled diverge, which needs a deduction
+                  // to have been recorded - so it stays hidden on every
+                  // ordinary plan rather than adding permanent noise.
+                  sub: nonCashNum > 0
+                      ? '${_fmtAmt(paidNum)} cash · ${_fmtAmt(nonCashNum)} withheld'
+                      : null),
+              _stat('BALANCE',
+                  remainingNum == null ? invoice.balance : _fmtAmt(remainingNum),
+                  AppColors.error),
             ],
           ),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
@@ -367,7 +402,9 @@ class InvoiceDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _stat(String label, String value, Color valueColor) {
+  /// One header figure. [sub] is an optional second line, used to break a
+  /// settled total into cash and withheld tax when the two differ.
+  Widget _stat(String label, String value, Color valueColor, {String? sub}) {
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,6 +412,12 @@ class InvoiceDetailScreen extends ConsumerWidget {
           Text(label, style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
           SizedBox(height: 3.h),
           Text(value, style: AppText.custom(size: 17, weight: FontWeight.w800, color: valueColor)),
+          if (sub != null) ...[
+            SizedBox(height: 2.h),
+            Text(sub,
+                maxLines: 2,
+                style: AppText.custom(size: 10, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+          ],
         ],
       ),
     );
@@ -534,17 +577,10 @@ class InvoiceDetailScreen extends ConsumerWidget {
     );
   }
 
-  /// The prototype's `fmtAmt` for the paid total (Cr above ₹1Cr, else L).
-  String _fmtAmt(int x) {
-    if (x >= 10000000) {
-      return '₹${_trim((x / 100000).round() / 100)}Cr';
-    }
-    return '₹${_trim((x / 10000).round() / 10)}L';
-  }
-
-  String _trim(num v) {
-    var s = v.toString();
-    if (s.endsWith('.0')) s = s.substring(0, s.length - 2);
-    return s;
-  }
+  /// Same scale as `invoice.total`, so the three header figures agree.
+  ///
+  /// The prototype's `fmtAmt` was lakhs-only — fine for its ₹18L seed, but a
+  /// ₹25,490 plan read "TOTAL ₹25.5K · BALANCE ₹0.3L", and a ₹500 deduction
+  /// under it read "₹0L withheld".
+  String _fmtAmt(int x) => formatInr(x);
 }

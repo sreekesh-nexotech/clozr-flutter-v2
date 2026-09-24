@@ -54,7 +54,9 @@ class ProductsRepositoryImpl implements ProductsRepository {
       name: name,
       kind: 'product',
       cat: '',
-      hsn: fields['hsn_code'] as String? ?? '',
+      // Every form sends `hsn_sac`; `hsn_code` matched nothing, so the echoed
+      // mock row always came back with an empty HSN.
+      hsn: fields['hsn_sac'] as String? ?? fields['hsn_code'] as String? ?? '',
       unit: '',
       price: formatInr(price),
       priceNum: price,

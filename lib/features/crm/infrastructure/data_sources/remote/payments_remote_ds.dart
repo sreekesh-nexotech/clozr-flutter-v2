@@ -40,16 +40,28 @@ class PaymentsRemoteDataSource {
   /// Settles one record: `PATCH /quotations/payment-records/{id}/`. The server
   /// recalculates the parent invoice (amount_paid, next_due_date, completion),
   /// so callers must refetch both lists afterwards.
+  ///
+  /// [tdsDeducted] / [bankCharge] are the amounts withheld from the receipt.
+  /// They are only accepted on a record that is being paid, which this PATCH
+  /// satisfies by sending `status: 'paid'` in the same body. Without them the
+  /// plan records the full gross as cash that never arrived, overstating the
+  /// org's cash position.
   Future<void> markRecordPaid(
     String recordId, {
     double? amount,
     String method = 'upi',
+    double? tdsDeducted,
+    double? bankCharge,
   }) async {
     await _api.patch(ApiEndpoints.paymentRecord(recordId), body: {
       'status': 'paid',
       if (amount != null) 'amount_paid': amount.toStringAsFixed(2),
       'paid_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
       'payment_method': method,
+      if (tdsDeducted != null && tdsDeducted > 0)
+        'tds_deducted': tdsDeducted.toStringAsFixed(2),
+      if (bankCharge != null && bankCharge > 0)
+        'bank_charge': bankCharge.toStringAsFixed(2),
     });
   }
 }
@@ -80,21 +92,40 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
     final due = parseApiDate(row['due_date']);
     final paid = parseApiDate(row['paid_date']);
     final paidAmt = parseAmount(row['amount_paid']);
-    final amount = paidAmt > 0 ? paidAmt : parseAmount(row['amount_expected']);
+    // The **contracted** figure. This used to prefer `amount_paid` once the
+    // record was paid, which reads the net cash - so an instalment settled
+    // with tax withheld showed a smaller number beside a "Paid" pill and
+    // the schedule stopped summing to the invoice total.
+    final expected = parseAmount(row['amount_expected']);
+    final amount = expected > 0 ? expected : paidAmt;
+    final tds = parseAmount(row['tds_deducted']);
+    final gstTds = parseAmount(row['gst_tds_deducted']);
+    final gstTcs = parseAmount(row['gst_tcs_deducted']);
+    final bankCharge = parseAmount(row['bank_charge']);
     final statusKey = paymentStatusKey(status: rawStatus, dueDate: due);
     final installmentNumber = row['installment_number'];
     return Payment(
       id: id,
       custId: _str(row['customer_id']),
+      // The list serializer sends only `customer_name`.
+      custName: _str(row['customer_name']),
       // The parent's **display** id, because `invId` is shown on screen
       // ("Invoice · QTN-00005"), routed on, and joined against `Invoice.id`.
       // A `payment-records` row carries `quotation_number` itself, so the
       // uuid in `invoice_id` is only a last resort.
       invId: _str(row['quotation_number']) ?? _str(row['invoice_id']),
+      // The durable FK to the parent plan. `invoice_id` above is
+      // deprecated and goes away one release after accounting ships.
+      planUuid: _str(row['payment']),
       label: _str(row['notes']) ??
           'Installment ${installmentNumber is num ? installmentNumber.toInt() : 1}',
       amount: formatInr(amount),
       amountNum: amount.round(),
+      paidCashNum: paidAmt.round(),
+      tdsNum: tds.round(),
+      gstTdsNum: gstTds.round(),
+      gstTcsNum: gstTcs.round(),
+      bankChargeNum: bankCharge.round(),
       method: paymentMethodDisplay(row['payment_method']),
       status: statusKey,
       date: paid != null

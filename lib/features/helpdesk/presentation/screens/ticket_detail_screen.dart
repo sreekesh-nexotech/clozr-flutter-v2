@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/utils/inr_format.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
@@ -464,6 +465,13 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       ('Created', t.created),
       ('First responded', t.responded ?? 'Awaiting'),
       ('Resolved', t.resolved ?? '—'),
+      // Read-only: the ticket write path filters unknown keys, so the app can
+      // show the flag but cannot set it. Hidden entirely on the ordinary case
+      // rather than printing "Billable: No" on every ticket.
+      if (t.billable) ...[
+        ('Billable', t.billableAmount == null ? 'Yes' : formatInr(parseAmount(t.billableAmount))),
+        ('Billing status', t.isBilled ? 'Billed' : 'Not yet billed'),
+      ],
     ];
     final vColor = t.isLocked ? AppColors.textPlaceholder : AppColors.textPrimary;
     return ClozrCard(

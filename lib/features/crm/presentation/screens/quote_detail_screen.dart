@@ -453,7 +453,13 @@ class QuoteDetailScreen extends ConsumerWidget {
                       children: [
                         Text(it.name, style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
                         SizedBox(height: 2.h),
-                        Text('Qty ${it.qty} · ${it.rate}',
+                        Text(
+                            // `formatQty` keeps a whole quantity reading "3", not
+                            // "3.0". The discount is already deducted from the
+                            // amount on the right - surfaced so the row's
+                            // arithmetic is explicable rather than looking wrong.
+                            'Qty ${formatQty(it.qty)} · ${it.rate}'
+                            '${it.discount > 0 ? " · -${formatInr(it.discount)} off" : ""}',
                             style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
                       ],
                     ),
@@ -473,7 +479,7 @@ class QuoteDetailScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Text('TOTAL · TAX-FREE',
+                Text(quote.isTaxInclusive ? 'TOTAL · TAX INCLUSIVE' : 'TOTAL · TAX-FREE',
                     style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
                 const Spacer(),
                 Text(_fmt(sub),

@@ -424,11 +424,42 @@ class ProductDetailScreen extends ConsumerWidget {
           MetaRow(label: priceLabel, value: product.price),
           // '—' when the org's Product layout does not expose `tax_rate`: the
           // rate is unknown, and so is everything computed from it.
-          MetaRow(label: 'GST rate', value: product.gstKnown ? '${product.gst}%' : '—'),
+          MetaRow(
+              // "indicative" when the figures below were computed here from
+              // `tax_rate` rather than sent by the server: that column is a UI
+              // default now, and accounting's rate master resolves the rate
+              // that actually gets invoiced.
+              label: product.gstServerComputed ? 'GST rate' : 'GST rate (indicative)',
+              value: product.gstKnown ? '${product.gst}%' : '—'),
           MetaRow(
               label: 'GST amount',
               value: product.gstKnown ? product.gstAmt : '—',
               last: true),
+          // The server's own GST 2.0 nudge, shown verbatim - it owns the list
+          // of retired slabs, the app does not encode a copy.
+          if (product.deprecatedRate case final note?) ...[
+            SizedBox(height: 10.h),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+              decoration: BoxDecoration(
+                color: AppColors.tintAmber,
+                borderRadius: BorderRadius.circular(10.r),
+                border: Border.all(color: AppColors.warningDeep),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(PhosphorIconsFill.warningCircle, size: 16.sp, color: AppColors.warning),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: Text(note,
+                        style: AppText.custom(
+                            size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           Padding(
             padding: EdgeInsets.only(top: 12.h, bottom: 2.h),
             child: Row(

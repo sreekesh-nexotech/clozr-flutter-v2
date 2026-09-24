@@ -205,6 +205,13 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
       ref.read(toastProvider.notifier).show('Enter the product / service name');
       return;
     }
+    // The schema-driven path renders `hsn_sac` as a plain text column too.
+    final schemaHsn = form.payload['hsn_sac'];
+    if (schemaHsn is String && !isValidHsnSac(schemaHsn)) {
+      setState(() => _saving = false);
+      ref.read(toastProvider.notifier).show(kHsnSacHint);
+      return;
+    }
     final payload = productCreatePayload(
       form.payload,
       name: _name.text,
@@ -233,6 +240,11 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     }
     if (_name.text.trim().isEmpty) {
       ref.read(toastProvider.notifier).show('Enter the product / service name');
+      return;
+    }
+    // Caught here rather than by the server, which now format-checks it.
+    if (!isValidHsnSac(_hsn.text)) {
+      ref.read(toastProvider.notifier).show(kHsnSacHint);
       return;
     }
     final price = int.tryParse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
@@ -328,7 +340,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                   children: [
                     Expanded(child: _field('SKU / code', _sku, 'e.g. JN-RECEP')),
                     SizedBox(width: 9.w),
-                    Expanded(child: _field('HSN / SAC code', _hsn, 'e.g. 940360')),
+                    Expanded(child: _field('HSN / SAC code', _hsn, 'e.g. 940360', number: true)),
                   ],
                 ),
                 SizedBox(height: 14.h),

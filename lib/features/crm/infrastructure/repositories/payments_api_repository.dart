@@ -56,8 +56,14 @@ class PaymentsApiRepository implements PaymentsRepository {
     String recordId, {
     double? amount,
     String method = 'upi',
+    double? tdsDeducted,
+    double? bankCharge,
   }) async {
-    await _remote.markRecordPaid(recordId, amount: amount, method: method);
+    await _remote.markRecordPaid(recordId,
+        amount: amount,
+        method: method,
+        tdsDeducted: tdsDeducted,
+        bankCharge: bankCharge);
     // The server recalculates the parent invoice (amount_paid, next_due_date,
     // completion), so both offline copies are stale.
     await AppCache.remove(AppCache.crmCache, _cacheKey);

@@ -101,6 +101,13 @@ class ProjectsApiRepository implements ProjectsRepository {
         'isArchived': p.isArchived,
         'statusName': p.statusName,
         'desc': p.desc,
+        // Both were omitted, so every cached project decoded with
+        // `customerId: null` and `statusId: ''`. Offline, the customer facet
+        // then fell back to matching the display name (which the entity's own
+        // doc warns is not unique in an org), and a status write built from a
+        // cached row would go out without the id it must send.
+        'customerId': p.customerId,
+        'statusId': p.statusId,
       };
 
   static Project _fromJson(Map row) => Project(
@@ -133,6 +140,8 @@ class ProjectsApiRepository implements ProjectsRepository {
         isArchived: row['isArchived'] == true,
         statusName: row['statusName'] as String? ?? '',
         desc: row['desc'] as String? ?? '',
+        customerId: row['customerId'] as String?,
+        statusId: row['statusId'] as String? ?? '',
       );
 
   @override

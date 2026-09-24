@@ -48,7 +48,7 @@ class PaymentCard extends ConsumerWidget {
                     // is a uuid on a live backend, so the row read
                     // "3f2601da-8a35-… · Installment 1 of 6". Falls back to the
                     // id for seed rows, whose ids are short and meaningful.
-                    Text('${payment.invId ?? payment.id} · ${payment.label}',
+                    Text('${payment.invId ?? payment.planUuid ?? payment.id} · ${payment.label}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),

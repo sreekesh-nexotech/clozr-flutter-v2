@@ -15,6 +15,11 @@ const Set<String> kProductCardFrameColumns = {
   'price',
   'product_type',
   'is_active',
+  // The server's GST 2.0 nudge. It rides on the **list** row too, but only for
+  // a product on a retired slab - so it appeared as an unstyled grey chip
+  // reading the whole sentence, on some cards and not others. The detail
+  // page's Pricing card owns it, as a proper warning banner.
+  'deprecated_rate',
 };
 
 /// Columns the **detail** page renders in its own chrome, or must never print
@@ -43,6 +48,9 @@ const Set<String> kProductDetailChromeColumns = {
   'is_active',
   'price',
   'tax_rate',
+  // The Pricing card renders this as a warning banner; without it here the
+  // Details card would print the same sentence again as a plain row.
+  'deprecated_rate',
   'currency',
   // The composition card owns the package breakdown and its six totals (§7).
   'components',

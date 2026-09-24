@@ -84,3 +84,26 @@ Map<String, dynamic> productCreatePayload(
   }
   return payload;
 }
+
+/// Whether [value] is an HSN/SAC the serializer will accept.
+///
+/// The backend now format-checks this field and answers
+/// `{"hsn_sac": ["hsn_sac must be 4 to 8 digits when set."]}` — so a save that
+/// used to succeed with "n/a" or "HSN940360" now fails after a round trip,
+/// with the sheet still full of typed data.
+///
+/// Verified against the live API: 4 and 6 digits are accepted; letters, spaces
+/// and punctuation are refused. **Any** length from 4 to 8 passes — deliberately
+/// not the narrower {4, 6, 8}, because a client rule stricter than the server's
+/// would block codes the server is happy with, which is worse than the bug it
+/// fixes.
+///
+/// Empty is valid: the column is nullable and the remote data source strips
+/// fields that trim to empty before the request goes out.
+bool isValidHsnSac(String value) {
+  final v = value.trim();
+  return v.isEmpty || RegExp(r'^\d{4,8}$').hasMatch(v);
+}
+
+/// The message shown when [isValidHsnSac] fails.
+const kHsnSacHint = 'HSN / SAC must be 4 to 8 digits';

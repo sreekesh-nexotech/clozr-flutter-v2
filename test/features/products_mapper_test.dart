@@ -7,6 +7,59 @@ import 'package:clozrapp/features/crm/domain/entities/product.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+
+  group('accounting change', () {
+    test('deprecated_rate is carried verbatim and only when the server sends it', () {
+      // The exact sentence `GET /crm/products/{id}/` returns for a 12% product,
+      // captured from the live dev org. The app must not compose its own
+      // wording or derive it from the rate - the server owns the list of
+      // retired slabs under GST 2.0.
+      const note = 'GST rate 12.00% is deprecated under GST 2.0; '
+          'the effective rate is resolved by the accounting rate master.';
+      final deprecated = productFromApi({
+        'product_id': 'p-12',
+        'product_name': 'Legacy slab item',
+        'price': '1000.00',
+        'tax_rate': '12.00',
+        'deprecated_rate': note,
+      })!;
+      expect(deprecated.deprecatedRate, note);
+
+      // Verified against the same org: an 18% product omits the key entirely.
+      final fine = productFromApi({
+        'product_id': 'p-18',
+        'product_name': 'Current slab item',
+        'price': '1000.00',
+        'tax_rate': '18.00',
+      })!;
+      expect(fine.deprecatedRate, isNull);
+    });
+
+    test('gstServerComputed distinguishes server figures from local arithmetic', () {
+      // Both computed columns present - the live shape on this org.
+      final served = productFromApi({
+        'product_id': 'p-a',
+        'product_name': 'A',
+        'price': '150.00',
+        'tax_rate': '18.00',
+        'gst_amount': '27.00',
+        'price_incl': '177.00',
+      })!;
+      expect(served.gstServerComputed, isTrue);
+
+      // A projection without them falls back to `price x rate`, which the
+      // accounting rate master can contradict - the screen labels it
+      // "indicative" rather than presenting it as fact.
+      final computed = productFromApi({
+        'product_id': 'p-b',
+        'product_name': 'B',
+        'price': '150.00',
+        'tax_rate': '18.00',
+      })!;
+      expect(computed.gstServerComputed, isFalse);
+    });
+  });
+
   group('productFromApi', () {
     test('maps a full row: money strings, gst/gross computed, category kept', () {
       final p = productFromApi({

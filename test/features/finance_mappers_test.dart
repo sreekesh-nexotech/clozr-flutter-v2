@@ -83,6 +83,80 @@ void main() {
       expect(q.owner, 'me');
     });
 
+    test('accounting change: decimal-string quantity, discount and line order', () {
+      // The exact shape `GET /quotations/quotations/{id}/` returns after the
+      // accounting-readiness change: quantity is a STRING with three decimals,
+      // and the new tax columns ride along as nulls.
+      //
+      // This is the regression that mattered most. `quantity` used to go
+      // through an int-only helper, which returned null for "250.000" and fell
+      // through to a `?? 1` default - so EVERY line on EVERY quote rendered
+      // "Qty 1". On the dev org 22 of 29 live line items had a quantity other
+      // than 1, including lines of 250 and 500 units.
+      final q = quoteFromApi({
+        'quotation_id': 'uuid-q',
+        'quotation_number': 'QTN-00055',
+        'total_amount': '89965.00',
+        'line_items': [
+          {
+            'description': 'NexoCRM Starter',
+            'quantity': '35.000',
+            'unit_price': '1499.00',
+            'total_price': '52465.00',
+            'line_discount': '0.00',
+            'line_no': 2,
+            'hsn_sac': null,
+            'rate_pct': null,
+            'supply_nature': null,
+            'product': null,
+            'source_package': null,
+          },
+          {
+            'description': 'product 01',
+            'quantity': '250.000',
+            'unit_price': '150.00',
+            'total_price': '37500.00',
+            'line_discount': '1200.50',
+            'line_no': 1,
+          },
+        ],
+      })!;
+
+      // Sorted by `line_no`, not payload order.
+      expect(q.items.map((i) => i.name), ['product 01', 'NexoCRM Starter']);
+
+      final first = q.items.first;
+      expect(first.qty, 250.0, reason: 'decimal string must not collapse to 1');
+      expect(first.amtNum, 37500);
+      expect(first.discount, 1200.5);
+
+      final second = q.items[1];
+      expect(second.qty, 35.0);
+      expect(second.discount, 0);
+    });
+
+    test('accounting change: a fractional quantity survives, zero is not 1', () {
+      final q = quoteFromApi({
+        'quotation_id': 'uuid-q2',
+        'quotation_number': 'QTN-01',
+        'total_amount': '1000.00',
+        'line_items': [
+          {'description': 'Consulting', 'quantity': '2.500', 'unit_price': '400.00', 'total_price': '1000.00'},
+          // A genuine zero must read as 0, not fall back to the 1 default -
+          // that is why the parser returns null only for *unreadable* input.
+          {'description': 'Freebie', 'quantity': '0.000', 'unit_price': '0.00', 'total_price': '0.00'},
+          // A deployment sending a JSON number still works.
+          {'description': 'Legacy', 'quantity': 4, 'unit_price': '10.00', 'total_price': '40.00'},
+          // Unreadable falls back to 1 rather than silently costing nothing.
+          {'description': 'Junk', 'quantity': 'n/a', 'unit_price': '10.00', 'total_price': '10.00'},
+        ],
+      })!;
+      expect(q.items[0].qty, 2.5);
+      expect(q.items[1].qty, 0.0);
+      expect(q.items[2].qty, 4.0);
+      expect(q.items[3].qty, 1.0);
+    });
+
     test('the live detail row: server total and per-line total_price', () {
       // As `GET /quotations/quotations/{id}/` serves QTN-00057 on the dev org
       // after the backend started deriving `total_amount`.
@@ -216,7 +290,7 @@ void main() {
   });
 
   group('paymentRecordFromApi', () {
-    test('paid row: amount_paid wins, method display, paid date', () {
+    test('paid row: the CONTRACTED amount is shown, cash kept separately', () {
       final p = paymentRecordFromApi({
         'record_id': 'uuid-r1',
         'invoice_id': 'uuid-p',
@@ -235,8 +309,15 @@ void main() {
       expect(p.invId, 'uuid-p');
       expect(p.custId, 'uuid-c');
       expect(p.label, 'Advance · 40%');
-      expect(p.amount, '₹7L');
-      expect(p.amountNum, 700000);
+      // The row shows what the instalment is FOR (`amount_expected`), not the
+      // cash that arrived. It used to prefer `amount_paid` once the record was
+      // paid, so an instalment settled with tax withheld displayed the smaller
+      // net figure beside a green "Paid" pill — and the schedule rows stopped
+      // summing to the invoice total.
+      expect(p.amount, '₹7.2L');
+      expect(p.amountNum, 720000);
+      // The cash is still available, just not as the headline figure.
+      expect(p.paidCashNum, 700000);
       expect(p.method, 'Bank transfer');
       expect(p.status, 'paid');
       expect(p.date, '12 Jun 2026');

@@ -86,8 +86,9 @@ QuotesRemoteDataSource _dsWith(_CaptureAdapter adapter) {
 
 const _line = QuoteDraftLine(
   description: 'Turnkey Office Fit-out',
-  quantity: 2,
+  quantity: '2.000',
   unitPrice: '2400',
+  productId: 'P1',
 );
 
 void main() {
@@ -155,8 +156,16 @@ void main() {
 
       expect(json['lead'], 'lead-1');
       expect(json['currency'], 'INR');
+      // `quantity` is a decimal string, like `unit_price`: the API supports
+      // fractional quantities and an int here collapsed "2.5" to 1.
+      // `product_id` is what makes the server snapshot the line's tax fields.
       expect(json['line_items'], [
-        {'description': 'Turnkey Office Fit-out', 'quantity': 2, 'unit_price': '2400'}
+        {
+          'description': 'Turnkey Office Fit-out',
+          'quantity': '2.000',
+          'unit_price': '2400',
+          'product_id': 'P1',
+        }
       ]);
       // The server stamps the owner and only gains a customer on conversion —
       // sending either would be ignored at best.

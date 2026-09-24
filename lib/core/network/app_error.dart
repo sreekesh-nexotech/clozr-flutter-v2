@@ -18,6 +18,11 @@ enum AppErrorType {
   /// 404.
   notFound,
 
+  /// 409 — the request was understood and refused because it conflicts with
+  /// the record's current state. The accounting module's posting hooks use
+  /// this to veto a settlement write (`ACCOUNTING_POSTING_REJECTED`).
+  conflict,
+
   /// 400/422 — request understood but rejected; [fieldErrors] may be set.
   validation,
 
@@ -44,6 +49,8 @@ class AppError implements Exception {
     this.statusCode,
     this.fieldErrors,
     this.cause,
+    this.code,
+    this.extra,
   });
 
   final AppErrorType type;
@@ -59,7 +66,25 @@ class AppError implements Exception {
   /// The underlying exception, for logs only — never shown to the user.
   final Object? cause;
 
+  /// The backend's machine-readable error code, when it sent a string one.
+  ///
+  /// Guarded to strings on purpose: the usual envelope puts the **integer**
+  /// status in `code`, and only the structured errors use a symbolic one.
+  final String? code;
+
+  /// The structured-error envelope's context — `rule`, `next`, `cause`.
+  ///
+  /// The accounting veto sends `{code, cause, detail, rule?, next?}`, where
+  /// `next` is a hint like `reopen_period`. Without keeping these the app can
+  /// show the sentence but can never act on it.
+  final Map<String, dynamic>? extra;
+
   bool get isAuthError => type == AppErrorType.unauthorized;
+
+  /// An accounting posting hook refused this write and the CRM side was rolled
+  /// back. Only possible once the accounting module is live.
+  bool get isAccountingRejection =>
+      statusCode == 409 && code == 'ACCOUNTING_POSTING_REJECTED';
 
   /// Maps a [DioException] (and the DRF error body conventions) onto the
   /// app-level model. DRF errors arrive as `{"detail": "..."}`,
@@ -101,12 +126,15 @@ class AppError implements Exception {
     final status = e.response?.statusCode ?? 0;
     final body = e.response?.data;
     final message = _extractMessage(body) ?? _defaultMessage(status);
+    final rawCode = body is Map ? body['code'] : null;
     return AppError(
       type: _typeForStatus(status),
       message: message,
       statusCode: status,
       fieldErrors: _extractFieldErrors(body),
       cause: e,
+      code: rawCode is String ? rawCode : null,
+      extra: _extractExtra(body),
     );
   }
 
@@ -114,6 +142,7 @@ class AppError implements Exception {
     if (status == 401) return AppErrorType.unauthorized;
     if (status == 403) return AppErrorType.forbidden;
     if (status == 404) return AppErrorType.notFound;
+    if (status == 409) return AppErrorType.conflict;
     if (status == 429) return AppErrorType.throttled;
     if (status == 400 || status == 422) return AppErrorType.validation;
     if (status >= 500) return AppErrorType.server;
@@ -124,6 +153,9 @@ class AppError implements Exception {
     if (status == 401) return 'Your session has expired. Please sign in again.';
     if (status == 403) return "You don't have permission to do that.";
     if (status == 404) return 'Not found.';
+    if (status == 409) {
+      return 'That conflicts with the current state of this record. Refresh and try again.';
+    }
     if (status == 429) return 'Too many attempts. Please wait and try again.';
     if (status >= 500) return 'Server error. Please try again shortly.';
     return 'Something went wrong. Please try again.';
@@ -166,6 +198,17 @@ class AppError implements Exception {
     return null;
   }
 
+  /// The structured-error envelope's machine-readable context.
+  static Map<String, dynamic>? _extractExtra(Object? body) {
+    if (body is! Map) return null;
+    final out = <String, dynamic>{};
+    for (final key in const ['rule', 'next', 'next_action', 'cause']) {
+      final v = body[key];
+      if (v != null) out[key] = v;
+    }
+    return out.isEmpty ? null : out;
+  }
+
   static Map<String, List<String>>? _extractFieldErrors(Object? body) {
     if (body is! Map) return null;
     // The handler nests field errors under `errors`; raw DRF puts them at the
@@ -174,7 +217,14 @@ class AppError implements Exception {
     final out = <String, List<String>>{};
     for (final entry in source.entries) {
       final key = entry.key.toString();
-      if (const {'detail', 'error', 'message', 'code', 'error_codes'}.contains(key)) {
+      // `cause`, `rule`, `next` belong to the structured-error envelope, not to
+      // any form field. Left in, they surfaced as phantom validation errors —
+      // and `_extractMessage` consults field errors as a last resort, so a 409
+      // without a `detail` would have shown the user "rule: R7".
+      if (const {
+        'detail', 'error', 'message', 'code', 'error_codes',
+        'cause', 'rule', 'next', 'next_action', 'hint',
+      }.contains(key)) {
         continue;
       }
       final v = entry.value;

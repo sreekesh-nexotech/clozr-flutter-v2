@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -34,6 +35,21 @@ class _QuoteLine {
   String productId;
   final TextEditingController qtyCtrl;
   _QuoteLine(this.productId) : qtyCtrl = TextEditingController(text: '1');
+}
+
+/// The line's quantity, or **null** when the box does not hold a usable number.
+///
+/// Null rather than a `?? 1` fallback, which is what this used to be: the box
+/// accepts free text, `int.tryParse('2.5')` returns null, and the fallback
+/// silently turned it into 1. The preview, the running total *and* the POSTed
+/// quantity all read 1, so a quote for 2.5 units was created at 40% of its
+/// value with no error, no toast and no red field.
+///
+/// Callers decide what null means: the preview shows ₹0 (a half-typed "2."
+/// should not jump to 1×), and the submit guard refuses to send.
+double? _qtyOf(_QuoteLine line) {
+  final v = double.tryParse(line.qtyCtrl.text.trim());
+  return (v == null || v <= 0) ? null : v;
 }
 
 class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
@@ -145,7 +161,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
             if (_productById(products, line.productId) case final p?)
               QuoteDraftLine(
                 description: p.name,
-                quantity: int.tryParse(line.qtyCtrl.text) ?? 1,
+                // Three decimals, matching what the serializer returns.
+                quantity: (_qtyOf(line) ?? 0).toStringAsFixed(3),
+                // Links the line to the catalog so the server snapshots its tax
+                // fields and explodes a package into components.
+                productId: p.id,
                 // The catalog's **numeric** price, two decimals, as the API's
                 // decimal-string contract wants.
                 //
@@ -180,6 +200,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     // quote would just quietly cost less than what is on screen.
     if (draft.lines.length != _lines.length) {
       toast.show('Every line needs a product — pick one, or remove the row');
+      return;
+    }
+    // Without this a line reading "2." or "abc" posts a quantity of 0.
+    if (_lines.any((l) => _qtyOf(l) == null)) {
+      toast.show('Every line needs a quantity greater than zero');
       return;
     }
     if (_payType.needsInstallmentCount && draft.numInstallments < 2) {
@@ -287,7 +312,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     for (final line in _lines) {
       final p = _productById(products, line.productId);
       if (p != null) {
-        total += (p.priceNum * (int.tryParse(line.qtyCtrl.text) ?? 1)).round();
+        total += (p.priceNum * (_qtyOf(line) ?? 0)).round();
       }
     }
 
@@ -673,7 +698,17 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   ),
                   child: TextField(
                     controller: line.qtyCtrl,
-                    keyboardType: TextInputType.number,
+                    // `.number` shows a digits-only pad on iOS, so a fractional
+                    // quantity could not physically be typed.
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      // Digits, one dot, at most three decimals.
+                      TextInputFormatter.withFunction((oldValue, newValue) =>
+                          RegExp(r'^\d*\.?\d{0,3}$').hasMatch(newValue.text)
+                              ? newValue
+                              : oldValue),
+                    ],
                     onChanged: (_) => setState(() {}),
                     style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
                     cursorColor: AppColors.blueBright,
@@ -706,7 +741,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   Text('Line total', style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                   Text(
                     selected != null
-                        ? _fmtAmt((selected.priceNum * (int.tryParse(line.qtyCtrl.text) ?? 1)).round())
+                        ? _fmtAmt((selected.priceNum * (_qtyOf(line) ?? 0)).round())
                         : '₹0',
                     style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary),
                   ),

@@ -141,10 +141,24 @@ class QuotesRemoteDataSource {
         // an alternate shape.
         final name = _str(row['template_name']) ?? _str(row['name']);
         if (id == null || name == null) continue;
+        final category = _str(row['category']);
+        // The accounting change seeds a GST "Tax Invoice" template into every
+        // new org. It comes back from this endpoint like any other, and picking
+        // it on the New quote form renders a tax-invoice layout whose tax
+        // fields are all null - a blank-tax invoice sent out under a quote's
+        // cover.
+        //
+        // Excluded rather than allow-listed on purpose: `category == 'quote'`
+        // matches nothing, and `category != null` would hide Classic and
+        // Modern, whose category is null.
+        if (_nonQuoteTemplateCategories.contains(category?.toLowerCase())) {
+          continue;
+        }
         out.add(QuoteTemplate(
           id: id,
           name: name,
           isDefault: row['is_default'] == true,
+          category: category,
         ));
       }
       return out;
@@ -247,6 +261,9 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
       dueDate: absoluteDate(parseApiDate(row['next_due_date'] ?? row['due_date'])),
       owner: _ownerId(row),
       items: items,
+      // Absent from the payload today; mapped so the total's tax label stops
+      // being an unconditional claim the moment it appears.
+      amountsAre: _str(row['amounts_are']),
       note: _str(row['notes']) ?? _str(row['note']),
     );
   } on Object {
@@ -259,7 +276,11 @@ List<QuoteItem> _items(Object? raw) {
   final out = <QuoteItem>[];
   for (final m in raw) {
     if (m is! Map) continue;
-    final qty = _int(m['quantity']) ?? _int(m['qty']) ?? 1;
+    // `quantity` arrives as a decimal **string** ("1.000") since quantities
+    // became fractional. `_int` only accepts a num, so it returned null and the
+    // `?? 1` fallback fired on every line — every quote read "Qty 1" whatever
+    // the real figure. `_decimal` accepts both shapes.
+    final qty = _decimal(m['quantity']) ?? _decimal(m['qty']) ?? 1.0;
     final rate = parseAmount(m['unit_price'] ?? m['price'] ?? m['rate']);
     // `total_price` is the live serializer's per-line figure; the rest are
     // older shapes kept for other deployments.
@@ -275,8 +296,16 @@ List<QuoteItem> _items(Object? raw) {
       rate: formatInr(rate),
       amt: formatInr(amt),
       amtNum: amt.round(),
+      // Already subtracted from `total_price` server-side — carried only so the
+      // row can explain why qty × rate does not equal the amount.
+      discount: parseAmount(m['line_discount']),
+      lineNo: _int(m['line_no']) ?? 0,
     ));
   }
+  // `line_no` is the server's stable ordering key. Every line reports 0 until
+  // package explosion starts numbering them, and a stable sort leaves an
+  // all-equal list in payload order — so this is inert today and correct later.
+  out.sort((a, b) => a.lineNo.compareTo(b.lineNo));
   return out;
 }
 
@@ -304,6 +333,25 @@ String? _linkedId(Object? v, String idKey) {
   return _str(v);
 }
 
+/// Template categories that are not quote layouts and must stay out of the New
+/// quote picker. See `NexoCRM_Accounting_Change_Document.pdf` section B10.
+///
+/// Filtered client-side: there is no documented "everything except invoice"
+/// server filter, and DRF silently ignores an unknown query param - which would
+/// give a filter that looks applied and is not.
+const _nonQuoteTemplateCategories = {'invoice'};
+
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
 
 int? _int(Object? v) => v is num ? v.toInt() : null;
+
+/// A decimal that may arrive as a JSON number or as a string ("2.500").
+///
+/// Deliberately **not** [parseAmount]: that returns 0 for unparseable input,
+/// and a quantity of 0 is a worse lie than the 1 fallback. Null means "could
+/// not read it", which keeps "parsed as zero" and "unreadable" distinct.
+double? _decimal(Object? v) {
+  if (v is num) return v.toDouble();
+  if (v is String && v.trim().isNotEmpty) return double.tryParse(v.trim());
+  return null;
+}

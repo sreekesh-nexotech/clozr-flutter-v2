@@ -14,5 +14,7 @@ abstract class PaymentsRepository {
     String recordId, {
     double? amount,
     String method = 'upi',
+    double? tdsDeducted,
+    double? bankCharge,
   });
 }

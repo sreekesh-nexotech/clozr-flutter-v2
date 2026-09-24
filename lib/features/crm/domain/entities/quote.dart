@@ -3,9 +3,22 @@ import 'package:equatable/equatable.dart';
 /// A single line item on a quote (product/service, qty, rate, amount).
 class QuoteItem extends Equatable {
   final String name;
-  final int qty;
+
+  /// Line quantity. A **double**, not an int: the serializer supports
+  /// fractional quantities and sends them as decimal strings ("2.500"), so an
+  /// int here silently collapsed every line to the `?? 1` fallback.
+  final double qty;
   final String rate; // display, e.g. "₹9L"
   final String amt; // display, e.g. "₹9L"
+
+  /// Per-line discount in rupees, already **subtracted** from [amt]/[amtNum] by
+  /// the server. Shown so `qty × rate ≠ amt` has a visible explanation; never
+  /// subtract it again.
+  final double discount;
+
+  /// The server's stable ordering key. Lines are sorted by it so an exploded
+  /// package (component + adjustment lines) reads in the server's order.
+  final int lineNo;
 
   /// The line total in rupees, for arithmetic.
   ///
@@ -21,10 +34,12 @@ class QuoteItem extends Equatable {
     required this.rate,
     required this.amt,
     this.amtNum = 0,
+    this.discount = 0,
+    this.lineNo = 0,
   });
 
   @override
-  List<Object?> get props => [name, qty, rate, amt, amtNum];
+  List<Object?> get props => [name, qty, rate, amt, amtNum, discount, lineNo];
 }
 
 /// A CRM quote. Fields mirror the prototype's `quotes` seed 1:1 so the mock data
@@ -76,6 +91,16 @@ class Quote extends Equatable {
   final List<QuoteItem> items;
   final String? note;
 
+  /// `EXCLUSIVE` / `INCLUSIVE`, or **null** when the serializer did not send it
+  /// — which is the case on every deployment today.
+  ///
+  /// The screen used to label every total "TAX-FREE" unconditionally. That was
+  /// a safe assumption while a quote carried no tax information at all; the
+  /// accounting change can now contradict it, and a rep reading an INCLUSIVE
+  /// quote as tax-free would quote the customer roughly the tax again on top.
+  /// Null keeps the old wording, so nothing changes until the field arrives.
+  final String? amountsAre;
+
   const Quote({
     required this.id,
     this.uuid = '',
@@ -95,7 +120,11 @@ class Quote extends Equatable {
     required this.owner,
     required this.items,
     this.note,
+    this.amountsAre,
   });
+
+  /// True only when the server has explicitly said the amounts include tax.
+  bool get isTaxInclusive => (amountsAre ?? '').toUpperCase() == 'INCLUSIVE';
 
   @override
   List<Object?> get props => [id];

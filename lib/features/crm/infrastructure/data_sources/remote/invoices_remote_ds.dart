@@ -72,7 +72,15 @@ InvoiceSummary summaryFromApi(Map<String, dynamic> row) => InvoiceSummary(
       overdueRecords: _int(row['overdue_records']),
     );
 
-int _int(Object? v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+/// A count that may arrive as a number or as a string.
+///
+/// `int.tryParse` returns null for a decimal string like "3.0", which read as a
+/// count of 0 - "0 of 0 settled". The double fallback covers that.
+int _int(Object? v) {
+  if (v is num) return v.toInt();
+  final s = '$v'.trim();
+  return int.tryParse(s) ?? double.tryParse(s)?.round() ?? 0;
+}
 
 /// Maps a list of raw rows, skipping malformed entries.
 List<Invoice> invoicesFromApiRows(List<dynamic> rows) {
@@ -95,6 +103,18 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
   try {
     final total = parseAmount(row['total_amount']);
     final amountPaid = parseAmount(row['amount_paid']);
+    // Absent is not zero. A row that never reported its outstanding balance
+    // would otherwise compute `total - 0` and look fully settled.
+    final hasRemaining = row.containsKey('amount_remaining');
+    final remaining = parseAmount(row['amount_remaining']);
+    // `amount_remaining` is total minus **settled**, which counts withheld tax
+    // as well as cash. Folding the status off `amount_paid` made a plan settled
+    // entirely by TDS read "Unpaid" beside a non-zero settled figure - but only
+    // when the server actually told us the balance; otherwise cash is all we
+    // know, which is the behaviour this had before.
+    final settledAmount = (!hasRemaining || total <= 0)
+        ? amountPaid
+        : (total - remaining).clamp(0.0, total);
     final records =
         row['records'] is List ? (row['records'] as List) : const <dynamic>[];
     var settled = 0;
@@ -114,6 +134,14 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
       uuid: _str(row['payment_id']) ?? '',
       custId: _str(row['customer_id']) ??
           (row['customer'] is Map ? _str((row['customer'] as Map)['customer_id']) : null),
+      // The list serializer sends only `customer_name`; the detail nests a
+      // `customer` object. Both are read, so a card always has something to
+      // show instead of an em dash on every single row.
+      custName: _str(row['customer_name']) ??
+          (row['customer'] is Map
+              ? _str((row['customer'] as Map)['customer_name']) ??
+                  _str((row['customer'] as Map)['name'])
+              : null),
       quoteId: quotationNumber,
       quoteUuid: _str(row['quotation']),
       type: _str(row['payment_type']) == 'lumpsum' ? 'Lump sum' : 'Installments',
@@ -121,9 +149,12 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
       totalNum: total.round(),
       settled: settled,
       of: of,
-      balance: formatInr(parseAmount(row['amount_remaining'])),
+      balance: formatInr(remaining),
+      // Absent is not the same as zero - see Invoice.remainingNum.
+      remainingNum: hasRemaining ? remaining.round() : null,
       paidNum: amountPaid.round(),
-      status: invoiceStatusKey(status: _str(row['status']), amountPaid: amountPaid),
+      status:
+          invoiceStatusKey(status: _str(row['status']), amountPaid: settledAmount),
     );
   } on Object {
     return null;

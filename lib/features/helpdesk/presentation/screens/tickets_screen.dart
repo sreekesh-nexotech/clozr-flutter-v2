@@ -286,7 +286,15 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       ref.read(ticketFiltersProvider.notifier).state = FilterValues();
       return;
     }
-    final view = saved.views.firstWhere((v) => v.id == id);
+    // The chip was built from an earlier snapshot of the saved-view list. If
+    // the view was deleted or renamed elsewhere between render and tap,
+    // `firstWhere` threw a StateError inside a tap handler - a red screen in
+    // debug, a swallowed tap in release. Fail inert and say so instead.
+    final view = saved.views.where((v) => v.id == id).firstOrNull;
+    if (view == null) {
+      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      return;
+    }
     ref.read(ticketSavedViewsProvider.notifier).apply(id);
     // Applying a view loads its values as the current (editable) filter state.
     ref.read(ticketFiltersProvider.notifier).state = view.values.copy();

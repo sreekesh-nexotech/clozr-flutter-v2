@@ -46,18 +46,10 @@ final allPaymentsProvider = Provider<List<Payment>>((ref) {
   final resolved = [
     for (final p in seed)
       if (paid.contains(p.id) && p.status != 'paid')
-        Payment(
-          id: p.id,
-          custId: p.custId,
-          invId: p.invId,
-          label: p.label,
-          amount: p.amount,
-          amountNum: p.amountNum,
-          method: p.method,
-          status: 'paid',
-          date: p.date,
-          owner: p.owner,
-        )
+        // `copyWith`, not a field-by-field rebuild: this used to enumerate
+        // every field, so each one added to Payment had to be remembered here
+        // or it silently reset to its default the moment a record was settled.
+        p.copyWith(status: 'paid')
       else
         p,
   ];
@@ -78,7 +70,14 @@ final paymentByIdProvider = Provider.family<Payment?, String>((ref, id) {
 /// so an optimistic settle shows on the schedule immediately.
 final paymentsForInvoiceProvider = Provider.family<List<Payment>, String>((ref, invId) {
   final payments = ref.watch(allPaymentsProvider);
-  return payments.where((p) => p.invId == invId).toList();
+  // Matched on either key. `Invoice.id` is `quotation_number` when the source
+  // quote has one and the plan's `payment_id` when it does not — and a record
+  // carries `quotation_number` as `invId` and `payment` as `planUuid`. So the
+  // second clause covers exactly the case that used to depend on the deprecated
+  // `invoice_id`, and keeps working after it is removed.
+  return payments
+      .where((p) => p.invId == invId || p.planUuid == invId)
+      .toList();
 });
 
 /// Customer/lead one-liner (company or name) for a payment, resolved via
@@ -90,6 +89,10 @@ String paymentTitle(Payment p, CrmPartyLookup lookup) {
   if (company != null && company.isNotEmpty) return company;
   final name = party?.name;
   if (name != null && name.isNotEmpty) return name;
+  // The serializer sends `customer_name` but no `customer_id`, so the lookup
+  // above finds nothing and every row used to fall through to an em dash.
+  final own = p.custName;
+  if (own != null && own.isNotEmpty) return own;
   return p.custId ?? '—';
 }
 

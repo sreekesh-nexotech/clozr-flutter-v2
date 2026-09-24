@@ -132,6 +132,25 @@ const List<NavEntry> navCatalog = [
       // class as Settings and the admin Dashboard per permissions.md — not the
       // CRM `payment` module a plain CRM User already has.
       modules: ['settings']),
+  NavEntry(
+      key: 'accounting',
+      label: 'Accounting',
+      icon: PhosphorIconsRegular.calculator,
+      path: Routes.accounting,
+      // The seven permission areas the accounting module ships with. They are
+      // already returned by `/auth/me/modules/`, and no other entry lists any
+      // of them - so an Accountant or Finance Viewer failed `canAny` for every
+      // entry above, got an empty drawer, and was landed on a Dashboard that
+      // 403s with only Logout working.
+      modules: [
+        'acc_setup',
+        'acc_document',
+        'acc_purchase',
+        'acc_settlement',
+        'acc_period',
+        'acc_journal',
+        'acc_report',
+      ]),
 ];
 
 /// The Dashboard's panel tabs (`?tab=`) and the module keys that unlock each.

@@ -43,6 +43,22 @@ class Product extends Equatable {
   /// `tax_rate` can be switched off — in which case the rate is *unknown*, not
   /// 18%. Screens must not print a tax figure they were never given.
   final bool gstKnown;
+
+  /// Whether [gstAmt] / [gross] came from the server rather than being computed
+  /// here as `price × tax_rate`.
+  ///
+  /// The accounting change demotes `tax_rate` to "UI default only" — the
+  /// effective rate is resolved by accounting's rate master. Once those can
+  /// differ, a locally computed gross is simply wrong, and nothing on screen
+  /// would say it had been computed rather than received.
+  final bool gstServerComputed;
+
+  /// The server's GST 2.0 deprecation nudge, present only when the product sits
+  /// on a retired slab (12% / 28%). Null on every other product.
+  ///
+  /// Shown verbatim: the server owns the list of retired rates, and the app
+  /// should not encode its own copy.
+  final String? deprecatedRate;
   final String gstAmt; // display
   final String gross; // display gross unit price
   final int deals;
@@ -74,6 +90,8 @@ class Product extends Equatable {
     this.priceNum = 0,
     required this.gst,
     this.gstKnown = true,
+    this.gstServerComputed = true,
+    this.deprecatedRate,
     required this.gstAmt,
     required this.gross,
     required this.deals,

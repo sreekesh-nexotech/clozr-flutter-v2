@@ -12,19 +12,36 @@ class QuoteDraftLine {
     required this.description,
     required this.quantity,
     required this.unitPrice,
+    this.productId = '',
   });
 
   final String description;
-  final int quantity;
+
+  /// Quantity, as a decimal **string** for the same reason as [unitPrice].
+  ///
+  /// It was an `int`, and the form parsed the box with `int.tryParse(...) ?? 1`
+  /// — so "2.5" became 1 and the quote was created at 40% of its value with no
+  /// error shown. The API accepts fractional quantities.
+  final String quantity;
 
   /// Rupees. Sent as a string because the API takes decimals as strings, and
   /// round-tripping through a double loses paise.
   final String unitPrice;
 
+  /// The catalog product this line came from.
+  ///
+  /// Sending it is what makes the server snapshot the line's tax fields
+  /// (`hsn_sac`, `rate_pct`, `supply_nature`) and explode a package into its
+  /// component lines. Without it the line is created bare, and because the
+  /// snapshot happens at write time it can never be filled in afterwards — so
+  /// a quote raised on mobile would be un-invoiceable once accounting ships.
+  final String productId;
+
   Map<String, dynamic> toJson() => {
         'description': description,
         'quantity': quantity,
         'unit_price': unitPrice,
+        if (productId.isNotEmpty) 'product_id': productId,
       };
 }
 

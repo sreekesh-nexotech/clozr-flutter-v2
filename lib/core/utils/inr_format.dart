@@ -25,6 +25,19 @@ String formatInr(num? amount) {
   return '$sign₹${_grouped.format(abs)}';
 }
 
+/// Formats a line quantity for display: `1.0` reads "1", `2.5` reads "2.5".
+///
+/// Quantities became fractional with the accounting-readiness change and now
+/// arrive as decimal strings ("1.000"), so they are carried as doubles. A bare
+/// `toString()` would print "Qty 1.0" on every whole-number line.
+String formatQty(double qty) {
+  final text = qty.toStringAsFixed(3);
+  final trimmed = text.contains('.')
+      ? text.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')
+      : text;
+  return trimmed.isEmpty ? '0' : trimmed;
+}
+
 /// Parses API money values: JSON numbers or decimal strings ("450000.00").
 double parseAmount(Object? value) {
   if (value is num) return value.toDouble();

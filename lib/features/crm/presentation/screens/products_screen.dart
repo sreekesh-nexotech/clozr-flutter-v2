@@ -244,7 +244,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       ref.read(productFiltersProvider.notifier).state = FilterValues();
       return;
     }
-    final view = saved.views.firstWhere((v) => v.id == id);
+    // The chip was built from an earlier snapshot of the saved-view list. If
+    // the view was deleted or renamed elsewhere between render and tap,
+    // `firstWhere` threw a StateError inside a tap handler - a red screen in
+    // debug, a swallowed tap in release. Fail inert and say so instead.
+    final view = saved.views.where((v) => v.id == id).firstOrNull;
+    if (view == null) {
+      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      return;
+    }
     ref.read(productSavedViewsProvider.notifier).apply(id);
     ref.read(productFiltersProvider.notifier).state = view.values.copy();
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');

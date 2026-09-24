@@ -40,6 +40,9 @@ class ErrorState extends StatelessWidget {
       AppErrorType.forbidden => (PhosphorIconsFill.lock, 'No access'),
       AppErrorType.notFound => (PhosphorIconsFill.magnifyingGlass, 'Not found'),
       AppErrorType.server => (PhosphorIconsFill.cloudSlash, 'Server error'),
+      // A 409 is the server understanding the request and refusing it, not a
+      // fault — titling it "Something went wrong" invited a pointless retry.
+      AppErrorType.conflict => (PhosphorIconsFill.lock, 'Blocked'),
       _ => (PhosphorIconsFill.warningCircle, 'Something went wrong'),
     };
     return ErrorState(

@@ -247,7 +247,12 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((p) => projectMatchesFilters(p, draft)).length,
+      // Same `serverApplied` as the applied list above, or the drawer
+      // previews a different number from the one the list will show.
+      previewCount: (draft) => base
+          .where((p) => projectMatchesFilters(p, draft,
+              serverApplied: ApiConfig.apiEnabled))
+          .length,
       activeViewName: activeView?.name,
       existingViewNames: ref.read(projectSavedFiltersProvider).filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
@@ -334,7 +339,15 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       _applyFilters(FilterValues());
       return;
     }
-    final view = saved.filters.firstWhere((f) => f.id == id);
+    // The chip was built from an earlier snapshot of the saved-view list. If
+    // the view was deleted or renamed elsewhere between render and tap,
+    // `firstWhere` threw a StateError inside a tap handler - a red screen in
+    // debug, a swallowed tap in release. Fail inert and say so instead.
+    final view = saved.filters.where((f) => f.id == id).firstOrNull;
+    if (view == null) {
+      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      return;
+    }
     // A filter the server marked invalid fails inert by contract — never run
     // it, say why instead.
     if (!view.isValid) {

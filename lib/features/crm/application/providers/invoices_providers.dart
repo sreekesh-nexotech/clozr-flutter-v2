@@ -61,6 +61,10 @@ String invoiceWho(Invoice iv, CrmPartyLookup lookup) {
   if (company != null && company.isNotEmpty) return company;
   final name = party?.name;
   if (name != null && name.isNotEmpty) return name;
+  // The plan serializer sends `customer_name` but no `customer_id`, so the
+  // lookup above resolves nothing and every card used to read an em dash.
+  final own = iv.custName;
+  if (own != null && own.isNotEmpty) return own;
   return iv.custId ?? '—';
 }
 

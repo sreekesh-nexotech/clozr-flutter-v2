@@ -86,6 +86,7 @@ class Routes {
   static const roles = '/roles';
   static const messages = '/messages';
   static const chat = '/chat';
+  static const accounting = '/accounting';
 
   /// Chrome metadata per path.
   static const Map<String, RouteMeta> meta = {
@@ -146,6 +147,7 @@ class Routes {
     roles: RouteMeta(NavContext.crm, false),
     messages: RouteMeta(NavContext.crm, false),
     chat: RouteMeta(NavContext.crm, false),
+    accounting: RouteMeta(NavContext.none, false),
   };
 
   static RouteMeta metaFor(String location) {

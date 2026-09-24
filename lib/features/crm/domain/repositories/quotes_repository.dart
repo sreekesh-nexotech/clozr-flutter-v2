@@ -53,9 +53,15 @@ class QuoteTemplate {
     required this.id,
     required this.name,
     this.isDefault = false,
+    this.category,
   });
 
   final String id;
   final String name;
   final bool isDefault;
+
+  /// The template's category — `milestone`, `subscription`, `general`, or null
+  /// for the plain print layouts (Classic/Modern). The accounting change adds
+  /// `invoice`, which must not appear in the quote picker.
+  final String? category;
 }

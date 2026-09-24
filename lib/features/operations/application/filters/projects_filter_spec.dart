@@ -38,15 +38,6 @@ Set<String> teamNamesOfProject(Project p) {
   return teams;
 }
 
-/// The prototype's cost parser: "₹18L" → 1800000, "₹1.2Cr" → 12000000.
-double projectCostRupees(Project p) {
-  final v = p.cost;
-  final n = double.tryParse(v.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
-  if (RegExp(r'cr', caseSensitive: false).hasMatch(v)) return n * 10000000;
-  if (RegExp(r'l', caseSensitive: false).hasMatch(v)) return n * 100000;
-  return n;
-}
-
 /// The project's expected-end date (ISO preferred, display fallback).
 DateTime? projectEndDate(Project p) =>
     DateTime.tryParse(p.endISO) ?? opsParseDisplayDate(p.end);
@@ -219,6 +210,15 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
       return false;
     }
     if (!FilterMatch.matchAnyOf(v.choice('managers'), [p.manager])) return false;
+    // Server-side as `budget_min` / `budget_max` (`operations.md` §1), so it
+    // belongs inside this guard like the facets above it. It sat outside, and
+    // the `?view=list` projection carries no `estimated_costing` - so `costNum`
+    // was 0 on every row and any minimum above zero emptied a list the server
+    // had already filtered correctly.
+    if (!FilterMatch.matchRange(v.range('cost'), p.costNum.toDouble(),
+        scale: 100000)) {
+      return false;
+    }
   }
 
   // Always local — `operations.md` §1 documents no param for these; see
@@ -247,7 +247,6 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
 
   if (!FilterMatch.matchDate(v.date('end'), projectEndDate(p))) return false;
   if (!FilterMatch.matchDate(v.date('start'), opsParseDisplayDate(p.start))) return false;
-  if (!FilterMatch.matchRange(v.range('cost'), projectCostRupees(p), scale: 100000)) return false;
 
   return true;
 }

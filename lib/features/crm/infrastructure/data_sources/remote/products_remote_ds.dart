@@ -215,6 +215,12 @@ Product? productFromApi(Map<String, dynamic> row) {
       priceNum: price,
       gst: gst,
       gstKnown: rate != null,
+      // Both figures came from the server, rather than from `price × rate`
+      // here. `tax_rate` is a UI default now - accounting's rate master decides
+      // the effective rate - so a locally computed gross can be wrong, and the
+      // screen needs to know not to present it as fact.
+      gstServerComputed: serverGst != null && serverGross != null,
+      deprecatedRate: _str(row['deprecated_rate']),
       gstAmt: formatInr(serverGst ?? price * gst / 100),
       gross: formatInr(serverGross ?? price * (1 + gst / 100)),
       deals: deals,

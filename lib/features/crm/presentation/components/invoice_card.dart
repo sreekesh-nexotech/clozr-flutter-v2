@@ -112,7 +112,14 @@ class InvoiceCard extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: Text('${invoice.settled}/${invoice.of} settled',
+                // The plan LIST serializer carries no `records` array - only
+                // the detail does - so these counts were 0 on every card and
+                // this read a permanent "0/0 settled". Falls back to the money,
+                // which the list row does carry.
+                child: Text(
+                    invoice.hasRecordCounts
+                        ? '${invoice.settled}/${invoice.of} settled'
+                        : '${invoice.total} total',
                     style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
               ),
               Text('Balance ${invoice.balance}',

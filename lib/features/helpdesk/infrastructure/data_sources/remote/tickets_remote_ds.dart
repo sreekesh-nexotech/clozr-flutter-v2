@@ -428,6 +428,13 @@ class TicketsRemoteDataSource {
         resolveByISO: resolveByISO,
         resolveByLabel: _slaLabel(resolveByISO),
         desc: _str(json['description']) ?? '',
+        // Live on the list serializer today, with `billable` false and the
+        // other three null on every row. All four tolerate absent and null —
+        // this mapper only ever reads keys it names.
+        billable: json['billable'] == true,
+        billableAmount: _str(json['billable_amount']),
+        billableProductId: _str(json['billable_product']),
+        billedDocumentLineId: _str(json['billed_document_line_id']),
       );
     } on Object {
       return null;

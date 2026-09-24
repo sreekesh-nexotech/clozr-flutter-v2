@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../core/widgets/placeholder_screen.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../core/auth/module_access_gate.dart';
@@ -222,6 +224,17 @@ final GoRouter appRouter = GoRouter(
         _r(Routes.roles, const RolesScreen()),
         _push(Routes.messages, const MessagesScreen()),
         _push(Routes.chat, const ChatScreen()),
+        // A destination for the Accountant / Finance Viewer roles. Their
+        // grants are all `acc_*`, which no other nav entry lists - so
+        // without this the drawer rendered empty and the landing fallback
+        // dropped them on a Dashboard that 403s, with only Logout working.
+        _r(Routes.accounting,
+            const PlaceholderScreen(
+                title: 'Accounting',
+                body: 'Accounting is managed in the web app.',
+                // A landing destination, not a pushed one - without the header
+                // there is no drawer button and no way off the screen.
+                showHeader: true)),
       ],
     ),
   ],

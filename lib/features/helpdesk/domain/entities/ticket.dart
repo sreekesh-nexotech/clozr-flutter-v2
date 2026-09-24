@@ -86,6 +86,23 @@ class Ticket extends Equatable {
     return a.isAfter(d);
   }
 
+  /// Whether this ticket's work is chargeable to the customer.
+  ///
+  /// Read-only in the app for now: the write path filters unknown keys, so the
+  /// flag can be shown but not set here. Set it in the web app.
+  final bool billable;
+
+  /// The amount to charge, as the decimal string the API sends. Null when the
+  /// charge is carried by [billableProductId] instead.
+  final String? billableAmount;
+
+  /// The catalog product the charge is based on.
+  final String? billableProductId;
+
+  /// Set by accounting once the charge has actually been posted to a document.
+  /// Null until then, and never editable from the app.
+  final String? billedDocumentLineId;
+
   const Ticket({
     required this.id,
     this.reference = '',
@@ -116,7 +133,14 @@ class Ticket extends Equatable {
     required this.desc,
     this.resolvedISO,
     this.respondedISO,
+    this.billable = false,
+    this.billableAmount,
+    this.billableProductId,
+    this.billedDocumentLineId,
   });
+
+  /// Whether accounting has posted the charge for this ticket.
+  bool get isBilled => (billedDocumentLineId ?? '').isNotEmpty;
 
   /// Whether the ticket was resolved after its resolution SLA expired. Null
   /// when either timestamp is missing — "not known", not "on time".
@@ -163,6 +187,13 @@ class Ticket extends Equatable {
         desc: desc,
         resolvedISO: resolvedISO,
         respondedISO: respondedISO,
+        // This method enumerates every field by hand, so anything added above
+        // and forgotten here silently resets to its default on a status or
+        // assignee change.
+        billable: billable,
+        billableAmount: billableAmount,
+        billableProductId: billableProductId,
+        billedDocumentLineId: billedDocumentLineId,
       );
 
   @override

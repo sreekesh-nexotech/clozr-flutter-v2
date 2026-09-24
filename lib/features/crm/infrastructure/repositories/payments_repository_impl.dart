@@ -21,6 +21,8 @@ class PaymentsRepositoryImpl implements PaymentsRepository {
     String recordId, {
     double? amount,
     String method = 'upi',
+    double? tdsDeducted,
+    double? bankCharge,
   }) async {
     // Mock mode: no backend — the sheet's local paid override is the state.
     await Future<void>.delayed(AppConstants.mockLatency);
