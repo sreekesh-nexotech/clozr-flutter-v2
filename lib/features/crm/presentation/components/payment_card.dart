@@ -72,6 +72,12 @@ class PaymentCard extends ConsumerWidget {
               Expanded(
                 child: Text(methodLabel, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
               ),
+              // The accounting invoice this instalment was billed on, once
+              // there is one (`record_summary`, handover §9.1).
+              if (payment.recordSummary?.documentNumber != null) ...[
+                StatusPill(label: payment.recordSummary!.documentNumber!, color: AppColors.navy, fontSize: 10.5),
+                SizedBox(width: 8.w),
+              ],
               Text(payment.date,
                   style: AppText.custom(size: 12, weight: FontWeight.w600, color: paymentDateColor(payment.status))),
             ],

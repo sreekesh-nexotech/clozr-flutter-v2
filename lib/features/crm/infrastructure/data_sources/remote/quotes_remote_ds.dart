@@ -300,6 +300,9 @@ List<QuoteItem> _items(Object? raw) {
       // row can explain why qty × rate does not equal the amount.
       discount: parseAmount(m['line_discount']),
       lineNo: _int(m['line_no']) ?? 0,
+      hsn: _str(m['hsn_sac']),
+      supplyNature: _str(m['supply_nature']),
+      ratePct: m['rate_pct'] == null ? null : '${m['rate_pct']}',
     ));
   }
   // `line_no` is the server's stable ordering key. Every line reports 0 until

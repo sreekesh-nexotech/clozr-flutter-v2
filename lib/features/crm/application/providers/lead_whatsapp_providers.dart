@@ -136,8 +136,13 @@ final leadWhatsappServiceProvider = Provider<LeadWhatsappService>((ref) {
     // `read` inside the callbacks, not `watch` at build time: the service is
     // cached for the screen's life and both calls must see the list as it is at
     // the moment of the tap, not as it was when the button was first drawn.
-    ensureLoaded: () => ref.read(conversationsProvider.notifier).ensureLoaded(),
-    conversations: () => ref.read(conversationsProvider).conversations,
+    // Without inbox access there is no conversation to find — skip the lookup
+    // (it would only 403) and go straight to handing off to WhatsApp.
+    ensureLoaded: () => ref.read(whatsappInboxAllowedProvider)
+        ? ref.read(conversationsProvider.notifier).ensureLoaded()
+        : Future<void>.value(),
+    conversations: () =>
+        ref.read(whatsappInboxAllowedProvider) ? ref.read(conversationsProvider).conversations : const [],
     // externalApplication, or Android may hand a wa.me link to an in-app
     // webview that cannot open the app it redirects to.
     launcher: (uri) => launchUrl(uri, mode: LaunchMode.externalApplication),

@@ -41,28 +41,46 @@ class PaymentsRemoteDataSource {
   /// recalculates the parent invoice (amount_paid, next_due_date, completion),
   /// so callers must refetch both lists afterwards.
   ///
-  /// [tdsDeducted] / [bankCharge] are the amounts withheld from the receipt.
-  /// They are only accepted on a record that is being paid, which this PATCH
-  /// satisfies by sending `status: 'paid'` in the same body. Without them the
-  /// plan records the full gross as cash that never arrived, overstating the
-  /// org's cash position.
-  Future<void> markRecordPaid(
+  /// [amountPaid] is the **cash** received, net of TDS and bank charge — the
+  /// withheld parts count toward settlement server-side. [tdsDeducted] and
+  /// [bankCharge] are only accepted in a PATCH that also sends
+  /// `status: 'paid'`, which this one does. Amounts are the API's decimal
+  /// strings, so no paise are lost.
+  ///
+  /// With accounting active, the same transaction posts a receipt. Money
+  /// source resolution needs [bankAccountId] for any non-cash method unless
+  /// the org has a default bank, or it is refused with 409
+  /// `NO_BANK_ACCOUNT_FOR_METHOD` and the record is left unpaid (handover
+  /// §9.1). [treatAs] (`ADVANCE` / `CUSTOMER_CREDIT`) only matters when there
+  /// is no issued invoice to allocate to.
+  ///
+  /// Returns whether the refreshed record carries a posted receipt.
+  Future<bool> markRecordPaid(
     String recordId, {
-    double? amount,
+    String? amountPaid,
     String method = 'upi',
-    double? tdsDeducted,
-    double? bankCharge,
+    DateTime? paidDate,
+    String? tdsDeducted,
+    String? bankCharge,
+    String? bankAccountId,
+    String? treatAs,
+    String? gatewayRef,
   }) async {
-    await _api.patch(ApiEndpoints.paymentRecord(recordId), body: {
+    bool nonZero(String? v) => v != null && (double.tryParse(v) ?? 0) > 0;
+    final res = await _api.patch(ApiEndpoints.paymentRecord(recordId), body: {
       'status': 'paid',
-      if (amount != null) 'amount_paid': amount.toStringAsFixed(2),
-      'paid_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+      if (amountPaid != null) 'amount_paid': amountPaid,
+      // The customer's date, not today's — a receipt posts into the period
+      // the money actually arrived in.
+      'paid_date': DateFormat('yyyy-MM-dd').format(paidDate ?? DateTime.now()),
       'payment_method': method,
-      if (tdsDeducted != null && tdsDeducted > 0)
-        'tds_deducted': tdsDeducted.toStringAsFixed(2),
-      if (bankCharge != null && bankCharge > 0)
-        'bank_charge': bankCharge.toStringAsFixed(2),
+      if (nonZero(tdsDeducted)) 'tds_deducted': tdsDeducted,
+      if (nonZero(bankCharge)) 'bank_charge': bankCharge,
+      if (bankAccountId != null) 'bank_account_id': bankAccountId,
+      if (treatAs != null) 'treat_as': treatAs,
+      if (gatewayRef != null && gatewayRef.isNotEmpty) 'gateway_ref': gatewayRef,
     });
+    return res is Map && res['posted_receipt_id'] != null;
   }
 }
 
@@ -126,6 +144,13 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
       gstTdsNum: gstTds.round(),
       gstTcsNum: gstTcs.round(),
       bankChargeNum: bankCharge.round(),
+      amountExact: _money(row['amount_expected']) ?? _money(row['amount_paid']) ?? '',
+      linkedDocumentId: _str(row['linked_document_id']),
+      postedReceiptId: _str(row['posted_receipt_id']),
+      recordSummary: recordSummaryFromApi(row['record_summary']),
+      treatAs: _str(row['treat_as']),
+      bankAccountId: _str(row['bank_account_id']),
+      gatewayRef: _str(row['gateway_ref']),
       method: paymentMethodDisplay(row['payment_method']),
       status: statusKey,
       date: paid != null
@@ -159,3 +184,31 @@ String paymentMethodDisplay(Object? code) {
 }
 
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
+
+/// A money field as its exact decimal string, whether sent as text or number.
+String? _money(Object? v) {
+  if (v is num) return v.toStringAsFixed(2);
+  return _str(v);
+}
+
+/// `record_summary` → [RecordSummary], or null when absent (accounting off,
+/// or nothing linked yet — the two are indistinguishable by design).
+RecordSummary? recordSummaryFromApi(Object? v) {
+  if (v is! Map) return null;
+  final doc = v['document'];
+  final rec = v['receipt'];
+  final d = doc is Map ? doc : const {};
+  final r = rec is Map ? rec : const {};
+  final summary = RecordSummary(
+    documentId: _str(d['document_id']),
+    documentNumber: _str(d['number']),
+    documentStatus: _str(d['status']),
+    documentPaymentState: _str(d['payment_state']),
+    documentOpenBalance: _money(d['open_balance']),
+    receiptId: _str(r['receipt_id']),
+    receiptStatus: _str(r['status']),
+    receiptAmount: _money(r['amount']),
+    receiptDate: _str(r['receipt_date']),
+  );
+  return summary.hasDocument || summary.hasReceipt ? summary : null;
+}

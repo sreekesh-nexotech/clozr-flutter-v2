@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../auth/application/providers/auth_providers.dart';
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/whatsapp_template.dart';
 import '../../domain/repositories/messages_repository.dart';
@@ -273,6 +274,21 @@ class ConversationsController extends StateNotifier<ConversationsState> {
     ]);
   }
 }
+
+/// Whether this role may use the WhatsApp inbox (`whatsapp_inbox` in
+/// `/auth/me/modules/`).
+///
+/// False while the role is still loading, so nothing fetches the inbox before
+/// the answer is in — a role without the module got a 403 toast on every list
+/// screen, from the header badge alone. A settled but failed fetch (null
+/// access) stays open, the drawer's rule: a network blip must not hide it.
+final whatsappInboxAllowedProvider = Provider<bool>((ref) {
+  if (!ApiConfig.apiEnabled) return true;
+  final async = ref.watch(moduleAccessProvider);
+  if (async.isLoading && !async.hasValue) return false;
+  final access = async.valueOrNull;
+  return access == null || access.can('whatsapp_inbox');
+});
 
 final conversationsProvider =
     StateNotifierProvider<ConversationsController, ConversationsState>((ref) {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/presentation/components/product_tax_profile_card.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -169,6 +170,9 @@ class ProductDetailScreen extends ConsumerWidget {
                   SizedBox(height: 14.h),
                   card,
                 ],
+                // Accounting's tax defaults for this product — renders nothing
+                // unless accounting is active and setup is readable.
+                if (!product.isPackage && ApiConfig.apiEnabled) ProductTaxProfileCard(productId: product.id),
                 SizedBox(height: 14.h),
                 NotesCard(
                   title: 'Notes',
@@ -434,7 +438,9 @@ class ProductDetailScreen extends ConsumerWidget {
           MetaRow(
               label: 'GST amount',
               value: product.gstKnown ? product.gstAmt : '—',
-              last: true),
+              last: product.raw['supply_nature'] is! String),
+          if (product.raw['supply_nature'] case final String nature)
+            MetaRow(label: 'Goods or service', value: nature == 'GOODS' ? 'Goods' : 'Service', last: true),
           // The server's own GST 2.0 nudge, shown verbatim - it owns the list
           // of retired slabs, the app does not encode a copy.
           if (product.deprecatedRate case final note?) ...[

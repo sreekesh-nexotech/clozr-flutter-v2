@@ -110,6 +110,67 @@ class StatusMeta$ {
     'overdue': StatusMeta('Overdue', AppColors.error),
   };
 
+  // ── Accounting (keys are the API's own enum values, handover §7.1) ──
+
+  static const accDocument = <String, StatusMeta>{
+    'DRAFT': StatusMeta('Draft', AppColors.textMuted),
+    'ISSUED': StatusMeta('Issued', AppColors.navy),
+    'CANCELLED': StatusMeta('Cancelled', AppColors.error),
+    'VOID_DRAFT': StatusMeta('Void', AppColors.textPlaceholder),
+  };
+
+  static const accPaymentState = <String, StatusMeta>{
+    'UNPAID': StatusMeta('Unpaid', AppColors.error),
+    'PARTIAL': StatusMeta('Part paid', AppColors.warning),
+    'PAID': StatusMeta('Paid', AppColors.success),
+    'WRITTEN_OFF': StatusMeta('Written off', AppColors.textMuted),
+  };
+
+  /// Receipts and vendor payments.
+  static const accPosting = <String, StatusMeta>{
+    'POSTED': StatusMeta('Posted', AppColors.success),
+    'REVERSED': StatusMeta('Reversed', AppColors.error),
+  };
+
+  /// Advances, customer credits and vendor advances share one palette.
+  static const accBalance = <String, StatusMeta>{
+    'OPEN': StatusMeta('Open', AppColors.blueBright),
+    'ACTIVE': StatusMeta('Open', AppColors.blueBright),
+    'PARTIALLY_ADJUSTED': StatusMeta('Part adjusted', AppColors.warning),
+    'PARTIALLY_APPLIED': StatusMeta('Part applied', AppColors.warning),
+    'ADJUSTED': StatusMeta('Adjusted', AppColors.success),
+    'APPLIED': StatusMeta('Applied', AppColors.success),
+    'RELEASED': StatusMeta('Released', AppColors.success),
+    'REFUNDED': StatusMeta('Refunded', AppColors.textMuted),
+    'CANCELLED': StatusMeta('Cancelled', AppColors.error),
+  };
+
+  static const accEvent = <String, StatusMeta>{
+    'RECEIVED': StatusMeta('Received', AppColors.blueBright),
+    'PENDING_APPROVAL': StatusMeta('Needs approval', AppColors.pending),
+    'POSTED': StatusMeta('Posted', AppColors.success),
+    'REJECTED': StatusMeta('Rejected', AppColors.error),
+    'SKIPPED': StatusMeta('Skipped', AppColors.textMuted),
+  };
+
+  /// Book, GST-return, TDS and fiscal-year period states.
+  static const accPeriod = <String, StatusMeta>{
+    'OPEN': StatusMeta('Open', AppColors.blueBright),
+    'CLOSED': StatusMeta('Closed', AppColors.textMuted),
+    'FILED': StatusMeta('Filed', AppColors.success),
+    'SETTLED': StatusMeta('Settled', AppColors.navy),
+    'DEPOSITED': StatusMeta('Deposited', AppColors.success),
+    'CLOSING': StatusMeta('Closing', AppColors.warning),
+    'REOPENED': StatusMeta('Reopened', AppColors.pending),
+  };
+
+  static const accActivation = <String, StatusMeta>{
+    'INACTIVE': StatusMeta('Not activated', AppColors.textMuted),
+    'ACTIVATING': StatusMeta('Activating', AppColors.warning),
+    'ACTIVE': StatusMeta('Active', AppColors.success),
+    'SUSPENDED': StatusMeta('Suspended', AppColors.error),
+  };
+
   // Priority tag tones (this.TAGTONE) — bg + fg
   static const Map<String, ({Color bg, Color fg})> priorityTone = {
     'high': (bg: AppColors.tintRedSoft, fg: AppColors.error),

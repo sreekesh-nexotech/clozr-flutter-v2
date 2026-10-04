@@ -20,6 +20,13 @@ class QuoteItem extends Equatable {
   /// package (component + adjustment lines) reads in the server's order.
   final int lineNo;
 
+  /// Snapshotted from the catalog product at write time (read-only on the
+  /// quote): the HSN/SAC code, goods-or-service, and the GST rate. Null on
+  /// lines raised without a product, and everywhere before accounting.
+  final String? hsn;
+  final String? supplyNature;
+  final String? ratePct;
+
   /// The line total in rupees, for arithmetic.
   ///
   /// [amt] is a *display* string that `formatInr` abbreviates ("₹1.8L"), so
@@ -36,10 +43,13 @@ class QuoteItem extends Equatable {
     this.amtNum = 0,
     this.discount = 0,
     this.lineNo = 0,
+    this.hsn,
+    this.supplyNature,
+    this.ratePct,
   });
 
   @override
-  List<Object?> get props => [name, qty, rate, amt, amtNum, discount, lineNo];
+  List<Object?> get props => [name, qty, rate, amt, amtNum, discount, lineNo, hsn, ratePct];
 }
 
 /// A CRM quote. Fields mirror the prototype's `quotes` seed 1:1 so the mock data

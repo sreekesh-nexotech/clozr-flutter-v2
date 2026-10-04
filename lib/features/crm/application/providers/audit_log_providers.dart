@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../auth/application/providers/auth_providers.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../infrastructure/data_sources/remote/audit_log_remote_ds.dart';
 import 'crm_catalog_providers.dart';
@@ -14,10 +15,17 @@ import '../../../helpdesk/application/providers/tickets_providers.dart';
 /// error. Mock mode, a failed fetch, and a user without `view_audit_log` (which
 /// 403s) all resolve to an empty list, and the card simply does not render.
 
-/// Null in mock mode, which is what makes the log resolve empty there.
+/// Null in mock mode, which is what makes the log resolve empty there — and
+/// null for a role without `audit_log` in `/auth/me/modules/`, so the call
+/// that would only 403 is never made and the activity card simply stays
+/// hidden. Also null while the role is still loading; a settled but failed
+/// modules fetch stays open (the drawer's rule).
 final auditLogRemoteDataSourceProvider =
     Provider<AuditLogRemoteDataSource?>((ref) {
   if (!ApiConfig.apiEnabled) return null;
+  final access = ref.watch(moduleAccessProvider);
+  if (access.isLoading && !access.hasValue) return null;
+  if (access.valueOrNull != null && !access.valueOrNull!.can('audit_log')) return null;
   return AuditLogRemoteDataSource(ref.watch(apiServiceProvider));
 });
 

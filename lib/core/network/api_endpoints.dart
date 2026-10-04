@@ -256,4 +256,101 @@ class ApiEndpoints {
   /// short-lived and need the org's own token, so this is the only way to
   /// open one (`whatsapp.md` §5).
   static String whatsappMedia(Object mediaId) => '/whatsapp/media/$mediaId/';
+
+  // ── Lookups the accounting screens share ──
+
+  /// GST state codes — `[{code: "32", name: "Kerala", alpha: "KL"}, …]`, any
+  /// authenticated user (`ACCOUNTING_FRONTEND_HANDOVER.md` §7.3).
+  static const states = '/organizations/states/';
+
+  /// `{plan, features: {accounting: bool, …}}` — the plan-feature pre-check
+  /// (handover §2). The plan-gate 403 body is flattened, so this is the only
+  /// honest way to tell "not in the plan" from "no permission".
+  static const myFeatures = '/billing/features/me/';
+
+  // ── Accounting (`/accounting/`, handover §8) ──
+  static const _acc = '/accounting';
+
+  // Setup — the only area not behind the activation gate.
+  static const accTenantProfile = '$_acc/setup/tenant-profile/';
+  static const accTenantAttributes = '$_acc/setup/tenant-attributes/';
+  static const accGates = '$_acc/setup/gates/';
+  static const accAccounts = '$_acc/setup/accounts/';
+  static const accSeries = '$_acc/setup/series/';
+
+  // Masters
+  static const accVendors = '$_acc/masters/vendors/';
+  static String accVendor(String id) => '$_acc/masters/vendors/$id/';
+
+  /// [kind] is `customer` or `vendor`.
+  static String accPartyTaxProfile(String kind, String id) =>
+      '$_acc/masters/parties/$kind/$id/tax-profile/';
+  static const accCustomerTaxProfiles =
+      '$_acc/masters/parties/customer/tax-profiles/';
+  static String accProductTaxProfile(String id) =>
+      '$_acc/masters/products/$id/tax-profile/';
+  static const accBankAccounts = '$_acc/masters/bank-accounts/';
+  static const accHsnRates = '$_acc/masters/hsn-rates/';
+
+  // Sales documents
+  static const accDocuments = '$_acc/documents/';
+  static String accDocument(String id) => '$_acc/documents/$id/';
+  static const accInvoices = '$_acc/documents/invoices/';
+  static const accInvoiceFromRecord =
+      '$_acc/documents/invoices/from-payment-record/';
+  static const accInvoiceFromTicket = '$_acc/documents/invoices/from-ticket/';
+  static String accPreviewTax(String id) => '$_acc/documents/$id/preview-tax/';
+  static String accIssue(String id) => '$_acc/documents/$id/issue/';
+  static String accVoid(String id) => '$_acc/documents/$id/void/';
+  static String accCancel(String id) => '$_acc/documents/$id/cancel/';
+  static String accRenderContext(String id) =>
+      '$_acc/documents/$id/render-context/';
+  static const accCreditNotes = '$_acc/documents/credit-notes/';
+
+  // Settlement
+  static const accReceipts = '$_acc/settlement/receipts/';
+  static String accReceipt(String id) => '$_acc/settlement/receipts/$id/';
+  static String accReceiptReverse(String id) =>
+      '$_acc/settlement/receipts/$id/reverse/';
+  static const accAdvances = '$_acc/settlement/advances/';
+  static String accAdvance(String id) => '$_acc/settlement/advances/$id/';
+  static const accCustomerCredits = '$_acc/settlement/customer-credits/';
+  static String accCustomerCredit(String id) =>
+      '$_acc/settlement/customer-credits/$id/';
+  static const accVendorPayments = '$_acc/settlement/vendor-payments/';
+  static String accVendorPayment(String id) =>
+      '$_acc/settlement/vendor-payments/$id/';
+  static String accVendorPaymentReverse(String id) =>
+      '$_acc/settlement/vendor-payments/$id/reverse/';
+  static const accVendorAdvances = '$_acc/settlement/vendor-advances/';
+
+  // Purchases
+  static const accVendorBills = '$_acc/purchases/vendor-bills/';
+  static const accExpenses = '$_acc/purchases/expenses/';
+
+  // Journal (read-only on mobile)
+  static const accJournalEntries = '$_acc/journal/entries/';
+  static String accJournalEntry(String id) => '$_acc/journal/entries/$id/';
+  static const accLedgerEvents = '$_acc/journal/events/';
+
+  // Periods (read-only on mobile)
+  static const accPeriods = '$_acc/periods/';
+  static const accFiscalYears = '$_acc/periods/fiscal-years/';
+  static String accGstChecklist(String id) =>
+      '$_acc/periods/gst/$id/checklist/';
+
+  // Reports
+  static const accArAging = '$_acc/reports/ar-aging/';
+  static const accApAging = '$_acc/reports/ap-aging/';
+  static String accCustomerStatement(String id) =>
+      '$_acc/reports/customer-statement/$id/';
+  static String accVendorStatement(String id) =>
+      '$_acc/reports/vendor-statement/$id/';
+  static const accPnl = '$_acc/reports/pnl/';
+  static const accBalanceSheet = '$_acc/reports/balance-sheet/';
+  static const accTrialBalance = '$_acc/reports/trial-balance/';
+  static const accGstSummary = '$_acc/reports/gst-summary/';
+  static const accTdsSummary = '$_acc/reports/tds-summary/';
+  static String accProjectFinancials(String id) =>
+      '$_acc/reports/project-financials/$id/';
 }

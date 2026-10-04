@@ -39,11 +39,16 @@ class AppHeaderBar extends ConsumerWidget {
         ? org.name
         : AppConstants.workspaceName;
 
-    final unreadChats = chatUnread ??
-        ref
-            .watch(conversationsProvider)
-            .conversations
-            .fold<int>(0, (sum, c) => sum + c.unread);
+    // No inbox access, no Messages button — and the conversation list is not
+    // even watched, so it is never fetched.
+    final inbox = ref.watch(whatsappInboxAllowedProvider);
+    final unreadChats = !inbox
+        ? 0
+        : chatUnread ??
+            ref
+                .watch(conversationsProvider)
+                .conversations
+                .fold<int>(0, (sum, c) => sum + c.unread);
     final unreadNotifs =
         hasUnread ?? (ref.watch(notificationsProvider).unreadCount > 0);
 
@@ -89,12 +94,14 @@ class AppHeaderBar extends ConsumerWidget {
         ),
         Row(
           children: [
-            _iconButton(
-              icon: PhosphorIconsRegular.chatsCircle,
-              onTap: () => context.push(Routes.messages),
-              badge: unreadChats > 0 ? '$unreadChats' : null,
-            ),
-            SizedBox(width: 10.w),
+            if (inbox) ...[
+              _iconButton(
+                icon: PhosphorIconsRegular.chatsCircle,
+                onTap: () => context.push(Routes.messages),
+                badge: unreadChats > 0 ? '$unreadChats' : null,
+              ),
+              SizedBox(width: 10.w),
+            ],
             _iconButton(
               icon: PhosphorIconsRegular.bell,
               onTap: () => context.push(Routes.notifications),

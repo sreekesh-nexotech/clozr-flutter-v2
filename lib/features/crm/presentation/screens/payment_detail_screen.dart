@@ -25,6 +25,11 @@ import '../../domain/entities/payment.dart';
 import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
+import '../components/record_payment_sheet.dart';
+import '../../../../core/utils/money_format.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/components/acc_widgets.dart';
+import '../../../accounting/presentation/config/accounting_copy.dart';
 
 /// Payment detail — header (amount + status + optional "Mark as paid"), related
 /// links, payment detail rows, activity and notes.
@@ -109,12 +114,16 @@ class PaymentDetailScreen extends ConsumerWidget {
                 physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
               children: [
-                _headerCard(ref, payment, meta, canMarkPaid),
+                _headerCard(context, ref, payment, meta, canMarkPaid),
                 SizedBox(height: 14.h),
                 _relatedCard(context, payment, cust, linkedInvoice?.quoteId),
                 SizedBox(height: 14.h),
                 _detailsCard(payment, meta, owner),
                 SizedBox(height: 14.h),
+                if (payment.recordSummary != null) ...[
+                  _accountingCard(context, payment),
+                  SizedBox(height: 14.h),
+                ],
                 FinanceCard(
                   title: 'Activity',
                   child: Padding(
@@ -141,7 +150,15 @@ class PaymentDetailScreen extends ConsumerWidget {
   /// wrote nothing, so the pill still read unpaid after a reload. Two other
   /// places in the app already did the real write, which made this the odd one
   /// out rather than a deliberate stub.
-  Future<void> _markPaid(WidgetRef ref, Payment payment) async {
+  Future<void> _markPaid(BuildContext context, WidgetRef ref, Payment payment) async {
+    // With accounting on, marking paid posts a receipt: it needs the date the
+    // money arrived, any TDS withheld and the bank it landed in — which is
+    // exactly what the sheet asks for. A one-tap "today, in full, no bank"
+    // write would book the wrong period and the wrong cash.
+    if (ref.read(accountingActiveProvider)) {
+      await showRecordPaymentSheet(context, invoiceId: payment.invId, recordId: payment.id);
+      return;
+    }
     final prev = ref.read(paidOverrideProvider);
     ref.read(paidOverrideProvider.notifier).state = {...prev, payment.id};
 
@@ -149,7 +166,7 @@ class PaymentDetailScreen extends ConsumerWidget {
       try {
         await ref.read(paymentsRepositoryProvider).markRecordPaid(
               payment.id,
-              amount: payment.amountNum > 0 ? payment.amountNum.toDouble() : null,
+              amountPaid: payment.amountExact.isNotEmpty ? payment.amountExact : null,
             );
       } on AppError catch (e) {
         // Put the optimistic flip back, so the pill cannot claim a payment the
@@ -165,7 +182,7 @@ class PaymentDetailScreen extends ConsumerWidget {
     ref.read(toastProvider.notifier).show('Payment marked as paid');
   }
 
-  Widget _headerCard(WidgetRef ref, Payment payment, StatusMeta meta, bool canMarkPaid) {
+  Widget _headerCard(BuildContext context, WidgetRef ref, Payment payment, StatusMeta meta, bool canMarkPaid) {
     final lookup = ref.watch(crmPartyLookupProvider);
     return FinanceCard(
       child: Column(
@@ -202,7 +219,7 @@ class PaymentDetailScreen extends ConsumerWidget {
           if (canMarkPaid) ...[
             const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
             GestureDetector(
-              onTap: () => _markPaid(ref, payment),
+              onTap: () => _markPaid(context, ref, payment),
               child: Container(
                 height: 46.h,
                 alignment: Alignment.center,
@@ -291,8 +308,22 @@ class PaymentDetailScreen extends ConsumerWidget {
       title: 'Payment details',
       child: Column(
         children: [
-          MetaRow(label: 'Amount', value: payment.amount),
+          MetaRow(label: 'Amount', value: payment.amountExact.isEmpty ? payment.amount : formatMoneyStr(payment.amountExact)),
           MetaRow(label: 'Status', value: meta.label),
+          // Only once something was withheld: on an ordinary receipt cash and
+          // the contracted amount are the same figure.
+          if (payment.hasDeductions) ...[
+            MetaRow(label: 'Cash received', value: formatMoneyStr(payment.paidCashNum)),
+            if (payment.tdsNum > 0) MetaRow(label: 'TDS withheld', value: formatMoneyStr(payment.tdsNum)),
+            if (payment.gstTdsNum > 0) MetaRow(label: 'GST TDS', value: formatMoneyStr(payment.gstTdsNum)),
+            if (payment.gstTcsNum > 0) MetaRow(label: 'GST TCS', value: formatMoneyStr(payment.gstTcsNum)),
+            if (payment.bankChargeNum > 0) MetaRow(label: 'Bank charge', value: formatMoneyStr(payment.bankChargeNum)),
+            MetaRow(
+                label: 'Settled value',
+                value: formatMoneyStr(payment.paidCashNum + payment.deductionsNum)),
+          ],
+          if (payment.treatAs != null)
+            MetaRow(label: 'Booked as', value: label(const {'ADVANCE': 'Advance', 'CUSTOMER_CREDIT': 'Customer credit'}, payment.treatAs)),
           MetaRow(label: 'Method', value: payment.method == '—' ? 'Not set' : payment.method),
           MetaRow(label: 'Type', value: payment.label),
           MetaRow(label: 'Date', value: payment.date),
@@ -320,6 +351,59 @@ class PaymentDetailScreen extends ConsumerWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// What the ledger made of this instalment: its invoice and its receipt.
+  Widget _accountingCard(BuildContext context, Payment payment) {
+    final s = payment.recordSummary!;
+    return FinanceCard(
+      title: 'Accounting',
+      child: Padding(
+        padding: EdgeInsets.only(top: 4.h),
+        child: Column(
+          children: [
+            if (s.hasDocument)
+              _relChip(
+                kind: 'Invoice · ${label(const {'DRAFT': 'Draft', 'ISSUED': 'Issued', 'CANCELLED': 'Cancelled', 'VOID_DRAFT': 'Void'}, s.documentStatus)}'
+                    '${s.documentPaymentState == null || s.documentPaymentState == 'NA' ? '' : ' · ${label(const {'UNPAID': 'Unpaid', 'PARTIAL': 'Part paid', 'PAID': 'Paid'}, s.documentPaymentState)}'}',
+                name: s.documentNumber ?? 'Draft',
+                onTap: () => context.push('${Routes.accDocumentDetail}?id=${s.documentId}'),
+              ),
+            if (s.hasDocument && s.hasReceipt) SizedBox(height: 8.h),
+            if (s.hasReceipt)
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12.r),
+                  border: Border.all(color: AppColors.borderCardSoft),
+                ),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIconsRegular.receipt, size: 16.sp, color: AppColors.success),
+                    SizedBox(width: 11.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('RECEIPT · ${s.receiptStatus ?? ''}'.trim(),
+                              style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                          SizedBox(height: 1.h),
+                          Text('${formatMoneyStr(s.receiptAmount)} · ${formatApiDay(s.receiptDate)}',
+                              style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (payment.status == 'paid') ...[
+              SizedBox(height: 10.h),
+              const AccInfoBanner('Changing the amount, TDS or date of a paid instalment reverses its receipt and posts it again.'),
+            ],
+          ],
+        ),
       ),
     );
   }

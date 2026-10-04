@@ -64,6 +64,20 @@ class Invoice extends Equatable {
 
   final String status; // key into StatusMeta$.invoice
 
+  // ── Accounting (handover §9.2). All null when the org has no accounting. ──
+
+  /// `INVOICE_ON_DUE | INVOICE_ON_COMPLETION | PERIODIC | MANUAL`.
+  final String? billingMode;
+
+  /// Issue due drafts automatically (INVOICE_ON_DUE / PERIODIC).
+  final bool autoIssue;
+
+  /// `EXCLUSIVE | INCLUSIVE`. Null on plans created before accounting — gate
+  /// G9 wants it set, and it locks once a record is linked or receipted.
+  final String? amountsAre;
+  final String? projectId;
+  final String? contractRef;
+
   const Invoice({
     required this.id,
     this.uuid = '',
@@ -80,6 +94,11 @@ class Invoice extends Equatable {
     this.remainingNum,
     this.paidNum = 0,
     required this.status,
+    this.billingMode,
+    this.autoIssue = false,
+    this.amountsAre,
+    this.projectId,
+    this.contractRef,
   });
 
   /// What the plan has actually settled, in whole rupees.

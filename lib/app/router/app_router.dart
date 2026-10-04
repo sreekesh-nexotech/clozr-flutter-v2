@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/widgets/placeholder_screen.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../core/auth/module_access_gate.dart';
@@ -73,6 +72,20 @@ import '../../features/people/presentation/screens/teams_screen.dart';
 import '../../features/people/presentation/screens/roles_screen.dart';
 import '../../features/messages/presentation/screens/messages_screen.dart';
 import '../../features/messages/presentation/screens/chat_screen.dart';
+// Accounting
+import '../../features/accounting/presentation/screens/acc_document_detail_screen.dart';
+import '../../features/accounting/presentation/screens/acc_document_print_screen.dart';
+import '../../features/accounting/presentation/screens/acc_home_screen.dart';
+import '../../features/accounting/presentation/screens/acc_invoices_screen.dart';
+import '../../features/accounting/presentation/screens/acc_money_screen.dart';
+import '../../features/accounting/presentation/screens/acc_purchases_screen.dart';
+import '../../features/accounting/presentation/screens/acc_vendor_detail_screen.dart';
+import '../../features/accounting/presentation/screens/acc_vendors_screen.dart';
+import '../../features/accounting/presentation/screens/acc_new_invoice_screen.dart';
+import '../../features/accounting/presentation/screens/acc_periods_screen.dart';
+import '../../features/accounting/presentation/screens/acc_report_screen.dart';
+import '../../features/accounting/presentation/screens/acc_reports_screen.dart';
+import '../../features/accounting/presentation/screens/acc_status_screen.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 final shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -224,17 +237,21 @@ final GoRouter appRouter = GoRouter(
         _r(Routes.roles, const RolesScreen()),
         _push(Routes.messages, const MessagesScreen()),
         _push(Routes.chat, const ChatScreen()),
-        // A destination for the Accountant / Finance Viewer roles. Their
-        // grants are all `acc_*`, which no other nav entry lists - so
-        // without this the drawer rendered empty and the landing fallback
-        // dropped them on a Dashboard that 403s, with only Logout working.
-        _r(Routes.accounting,
-            const PlaceholderScreen(
-                title: 'Accounting',
-                body: 'Accounting is managed in the web app.',
-                // A landing destination, not a pushed one - without the header
-                // there is no drawer button and no way off the screen.
-                showHeader: true)),
+        // Accounting (plan §4). Home is the landing for the Accountant /
+        // Finance Viewer roles, whose grants are all `acc_*`.
+        _r(Routes.accHome, const AccHomeScreen()),
+        _r(Routes.accInvoices, const AccInvoicesScreen()),
+        _push(Routes.accNewInvoice, const AccNewInvoiceScreen()),
+        _push(Routes.accDocumentDetail, const AccDocumentDetailScreen()),
+        _push(Routes.accDocumentPrint, const AccDocumentPrintScreen()),
+        _push(Routes.accStatus, const AccStatusScreen()),
+        _r(Routes.accMoney, const AccMoneyScreen()),
+        _r(Routes.accPurchases, const AccPurchasesScreen()),
+        _push(Routes.accVendors, const AccVendorsScreen()),
+        _push(Routes.accVendorDetail, const AccVendorDetailScreen()),
+        _push(Routes.accReports, const AccReportsScreen()),
+        _push(Routes.accReport, const AccReportScreen()),
+        _push(Routes.accPeriods, const AccPeriodsScreen()),
       ],
     ),
   ],

@@ -37,6 +37,13 @@ class InvoicesRemoteDataSource {
     return out;
   }
 
+  /// `PATCH /quotations/payments/{payment_id}/` — the plan's accounting
+  /// settings (handover §9.2): `billing_mode`, `auto_issue`, `amounts_are`,
+  /// `project`, `contract_ref`. `amounts_are` answers a field-level 400 once
+  /// any record is linked or receipted.
+  Future<void> updatePlan(String paymentId, Map<String, Object?> fields) =>
+      _api.patch(ApiEndpoints.payment(paymentId), body: fields);
+
   /// `GET /quotations/payments/{payment_id}/summary/` (doc §2b).
   ///
   /// Best-effort: the header row already carries enough to render the invoice,
@@ -155,6 +162,12 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
       paidNum: amountPaid.round(),
       status:
           invoiceStatusKey(status: _str(row['status']), amountPaid: settledAmount),
+      billingMode: _str(row['billing_mode']),
+      autoIssue: row['auto_issue'] == true,
+      amountsAre: _str(row['amounts_are']),
+      projectId: _str(row['project']) ??
+          (row['project'] is Map ? _str((row['project'] as Map)['project_id']) : null),
+      contractRef: _str(row['contract_ref']),
     );
   } on Object {
     return null;

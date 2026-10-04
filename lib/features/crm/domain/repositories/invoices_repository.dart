@@ -10,4 +10,7 @@ abstract class InvoicesRepository {
   /// `payment_id`. Null means "no server figures" — mock mode, an invoice with
   /// no uuid, or a failed call — and callers fall back to their own arithmetic.
   Future<InvoiceSummary?> getInvoiceSummary(String paymentId);
+
+  /// Saves the plan's accounting settings (handover §9.2). Mock mode no-ops.
+  Future<void> updatePlanBilling(String paymentId, Map<String, Object?> fields);
 }

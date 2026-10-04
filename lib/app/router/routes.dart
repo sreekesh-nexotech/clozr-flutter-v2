@@ -5,7 +5,7 @@
 /// hardcode a path string.
 library;
 
-enum NavContext { crm, ops, help, dash, none }
+enum NavContext { crm, ops, help, dash, acc, none }
 
 class RouteMeta {
   final NavContext nav;
@@ -86,7 +86,21 @@ class Routes {
   static const roles = '/roles';
   static const messages = '/messages';
   static const chat = '/chat';
-  static const accounting = '/accounting';
+
+  // Accounting (`docs-flutter/ACCOUNTING_FLUTTER_PLAN.md` §4)
+  static const accHome = '/acc/home';
+  static const accInvoices = '/acc/invoices';
+  static const accNewInvoice = '/acc/invoices/add';
+  static const accDocumentDetail = '/acc/documents/detail';
+  static const accDocumentPrint = '/acc/documents/print';
+  static const accMoney = '/acc/money';
+  static const accPurchases = '/acc/purchases';
+  static const accVendors = '/acc/vendors';
+  static const accVendorDetail = '/acc/vendors/detail';
+  static const accReports = '/acc/reports';
+  static const accReport = '/acc/reports/view';
+  static const accPeriods = '/acc/periods';
+  static const accStatus = '/acc/status';
 
   /// Chrome metadata per path.
   static const Map<String, RouteMeta> meta = {
@@ -147,7 +161,19 @@ class Routes {
     roles: RouteMeta(NavContext.crm, false),
     messages: RouteMeta(NavContext.crm, false),
     chat: RouteMeta(NavContext.crm, false),
-    accounting: RouteMeta(NavContext.none, false),
+    accHome: RouteMeta(NavContext.acc, true),
+    accInvoices: RouteMeta(NavContext.acc, true),
+    accNewInvoice: RouteMeta(NavContext.acc, false),
+    accDocumentDetail: RouteMeta(NavContext.acc, false),
+    accDocumentPrint: RouteMeta(NavContext.acc, false),
+    accMoney: RouteMeta(NavContext.acc, true),
+    accPurchases: RouteMeta(NavContext.acc, true),
+    accVendors: RouteMeta(NavContext.acc, false),
+    accVendorDetail: RouteMeta(NavContext.acc, false),
+    accReports: RouteMeta(NavContext.acc, false),
+    accReport: RouteMeta(NavContext.acc, false),
+    accPeriods: RouteMeta(NavContext.acc, false),
+    accStatus: RouteMeta(NavContext.acc, false),
   };
 
   static RouteMeta metaFor(String location) {

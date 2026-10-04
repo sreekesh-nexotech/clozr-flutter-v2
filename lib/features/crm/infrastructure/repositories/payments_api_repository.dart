@@ -52,21 +52,30 @@ class PaymentsApiRepository implements PaymentsRepository {
   }
 
   @override
-  Future<void> markRecordPaid(
+  Future<bool> markRecordPaid(
     String recordId, {
-    double? amount,
+    String? amountPaid,
     String method = 'upi',
-    double? tdsDeducted,
-    double? bankCharge,
+    DateTime? paidDate,
+    String? tdsDeducted,
+    String? bankCharge,
+    String? bankAccountId,
+    String? treatAs,
+    String? gatewayRef,
   }) async {
-    await _remote.markRecordPaid(recordId,
-        amount: amount,
+    final posted = await _remote.markRecordPaid(recordId,
+        amountPaid: amountPaid,
         method: method,
+        paidDate: paidDate,
         tdsDeducted: tdsDeducted,
-        bankCharge: bankCharge);
+        bankCharge: bankCharge,
+        bankAccountId: bankAccountId,
+        treatAs: treatAs,
+        gatewayRef: gatewayRef);
     // The server recalculates the parent invoice (amount_paid, next_due_date,
     // completion), so both offline copies are stale.
     await AppCache.remove(AppCache.crmCache, _cacheKey);
     await AppCache.remove(AppCache.crmCache, _invoicesCacheKey);
+    return posted;
   }
 }

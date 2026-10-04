@@ -18,6 +18,10 @@ class AppCache {
   static const String operationsCache = 'operations_cache';
   static const String helpdeskCache = 'helpdesk_cache';
   static const String notificationsCache = 'notifications_cache';
+
+  /// Accounting **reads** only — document pages, vendors, settlement lists,
+  /// the period register and reports. Never a form or a tax preview.
+  static const String accountingCache = 'accounting_cache';
   static const String settingsBox = 'settings';
 
   static const List<String> _boxes = [
@@ -28,6 +32,7 @@ class AppCache {
     operationsCache,
     helpdeskCache,
     notificationsCache,
+    accountingCache,
     settingsBox,
   ];
 
@@ -76,6 +81,13 @@ class AppCache {
   static Future<void> remove(String box, String key) async {
     if (!_ready) return;
     await Hive.box<String>(box).delete(key);
+  }
+
+  /// Empties one box — for a feature whose writes can move most of its reads
+  /// at once (an accounting posting touches balances, aging and the register).
+  static Future<void> clearBox(String box) async {
+    if (!_ready) return;
+    await Hive.box<String>(box).clear();
   }
 
   /// Clears every cache box — called on logout so no tenant data survives a

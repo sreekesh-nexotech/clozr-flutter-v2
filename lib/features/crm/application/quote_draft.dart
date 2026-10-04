@@ -79,6 +79,9 @@ class QuoteDraft {
     this.terms = '',
     this.currency = 'INR',
     this.lines = const [],
+    this.amountsAre,
+    this.placeOfSupplyStateCode,
+    this.contractRef = '',
   });
 
   /// The only required field on create.
@@ -95,6 +98,15 @@ class QuoteDraft {
   final String terms;
   final String currency;
   final List<QuoteDraftLine> lines;
+
+  /// `EXCLUSIVE` / `INCLUSIVE` — whether the line prices already include tax.
+  /// Accounting reads it to derive every invoice raised from this quote, and
+  /// it locks once a payment is recorded, so it has to be right up front.
+  final String? amountsAre;
+
+  /// Two-digit GST state code; null lets the server derive it from the party.
+  final String? placeOfSupplyStateCode;
+  final String contractRef;
 
   /// Whether this draft can be submitted at all: the API requires a lead, and a
   /// quote with no line items has no amount.
@@ -132,6 +144,12 @@ class QuoteDraft {
       if (wants('terms_and_conditions') && terms.trim().isNotEmpty)
         'terms_and_conditions': terms.trim(),
       'line_items': [for (final l in lines) l.toJson()],
+      // Accounting fields (handover §9.3). Not layout-driven — they only
+      // appear on the form while accounting is active, so they are sent
+      // whenever the user set them.
+      if (amountsAre != null) 'amounts_are': amountsAre,
+      if (placeOfSupplyStateCode != null) 'place_of_supply_state_code': placeOfSupplyStateCode,
+      if (contractRef.trim().isNotEmpty) 'contract_ref': contractRef.trim(),
     };
   }
 

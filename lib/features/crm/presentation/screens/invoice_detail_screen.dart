@@ -35,6 +35,10 @@ import '../../infrastructure/data_sources/local/crm_party_directory.dart';
 import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
 import '../components/record_payment_sheet.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/components/acc_widgets.dart';
+import '../../../accounting/presentation/components/plan_billing_card.dart';
+import '../../../accounting/presentation/sheets/invoice_from_record_sheet.dart';
 
 /// Invoice detail — header (id + status, total/paid/balance, action buttons) and
 /// the installment schedule (tappable payment rows), plus notes.
@@ -146,6 +150,10 @@ class InvoiceDetailScreen extends ConsumerWidget {
                 _headerCard(context, ref, invoice, meta, cust, paidNum, summary),
                 SizedBox(height: 14.h),
                 _detailsCard(ref, invoice),
+                if (ref.watch(accountingActiveProvider)) ...[
+                  PlanBillingCard(invoice: invoice),
+                  SizedBox(height: 14.h),
+                ],
                 FinanceCard(
                   title: 'Installment schedule',
                   child: Column(
@@ -505,7 +513,13 @@ class InvoiceDetailScreen extends ConsumerWidget {
   /// payment sheet. The server recalculates the parent invoice — `amount_paid`,
   /// `next_due_date`, completion — so both lists are refetched, and the summary
   /// follows on the write tick.
-  Future<void> _settle(WidgetRef ref, Payment p) async {
+  Future<void> _settle(BuildContext context, WidgetRef ref, Payment p) async {
+    // With accounting on, settling posts a receipt: it needs the date the money
+    // arrived, any TDS and the bank — the sheet, targeted at this instalment.
+    if (ref.read(accountingActiveProvider)) {
+      await showRecordPaymentSheet(context, invoiceId: p.invId ?? p.planUuid, recordId: p.id);
+      return;
+    }
     final prev = ref.read(paidOverrideProvider);
     ref.read(paidOverrideProvider.notifier).state = {...prev, p.id};
 
@@ -513,7 +527,7 @@ class InvoiceDetailScreen extends ConsumerWidget {
       try {
         await ref.read(paymentsRepositoryProvider).markRecordPaid(
               p.id,
-              amount: p.amountNum > 0 ? p.amountNum.toDouble() : null,
+              amountPaid: p.amountExact.isNotEmpty ? p.amountExact : null,
             );
       } on AppError catch (e) {
         ref.read(paidOverrideProvider.notifier).state = {...prev};
@@ -551,6 +565,7 @@ class InvoiceDetailScreen extends ConsumerWidget {
                   Text('${p.id} · $methodLabel', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
                   SizedBox(height: 2.h),
                   Text(p.date, style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: paymentDateColor(p.status))),
+                  if (ref.watch(accountingActiveProvider)) ..._accountingLine(context, ref, p),
                 ],
               ),
             ),
@@ -564,7 +579,7 @@ class InvoiceDetailScreen extends ConsumerWidget {
                 if (canPay) ...[
                   SizedBox(height: 5.h),
                   GestureDetector(
-                    onTap: () => _settle(ref, p),
+                    onTap: () => _settle(context, ref, p),
                     child: Text('Settle now',
                         style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
                   ),
@@ -575,6 +590,62 @@ class InvoiceDetailScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// The instalment's accounting state under its date: the invoice raised
+  /// for it (tap → the document), whether a receipt posted, and — when there
+  /// is no invoice yet — the "Issue invoice" action.
+  List<Widget> _accountingLine(BuildContext context, WidgetRef ref, Payment p) {
+    final s = p.recordSummary;
+    final canCreate = ref.watch(accPermProvider('acc_document')).create;
+    return [
+      if (s != null && s.hasDocument) ...[
+        SizedBox(height: 5.h),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => context.push('${Routes.accDocumentDetail}?id=${s.documentId}'),
+          child: Row(
+            children: [
+              Icon(PhosphorIconsRegular.receipt, size: 12.sp, color: AppColors.blueBright),
+              SizedBox(width: 4.w),
+              Flexible(
+                child: Text(s.documentNumber ?? 'Draft invoice',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+              ),
+              if (s.documentPaymentState != null && s.documentPaymentState != 'NA') ...[
+                SizedBox(width: 6.w),
+                PaymentStatePill(s.documentPaymentState!),
+              ],
+            ],
+          ),
+        ),
+      ],
+      if (p.postedReceiptId != null || (s?.hasReceipt ?? false)) ...[
+        SizedBox(height: 4.h),
+        Text('Receipt posted',
+            style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.success)),
+      ],
+      if (p.linkedDocumentId == null && !(s?.hasDocument ?? false) && canCreate) ...[
+        SizedBox(height: 5.h),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () async {
+            final doc = await showInvoiceFromRecordSheet(
+              context,
+              recordId: p.id,
+              customerId: p.custId,
+            );
+            if (doc != null && context.mounted) {
+              context.push('${Routes.accDocumentDetail}?id=${doc.id}');
+            }
+          },
+          child: Text('Issue invoice',
+              style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+        ),
+      ],
+    ];
   }
 
   /// Same scale as `invoice.total`, so the three header figures agree.

@@ -67,6 +67,19 @@ class ClozrBottomNav extends ConsumerWidget {
           if (tabs.contains('help'))
             _NavItem('help', 'Helpdesk', PhosphorIconsRegular.headset, PhosphorIconsFill.headset, '${Routes.dashboard}?tab=help', 64),
         ];
+      case NavContext.acc:
+        // Each tab only for a role that can read its area — the same module
+        // keys that gate the drawer's Accounting children.
+        bool can(String m) => access == null || access.can(m);
+        return [
+          _NavItem('acchome', 'Home', PhosphorIconsRegular.house, PhosphorIconsFill.house, Routes.accHome, 46),
+          if (can('acc_document'))
+            _NavItem('accinvoices', 'Invoices', PhosphorIconsRegular.receipt, PhosphorIconsFill.receipt, Routes.accInvoices, 54),
+          if (can('acc_purchase'))
+            _NavItem('accpurchases', 'Purchases', PhosphorIconsRegular.shoppingCart, PhosphorIconsFill.shoppingCart, Routes.accPurchases, 60),
+          if (can('acc_settlement'))
+            _NavItem('accmoney', 'Money', PhosphorIconsRegular.wallet, PhosphorIconsFill.wallet, Routes.accMoney, 46),
+        ];
       case NavContext.crm:
       case NavContext.none:
         return [
@@ -88,6 +101,9 @@ class ClozrBottomNav extends ConsumerWidget {
     if (path.startsWith('/ops')) return Routes.createTask;
     if (path.startsWith('/help')) return Routes.createTicket;
     if (path.startsWith('/quotes')) return Routes.addQuote;
+    // Purchases and Money register their own sheets; everywhere else in
+    // Accounting the `+` raises an invoice.
+    if (path.startsWith('/acc')) return Routes.accNewInvoice;
     return Routes.addLead;
   }
 
@@ -112,6 +128,14 @@ class ClozrBottomNav extends ConsumerWidget {
         return path.startsWith('/help/tickets');
       case 'boards':
         return path == Routes.helpBoards;
+      case 'acchome':
+        return path == Routes.accHome;
+      case 'accinvoices':
+        return path.startsWith('/acc/invoices') || path.startsWith('/acc/documents');
+      case 'accpurchases':
+        return path.startsWith('/acc/purchases');
+      case 'accmoney':
+        return path.startsWith('/acc/money');
       default:
         return false;
     }

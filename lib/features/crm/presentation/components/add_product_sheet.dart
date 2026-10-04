@@ -65,8 +65,16 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
   int _seq = 1;
   bool _saving = false;
 
-  /// The rates the serializer accepts — anything else is a 400 (§3).
-  static const List<int> _gstOptions = [0, 5, 12, 18, 28];
+  /// The rates the serializer accepts — anything else is a 400 (§3). 40% is
+  /// the GST 2.0 slab; 12% and 28% are retired and labelled so (handover §9.4).
+  static const List<int> _gstOptions = [0, 5, 12, 18, 28, 40];
+  static const Set<int> _deprecatedRates = {12, 28};
+
+  static String _rateLabel(int r) => _deprecatedRates.contains(r) ? '$r% (retired)' : '$r%';
+
+  /// `GOODS` / `SERVICE` — whether this is goods or a service for GST. Picks
+  /// the HSN (goods) or SAC (services) rate ladder when it is invoiced.
+  String _nature = 'SERVICE';
 
   /// A package needs at least one component before it can be active (§7), and
   /// this sheet has no component editor, so one is created inactive.
@@ -186,6 +194,10 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
         'tax_rate': [
           for (final r in _gstOptions) CatalogOption(id: '$r', name: '$r'),
         ],
+        'supply_nature': const [
+          CatalogOption(id: 'GOODS', name: 'Goods'),
+          CatalogOption(id: 'SERVICE', name: 'Service'),
+        ],
       };
 
   /// Creates the item from the org-configured form.
@@ -268,6 +280,7 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
           // posted ₹5,00,000 and the row came back ₹0.
           if (!widget.isPackage) 'price': price,
           'tax_rate': _gst,
+          'supply_nature': _nature,
           'description': _desc.text.trim(),
           'is_active': _forcedInactive ? false : _active,
         });
@@ -381,10 +394,10 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                             behavior: HitTestBehavior.opaque,
                             onTap: () => _pick(
                                 'GST rate',
-                                [for (final r in _gstOptions) '$r%'],
-                                '$_gst%',
+                                [for (final r in _gstOptions) _rateLabel(r)],
+                                _rateLabel(_gst),
                                 (v) => setState(() =>
-                                    _gst = int.parse(v.replaceAll('%', '')))),
+                                    _gst = int.parse(v.split('%').first))),
                             child: Container(
                             height: 46.h,
                             padding: EdgeInsets.symmetric(horizontal: 14.w),
@@ -407,6 +420,44 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                     ),
                   ],
                 ),
+                if (!widget.isPackage) ...[
+                  SizedBox(height: 14.h),
+                  _label$('Goods or service'),
+                  Row(
+                    children: [
+                      for (final n in const [('GOODS', 'Goods'), ('SERVICE', 'Service')]) ...[
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => setState(() => _nature = n.$1),
+                          child: Container(
+                            height: 36.h,
+                            padding: EdgeInsets.symmetric(horizontal: 14.w),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: _nature == n.$1 ? AppColors.blueSubtle : AppColors.white,
+                              borderRadius: BorderRadius.circular(10.r),
+                              border: Border.all(
+                                color: _nature == n.$1 ? const Color(0xFFA6D1FF) : const Color(0xFFE6E7EA),
+                                width: _nature == n.$1 ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Text(n.$2,
+                                style: AppText.custom(
+                                    size: 13,
+                                    weight: _nature == n.$1 ? FontWeight.w700 : FontWeight.w500,
+                                    color: _nature == n.$1 ? AppColors.navy : AppColors.textLabelAlt)),
+                          ),
+                        ),
+                        SizedBox(width: 8.w),
+                      ],
+                    ],
+                  ),
+                ],
+                if (_deprecatedRates.contains(_gst)) ...[
+                  SizedBox(height: 10.h),
+                  Text('$_gst% is a retired GST slab — the invoice will use the current rate for this HSN/SAC.',
+                      style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.warningDeep)),
+                ],
                 SizedBox(height: 14.h),
                 _priceNote(),
                 SizedBox(height: 14.h),

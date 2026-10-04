@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../components/ticket_billing_section.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
@@ -54,6 +56,7 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
     _subjectCtrl.dispose();
     _descCtrl.dispose();
     _contactCtrl.dispose();
+    _billing.dispose();
     super.dispose();
   }
 
@@ -77,8 +80,16 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
     _productId = t.productId;
     _projId = t.projId;
     _projName = t.projName;
+    _billing.dispose();
+    _billing = TicketBillingDraft.of(t);
+    _billed = t.isBilled;
     _prefilled = true;
   }
+
+  TicketBillingDraft _billing = TicketBillingDraft();
+
+  /// Billed tickets keep their billing fields — the invoice line has them.
+  bool _billed = false;
 
   bool get _slaNote => _pri != _origPri || _custId != _origCust;
 
@@ -217,6 +228,11 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
                       });
                     },
                   ),
+                  TicketBillingSection(
+                    draft: _billing,
+                    locked: _billed,
+                    onChanged: () => setState(() => _dirty = true),
+                  ),
                 ],
               ),
             ),
@@ -347,9 +363,15 @@ class _EditTicketScreenState extends ConsumerState<EditTicketScreen> {
       ref.read(toastProvider.notifier).show('Subject is required');
       return;
     }
+    final accounting = ref.read(accountingActiveProvider) && !_billed;
+    if (accounting && _billing.error != null) {
+      ref.read(toastProvider.notifier).showError(_billing.error!);
+      return;
+    }
     if (ApiConfig.apiEnabled) {
       try {
         await ref.read(ticketsRepositoryProvider).updateTicket(_id, {
+          if (accounting) ..._billing.toJson(),
           'subject': _subjectCtrl.text.trim(),
           'description': _descCtrl.text.trim(),
           'priority': _pri,

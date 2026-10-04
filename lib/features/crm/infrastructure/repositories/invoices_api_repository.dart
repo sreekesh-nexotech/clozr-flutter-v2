@@ -32,4 +32,10 @@ class InvoicesApiRepository implements InvoicesRepository {
   @override
   Future<InvoiceSummary?> getInvoiceSummary(String paymentId) =>
       _remote.fetchSummary(paymentId);
+
+  @override
+  Future<void> updatePlanBilling(String paymentId, Map<String, Object?> fields) async {
+    await _remote.updatePlan(paymentId, fields);
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+  }
 }

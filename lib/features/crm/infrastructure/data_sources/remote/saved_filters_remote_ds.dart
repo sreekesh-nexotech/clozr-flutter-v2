@@ -18,7 +18,8 @@ class SavedFiltersRemoteDataSource {
   /// `GET /crm/saved-filters/?module=<module>` — the caller's own presets,
   /// ordered by `(module, order, created_at)`. Always a paginated envelope.
   Future<List<SavedFilter>> fetch(String module) async {
-    final body = await _api.get(ApiEndpoints.savedFilters, query: {'module': module});
+    // Quiet: a role without saved views simply has none to show.
+    final body = await _api.get(ApiEndpoints.savedFilters, query: {'module': module}, quiet: true);
     final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <SavedFilter>[];
     for (final row in rows) {

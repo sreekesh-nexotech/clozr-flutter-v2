@@ -150,6 +150,8 @@ class UserDirectory {
       final body = await api.get(
         ApiEndpoints.users,
         query: {'page_size': 200},
+        // The expected 403 for non-admins must not surface as a toast.
+        quiet: true,
       );
       if (body is Map<String, dynamic> && body['results'] is List) {
         for (final row in body['results'] as List) {

@@ -26,6 +26,12 @@ class NavEntry {
   /// Backend module keys that make this entry visible. A group lists every key
   /// its children use, so the parent disappears only when all of them do.
   final List<String> modules;
+
+  /// A subscription-plan feature (`/billing/features/me/`) the entry also
+  /// needs. Null = not plan-gated. Checked by the drawer only: the landing
+  /// fallback keeps to modules, and an accounting-only role on a plan without
+  /// the feature lands on the Accounting home, which says so in words.
+  final String? planFeature;
   const NavEntry({
     required this.key,
     required this.label,
@@ -33,6 +39,7 @@ class NavEntry {
     this.path,
     this.children = const [],
     this.modules = const [],
+    this.planFeature,
   });
 
   bool get isGroup => children.isNotEmpty;
@@ -136,7 +143,8 @@ const List<NavEntry> navCatalog = [
       key: 'accounting',
       label: 'Accounting',
       icon: PhosphorIconsRegular.calculator,
-      path: Routes.accounting,
+      path: Routes.accHome,
+      planFeature: 'accounting',
       // The seven permission areas the accounting module ships with. They are
       // already returned by `/auth/me/modules/`, and no other entry lists any
       // of them - so an Accountant or Finance Viewer failed `canAny` for every
@@ -150,6 +158,15 @@ const List<NavEntry> navCatalog = [
         'acc_period',
         'acc_journal',
         'acc_report',
+      ],
+      children: [
+        NavGroupChild('Invoices', Routes.accInvoices, modules: ['acc_document']),
+        NavGroupChild('Money', Routes.accMoney, modules: ['acc_settlement']),
+        NavGroupChild('Purchases', Routes.accPurchases, modules: ['acc_purchase']),
+        NavGroupChild('Vendors', Routes.accVendors, modules: ['acc_purchase']),
+        NavGroupChild('Reports', Routes.accReports, modules: ['acc_report']),
+        NavGroupChild('Periods', Routes.accPeriods, modules: ['acc_period']),
+        NavGroupChild('Status', Routes.accStatus, modules: ['acc_setup']),
       ]),
 ];
 

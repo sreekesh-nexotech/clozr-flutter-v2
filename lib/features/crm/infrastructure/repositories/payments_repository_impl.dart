@@ -17,14 +17,19 @@ class PaymentsRepositoryImpl implements PaymentsRepository {
   }
 
   @override
-  Future<void> markRecordPaid(
+  Future<bool> markRecordPaid(
     String recordId, {
-    double? amount,
+    String? amountPaid,
     String method = 'upi',
-    double? tdsDeducted,
-    double? bankCharge,
+    DateTime? paidDate,
+    String? tdsDeducted,
+    String? bankCharge,
+    String? bankAccountId,
+    String? treatAs,
+    String? gatewayRef,
   }) async {
     // Mock mode: no backend — the sheet's local paid override is the state.
     await Future<void>.delayed(AppConstants.mockLatency);
+    return false;
   }
 }

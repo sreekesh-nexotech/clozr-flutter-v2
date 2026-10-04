@@ -10,6 +10,10 @@ import '../../../../core/utils/inr_format.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/action_menu.dart';
+import '../../../../core/utils/money_format.dart';
+import '../../../accounting/application/providers/accounting_invalidation.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/sheets/acc_sheet_scaffold.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_refresh.dart';
@@ -465,9 +469,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       ('Created', t.created),
       ('First responded', t.responded ?? 'Awaiting'),
       ('Resolved', t.resolved ?? '—'),
-      // Read-only: the ticket write path filters unknown keys, so the app can
-      // show the flag but cannot set it. Hidden entirely on the ordinary case
-      // rather than printing "Billable: No" on every ticket.
+      // Set from the ticket forms while accounting is active. Hidden entirely
+      // on the ordinary case rather than printing "Billable: No" on every
+      // ticket.
       if (t.billable) ...[
         ('Billable', t.billableAmount == null ? 'Yes' : formatInr(parseAmount(t.billableAmount))),
         ('Billing status', t.isBilled ? 'Billed' : 'Not yet billed'),
@@ -897,6 +901,19 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           label: 'Change status',
           onTap: () => _openStatusSheet(t),
         ),
+        // "Bill this ticket" (plan §5.5). The backend does not itself check
+        // billable / already-billed on `from-ticket/` (handover §12.24), so the
+        // app only offers it for a billable, unbilled ticket.
+        if (ref.read(accountingActiveProvider) &&
+            ref.read(accPermProvider('acc_document')).create &&
+            t.billable &&
+            !t.isBilled)
+          MenuAction(
+            icon: PhosphorIconsRegular.receipt,
+            label: 'Bill this ticket',
+            sublabel: 'Create a draft invoice for this work',
+            onTap: () => _billTicket(t),
+          ),
         MenuAction(
           icon: PhosphorIconsRegular.listChecks,
           label: 'Create task from ticket',
@@ -920,6 +937,35 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           ),
       ],
     );
+  }
+
+  bool _billing = false;
+
+  /// Creates the one-line draft invoice for a billable ticket and opens it.
+  /// Disabled after the first tap: the create takes no idempotency key and
+  /// makes a new draft on every call (handover §12.1).
+  Future<void> _billTicket(Ticket t) async {
+    if (_billing) return;
+    final ok = await confirmAcc(
+      context,
+      title: 'Bill this ticket?',
+      body: 'A draft invoice is created for this work. You can preview the tax and issue it from the draft.',
+      confirmLabel: 'Create draft',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _billing = true);
+    try {
+      final doc = await ref.read(accountingRepositoryProvider).invoiceFromTicket(t.id, documentDate: isoDay(DateTime.now()));
+      invalidateAccountingReads(ref.invalidate);
+      refreshTickets(ref);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('Draft invoice created');
+      if (doc != null) context.push('${Routes.accDocumentDetail}?id=${doc.id}');
+    } on AppError catch (e) {
+      if (mounted) ref.read(toastProvider.notifier).showError(e.message);
+    } finally {
+      if (mounted) setState(() => _billing = false);
+    }
   }
 
   /// Applies a status change with optimistic UI. In mock mode the local override

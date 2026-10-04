@@ -19,7 +19,7 @@ class ExotelRemoteDataSource {
   /// than "off". The caller treats unknown as "try it and see".
   Future<ExotelStatus> fetchStatus() async {
     try {
-      final body = await _api.get(ApiEndpoints.exotelStatus);
+      final body = await _api.get(ApiEndpoints.exotelStatus, quiet: true);
       if (body is! Map) return const ExotelStatus.unknown();
       return ExotelStatus(
         enabled: body['enabled'] == true,

@@ -86,6 +86,23 @@ class AppError implements Exception {
   bool get isAccountingRejection =>
       statusCode == 409 && code == 'ACCOUNTING_POSTING_REJECTED';
 
+  /// Accounting has not been activated for this organisation — the third of
+  /// the three gates every accounting view runs (handover §2).
+  bool get isAccountingInactive => code == 'ACCOUNTING_NOT_ACTIVE';
+
+  /// The structured guard's `cause` object — always a map when present, and
+  /// empty rather than null so callers can index it without a guard.
+  Map<String, dynamic> get causeMap {
+    final c = extra?['cause'];
+    return c is Map ? Map<String, dynamic>.from(c) : const {};
+  }
+
+  /// The structured guard's `next` hint (`PIN_VARIANT_ON_PRODUCT`, …).
+  String? get nextAction {
+    final n = extra?['next'] ?? extra?['next_action'];
+    return n is String && n.isNotEmpty ? n : null;
+  }
+
   /// Maps a [DioException] (and the DRF error body conventions) onto the
   /// app-level model. DRF errors arrive as `{"detail": "..."}`,
   /// `{"error": "..."}`, `{"message": "..."}` or `{field: ["msg", ...]}`.

@@ -136,7 +136,8 @@ class CrmCatalogRemoteDataSource {
     Map<String, dynamic> query = const {},
   }) async {
     try {
-      final body = await _api.get(path, query: {'page_size': _pageSize, ...query});
+      // Quiet: every catalog is an optional option list with its own fallback.
+      final body = await _api.get(path, query: {'page_size': _pageSize, ...query}, quiet: true);
       final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../components/ticket_billing_section.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
@@ -39,11 +41,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   String? _projId;
   String? _projName;
   bool _saving = false;
+  final _billing = TicketBillingDraft();
 
   @override
   void dispose() {
     _subjectCtrl.dispose();
     _descCtrl.dispose();
+    _billing.dispose();
     super.dispose();
   }
 
@@ -172,6 +176,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     });
                   },
                 ),
+                TicketBillingSection(draft: _billing, onChanged: () => setState(() {})),
                 SizedBox(height: 14.h),
                 AppTextField(
                   label: 'Description',
@@ -197,9 +202,15 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       context.pop();
       return;
     }
+    final accounting = ref.read(accountingActiveProvider);
+    if (accounting && _billing.error != null) {
+      ref.read(toastProvider.notifier).showError(_billing.error!);
+      return;
+    }
     setState(() => _saving = true);
     try {
       await ref.read(ticketsRepositoryProvider).createTicket({
+        if (accounting && _billing.billable) ..._billing.toJson(),
         'subject': _subjectCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'priority': _pri,

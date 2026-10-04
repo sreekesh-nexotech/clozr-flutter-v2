@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/presentation/components/acc_widgets.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
@@ -141,6 +142,14 @@ class QuoteDetailScreen extends ConsumerWidget {
               children: [
                 _headerCard(context, ref, quote, meta, canAccept),
                 SizedBox(height: 14.h),
+                if (_isLocked(ref, quote)) ...[
+                  const AccInfoBanner(
+                    'A payment has been recorded or invoiced against this quote, so its amounts, items and tax basis are locked. '
+                    'To change them, create a new quote and cancel the existing invoice.',
+                    icon: PhosphorIconsRegular.lockSimple,
+                  ),
+                  SizedBox(height: 14.h),
+                ],
                 if (party != null) ...[
                   _relatedCard(context, quote, party, isCust),
                   SizedBox(height: 14.h),
@@ -167,6 +176,24 @@ class QuoteDetailScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Whether the backend has locked this quote's money fields: any record of
+  /// its plan is paid or linked to an accounting invoice (handover §9.3).
+  bool _isLocked(WidgetRef ref, Quote quote) {
+    if (quote.uuid.isEmpty) return false;
+    final invoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
+    final plan = invoices.where((i) => i.quoteUuid == quote.uuid).firstOrNull;
+    if (plan == null) return false;
+    final records = ref.watch(paymentsForInvoiceProvider(plan.id));
+    return records.any((p) => p.status == 'paid' || p.linkedDocumentId != null);
+  }
+
+  /// `18.00` → `18`.
+  static String _pct(String raw) {
+    final v = double.tryParse(raw);
+    if (v == null) return raw;
+    return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
   }
 
   Widget _headerCard(BuildContext context, WidgetRef ref, Quote quote, StatusMeta meta, bool canAccept) {
@@ -459,7 +486,10 @@ class QuoteDetailScreen extends ConsumerWidget {
                             // amount on the right - surfaced so the row's
                             // arithmetic is explicable rather than looking wrong.
                             'Qty ${formatQty(it.qty)} · ${it.rate}'
-                            '${it.discount > 0 ? " · -${formatInr(it.discount)} off" : ""}',
+                            '${it.discount > 0 ? " · -${formatInr(it.discount)} off" : ""}'
+                            // The tax snapshot, once the line has one.
+                            '${it.hsn == null ? "" : " · HSN ${it.hsn}"}'
+                            '${it.ratePct == null ? "" : " · ${_pct(it.ratePct!)}%"}',
                             style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
                       ],
                     ),
@@ -479,7 +509,12 @@ class QuoteDetailScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Text(quote.isTaxInclusive ? 'TOTAL · TAX INCLUSIVE' : 'TOTAL · TAX-FREE',
+                Text(
+                    quote.isTaxInclusive
+                        ? 'TOTAL · TAX INCLUSIVE'
+                        : (quote.amountsAre ?? '').toUpperCase() == 'EXCLUSIVE'
+                            ? 'TOTAL · BEFORE TAX'
+                            : 'TOTAL · TAX-FREE',
                     style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
                 const Spacer(),
                 Text(_fmt(sub),

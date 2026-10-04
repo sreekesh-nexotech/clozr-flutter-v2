@@ -113,8 +113,13 @@ class ApiService {
     _authInterceptor.onSessionExpired = handler;
   }
 
-  Future<dynamic> get(String path, {Map<String, dynamic>? query}) =>
-      _run(() => _dio.get<dynamic>(path, queryParameters: query));
+  /// [quiet] keeps a refusal off [failures]: for optional, best-effort reads
+  /// (a filter's option list, a status probe) whose caller already falls back
+  /// on its own. Without it, a role that can read a list but not its side
+  /// catalogs got "You do not have permission…" over a screen that loaded
+  /// fine. The error is still thrown to the caller.
+  Future<dynamic> get(String path, {Map<String, dynamic>? query, bool quiet = false}) =>
+      _run(() => _dio.get<dynamic>(path, queryParameters: query), quiet: quiet);
 
   Future<dynamic> post(String path, {Object? body, Map<String, dynamic>? query}) =>
       _run(() => _dio.post<dynamic>(path, data: body, queryParameters: query));
@@ -150,7 +155,7 @@ class ApiService {
     }
   }
 
-  Future<dynamic> _run(Future<Response<dynamic>> Function() call) async {
+  Future<dynamic> _run(Future<Response<dynamic>> Function() call, {bool quiet = false}) async {
     try {
       final res = await call();
       if (res.requestOptions.method.toUpperCase() != 'GET') _writes.value++;
@@ -165,7 +170,8 @@ class ApiService {
       // auth interceptor already handles by logging out, and a toast about it
       // would only add noise to that.
       final isWrite = e.requestOptions.method.toUpperCase() != 'GET';
-      if (!error.isAuthError &&
+      if (!quiet &&
+          !error.isAuthError &&
           (isWrite || error.type == AppErrorType.forbidden)) {
         _failures.value = error;
       }

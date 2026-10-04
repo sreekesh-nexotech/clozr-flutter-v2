@@ -10,6 +10,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_text_styles.dart';
 import '../../../core/widgets/list_skeleton.dart';
 import '../../../data/api/user_directory.dart';
+import '../../accounting/application/providers/accounting_providers.dart';
 import '../../auth/application/providers/auth_providers.dart';
 import '../application/providers/shell_providers.dart';
 import '../domain/nav_catalog.dart';
@@ -52,6 +53,11 @@ class AppDrawer extends ConsumerWidget {
     final access = accessAsync.valueOrNull;
     bool visible(List<String> modules) =>
         access == null || access.canAny(modules);
+    // Null (unknown / mock / failed fetch) never hides anything — the same
+    // fail-open rule as [access].
+    final features = ref.watch(planFeaturesProvider).valueOrNull;
+    bool inPlan(NavEntry e) =>
+        e.planFeature == null || features == null || features.contains(e.planFeature);
 
     return Stack(
       children: [
@@ -90,7 +96,7 @@ class AppDrawer extends ConsumerWidget {
                         const _MenuSkeleton()
                       else
                         for (final e in navCatalog)
-                          if (visible(e.modules))
+                          if (visible(e.modules) && inPlan(e))
                             ..._row(context, ref, e, expanded, visible),
                     ],
                   ),

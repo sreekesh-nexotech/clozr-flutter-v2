@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
@@ -32,6 +33,27 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Nothing here may fetch until the role is known. After sign-in the router
+    // parks here while `/auth/me/modules/` is still in flight, and watching
+    // the data notifier below starts ~20 admin-dashboard calls at once — for a
+    // role without the `dashboard` module every one is a 403, each a "no
+    // permission" toast, a moment before the redirect moves the user on to
+    // their real landing screen. Hold on a plain skeleton instead; a role
+    // that lacks the module is redirected from here without a single call.
+    if (ApiConfig.apiEnabled) {
+      final accessAsync = ref.watch(moduleAccessProvider);
+      final access = accessAsync.valueOrNull;
+      final unresolved = accessAsync.isLoading && !accessAsync.hasValue;
+      if (unresolved || (access != null && !access.can('dashboard'))) {
+        return ColoredBox(
+          color: AppColors.bgScreen,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(18.w, 120.h, 18.w, 0),
+            child: const _DashboardSkeleton(),
+          ),
+        );
+      }
+    }
     // A `?tab=` the role cannot see (a stale deep link, or a module removed
     // since) falls back to the first panel it can, matching the bottom nav.
     final tabs = visibleDashboardTabs(ref.watch(moduleAccessProvider).valueOrNull);

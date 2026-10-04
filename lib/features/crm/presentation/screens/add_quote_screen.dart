@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/components/acc_pickers.dart';
+import '../../../accounting/presentation/config/accounting_copy.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
@@ -72,6 +75,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   QuotePaymentType _payType = QuotePaymentType.lumpsum;
   String _owner = 'me';
 
+  // Accounting (shown only while it is active).
+  String? _amountsAre;
+  String? _pos;
+  final _contractRefCtrl = TextEditingController();
+
   /// The lead this quote is for — the API's one required field.
   Lead? _lead;
 
@@ -87,6 +95,17 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   bool _loadingLeads = false;
 
   @override
+  void initState() {
+    super.initState();
+    // The org's usual tax basis, when accounting is on and setup is readable.
+    ref.read(tenantProfileProvider.future).then((p) {
+      if (mounted && _amountsAre == null && p?.defaultAmountsAre != null) {
+        setState(() => _amountsAre = p!.defaultAmountsAre);
+      }
+    }).catchError((_) {});
+  }
+
+  @override
   void dispose() {
     _titleCtrl.dispose();
     _validCtrl.dispose();
@@ -95,6 +114,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     _termsCtrl.dispose();
     _installmentsCtrl.dispose();
     _billingCtrl.dispose();
+    _contractRefCtrl.dispose();
     for (final l in _lines) {
       l.qtyCtrl.dispose();
     }
@@ -156,6 +176,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         billingPeriodDays: int.tryParse(_billingCtrl.text.trim()),
         notes: _notesCtrl.text,
         terms: _termsCtrl.text,
+        amountsAre: ref.read(accountingActiveProvider) ? _amountsAre : null,
+        placeOfSupplyStateCode: ref.read(accountingActiveProvider) ? _pos : null,
+        contractRef: ref.read(accountingActiveProvider) ? _contractRefCtrl.text : '',
         lines: [
           for (final line in _lines)
             if (_productById(products, line.productId) case final p?)
@@ -448,10 +471,18 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 SizedBox(height: 2.h),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Text('Tax-free — product amounts only',
+                  // Says what the total is, which depends on the tax basis:
+                  // "tax-free" read as a promise on an INCLUSIVE quote.
+                  child: Text(
+                      switch (_amountsAre) {
+                        'INCLUSIVE' => 'Tax included in these amounts',
+                        'EXCLUSIVE' => 'Before tax — tax is added on the invoice',
+                        _ => 'Tax-free — product amounts only',
+                      },
                       style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
                 ),
                 SizedBox(height: 22.h),
+                if (ref.watch(accountingActiveProvider)) ..._taxSection(),
                 _sectionLabel('Payment & validity'),
                 _chipField(
                   label: schema.labelOf('payment_type', 'Payment type'),
@@ -510,6 +541,37 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         ],
       ),
     );
+  }
+
+  /// Accounting's three quote fields (handover §9.3): the tax basis, the place
+  /// of supply and a contract reference. All three lock once a payment is
+  /// recorded against the quote.
+  List<Widget> _taxSection() {
+    final stateName = ref.watch(gstStateNameProvider);
+    return [
+      _sectionLabel('Tax'),
+      _chipField(
+        label: 'Prices are',
+        options: amountsAreLabels.values.toList(),
+        selected: amountsAreLabels[_amountsAre] ?? '',
+        onSelect: (v) => setState(
+            () => _amountsAre = amountsAreLabels.entries.firstWhere((e) => e.value == v).key),
+      ),
+      SizedBox(height: 14.h),
+      AppTextField(
+        label: 'Place of supply',
+        readOnly: true,
+        value: _pos == null ? null : stateName(_pos),
+        hint: 'From the customer (automatic)',
+        onTap: () async {
+          final code = await pickGstState(context, ref, selected: _pos);
+          if (code != null && mounted) setState(() => _pos = code);
+        },
+      ),
+      SizedBox(height: 14.h),
+      AppTextField(label: 'Contract reference', controller: _contractRefCtrl, hint: 'Optional — PO or contract no.'),
+      SizedBox(height: 22.h),
+    ];
   }
 
   Widget _header(BuildContext context) {

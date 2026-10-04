@@ -595,6 +595,17 @@ class TicketsRemoteDataSource {
     if (statusId != null && _uuidRe.hasMatch(statusId)) {
       out['status_id'] = statusId;
     }
+    // Billing (handover §9.5). Only when the form sent it — the forms add these
+    // keys solely while accounting is active.
+    if (fields['billable'] is bool) out['billable'] = fields['billable'];
+    if (fields.containsKey('billable_amount')) {
+      final amount = _str(fields['billable_amount']);
+      out['billable_amount'] = amount != null && double.tryParse(amount) != null ? amount : null;
+    }
+    if (fields.containsKey('billable_product_id')) {
+      final id = _str(fields['billable_product_id']);
+      out['billable_product_id'] = id != null && _uuidRe.hasMatch(id) ? id : null;
+    }
     for (final key in const ['product_id', 'project_id']) {
       if (!fields.containsKey(key)) continue;
       final id = _str(fields[key]);

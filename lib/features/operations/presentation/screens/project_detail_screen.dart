@@ -4,6 +4,8 @@ import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/components/project_financials_card.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
@@ -118,6 +120,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                     if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
                     SizedBox(height: 14.h),
                     _tabsCard(project, meta, projTasks, locked),
+                    // Billed, collected, costs and margin from the ledger —
+                    // only while accounting is active and reports are readable.
+                    if (ref.watch(accountingActiveProvider) && ref.watch(accPermProvider('acc_report')).read) ...[
+                      SizedBox(height: 14.h),
+                      ProjectFinancialsCard(projectId: project.id),
+                    ],
                     _notes(project),
                     SizedBox(height: 14.h),
                     _auditLog(project, meta, mgr.name),

@@ -5,6 +5,10 @@ import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/components/customer_accounting.dart';
+import '../../../accounting/presentation/sheets/party_tax_profile_sheet.dart';
+import '../../../accounting/presentation/sheets/record_receipt_sheet.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
@@ -80,7 +84,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   bool _upselling = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
-  static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Payments', 'Leads', 'Files'];
+  static const _baseTabs = ['Tasks', 'Call log', 'Follow-ups', 'Payments', 'Leads', 'Files'];
+
+  /// The activity tabs — plus Accounting while it is active (plan §5.3).
+  List<String> get _tabLabels =>
+      ref.watch(accountingActiveProvider) ? [..._baseTabs, 'Accounting'] : _baseTabs;
 
   /// Scrolls the notes card into view and focuses the composer (#13).
   void _focusNotes() {
@@ -122,6 +130,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             icon: PhosphorIconsRegular.notePencil,
             label: 'Add note',
             onTap: _focusNotes),
+        if (ref.read(accountingActiveProvider) && ref.read(accPermProvider('acc_setup')).read)
+          MenuAction(
+              icon: PhosphorIconsRegular.identificationCard,
+              label: 'Tax profile',
+              sublabel: 'GSTIN, PAN and registration',
+              onTap: () => showPartyTaxProfileSheet(context, kind: 'customer', partyId: cust.id, title: cust.name)),
         MenuAction(
             icon: PhosphorIconsRegular.archive,
             label: 'Archive customer',
@@ -716,6 +730,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         ],
                       ),
                     ],
+                    CustomerB2bBadge(customerId: cust.id),
                   ],
                 ),
               ),
@@ -1131,8 +1146,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       case 4:
         // "New lead" against a customer *is* an upsell.
         await _createUpsell(cust);
-      default:
+      case 5:
         await _uploadFiles(cust);
+      default:
+        // Accounting: money in when the role can post it, else a new invoice.
+        if (ref.read(accPermProvider('acc_settlement')).create) {
+          await showRecordReceiptSheet(context, customerId: cust.id);
+        } else {
+          await context.push('${Routes.accNewInvoice}?customer=${cust.id}');
+        }
     }
   }
 
@@ -1197,7 +1219,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Widget _activityCard(Customer cust) {
-    const ctaLabels = ['Add task', 'Log call', 'Add follow-up', 'Record payment', 'New lead', 'Upload file'];
+    final ctaLabels = [
+      'Add task', 'Log call', 'Add follow-up', 'Record payment', 'New lead', 'Upload file',
+      ref.watch(accPermProvider('acc_settlement')).create ? 'Record receipt' : 'New invoice',
+    ];
+    // Accounting can switch off under an open tab; fall back to the first.
+    if (_tab >= _tabLabels.length) _tab = 0;
     final ctaLabel = _uploading && _tab == 5 ? 'Uploading…' : ctaLabels[_tab];
     return ClozrCard(
       radius: 18,
@@ -1245,8 +1272,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         return _paymentsTab(cust);
       case 4:
         return _leadsTab(cust);
-      default:
+      case 5:
         return _filesTab(cust);
+      default:
+        return CustomerAccountingTab(customerId: cust.id);
     }
   }
 

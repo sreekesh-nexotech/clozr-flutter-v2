@@ -5,11 +5,17 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/utils/inr_format.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/utils/money_format.dart';
+import '../../../accounting/application/providers/accounting_invalidation.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/domain/entities/acc_masters.dart';
+import '../../../accounting/presentation/components/acc_pickers.dart';
+import '../../../accounting/presentation/components/acc_widgets.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../sheets/add_sheet_kit.dart' show pickSheetDate, sheetDateLabel;
 import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payments_providers.dart';
@@ -21,17 +27,21 @@ const Color _bannerText = Color(0xFF35507C);
 const List<String> _payMethods = ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque'];
 
 /// Opens the "Record payment" sheet (prototype `recordPayment`). Settle marks the
-/// next open installment paid; Ad-hoc inserts a new payment. Both toast.
-Future<void> showRecordPaymentSheet(BuildContext context, {String? invoiceId}) {
+/// next open installment paid — or [recordId], when the caller is one specific
+/// instalment; Ad-hoc inserts a new payment. Both toast.
+Future<void> showRecordPaymentSheet(BuildContext context, {String? invoiceId, String? recordId}) {
   return showClozrSheet<void>(
     context: context,
-    builder: (_) => _RecordPaymentSheet(initialInvoiceId: invoiceId),
+    builder: (_) => _RecordPaymentSheet(initialInvoiceId: invoiceId, recordId: recordId),
   );
 }
 
 class _RecordPaymentSheet extends ConsumerStatefulWidget {
-  const _RecordPaymentSheet({this.initialInvoiceId});
+  const _RecordPaymentSheet({this.initialInvoiceId, this.recordId});
   final String? initialInvoiceId;
+
+  /// Settle this record rather than the invoice's next open one.
+  final String? recordId;
 
   @override
   ConsumerState<_RecordPaymentSheet> createState() => _RecordPaymentSheetState();
@@ -53,6 +63,22 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   String _method = 'Bank transfer';
   int _seq = 20;
 
+  /// When the money actually arrived. It used to be forced to today, which
+  /// posts a receipt into the wrong period whenever it is recorded late.
+  DateTime _received = DateTime.now();
+
+  /// Accounting only: the bank account a non-cash receipt landed in. Without
+  /// one (and without an org default) the ledger refuses the whole write.
+  BankAccount? _bank;
+
+  /// Accounting only, and only for a record with no issued invoice: book the
+  /// money as a taxed advance or as a customer credit. Null = the server's
+  /// default (services → advance, goods → credit).
+  String? _treatAs;
+  final _gatewayRef = TextEditingController();
+  bool _busy = false;
+  AppError? _error;
+
   @override
   void initState() {
     super.initState();
@@ -61,11 +87,20 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
         (invoices.where((i) => i.status != 'completed').isNotEmpty
             ? invoices.firstWhere((i) => i.status != 'completed').id
             : (invoices.isNotEmpty ? invoices.first.id : null));
+    // Pre-select the org's default bank, so the common case needs no tap.
+    if (ref.read(accountingActiveProvider)) {
+      ref.read(bankAccountsProvider.future).then((accounts) {
+        if (!mounted || _bank != null) return;
+        final banks = [for (final a in accounts) if (a.kind == 'BANK') a];
+        final def = banks.where((a) => a.isDefault).firstOrNull ?? (banks.length == 1 ? banks.first : null);
+        if (def != null) setState(() => _bank = def);
+      }).catchError((_) {});
+    }
   }
 
   @override
   void dispose() {
-    for (final c in [_amount, _date, _label, _note, _tds, _bankCharge]) {
+    for (final c in [_amount, _date, _label, _note, _tds, _bankCharge, _gatewayRef]) {
       c.dispose();
     }
     super.dispose();
@@ -81,6 +116,10 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   Payment? get _nextInstallment {
     final payments = ref.read(allPaymentsProvider);
+    if (widget.recordId != null) {
+      final own = payments.where((p) => p.id == widget.recordId).firstOrNull;
+      if (own != null && own.status != 'paid') return own;
+    }
     for (final p in payments) {
       // Both keys, matching paymentsForInvoiceProvider: `Invoice.id` is the
       // quote number when there is one and the plan uuid otherwise, so the
@@ -141,10 +180,12 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     );
   }
 
-  /// Everything withheld from the receipt, in whole rupees.
-  int get _deductions =>
-      (int.tryParse(_tds.text.trim()) ?? 0) +
-      (int.tryParse(_bankCharge.text.trim()) ?? 0);
+  /// Everything withheld from the receipt, in rupees and paise.
+  double get _deductions => moneyNum(_tds.text.trim()) + moneyNum(_bankCharge.text.trim());
+
+  /// The instalment's contracted amount, exactly — never the rounded display.
+  double _expected(Payment p) =>
+      p.amountExact.isNotEmpty ? moneyNum(p.amountExact) : p.amountNum.toDouble();
 
   Future<void> _submit() async {
     final inv = _invoice;
@@ -162,50 +203,71 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       // Guarded here rather than by a 400: the API refuses a negative cash
       // figure, and silently sending one would roll the optimistic tick back
       // with a message the user cannot act on.
-      if (_deductions > next.amountNum) {
+      final expected = _expected(next);
+      if (_deductions > expected + 0.005) {
         ref.read(toastProvider.notifier).show(
-            'Deductions cannot be more than ${next.amount}');
+            'Deductions cannot be more than ${formatMoneyStr(toMoneyStr(expected))}');
         return;
       }
+      final accounting = ref.read(accountingActiveProvider);
+      final code = const {
+            'Bank transfer': 'bank_transfer',
+            'UPI': 'upi',
+            'Card': 'card',
+            'Cash': 'cash',
+            'Cheque': 'cheque',
+          }[_method] ??
+          'upi';
+      if (accounting && code != 'cash' && _bank == null) {
+        ref.read(toastProvider.notifier).showError('Pick the bank account the money came into');
+        return;
+      }
+      if (_busy) return;
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
       final override = {...ref.read(paidOverrideProvider), next.id};
       ref.read(paidOverrideProvider.notifier).state = override;
+      var posted = false;
       if (ApiConfig.apiEnabled) {
         try {
-          await ref.read(paymentsRepositoryProvider).markRecordPaid(
+          posted = await ref.read(paymentsRepositoryProvider).markRecordPaid(
                 next.id,
                 // Cash actually received. The instalment still settles for its
                 // full contracted amount — the withheld part counts toward
                 // completion server-side.
-                amount: next.amountNum > 0
-                    ? (next.amountNum - _deductions).toDouble()
-                    : null,
-                method: const {
-                      'Bank transfer': 'bank_transfer',
-                      'UPI': 'upi',
-                      'Card': 'card',
-                      'Cash': 'cash',
-                      'Cheque': 'cheque',
-                    }[_method] ??
-                    'upi',
-                tdsDeducted: (int.tryParse(_tds.text.trim()) ?? 0).toDouble(),
-                bankCharge: (int.tryParse(_bankCharge.text.trim()) ?? 0).toDouble(),
+                amountPaid: expected > 0 ? toMoneyStr(expected - _deductions) : null,
+                method: code,
+                paidDate: _received,
+                tdsDeducted: moneyInput(_tds.text),
+                bankCharge: moneyInput(_bankCharge.text),
+                bankAccountId: accounting && code != 'cash' ? _bank?.id : null,
+                treatAs: accounting && next.linkedDocumentId == null ? _treatAs : null,
+                gatewayRef: accounting ? _gatewayRef.text.trim() : null,
               );
           if (!mounted) return;
           ref.invalidate(paymentsProvider);
           ref.invalidate(invoicesProvider);
+          if (accounting) invalidateAccountingReads(ref.invalidate);
         } on AppError catch (e) {
           if (!mounted) return;
-          // Roll the optimistic override back — the record is still unpaid.
+          // Roll the optimistic override back — the record is still unpaid —
+          // and keep the sheet open with the reason, so the user can fix it
+          // (a missing bank account, a closed period) without retyping.
           ref.read(paidOverrideProvider.notifier).state = {
             ...ref.read(paidOverrideProvider)
           }..remove(next.id);
-          ref.read(toastProvider.notifier).showError(e.message);
+          setState(() {
+            _busy = false;
+            _error = e;
+          });
           return;
         }
       }
       if (!mounted) return;
       Navigator.of(context).pop();
-      ref.read(toastProvider.notifier).show('Payment recorded');
+      ref.read(toastProvider.notifier).show(posted ? 'Payment recorded · receipt posted' : 'Payment recorded');
       return;
     }
     // Ad-hoc branch. No backend endpoint exists, so in API mode we don't
@@ -215,7 +277,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       ref.read(toastProvider.notifier).show("Recording ad-hoc payments isn't available yet");
       return;
     }
-    final amt = int.tryParse(_amount.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final amt = moneyNum(_amount.text).round();
     if (amt <= 0) {
       ref.read(toastProvider.notifier).show('Enter the amount received');
       return;
@@ -254,6 +316,10 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (_error != null) ...[
+                  ConflictBanner(error: _error!),
+                  SizedBox(height: 13.h),
+                ],
                 _label$('Invoice', required: true),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -308,6 +374,30 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                   // is withheld at source.
                   if (next != null) ...[
                     SizedBox(height: 13.h),
+                    _label$('Received on', required: true),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        final d = await pickSheetDate(context, isoDay(_received));
+                        if (d != null) setState(() => _received = d);
+                      },
+                      child: Container(
+                        height: 44.h,
+                        padding: EdgeInsets.symmetric(horizontal: 13.w),
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(11.r),
+                          border: Border.all(color: AppColors.borderInput, width: 1.5),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(sheetDateLabel(_received), style: AppText.body())),
+                            Icon(PhosphorIconsRegular.calendarBlank, size: 15.sp, color: AppColors.textPlaceholder),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 13.h),
                     Row(
                       children: [
                         // Rebuilt on every keystroke: the "cash received"
@@ -325,8 +415,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                     if (_deductions > 0) ...[
                       SizedBox(height: 7.h),
                       Text(
-                          'Cash received ${formatInr((next.amountNum - _deductions).toDouble())}'
-                          ' · settles ${next.amount}',
+                          'Cash ${formatMoneyStr(toMoneyStr(_expected(next) - _deductions))}'
+                          ' + withheld ${formatMoneyStr(toMoneyStr(_deductions))}'
+                          ' = settles ${formatMoneyStr(toMoneyStr(_expected(next)))}',
                           style: AppText.custom(
                               size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                     ],
@@ -350,6 +441,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                   runSpacing: 8.h,
                   children: [for (final m in _payMethods) _methodChip(m)],
                 ),
+                if (_mode == 'settle' && next != null && ref.watch(accountingActiveProvider)) ..._accountingFields(next),
                 SizedBox(height: 13.h),
                 _field('Notes', _note, 'Internal note, e.g. Installment 1 of 3'),
                 SizedBox(height: 6.h),
@@ -362,24 +454,58 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     );
   }
 
+  /// The receipt the ledger will post: which bank it landed in and, for an
+  /// instalment with no issued invoice, how to book it (handover §9.1).
+  List<Widget> _accountingFields(Payment next) {
+    final cash = _method == 'Cash';
+    return [
+      if (!cash) ...[
+        SizedBox(height: 13.h),
+        AccPickerBox(
+          label: 'Into bank account',
+          required: true,
+          value: _bank?.label,
+          hint: 'Select account…',
+          onTap: () async {
+            final b = await pickBankAccount(context, ref, selectedId: _bank?.id);
+            if (b != null) setState(() => _bank = b);
+          },
+        ),
+        SizedBox(height: 13.h),
+        _field('Gateway / UTR reference', _gatewayRef, 'Optional'),
+      ],
+      if (next.linkedDocumentId == null) ...[
+        SizedBox(height: 13.h),
+        AccChoiceChips(
+          label: 'No invoice yet — book it as',
+          options: const {'': 'Automatic', 'ADVANCE': 'Advance', 'CUSTOMER_CREDIT': 'Customer credit'},
+          selected: _treatAs ?? '',
+          onSelected: (v) => setState(() => _treatAs = v.isEmpty ? null : v),
+        ),
+      ],
+    ];
+  }
+
   Widget _footer() {
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 24.h),
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _submit,
+        onTap: _busy ? null : _submit,
         child: Container(
           height: 48.h,
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
+          decoration: BoxDecoration(
+              color: _busy ? AppColors.navy.withOpacity(0.6) : AppColors.navy,
+              borderRadius: BorderRadius.circular(12.r)),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(PhosphorIconsBold.check, size: 15.sp, color: AppColors.white),
               SizedBox(width: 8.w),
-              Text('Record payment',
+              Text(_busy ? 'Recording…' : 'Record payment',
                   style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
             ],
           ),
@@ -511,8 +637,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             child: TextField(
               controller: c,
               onChanged: onChanged,
-              keyboardType: number ? TextInputType.number : TextInputType.text,
-              inputFormatters: number ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))] : null,
+              keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+              // Paise allowed: TDS is rarely a round figure.
+              inputFormatters: number ? [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))] : null,
               style: AppText.body(),
               cursorColor: AppColors.blueBright,
               decoration: InputDecoration(

@@ -55,6 +55,8 @@ class ModuleAccess extends Equatable {
     this.roles = const [],
     this.modules = const {},
     this.sidebar = const [],
+    this.moneyPostingBypass = false,
+    this.moneyPosting = const {},
   });
 
   final bool isStaff;
@@ -71,6 +73,16 @@ class ModuleAccess extends Equatable {
 
   /// The module keys in nav order, as the backend sorted them.
   final List<String> sidebar;
+
+  /// `money_posting.bypass` — only a superuser skips the money-posting check.
+  final bool moneyPostingBypass;
+
+  /// `money_posting.modules` — per accounting module, the posting verbs the
+  /// user really holds (`can_create`, `can_update`, `can_approve`). Staff with
+  /// [fullAccess] no longer get these for free (handover §3), so this, not
+  /// [modules], decides whether a posting button is offered. Empty when the
+  /// backend does not send the block.
+  final Map<String, Map<String, bool>> moneyPosting;
 
   /// Whether [key] is readable at all.
   bool can(String key) => modules.containsKey(key);
@@ -96,7 +108,22 @@ class ModuleAccess extends Equatable {
           : const {},
       sidebar:
           (json['sidebar'] as List? ?? const []).whereType<String>().toList(),
+      moneyPostingBypass: json['money_posting'] is Map && (json['money_posting'] as Map)['bypass'] == true,
+      moneyPosting: _moneyPosting(json['money_posting']),
     );
+  }
+
+  static Map<String, Map<String, bool>> _moneyPosting(Object? raw) {
+    final mods = raw is Map ? raw['modules'] : null;
+    if (mods is! Map) return const {};
+    return {
+      for (final e in mods.entries)
+        if (e.value is Map)
+          '${e.key}': {
+            for (final v in (e.value as Map).entries)
+              if (v.value is bool) '${v.key}': v.value as bool,
+          },
+    };
   }
 
   @override

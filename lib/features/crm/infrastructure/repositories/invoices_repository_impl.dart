@@ -19,4 +19,7 @@ class InvoicesRepositoryImpl implements InvoicesRepository {
   /// No backend to ask; the screen keeps its derived figures.
   @override
   Future<InvoiceSummary?> getInvoiceSummary(String paymentId) async => null;
+
+  @override
+  Future<void> updatePlanBilling(String paymentId, Map<String, Object?> fields) async {}
 }
