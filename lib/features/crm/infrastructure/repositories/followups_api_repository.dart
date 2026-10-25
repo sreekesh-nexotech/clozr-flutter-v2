@@ -16,10 +16,13 @@ class FollowupsApiRepository implements FollowupsRepository {
 
   @override
   Future<List<Followup>> getFollowups({Map<String, dynamic> filters = const {}}) async {
+    // Overlaps the row fetch; never throws.
+    final types = _remote.statusTypes();
     try {
       final rows = await _remote.fetchFollowupRows(filters: filters);
-      await AppCache.put(AppCache.crmCache, _cacheKey, rows);
-      return FollowupsRemoteDataSource.mapRows(rows);
+      // Only the unfiltered list is the offline copy.
+      if (filters.isEmpty) await AppCache.put(AppCache.crmCache, _cacheKey, rows);
+      return FollowupsRemoteDataSource.mapRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
         final cached = AppCache.get(AppCache.crmCache, _cacheKey);
@@ -28,7 +31,7 @@ class FollowupsApiRepository implements FollowupsRepository {
           return FollowupsRemoteDataSource.mapRows([
             for (final row in data)
               if (row is Map) Map<String, dynamic>.from(row),
-          ]);
+          ], statusTypes: await types);
         }
       }
       rethrow;

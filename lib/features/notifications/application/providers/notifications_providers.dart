@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../auth/application/providers/auth_providers.dart';
 import '../../domain/entities/app_notification.dart';
 import '../../domain/repositories/notifications_repository.dart';
 import '../../infrastructure/data_sources/local/notifications_mock_ds.dart';
@@ -13,7 +14,22 @@ import '../../infrastructure/repositories/notifications_repository_impl.dart';
 const _pageSize = 8;
 const _pageStep = 6;
 
-enum NotifFilter { all, unread }
+/// The webapp's status segment. Each one is its own server query
+/// (`status=` unread / pinned / snoozed; All sends none, which the server
+/// answers pinned-first with snoozed rows left out).
+enum NotifFilter { all, unread, pinned, snoozed }
+
+extension on NotifFilter {
+  String? get status => switch (this) {
+        NotifFilter.all => null,
+        NotifFilter.unread => 'unread',
+        NotifFilter.pinned => 'pinned',
+        NotifFilter.snoozed => 'snoozed',
+      };
+}
+
+/// The webapp snoozes for a fixed three hours.
+const notificationSnoozeHours = 3;
 
 /// DI seam: mock seed without a base URL, REST otherwise.
 final notificationsRepositoryProvider = Provider<NotificationsRepository>((ref) {
@@ -60,6 +76,8 @@ class NotificationsState {
   static const _dayRank = {'today': 0, 'yesterday': 1, 'earlier': 2};
 
   /// All notifications matching the active filter, sorted by day then order.
+  /// The server already narrowed [all] to the filter; the local pass only
+  /// keeps a just-read row from lingering under Unread.
   List<AppNotification> get filtered {
     final list = filter == NotifFilter.unread ? all.where((n) => n.unread).toList() : List.of(all);
     list.sort((a, b) => (_dayRank[a.day] ?? 3).compareTo(_dayRank[b.day] ?? 3));
@@ -88,8 +106,10 @@ class NotificationsController extends StateNotifier<NotificationsState> {
 
   Future<void> _load() async {
     state = state.copyWith(loading: true, clearError: true);
+    final filter = state.filter;
     try {
-      final rows = await _repo.getNotifications();
+      final rows = await _repo.getNotifications(status: filter.status);
+      if (!mounted || state.filter != filter) return;
       if (mounted) state = state.copyWith(all: rows, loading: false, clearError: true);
     } on AppError catch (e) {
       // Surface the failure so a real 500 isn't mistaken for "all caught up".
@@ -109,7 +129,38 @@ class NotificationsController extends StateNotifier<NotificationsState> {
     _load();
   }
 
-  void setFilter(NotifFilter f) => state = state.copyWith(filter: f, shown: _pageSize);
+  void setFilter(NotifFilter f) {
+    if (f == state.filter) return;
+    state = state.copyWith(filter: f, shown: _pageSize, all: const []);
+    _load();
+  }
+
+  /// Pin or unpin, then re-read the feed so the server's pinned-first order
+  /// shows. Returns the server's refusal, or null.
+  Future<String?> setPinned(String id, bool pinned) async {
+    try {
+      await _repo.setPinned(id, pinned);
+    } on AppError catch (e) {
+      return e.message;
+    }
+    if (mounted) await _load();
+    return null;
+  }
+
+  /// Snooze for [notificationSnoozeHours] (or unsnooze), then re-read: a
+  /// snoozed row leaves All and shows under Snoozed.
+  Future<String?> setSnoozed(String id, bool snooze) async {
+    try {
+      await _repo.setSnoozed(
+        id,
+        snooze ? DateTime.now().add(const Duration(hours: notificationSnoozeHours)) : null,
+      );
+    } on AppError catch (e) {
+      return e.message;
+    }
+    if (mounted) await _load();
+    return null;
+  }
 
   void markAllRead() {
     state = state.copyWith(all: [for (final n in state.all) n.copyWith(unread: false)]);
@@ -147,7 +198,30 @@ class NotificationsController extends StateNotifier<NotificationsState> {
   void loadMore() => state = state.copyWith(shown: state.shown + _pageStep);
 }
 
+/// Keyed to the signed-in user, so the next account never sees the previous
+/// one's feed.
 final notificationsProvider =
-    StateNotifierProvider<NotificationsController, NotificationsState>(
-  (ref) => NotificationsController(ref.watch(notificationsRepositoryProvider)),
-);
+    StateNotifierProvider<NotificationsController, NotificationsState>((ref) {
+  ref.watch(sessionControllerProvider.select((s) => s.user?.id));
+  return NotificationsController(ref.watch(notificationsRepositoryProvider));
+});
+
+/// The bell's unread count, polled every minute like the webapp's badge
+/// (`status=unread&page_size=1` → `count`). Null until the first answer, and
+/// on failure — the bell then falls back to the loaded feed.
+final notificationsUnreadCountProvider = StreamProvider<int?>((ref) async* {
+  final user = ref.watch(sessionControllerProvider.select((s) => s.user?.id));
+  if (user == null) {
+    yield null;
+    return;
+  }
+  final repo = ref.watch(notificationsRepositoryProvider);
+  while (true) {
+    try {
+      yield await repo.unreadCount();
+    } on Object {
+      yield null;
+    }
+    await Future<void>.delayed(const Duration(seconds: 60));
+  }
+});

@@ -129,6 +129,7 @@ final customerActivityLogProvider = FutureProvider.autoDispose
     modelName: 'Customer',
     recordId: customerId,
     statusNames: {for (final s in statuses) s.id: s.name},
+    recordLabel: 'Customer',
   );
 });
 

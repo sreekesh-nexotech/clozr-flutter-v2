@@ -153,5 +153,22 @@ final taskActivityLogProvider =
     modelName: 'Task',
     recordId: taskId,
     statusNames: {for (final s in statuses) s.id: s.name},
+    recordLabel: 'Task',
+  );
+});
+
+/// The same log for a follow-up — a Task row underneath, but its entries read
+/// "Created follow-up" / "Updated follow-up", as on the webapp.
+final followupActivityLogProvider =
+    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, taskId) async {
+  final ds = ref.watch(auditLogRemoteDataSourceProvider);
+  if (ds == null) return const [];
+  ref.watch(apiWriteTickProvider);
+  final statuses = ref.watch(taskStatusOptionsProvider);
+  return ds.fetchFor(
+    modelName: 'Task',
+    recordId: taskId,
+    statusNames: {for (final s in statuses) s.id: s.name},
+    recordLabel: 'Follow-up',
   );
 });

@@ -6,6 +6,10 @@ import 'package:flutter/material.dart';
 /// - **picked on the device** — [localPath] points at the file to upload, and
 ///   [url] is null until the upload returns;
 /// - **loaded from the API** — [url] is the CDN link and [localPath] is null.
+/// One of the org's note types (source tags) — `GET /crm/note-types/`.
+/// [color] is the server's hex (`#16a34a`), empty when it has none.
+typedef NoteTypeOption = ({String id, String name, String color});
+
 class NoteAttachment {
   const NoteAttachment({
     required this.name,
@@ -76,12 +80,21 @@ class NoteEntry {
     this.via,
     this.avatarColor,
     this.pinned = false,
+    this.authorId,
+    this.noteType,
     List<NoteReply>? replies,
     List<NoteAttachment>? attachments,
   })  : replies = replies ?? [],
         attachments = attachments ?? [];
 
   final String id;
+
+  /// `created_by.user_id` — only the author may pin, edit or delete a note
+  /// (webapp `NoteCard`). Null for a note written in this session.
+  final String? authorId;
+
+  /// The org note type ("General", "Meeting", …) the note is tagged with.
+  final String? noteType;
   final String author;
   final String time;
   final String body;
@@ -102,14 +115,18 @@ class NoteEntry {
 
   /// The same note with [pinned] flipped to [value]; every other field, and
   /// the live `replies`/`attachments` lists, carried over untouched.
-  NoteEntry withPinned(bool value) => NoteEntry(
-        id: id,
+  NoteEntry withPinned(bool value) => copyWith(pinned: value);
+
+  NoteEntry copyWith({bool? pinned, String? body, String? id, String? noteType}) => NoteEntry(
+        id: id ?? this.id,
         author: author,
         time: time,
-        body: body,
+        body: body ?? this.body,
         via: via,
         avatarColor: avatarColor,
-        pinned: value,
+        pinned: pinned ?? this.pinned,
+        authorId: authorId,
+        noteType: noteType ?? this.noteType,
         replies: replies,
         attachments: attachments,
       );

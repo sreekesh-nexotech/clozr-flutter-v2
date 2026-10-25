@@ -15,6 +15,10 @@ enum LeadWhatsappResult {
   /// The lead has no phone number, so there is nothing to open.
   noNumber,
 
+  /// No thread yet and the caller asked not to leave the app — it opens the
+  /// webapp's draft (template-only) chat instead.
+  noThread,
+
   /// The device would not open WhatsApp (not installed, no browser).
   whatsappUnavailable,
 
@@ -76,6 +80,7 @@ class LeadWhatsappService {
   Future<LeadWhatsappOutcome> open({
     required String leadId,
     required String phone,
+    bool openExternally = true,
   }) async {
     final digits = waDigits(phone);
 
@@ -91,10 +96,14 @@ class LeadWhatsappService {
       lookupError = 'Could not check for an existing chat.';
     }
 
+    // Webapp (`useLeadConversationId`): the lead's thread is the one the
+    // backend links to it — matched on the lead id only. A thread that merely
+    // shares the number is not this lead's; with no link the lead gets a
+    // draft chat instead.
     final existing = findConversationForLead(
       _conversations(),
       leadId: leadId,
-      phone: digits,
+      phone: '',
     );
     if (existing != null) {
       return LeadWhatsappOutcome(LeadWhatsappResult.openedThread,
@@ -108,6 +117,10 @@ class LeadWhatsappService {
             : LeadWhatsappResult.lookupFailed,
         message: lookupError,
       );
+    }
+
+    if (!openExternally) {
+      return LeadWhatsappOutcome(LeadWhatsappResult.noThread, message: lookupError);
     }
 
     // wa.me takes E.164 digits with no `+`; it opens the installed app and

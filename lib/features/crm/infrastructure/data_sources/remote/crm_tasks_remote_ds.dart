@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
+import '../../../../../core/network/app_error.dart';
 import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
@@ -21,7 +22,8 @@ class CrmTasksRemoteDataSource {
   List<Map<String, dynamic>>? _statusCache;
 
   /// Raw list rows (followed up to 3 pages). The repository caches these.
-  Future<List<Map<String, dynamic>>> fetchTaskRows() => _fetchRows();
+  Future<List<Map<String, dynamic>>> fetchTaskRows({Map<String, dynamic> query = const {}}) =>
+      _fetchRows(query: query);
 
   /// Raw rows for the tasks linked to one lead, scoped server-side with the
   /// shared generic-relation params rather than filtered after the fact.
@@ -44,6 +46,7 @@ class CrmTasksRemoteDataSource {
   Future<List<Map<String, dynamic>>> _fetchRows({
     String? relatedTo,
     String? relatedToId,
+    Map<String, dynamic> query = const {},
   }) async {
     final scoped = relatedTo != null && relatedToId != null;
     final rows = <Map<String, dynamic>>[];
@@ -59,6 +62,7 @@ class CrmTasksRemoteDataSource {
         // Both-or-neither by contract; one alone is a 400.
         if (scoped) 'related_to': relatedTo,
         if (scoped) 'related_to_id': relatedToId,
+        ...query,
         if (page > 1) 'page': page,
       });
       final chunk = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
@@ -80,18 +84,27 @@ class CrmTasksRemoteDataSource {
   /// request action rather than a query param. A column visible on the card but
   /// hidden on the list therefore arrives with no value — which renders as
   /// absent, since the card skips empty values.
+  ///
+  /// A timeout or lost connection is **rethrown** rather than answered with
+  /// [ViewSchema.empty]: on a pull-to-refresh or a re-visit the provider then
+  /// keeps the layout it already has (`valueOrNull` holds the previous value
+  /// through an error), instead of a slow server silently swapping every card
+  /// back to the built-in layout.
   Future<ViewSchema> fetchListSchema() async {
-    final mobile = await _schema('mobile');
-    return mobile.isNotEmpty ? mobile : _schema('list');
+    final mobile = await _schema('mobile', rethrowOutage: true);
+    return mobile.isNotEmpty ? mobile : _schema('list', rethrowOutage: true);
   }
 
-  Future<ViewSchema> _schema(String viewType) async {
+  Future<ViewSchema> _schema(String viewType, {bool rethrowOutage = false}) async {
     try {
       final body = await _api.get(
         ApiEndpoints.crmTaskSchema,
         query: {'view_type': viewType},
       );
       return ViewSchema.fromResponse(body);
+    } on AppError catch (e) {
+      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      return ViewSchema.empty;
     } on Object {
       return ViewSchema.empty;
     }
@@ -126,9 +139,10 @@ class CrmTasksRemoteDataSource {
   ///
   /// The record is also trimmed to the org's **detail** config, so it carries
   /// fields the list rows do not.
-  Future<Map<String, dynamic>?> fetchTaskRow(String id) async {
+  Future<Map<String, dynamic>?> fetchTaskRow(String id, {bool isFollowup = false}) async {
     if (id.isEmpty) return null;
-    final body = await _api.get(ApiEndpoints.crmTask(id));
+    // Webapp `getTaskDetail`: a follow-up is only found under the flag.
+    final body = await _api.get(ApiEndpoints.crmTask(id), query: {if (isFollowup) 'is_followup': 'true'});
     return body is Map<String, dynamic> ? body : null;
   }
 
@@ -136,8 +150,10 @@ class CrmTasksRemoteDataSource {
   ///
   /// [fields] is sent as-is: the caller built it from the org's own schema, so
   /// the key names are already the API's.
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields) async {
-    final body = await _api.patch(ApiEndpoints.crmTask(id), body: fields);
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false}) async {
+    final body = await _api.patch(
+        isFollowup ? '${ApiEndpoints.crmTask(id)}?is_followup=true' : ApiEndpoints.crmTask(id),
+        body: fields);
     if (body is! Map<String, dynamic>) return null;
     try {
       return taskFromJson(body);
@@ -146,8 +162,10 @@ class CrmTasksRemoteDataSource {
     }
   }
 
-  /// `DELETE /crm/tasks/{id}/`.
-  Future<void> deleteTask(String id) => _api.delete(ApiEndpoints.crmTask(id));
+  /// `DELETE /crm/tasks/{id}/` — a follow-up needs `?is_followup=true`, the
+  /// plain URL answers 404 for it.
+  Future<void> deleteTask(String id, {bool isFollowup = false}) =>
+      _api.delete(isFollowup ? '${ApiEndpoints.crmTask(id)}?is_followup=true' : ApiEndpoints.crmTask(id));
 
   /// Mapped task list (malformed rows are skipped, never fatal).
   Future<List<CrmTask>> fetchTasks() async => mapRows(await fetchTaskRows());
@@ -317,7 +335,12 @@ class CrmTasksRemoteDataSource {
       assignee: UserDirectory.mapUserId(
           assigned is Map ? _str(assigned['user_id']) : null),
       due: absoluteDate(due),
-      dueNote: dueNoteFor(due, now: now),
+      // No caption on a completed or cancelled task (webapp `isTerminal`).
+      dueNote: const {'completed', 'cancelled'}.contains(
+              (statusTypes[statusLabel.toLowerCase()] ?? (statusRaw is Map ? _str(statusRaw['status_type']) : '') ?? '')
+                  .toLowerCase())
+          ? ''
+          : dueNoteFor(due, now: now),
     );
   }
 
@@ -331,7 +354,9 @@ class CrmTasksRemoteDataSource {
     final days = day.difference(today).inDays;
     if (days < 0) return '${-days}d overdue';
     if (days == 0) return 'Today';
-    if (days <= 7) return 'In ${days}d';
+    // Webapp `dueDateInfo`: only 2–3 days out gets "In Nd"; tomorrow and
+    // later read the date alone.
+    if (days >= 2 && days <= 3) return 'In ${days}d';
     return '';
   }
 

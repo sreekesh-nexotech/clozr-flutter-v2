@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/api_endpoints.dart';
+import 'server_search_providers.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../core/network/paginated.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/quote.dart';
 import '../../domain/entities/view_schema.dart';
@@ -107,14 +110,37 @@ String quoteHeadline(Quote q, CrmPartyLookup lookup) {
 }
 
 // ── List UI state ──
-final quoteTabProvider = StateProvider<String>((ref) => 'all');
+/// The selected status chips — multi-select like the webapp's status chips.
+/// Empty means All; "All" is exclusive (tapping it clears the set).
+final quoteTabProvider = StateProvider<Set<String>>((ref) => const {});
+
+/// The Grand total sort, cycled from the list header like the webapp's column
+/// header: `-grand_total` (high → low) → `grand_total` (low → high) → '' (the
+/// server's default order, newest first).
+final quoteSortProvider = StateProvider<String>((ref) => '');
+
+/// The next step of the Grand total sort cycle.
+String nextQuoteSort(String current) => switch (current) {
+      '' => '-grand_total',
+      '-grand_total' => 'grand_total',
+      _ => '',
+    };
+
+/// Toggles one status chip; `all` clears the selection.
+Set<String> toggleQuoteChip(Set<String> current, String key) {
+  if (key == 'all') return const {};
+  return current.contains(key)
+      ? ({...current}..remove(key))
+      : {...current, key};
+}
 final quoteSearchProvider = StateProvider<String>((ref) => '');
 final quoteSearchOpenProvider = StateProvider<bool>((ref) => false);
 
 /// Quotes filtered by tab + drawer filters + search.
 final visibleQuotesProvider = Provider<List<Quote>>((ref) {
   final quotes = ref.watch(quotesProvider).valueOrNull ?? const [];
-  final tab = ref.watch(quoteTabProvider);
+  final chips = ref.watch(quoteTabProvider);
+  final sort = ref.watch(quoteSortProvider);
   final filters = ref.watch(quoteFiltersProvider);
   final q = ref.watch(quoteSearchProvider).trim().toLowerCase();
   final lookup = ref.watch(crmPartyLookupProvider);
@@ -123,15 +149,33 @@ final visibleQuotesProvider = Provider<List<Quote>>((ref) {
   // The same tab set the chips are built from, so the rows a tab lists are
   // exactly the rows its count promised.
   final tabKeys = ref.watch(quoteTabKeysProvider);
-  if (tab != 'all') out = out.where((x) => quoteInTab(x, tab, tabKeys: tabKeys));
+  // Like the webapp, a Status picked in the drawer overrides the chips.
+  final drawerStatus = filters.choice('status');
+  if (chips.isNotEmpty && !(drawerStatus?.isActive ?? false)) {
+    out = out.where((x) => chips.any((c) => quoteInTab(x, c, tabKeys: tabKeys)));
+  }
   if (!filters.isEmpty) out = out.where((x) => quoteMatchesFilters(x, filters, lookup));
   if (q.isNotEmpty) {
     // Searches the title too — it is what the card shows whenever the org's
     // layout hides the party, so searching for it has to find the row.
-    out = out.where((x) =>
-        ('${x.id} ${quoteWho(x, lookup)} ${x.title ?? ''}').toLowerCase().contains(q));
+    // Plus the webapp's server `?search=` (number, title, lead/customer name).
+    final matches = serverSearchMatcher(
+      ref,
+      ServerSearchKey(
+        endpoint: ApiEndpoints.quotations,
+        idFields: const ['quotation_id', 'quotation_number'],
+        query: q,
+      ),
+    );
+    out = out.where((x) => matches([x.uuid, x.id],
+        ('${x.id} ${quoteWho(x, lookup)} ${x.title ?? ''}').toLowerCase().contains(q)));
   }
-  return out.toList();
+  final list = out.toList();
+  if (sort.isNotEmpty) {
+    final dir = sort.startsWith('-') ? -1 : 1;
+    list.sort((a, b) => dir * a.grandTotalNum.compareTo(b.grandTotalNum));
+  }
+  return list;
 });
 
 /// Whether a quote belongs under a status tab — **one tab per quote**, so the
@@ -183,4 +227,18 @@ final quoteTabKeysProvider = Provider<Set<String>>((ref) {
     return const {'draft', 'sent', 'accepted', 'rejected', 'expired'};
   }
   return {for (final s in statuses) s.name.trim().toLowerCase()};
+});
+
+
+/// The lead's quotes **as the API sends them** — the webapp's Quotes tab reads
+/// `taxable_total`, `grand_total`, `created_at` and the status colour, which
+/// the mapped [Quote] does not keep. Same call the webapp makes.
+final leadQuoteRowsProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, leadId) async {
+  if (leadId.isEmpty || !ApiConfig.apiEnabled) return const [];
+  final body = await ref.read(apiServiceProvider).get(
+    ApiEndpoints.quotations,
+    query: {'lead': leadId, 'page_size': 100},
+  );
+  return Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
 });

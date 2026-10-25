@@ -57,6 +57,10 @@ class _LogCallSheetState extends State<_LogCallSheet> {
   /// stored E.164 value.
   late final PhoneController _toNumber = PhoneController(initialE164: widget.lead.phone);
 
+  /// The caller's own number, typed — only asked for when the profile has
+  /// none (webapp: From is a plain input).
+  final PhoneController _fromNumber = PhoneController();
+
   bool _incoming = false;
   _Outcome _outcome = _Outcome.connected;
   bool _saving = false;
@@ -68,6 +72,7 @@ class _LogCallSheetState extends State<_LogCallSheet> {
       c.dispose();
     }
     _toNumber.dispose();
+    _fromNumber.dispose();
     super.dispose();
   }
 
@@ -89,12 +94,9 @@ class _LogCallSheetState extends State<_LogCallSheet> {
     setState(() => _showErrors = true);
 
     final toast = widget.ref.read(toastProvider.notifier);
-    if (!_toOk) {
-      toast.show('Enter the number that was called');
-      return;
-    }
-    if (ApiConfig.apiEnabled && _myNumber.isEmpty) {
-      toast.show('Add your phone number to your profile to log calls.');
+    final from = _myNumber.isNotEmpty ? _myNumber : (_fromNumber.toE164() ?? '');
+    if (!_toOk || (ApiConfig.apiEnabled && from.isEmpty)) {
+      toast.showError('From and To numbers are required.');
       return;
     }
 
@@ -102,7 +104,7 @@ class _LogCallSheetState extends State<_LogCallSheet> {
     try {
       await widget.ref.read(callLogsRepositoryProvider).logManualCall(
             leadId: widget.lead.id,
-            fromNumber: _myNumber,
+            fromNumber: from,
             // E.164 with the code, which is what `normaliseCallNumber` and
             // Exotel's `to_number` expect — a bare ten digits would be dialled
             // without a country.
@@ -145,14 +147,15 @@ class _LogCallSheetState extends State<_LogCallSheet> {
               children: [
                 LinkedLeadField(lead: widget.lead),
                 if (noNumber) ...[
-                  SizedBox(height: 12.h),
-                  Text(
-                    'Your own phone number is missing from your profile. Every '
-                    'call log records the caller — that is you, not the number '
-                    'below — so add one to your profile before logging calls.',
-                    style: AppText.custom(
-                            size: 11.5, weight: FontWeight.w500, color: AppColors.error)
-                        .copyWith(height: 1.4),
+                  // No profile phone: type your own number, as on the webapp.
+                  SizedBox(height: 14.h),
+                  PhoneInputField(
+                    label: 'Your number',
+                    required: true,
+                    controller: _fromNumber,
+                    hint: '98470 00000',
+                    errorText: _showErrors && _fromNumber.toE164() == null ? 'From and To numbers are required.' : null,
+                    onChanged: () => setState(() {}),
                   ),
                 ],
                 SizedBox(height: 16.h),

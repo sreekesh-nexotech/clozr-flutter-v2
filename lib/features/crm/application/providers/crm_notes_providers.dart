@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/models/note.dart';
+import '../../../../core/network/api_endpoints.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../../core/network/paginated.dart';
 import '../../../notes/application/providers/notes_providers.dart';
 import '../../../notes/domain/repositories/notes_repository.dart';
 
@@ -118,7 +122,8 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
   }
 
   /// Prepends a note authored by [author] with any pending [attachments].
-  void addNote(String body, List<NoteAttachment> attachments, NoteAuthor author) {
+  void addNote(String body, List<NoteAttachment> attachments, NoteAuthor author,
+      {String? noteTypeId, String? noteTypeName, List<String> mentionedUserIds = const [], String? authorId}) {
     // An image posted with no caption still needs non-blank content, or the
     // POST 400s and the attachment — which uploads against the created note —
     // never goes out at all. See [noteBodyForApi].
@@ -132,6 +137,8 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
         body: body,
         avatarColor: author.color,
         attachments: attachments,
+        authorId: authorId,
+        noteType: noteTypeName,
       ),
       ...state,
     ];
@@ -142,6 +149,8 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
           relatedTo: _apiModel!,
           relatedToId: _apiRecordId,
           body: body,
+          noteTypeId: noteTypeId,
+          mentionedUserIds: mentionedUserIds,
         );
         if (created == null || !mounted) return;
         // Attachments are a second call — the upload points at a note_id, so
@@ -161,6 +170,8 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
                     avatarColor: n.avatarColor,
                     replies: n.replies,
                     attachments: uploaded,
+                    authorId: created.authorId ?? n.authorId,
+                    noteType: created.noteType ?? n.noteType,
                   )
                 : n,
         ];
@@ -225,6 +236,35 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
       }
     }());
   }
+
+  /// Webapp "Edit note": saves the new text, keeping the old on refusal.
+  /// Returns the server's error, or null.
+  Future<String?> editNote(String noteId, String body, {List<String> mentionedUserIds = const []}) async {
+    final before = state;
+    state = [for (final n in state) n.id == noteId ? n.copyWith(body: body) : n];
+    if (!_remoteWired) return null;
+    try {
+      await _repo!.updateNote(noteId: noteId, body: body, mentionedUserIds: mentionedUserIds);
+      return null;
+    } on AppError catch (e) {
+      if (mounted) state = before;
+      return e.message.isEmpty ? 'Could not update the note.' : e.message;
+    }
+  }
+
+  /// Webapp "Delete note": removes it (and its replies). Returns the error.
+  Future<String?> deleteNote(String noteId) async {
+    final before = state;
+    state = [for (final n in state) if (n.id != noteId) n];
+    if (!_remoteWired) return null;
+    try {
+      await _repo!.deleteNote(noteId);
+      return null;
+    } on AppError catch (e) {
+      if (mounted) state = before;
+      return e.message.isEmpty ? 'Could not delete the note.' : e.message;
+    }
+  }
 }
 
 /// Per-record notes provider. Kept alive (no autoDispose) so notes added on a
@@ -238,3 +278,40 @@ final crmNotesProvider =
     return CrmNotesNotifier(seed.build());
   },
 );
+
+/// The org's note types for the composer's "Tag" picker (webapp
+/// `NoteTypePicker`), loaded once per session.
+///
+/// An empty answer (none configured, or the call timed out) is not kept, so
+/// the next screen that shows notes asks again; a real list is kept.
+final noteTypesProvider = FutureProvider.autoDispose<List<NoteTypeOption>>((ref) async {
+  final types = await ref.read(notesRepositoryProvider).noteTypes();
+  if (types.isNotEmpty) ref.keepAlive();
+  return types;
+});
+
+/// Who a task's or follow-up's notes can @mention — webapp `MENTION_SOURCE`:
+/// the org user directory (`GET /management/users/`), the same pool tasks are
+/// assigned from. A user without directory access gets a 403, and then — as
+/// on the webapp — there is simply no Mention picker.
+// autoDispose until a list arrives: a timed-out fetch is retried the next
+// time a task opens, rather than leaving the picker missing for the session.
+final taskMentionUsersProvider = FutureProvider.autoDispose<List<({String id, String name})>>((ref) async {
+  if (!ApiConfig.apiEnabled) return const [];
+  try {
+    final body = await ref.read(apiServiceProvider).get(ApiEndpoints.users, query: {'page_size': 100}, quiet: true);
+    final out = <({String id, String name})>[];
+    for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
+      final id = r['user_id'];
+      if (id == null) continue;
+      final full = '${r['full_name'] ?? ''}'.trim();
+      final parts = [r['first_name'], r['last_name']].where((v) => v != null && '$v'.isNotEmpty).join(' ').trim();
+      final name = full.isNotEmpty ? full : parts.isNotEmpty ? parts : '${r['username'] ?? r['email'] ?? ''}'.trim();
+      if (name.isNotEmpty) out.add((id: '$id', name: name));
+    }
+    if (out.isNotEmpty) ref.keepAlive();
+    return out;
+  } on Object {
+    return const [];
+  }
+});

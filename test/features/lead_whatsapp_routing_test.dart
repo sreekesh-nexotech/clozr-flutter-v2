@@ -98,6 +98,16 @@ void main() {
       expect(t.launched, isEmpty);
     });
 
+    test('a thread that only shares the number is not the lead\'s — webapp matches the link', () async {
+      final t = _service([_conv(id: '9', phone: '919847000000')]);
+      final outcome = await t.service.open(
+          leadId: 'L7', phone: '+91 98470 00000', openExternally: false);
+
+      expect(outcome.result, LeadWhatsappResult.noThread);
+      expect(outcome.conversationId, isNull);
+      expect(t.launched, isEmpty);
+    });
+
     test('no thread hands the number to WhatsApp as bare E.164', () async {
       final t = _service([_conv(id: '1', leadId: 'L1', phone: '911111111111')]);
       final outcome = await t.service.open(leadId: 'L7', phone: '+91 98470 00000');

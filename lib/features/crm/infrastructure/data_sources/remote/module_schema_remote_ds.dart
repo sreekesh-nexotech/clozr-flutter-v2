@@ -1,4 +1,5 @@
 import '../../../../../core/network/api_service.dart';
+import '../../../../../core/network/app_error.dart';
 import '../../../domain/entities/view_schema.dart';
 
 /// The org's configured layout for one CRM module: `GET /<module>/schema/`.
@@ -36,7 +37,17 @@ class ModuleSchemaRemoteDataSource {
   ///
   /// An org with no mobile rows resolves to [ViewSchema.empty], whose contract
   /// is "no opinion — render the built-in layout".
-  Future<ViewSchema> fetchMobileSchema() => _fetch('mobile');
+  ///
+  /// A timeout or lost connection is **rethrown** rather than answered with
+  /// [ViewSchema.empty]: on a pull-to-refresh or a re-visit the provider then
+  /// keeps the layout it already has (`valueOrNull` holds the previous value
+  /// through an error), instead of a slow server silently swapping every card
+  /// back to the built-in layout.
+  ///
+  /// [query] carries extra selectors — Products and Packages share one schema
+  /// endpoint but each has its own config, picked by `item_type`.
+  Future<ViewSchema> fetchMobileSchema({Map<String, dynamic> query = const {}}) =>
+      _fetch('mobile', rethrowOutage: true, query: query);
 
   /// The detail-panel layout. This is also what the record endpoint trims itself
   /// to, so layout and payload agree: a visible column with no value means the
@@ -47,10 +58,17 @@ class ModuleSchemaRemoteDataSource {
   /// the backend has not seeded — yields the empty schema, which every consumer
   /// reads as "no opinion, render the built-in layout". A screen must never be
   /// blank because its layout call failed.
-  Future<ViewSchema> _fetch(String viewType) async {
+  Future<ViewSchema> _fetch(
+    String viewType, {
+    bool rethrowOutage = false,
+    Map<String, dynamic> query = const {},
+  }) async {
     try {
-      final body = await _api.get(schemaPath, query: {'view_type': viewType});
+      final body = await _api.get(schemaPath, query: {'view_type': viewType, ...query});
       return ViewSchema.fromResponse(body);
+    } on AppError catch (e) {
+      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      return ViewSchema.empty;
     } on Object {
       return ViewSchema.empty;
     }

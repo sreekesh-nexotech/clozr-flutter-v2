@@ -44,7 +44,7 @@ class DashboardScreen extends ConsumerWidget {
       final accessAsync = ref.watch(moduleAccessProvider);
       final access = accessAsync.valueOrNull;
       final unresolved = accessAsync.isLoading && !accessAsync.hasValue;
-      if (unresolved || (access != null && !access.can('dashboard'))) {
+      if (unresolved || (access != null && !access.canAny(dashboardModuleKeys))) {
         return ColoredBox(
           color: AppColors.bgScreen,
           child: Padding(

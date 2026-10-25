@@ -1,32 +1,48 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import '../../../accounting/application/providers/accounting_providers.dart';
-import '../../../accounting/presentation/components/acc_pickers.dart';
-import '../../../accounting/presentation/config/accounting_copy.dart';
+
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/widgets/app_bottom_sheet.dart';
-import '../../../../core/widgets/app_text_field.dart';
-import '../../../../data/api/roster.dart';
-import '../../../../data/mock/mock_users.dart';
 import '../../../../core/network/app_error.dart';
+import '../../../../core/utils/money_format.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/components/acc_pickers.dart' show pickGstState;
 import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/providers/leads_providers.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
+import '../../application/providers/quote_builder_providers.dart';
 import '../../application/providers/quotes_providers.dart';
-import '../../application/quote_draft.dart';
-import '../../domain/entities/lead.dart';
+import '../../application/quote_builder/quote_builder_draft.dart';
+import '../../application/quote_builder/quote_lines.dart';
+import '../../application/quote_builder/quote_tax.dart';
+import '../../application/quote_builder/quote_template_parts.dart';
 import '../../domain/entities/product.dart';
-import '../../domain/repositories/quotes_repository.dart';
-import '../components/lead_picker_sheet.dart';
-import '../components/lead_schema_form.dart';
+import '../../infrastructure/data_sources/remote/quote_builder_remote_ds.dart';
+import '../components/quote_builder/party_picker_sheet.dart';
+import '../components/quote_builder/qb_kit.dart';
+import '../components/quote_builder/quote_lines_editor.dart';
+import '../components/quote_builder/quote_template_sections.dart';
+import '../components/quote_builder/quote_totals_block.dart';
 
-/// New quote — a full-screen form. Line items are chosen from the live product
-/// catalog and the total recomputes as you go; submit is a static toast + pop.
+/// The quote builder — New quote, Edit quote, or a sent quote read-only.
+///
+/// A port of the webapp's `QuoteBuilderModal`, kept in this screen's own look:
+/// * `/quotes/add` → **New quote** (`?lead=` / `?customer=` preset the party);
+/// * `/quotes/edit?id=<uuid>` → **Edit quote <number>**, saving only the keys
+///   that changed (Save stays disabled until something did);
+/// * a sent (locked) quote → **Quote <number>**, read-only, Close only. A 409
+///   `QUOTE_LOCKED` on save flips the screen into that state.
+///
+/// Totals, untouched catalog prices and per-line GST all come from the server
+/// (`preview-tax`); the client never computes tax. After a save that needs
+/// discount approval the screen stays open on the saved-but-pending notice.
 class AddQuoteScreen extends ConsumerStatefulWidget {
   const AddQuoteScreen({super.key});
 
@@ -34,547 +50,1142 @@ class AddQuoteScreen extends ConsumerStatefulWidget {
   ConsumerState<AddQuoteScreen> createState() => _AddQuoteScreenState();
 }
 
-class _QuoteLine {
-  String productId;
-  final TextEditingController qtyCtrl;
-  _QuoteLine(this.productId) : qtyCtrl = TextEditingController(text: '1');
-}
-
-/// The line's quantity, or **null** when the box does not hold a usable number.
-///
-/// Null rather than a `?? 1` fallback, which is what this used to be: the box
-/// accepts free text, `int.tryParse('2.5')` returns null, and the fallback
-/// silently turned it into 1. The preview, the running total *and* the POSTed
-/// quantity all read 1, so a quote for 2.5 units was created at 40% of its
-/// value with no error, no toast and no red field.
-///
-/// Callers decide what null means: the preview shows ₹0 (a half-typed "2."
-/// should not jump to 1×), and the submit guard refuses to send.
-double? _qtyOf(_QuoteLine line) {
-  final v = double.tryParse(line.qtyCtrl.text.trim());
-  return (v == null || v <= 0) ? null : v;
-}
-
 class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
-  /// Reads the schema-driven section's values at submit time.
-  final _schemaFormKey = GlobalKey<LeadSchemaFormState>();
+  // ── Route ────────────────────────────────────────────────────────────────
+  bool _routeRead = false;
+  String _quoteId = '';
+  String _presetLeadId = '';
+  String _presetCustomerId = '';
+  bool _focusPayment = false;
 
+  /// Set by the detail screen (`&revise=1`) when the quote can be revised —
+  /// the read-only notice then offers the webapp's "Revise quote", which pops
+  /// back with `'revise'` so the detail runs its own confirm + revise.
+  bool _canRevise = false;
+  bool get _isEdit => _quoteId.isNotEmpty;
+
+  // ── Form ─────────────────────────────────────────────────────────────────
+  BuilderDraft _draft = BuilderDraft.empty();
+  bool _seeded = false;
   final _titleCtrl = TextEditingController();
-  final _validCtrl = TextEditingController();
-  final _dueCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  final _termsCtrl = TextEditingController();
-  final _installmentsCtrl = TextEditingController(text: '2');
-  final _billingCtrl = TextEditingController(text: '30');
+  final _contractCtrl = TextEditingController();
+  final _installmentsCtrl = TextEditingController();
+  final _billingCtrl = TextEditingController();
+  final _paymentKey = GlobalKey();
+  PartyOption? _leadPick;
+  PartyOption? _customerPick;
 
-  final List<_QuoteLine> _lines = [_QuoteLine('')];
-
-  /// The template's id, not its name — `template` is an FK on create. Null
-  /// means "let the server apply the org default".
-  String? _templateId;
-  QuotePaymentType _payType = QuotePaymentType.lumpsum;
-  String _owner = 'me';
-
-  // Accounting (shown only while it is active).
-  String? _amountsAre;
-  String? _pos;
-  final _contractRefCtrl = TextEditingController();
-
-  /// The lead this quote is for — the API's one required field.
-  Lead? _lead;
-
-  /// Whether the `?leadId=` prefill has been resolved. One-shot, so re-picking
-  /// the lead by hand is not undone on the next rebuild.
-  bool _prefilled = false;
-
-  /// True while the create request is in flight, so the button can't be
-  /// double-tapped into two quotes.
+  // ── Save ─────────────────────────────────────────────────────────────────
   bool _saving = false;
+  bool _attemptedSave = false;
+  bool _spotConfirmed = false;
 
-  /// True while the lead list is being fetched for the picker.
-  bool _loadingLeads = false;
+  /// Saved, but needs the user's attention (approval / field warnings).
+  SavedQuote? _savedQuote;
+
+  /// A 409 QUOTE_LOCKED during this edit.
+  AppError? _lockFailure;
+
+  /// The last create / update refusal, and its per-field messages.
+  String? _saveError;
+  Map<String, List<String>> _fieldErrors = const {};
+
+  // ── Live tax preview ─────────────────────────────────────────────────────
+  Timer? _previewTimer;
+  int _previewSeq = 0;
+  String? _requestedKey;
+  String? _answeredKey;
+  TaxPreview? _preview;
+  List<PreviewRowRef> _previewRows = const [];
+  String? _previewError;
 
   @override
-  void initState() {
-    super.initState();
-    // The org's usual tax basis, when accounting is on and setup is readable.
-    ref.read(tenantProfileProvider.future).then((p) {
-      if (mounted && _amountsAre == null && p?.defaultAmountsAre != null) {
-        setState(() => _amountsAre = p!.defaultAmountsAre);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeRead) return;
+    _routeRead = true;
+    final q = GoRouterState.of(context).uri.queryParameters;
+    _quoteId = q['id'] ?? '';
+    _presetLeadId = q['lead'] ?? q['leadId'] ?? '';
+    _presetCustomerId = q['customer'] ?? '';
+    _focusPayment = q['focus'] == 'payment';
+    _canRevise = q['revise'] == '1';
+    if (_isEdit) {
+      // Seed the form once, from the first server answer.
+      ref.listenManual<AsyncValue<SavedQuote>>(quoteBuilderQuoteProvider(_quoteId), (_, next) {
+        final q = next.valueOrNull;
+        if (q == null || _seeded) return;
+        // Deferred: this can fire synchronously, mid-lifecycle.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_seeded) setState(() => _seedFromQuote(q));
+        });
+      }, fireImmediately: true);
+    } else {
+      _draft = BuilderDraft.empty(leadId: _presetLeadId, customerId: _presetLeadId.isEmpty ? _presetCustomerId : '');
+      _seeded = true;
+      final ds = ref.read(quoteBuilderDsProvider);
+      if (_presetLeadId.isNotEmpty) {
+        ds.partyById(QuoteFor.lead, _presetLeadId).then((o) {
+          if (mounted && o != null) setState(() => _leadPick = o);
+        });
+      } else if (_presetCustomerId.isNotEmpty) {
+        ds.partyById(QuoteFor.customer, _presetCustomerId).then((o) {
+          if (mounted && o != null) setState(() => _customerPick = o);
+        });
       }
-    }).catchError((_) {});
+    }
   }
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
-    _validCtrl.dispose();
-    _dueCtrl.dispose();
-    _notesCtrl.dispose();
-    _termsCtrl.dispose();
-    _installmentsCtrl.dispose();
-    _billingCtrl.dispose();
-    _contractRefCtrl.dispose();
-    for (final l in _lines) {
-      l.qtyCtrl.dispose();
+    _previewTimer?.cancel();
+    for (final c in [_titleCtrl, _notesCtrl, _contractCtrl, _installmentsCtrl, _billingCtrl]) {
+      c.dispose();
     }
     super.dispose();
   }
 
+  void _patch(BuilderDraft Function(BuilderDraft) f) => setState(() => _draft = f(_draft));
 
-  /// The selected template's name, defaulting to the org's default one so the
-  /// chip row is never blank.
-  String _templateName(List<QuoteTemplate> templates) {
-    if (templates.isEmpty) return '';
-    final selected = templates.where((t) => t.id == _templateId);
-    if (selected.isNotEmpty) return selected.first.name;
-    final byDefault = templates.where((t) => t.isDefault);
-    return (byDefault.isNotEmpty ? byDefault.first : templates.first).name;
+  void _seedFromQuote(SavedQuote q) {
+    _draft = BuilderDraft.fromQuote(q);
+    _titleCtrl.text = _draft.title;
+    _notesCtrl.text = _draft.notes;
+    _contractCtrl.text = _draft.contractRef;
+    _installmentsCtrl.text = _draft.installments;
+    _billingCtrl.text = _draft.billing;
+    _seeded = true;
+    if (_focusPayment) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _paymentKey.currentContext;
+        if (ctx != null) Scrollable.ensureVisible(ctx, alignment: 0.3);
+      });
+    }
   }
 
-  /// Picks the lead this quote is for — the API's one required field.
-  Future<void> _pickLead() async {
-    if (_loadingLeads) return; // a second tap would stack two pickers
-    final toast = ref.read(toastProvider.notifier);
-    setState(() => _loadingLeads = true);
+  // ── Preview ──────────────────────────────────────────────────────────────
 
-    final List<Lead> leads;
-    try {
-      // Awaited, not read as a snapshot. `ref.read(leadsProvider).valueOrNull`
-      // answers null while the fetch is in flight, and this screen is usually
-      // reached from the Quotes list — where nothing has watched the provider
-      // yet, so the first tap always saw `AsyncLoading` and reported "no leads"
-      // for a list that was merely still loading. Tapping again a moment later
-      // worked, which is what made it look intermittent.
-      leads = await ref.read(leadsProvider.future);
-    } on Object catch (e) {
-      if (!mounted) return;
-      setState(() => _loadingLeads = false);
-      // A failed fetch is not an empty org — say which one it was.
-      toast.showError(e is AppError ? e.message : 'Could not load leads');
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _loadingLeads = false);
-
-    if (leads.isEmpty) {
-      toast.show('No leads available yet');
-      return;
-    }
-    final picked = await showLeadPickerSheet(context: context, leads: leads);
-    if (picked != null && mounted) setState(() => _lead = picked);
+  /// Debounced (400 ms) so typing never fires a request per keystroke; a
+  /// stale answer is dropped by sequence number, and the last figures stay on
+  /// screen (dimmed) until the new ones land.
+  void _schedulePreview(PreviewRequest? req) {
+    if (req == null || req.key == _requestedKey) return;
+    _requestedKey = req.key;
+    _previewTimer?.cancel();
+    _previewTimer = Timer(const Duration(milliseconds: 400), () => _runPreview(req));
   }
 
-  /// Builds the draft from the form's current state.
-  QuoteDraft _draft(List<Product> products) => QuoteDraft(
-        leadId: _lead?.id ?? '',
-        templateId: _templateId,
-        title: _titleCtrl.text,
-        validUntil: DateTime.tryParse(_validCtrl.text.trim()),
-        paymentType: _payType,
-        numInstallments: int.tryParse(_installmentsCtrl.text.trim()) ?? 2,
-        billingPeriodDays: int.tryParse(_billingCtrl.text.trim()),
-        notes: _notesCtrl.text,
-        terms: _termsCtrl.text,
-        amountsAre: ref.read(accountingActiveProvider) ? _amountsAre : null,
-        placeOfSupplyStateCode: ref.read(accountingActiveProvider) ? _pos : null,
-        contractRef: ref.read(accountingActiveProvider) ? _contractRefCtrl.text : '',
-        lines: [
-          for (final line in _lines)
-            if (_productById(products, line.productId) case final p?)
-              QuoteDraftLine(
-                description: p.name,
-                // Three decimals, matching what the serializer returns.
-                quantity: (_qtyOf(line) ?? 0).toStringAsFixed(3),
-                // Links the line to the catalog so the server snapshots its tax
-                // fields and explodes a package into components.
-                productId: p.id,
-                // The catalog's **numeric** price, two decimals, as the API's
-                // decimal-string contract wants.
-                //
-                // This used to strip the non-digits out of `p.price`, which is
-                // a display string `formatInr` abbreviates: "₹1.8L" became 18,
-                // "₹1.29Cr" became 129. Only prices under ₹1,000 survived
-                // intact, so quotes were being raised at a fraction of a
-                // percent of their real value.
-                unitPrice: p.priceNum.toStringAsFixed(2),
-              ),
-        ],
-      );
-
-  /// `POST /quotations/quotations/`.
-  Future<void> _submit(List<Product> products) async {
-    if (_saving) return;
-    final toast = ref.read(toastProvider.notifier);
-    final draft = _draft(products);
-
-    // Guard the two things the API will reject outright, so the user sees the
-    // reason here rather than a 400 from the server.
-    if (draft.leadId.isEmpty) {
-      toast.show('Pick a lead first');
-      return;
-    }
-    if (draft.lines.isEmpty) {
-      toast.show('Add at least one product line');
-      return;
-    }
-    // A row whose product never resolved is dropped when the draft is built,
-    // so it would reach neither the payload nor the user's attention — the
-    // quote would just quietly cost less than what is on screen.
-    if (draft.lines.length != _lines.length) {
-      toast.show('Every line needs a product — pick one, or remove the row');
-      return;
-    }
-    // Without this a line reading "2." or "abc" posts a quantity of 0.
-    if (_lines.any((l) => _qtyOf(l) == null)) {
-      toast.show('Every line needs a quantity greater than zero');
-      return;
-    }
-    if (_payType.needsInstallmentCount && draft.numInstallments < 2) {
-      toast.show('An even split needs at least 2 installments');
-      return;
-    }
-
-    setState(() => _saving = true);
+  Future<void> _runPreview(PreviewRequest req) async {
+    final seq = ++_previewSeq;
     try {
-      // The org's own fields ride on top of the body the draft builds. In
-      // schema-driven mode the draft's own title/valid-until/notes/terms boxes
-      // are not rendered, so they are empty and `toCreateJson` omits them —
-      // the two halves cannot collide.
-      final body = withSchemaFields(
-        draft.toCreateJson(schema: ref.read(quoteSchemaProvider)),
-        _schemaFormKey.currentState?.payload ?? const {},
-      );
-      final quote =
-          await ref.read(quotesRepositoryProvider).createQuote(body);
-      if (!mounted) return;
-      // The list is now stale either way.
-      ref.invalidate(quotesProvider);
-      // So is the Quotes tab of whichever lead this quote was raised against;
-      // it reads its own scoped fetch rather than filtering the list above.
-      ref.invalidate(leadQuotesProvider);
-      // A null quote means mock mode (nothing was persisted) — say so rather
-      // than claiming a quote number that does not exist.
-      toast.show(quote == null ? 'Quote created' : 'Quote ${quote.id} created');
-      context.pop();
+      final res = await ref.read(quoteBuilderDsProvider).previewTax(req.body);
+      if (!mounted || seq != _previewSeq) return;
+      setState(() {
+        _preview = res;
+        _previewRows = req.rows;
+        _answeredKey = req.key;
+        _previewError = null;
+      });
     } on AppError catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      toast.showError(e.message);
+      if (!mounted || seq != _previewSeq) return;
+      setState(() {
+        _answeredKey = req.key;
+        _previewError = previewErrorCopy(e.type == AppErrorType.validation, e.bareMessage);
+      });
     }
   }
 
-  String _fmtAmt(int n) {
-    if (n == 0) return '₹0';
-    if (n >= 10000000) return '₹${_trim((n / 100000).round() / 100)}Cr';
-    if (n >= 100000) return '₹${_trim((n / 10000).round() / 10)}L';
-    return '₹${_grouped(n)}';
-  }
+  // ── Party ────────────────────────────────────────────────────────────────
 
-  String _trim(num v) {
-    var s = v.toString();
-    if (s.endsWith('.0')) s = s.substring(0, s.length - 2);
-    return s;
-  }
-
-  /// Indian digit grouping (3-2-2), e.g. 250000 → 2,50,000.
-  String _grouped(int n) {
-    final s = n.toString();
-    if (s.length <= 3) return s;
-    final head = s.substring(0, s.length - 3);
-    final tail = s.substring(s.length - 3);
-    final buf = StringBuffer();
-    for (int i = 0; i < head.length; i++) {
-      final fromEnd = head.length - i;
-      buf.write(head[i]);
-      if (fromEnd > 1 && fromEnd.isOdd) buf.write(',');
-    }
-    return '$buf,$tail';
-  }
-
-  /// Adopts the lead named in `?leadId=` (set when the form is opened from a
-  /// lead's Quotes tab) as the quote's lead.
-  ///
-  /// Runs in build rather than initState because the lead has to be resolved
-  /// from a provider that may still be loading — [_prefilled] makes it a
-  /// one-shot, so a later manual pick is never overwritten by a late arrival.
-  void _adoptRouteLead() {
-    if (_prefilled) return;
-    final leadId = GoRouterState.of(context).uri.queryParameters['leadId'] ?? '';
-    if (leadId.isEmpty) {
-      _prefilled = true; // nothing to wait for
-      return;
-    }
-    final lead = ref.watch(leadDetailProvider(leadId)).valueOrNull ??
-        ref.watch(leadByIdProvider(leadId));
-    if (lead == null) return; // still loading — try again next build
-    _prefilled = true;
-    // The first build is already under way; defer the state write past it.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _lead = lead);
+  Future<void> _pickParty(QuoteFor mode) async {
+    final ds = ref.read(quoteBuilderDsProvider);
+    final picked = await showPartyPickerSheet(
+      context: context,
+      title: mode == QuoteFor.lead ? 'Select lead' : 'Select customer',
+      hint: mode == QuoteFor.lead
+          ? 'Search leads by name, company, email or phone…'
+          : 'Search customers by name, company, email…',
+      noun: mode == QuoteFor.lead ? 'leads' : 'customers',
+      search: mode == QuoteFor.lead ? ds.searchLeads : ds.searchCustomers,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _saveError = null;
+      if (mode == QuoteFor.lead) {
+        _leadPick = picked;
+        _draft = _draft.copyWith(leadId: picked.id);
+      } else {
+        _customerPick = picked;
+        _draft = _draft.copyWith(customerId: picked.id);
+      }
+      _spotConfirmed = false;
     });
   }
 
+  // ── Save ─────────────────────────────────────────────────────────────────
+
+  Future<void> _save(_View v, {Map<String, String>? spotOverride}) async {
+    setState(() => _attemptedSave = true);
+    if (!v.canSubmit || v.missingTemplateField) return;
+    // A new quote on the Item Quote layout first asks for its dynamic fields;
+    // the create continues from the popup's Continue.
+    if (!_isEdit && v.spotAsk.isNotEmpty && !_spotConfirmed && spotOverride == null) {
+      final values = await _openSpot(v, confirmLabel: 'Continue');
+      if (values == null || !mounted) return;
+      return _save(v, spotOverride: values);
+    }
+    final toast = ref.read(toastProvider.notifier);
+    final ds = ref.read(quoteBuilderDsProvider);
+    setState(() {
+      _saving = true;
+      _saveError = null;
+      _fieldErrors = const {};
+    });
+    try {
+      final Map<String, dynamic> res;
+      if (_isEdit) {
+        res = await ds.update(_quoteId, v.editPatch!);
+      } else {
+        final draft = spotOverride == null ? _draft : _draft.copyWith(spotValues: spotOverride);
+        res = await ds.create(toNewQuoteJson(draft, v.writeCtx));
+      }
+      if (!mounted) return;
+      final saved = SavedQuote.fromJson(res);
+      ref.invalidate(quotesProvider);
+      ref.invalidate(leadQuotesProvider);
+      if (_isEdit) {
+        ref.invalidate(quoteRowProvider(_quoteId));
+      }
+      if (saved.approvalIsPending || saved.fieldValuesWarnings.isNotEmpty) {
+        setState(() {
+          _saving = false;
+          _savedQuote = saved;
+        });
+      } else {
+        _finish(saved);
+      }
+    } on AppError catch (e) {
+      if (!mounted) return;
+      if (_isEdit && e.statusCode == 409 && e.code == 'QUOTE_LOCKED') {
+        // Sent meanwhile: show it as saved (read-only), not the refused edit.
+        final q = v.quote;
+        setState(() {
+          _saving = false;
+          _lockFailure = e;
+          if (q != null) _seedFromQuote(q);
+        });
+        ref.invalidate(quoteBuilderQuoteProvider(_quoteId));
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _saveError = e.bareMessage;
+        _fieldErrors = e.fieldErrors ?? const {};
+      });
+      toast.showError(e.bareMessage);
+    }
+  }
+
+  void _finish(SavedQuote saved) {
+    final toast = ref.read(toastProvider.notifier);
+    if (_isEdit) {
+      ref.invalidate(quoteBuilderQuoteProvider(_quoteId));
+      toast.show('Changes saved');
+    } else {
+      toast.show(saved.number.isEmpty ? 'Quote created' : 'Quote ${saved.number} created');
+    }
+    context.pop(saved.raw);
+  }
+
+  Future<Map<String, String>?> _openSpot(_View v, {required String confirmLabel}) async {
+    final values = await showSpotInputsSheet(
+      context,
+      fields: ref.read(quoteSpotInputsProvider(v.spotKey).future),
+      values: _draft.spotValues,
+      confirmLabel: confirmLabel,
+    );
+    if (values != null && mounted) {
+      setState(() {
+        _spotConfirmed = true;
+        _draft = _draft.copyWith(spotValues: values);
+      });
+    }
+    return values;
+  }
+
+  // ── "Amounts are" flip ───────────────────────────────────────────────────
+
+  Future<void> _changeAmountsAre(_View v, String to) async {
+    final from = v.amountsAre;
+    if (from.isEmpty || to == from) {
+      _patch((d) => d.copyWith(amountsAreChoice: to));
+      return;
+    }
+    final needsChoice = _isEdit && !_draft.linesDirty ? _draft.items.isNotEmpty : flipNeedsChoice(_draft.items);
+    if (!needsChoice) {
+      _patch((d) => d.copyWith(amountsAreChoice: to, serverFlip: null));
+      return;
+    }
+    final ds = ref.read(quoteBuilderDsProvider);
+    final flipPriced = <String, Map<String, List<PricedLine>>>{};
+    final items = _draft.items;
+    final choice = await showPriceConversionSheet(
+      context,
+      from: from,
+      to: to,
+      grandTotalBefore: _preview?.shownGrandTotal,
+      preview: (choice) async {
+        final req = flipPreviewRequest(v.previewCtx, items, from, to, choice);
+        try {
+          final res = await ds.previewTax(req.body);
+          final priced = mapPreviewLines(req.rows, res.lines);
+          flipPriced[choice] = priced;
+          final changes = <PriceChangeRow>[];
+          for (final it in items) {
+            if (it.isPackage) continue;
+            final after = priced[it.key]?.firstOrNull?.unitPrice ?? '';
+            final before = it.priceTouched || it.kind == LineKind.free
+                ? it.rate
+                : (v.livePriced[it.key]?.firstOrNull?.unitPrice ?? '');
+            if (after.isEmpty || before.isEmpty) continue;
+            if (double.tryParse(cleanUnitPrice(before)) == double.tryParse(after)) continue;
+            final qty = toQty(it.qty);
+            changes.add(PriceChangeRow(
+              name: it.name.isEmpty ? 'Line' : it.name,
+              before: groupedUnitPrice(displayUnitPrice(before, qty)),
+              after: groupedUnitPrice(displayUnitPrice(after, qty)),
+            ));
+          }
+          return (grandTotalAfter: res.shownGrandTotal, changes: changes, error: null);
+        } on AppError catch (e) {
+          return (
+            grandTotalAfter: null,
+            changes: const <PriceChangeRow>[],
+            error: previewErrorCopy(e.type == AppErrorType.validation, e.bareMessage),
+          );
+        }
+      },
+    );
+    if (choice == null || !mounted) return;
+    final plan = planFlip(v.previewCtx, to, choice);
+    setState(() {
+      if (plan == FlipPlan.resetToSaved && v.quote != null) {
+        _draft = _draft.copyWith(
+            amountsAreChoice: to, items: itemsFromSavedLines(v.quote!.lines), serverFlip: null);
+        return;
+      }
+      final next = applyPriceFlip(_draft.items, flipPriced[choice] ?? const {}, choice);
+      if (plan == FlipPlan.serverFlip) {
+        _draft = _draft.copyWith(amountsAreChoice: to, items: next, serverFlip: choice);
+      } else {
+        _draft = _draft.copyWith(
+          amountsAreChoice: to,
+          items: next,
+          serverFlip: null,
+          linesDirty: _draft.linesDirty || plan == FlipPlan.rewriteLinesDirty,
+        );
+      }
+    });
+  }
+
+  // ── Derived view ─────────────────────────────────────────────────────────
+
+  _View _buildView() {
+    // The draft is seeded by the listener in didChangeDependencies; until then
+    // the screen shows its loading state.
+    final quote = _isEdit && _seeded ? ref.watch(quoteBuilderQuoteProvider(_quoteId)).valueOrNull : null;
+    if (_isEdit) ref.watch(quoteBuilderQuoteProvider(_quoteId));
+    final readOnly = _isEdit && ((quote?.isLocked ?? false) || _lockFailure != null);
+    final leadLocked = !_isEdit && _presetLeadId.isNotEmpty;
+    final customerLocked = !_isEdit && _presetLeadId.isEmpty && _presetCustomerId.isNotEmpty;
+    final mode = leadLocked ? QuoteFor.lead : (customerLocked ? QuoteFor.customer : _draft.quoteFor);
+
+    // Templates.
+    final templatesAsync = ref.watch(quoteBuilderTemplatesProvider);
+    final active = [for (final t in templatesAsync.valueOrNull ?? const <QuoteTemplateOption>[]) if (t.isActive) t];
+    final defaultTemplateId = active.where((t) => t.isDefault && t.category.isEmpty).firstOrNull?.id ?? '';
+    final savedTemplateId = quote == null
+        ? ''
+        : (quote.templateId.isNotEmpty
+            ? quote.templateId
+            : active.where((t) => t.name == quote.templateName).firstOrNull?.id ?? '');
+    final templateId = _draft.templateChoice ?? (_isEdit ? savedTemplateId : defaultTemplateId);
+    final templateFallback = templatesAsync.hasError || (templatesAsync.hasValue && active.isEmpty);
+    final templateOptions = [
+      ...active,
+      if (quote != null && quote.templateId.isNotEmpty && !active.any((t) => t.id == quote.templateId))
+        QuoteTemplateOption(
+            id: quote.templateId,
+            // "(inactive)" only when the list loaded and lacks it — a role that
+            // cannot read templates (403) would otherwise see every quote's own
+            // template labelled inactive.
+            name: '${quote.templateName.isEmpty ? 'Current template' : quote.templateName}'
+                '${templatesAsync.hasError ? '' : ' (inactive)'}'),
+    ];
+
+    final hidden = _isEdit ? hiddenFields(quote) : <String>{};
+    final taxDefaults = readOnly ? null : ref.watch(quoteTaxDefaultsProvider).valueOrNull;
+    final amountsAre = _draft.amountsAreChoice ?? taxDefaults?.amountsAre ?? '';
+    final recurringEnabled = (taxDefaults?.recurringBillingEnabled ?? false) || quote?.chargeSummary != null;
+
+    final fieldsAsync = ref.watch(quoteTemplateFieldsProvider(templateId));
+    final templateFields = fieldsAsync.valueOrNull ?? const <TemplateField>[];
+    final configAsync = ref.watch(quoteTemplateConfigProvider(templateId));
+    final layoutConfigured = configAsync.valueOrNull?.needsConfiguration ?? false;
+    final headings = layoutConfigured ? configAsync.valueOrNull!.headings : const <SectionHeading>[];
+    final sectionDefaults = configAsync.valueOrNull?.sectionDefaults ?? const <String, String>{};
+
+    final libraryAsync = readOnly ? null : ref.watch(quoteClauseLibraryProvider);
+    final library = libraryAsync?.valueOrNull ?? const <LibraryClause>[];
+    final productsAsync = ref.watch(productsProvider);
+    final catalog = productsAsync.valueOrNull ?? const <Product>[];
+
+    // Clauses + sections.
+    final today = localIsoDate();
+    final productTypeIds = <String>{
+      for (final it in _draft.items)
+        for (final p in catalog)
+          if (p.id == it.productId) _productTypeId(p),
+    }..remove('');
+    final familyDefaults = defaultClauseRows(library, const {}, today);
+    final initialClauses =
+        _isEdit ? savedClauseRows(quote?.clauses ?? const []) : defaultClauseRows(library, productTypeIds, today);
+    final clauseRows = _draft.clauseRows ?? initialClauses;
+    final sectionPicks = _draft.sectionPicks ??
+        (_isEdit && quote != null ? quote.sections : defaultSectionPicks(headings, sectionDefaults, productTypeIds));
+    final missingSections = missingMandatoryHeadings(headings, sectionPicks);
+    final libraryLoaded = libraryAsync == null || !libraryAsync.isLoading;
+    final legacyTerms = _isEdit ? (quote?.clauses.isEmpty ?? true) : (libraryLoaded && familyDefaults.isEmpty);
+
+    // Spot inputs.
+    final spotKey = (
+      templateId: templateId,
+      leadId: !_isEdit && mode == QuoteFor.lead ? _draft.leadId : '',
+      customerId: !_isEdit && mode == QuoteFor.customer ? _draft.customerId : '',
+      quotationId: _isEdit ? _quoteId : '',
+    );
+    final spotFields = layoutConfigured && !readOnly && templateId.isNotEmpty
+        ? (ref.watch(quoteSpotInputsProvider(spotKey)).valueOrNull ?? const <SpotInputField>[])
+        : const <SpotInputField>[];
+    final spotAsk = fieldsNeedingInput(spotFields);
+
+    // Template fields.
+    final stored = quote?.fieldValues ?? const <String, dynamic>{};
+    Object valueOf(TemplateField f) => fieldValueOf(f, _draft.fieldEdits, stored, !_isEdit);
+    final missingTemplateField =
+        !hidden.contains('field_values') && templateFields.any((f) => isFieldMissing(f, valueOf(f)));
+
+    // Live preview.
+    final previewCtx = PreviewContext(
+      isEdit: _isEdit,
+      linesDirty: _draft.linesDirty,
+      savedMode: quote?.amountsAre ?? '',
+      quotationId: _isEdit ? _quoteId : null,
+      leadId: !_isEdit && mode == QuoteFor.lead && _draft.leadId.isNotEmpty ? _draft.leadId : null,
+      customerId: !_isEdit && mode == QuoteFor.customer && _draft.customerId.isNotEmpty ? _draft.customerId : null,
+      placeOfSupply: _draft.placeOfSupply,
+    );
+    final canPreview = !readOnly && _savedQuote == null && (!_isEdit || quote != null);
+    final liveReq = canPreview ? livePreviewRequest(previewCtx, _draft.items, amountsAre, _draft.serverFlip) : null;
+    if (canPreview) _schedulePreview(liveReq);
+    final hasPricedLines =
+        _isEdit ? _draft.items.isNotEmpty || !_draft.linesDirty : includedLines(_draft.items).isNotEmpty;
+    final livePriced = _preview == null ? <String, List<PricedLine>>{} : mapPreviewLines(_previewRows, _preview!.lines);
+    final priced = readOnly && quote != null ? savedLinePricing(_draft.items, quote.lines) : livePriced;
+    final updating = _requestedKey != null && _requestedKey != _answeredKey;
+
+    // Validation.
+    final problems = _draft.items.map(lineProblem).toSet();
+    final hasNoLines = includedLines(_draft.items).isEmpty && (!_isEdit || _draft.linesDirty);
+    final validityInPast = validUntilInPast(_draft.validUntil, _isEdit ? (quote?.validUntil ?? '') : '', today);
+    final hasRecurringLine = _draft.items.any((it) => effectiveCharge(it, livePriced[it.key]).isRecurring);
+    final partyChosen = _isEdit || (mode == QuoteFor.lead ? _draft.leadId.isNotEmpty : _draft.customerId.isNotEmpty);
+    final writeCtx = BuilderWriteContext(
+      templateId: templateId,
+      amountsAre: amountsAre,
+      fields: templateFields,
+      legacyTerms: legacyTerms,
+      savedTemplateId: savedTemplateId,
+      statusId: _isEdit ? null : ref.watch(quoteDefaultStatusProvider).valueOrNull,
+    );
+    final editPatch = _isEdit && quote != null ? toQuoteUpdateJson(_draft, quote, writeCtx) : null;
+    final hasChanges = !_isEdit || (editPatch != null && editPatch.isNotEmpty);
+    final recurringWithSubscription = hasRecurringLine && _draft.payType == 'subscription';
+    final hasTemplate = templateId.isNotEmpty || templateFallback;
+    final block = blockReason(
+      items: _draft.items,
+      validityInPast: validityInPast,
+      recurringWithSubscription: recurringWithSubscription,
+      hasAmountsAre: amountsAre.isNotEmpty,
+      attemptedSave: _attemptedSave,
+      missingTemplateField: missingTemplateField,
+    );
+    final canSubmit = !readOnly &&
+        _savedQuote == null &&
+        hasTemplate &&
+        partyChosen &&
+        !problems.contains(LineProblem.qty) &&
+        !problems.contains(LineProblem.price) &&
+        !problems.contains(LineProblem.charge) &&
+        !problems.contains(LineProblem.description) &&
+        !problems.contains(LineProblem.tax) &&
+        !hasNoLines &&
+        !validityInPast &&
+        !recurringWithSubscription &&
+        amountsAre.isNotEmpty &&
+        hasChanges &&
+        !_saving;
+
+    return _View(
+      quote: quote,
+      quoteLoading: _isEdit && quote == null,
+      quoteError: _isEdit ? ref.watch(quoteBuilderQuoteProvider(_quoteId)).error : null,
+      readOnly: readOnly,
+      leadLocked: leadLocked,
+      customerLocked: customerLocked,
+      mode: mode,
+      templatesLoading: templatesAsync.isLoading,
+      templateOptions: templateOptions,
+      templateId: templateId,
+      templateFallback: templateFallback,
+      hidden: hidden,
+      amountsAre: amountsAre,
+      taxDefaults: taxDefaults,
+      recurringEnabled: recurringEnabled,
+      templateFields: templateFields,
+      templateFieldsLoading: templateId.isNotEmpty && fieldsAsync.isLoading,
+      templateFieldsError: fieldsAsync.hasError ? 'The template’s fields could not be loaded.' : null,
+      layoutConfigured: layoutConfigured,
+      headings: headings,
+      sectionsLoading: configAsync.isLoading,
+      sectionsError: configAsync.hasError ? 'Could not load the quote sections.' : null,
+      sectionPicks: sectionPicks,
+      missingSections: missingSections,
+      library: library,
+      libraryLoading: libraryAsync?.isLoading ?? false,
+      libraryError: (libraryAsync?.hasError ?? false)
+          ? 'The clause library could not be loaded. Saved and default clauses are kept.'
+          : null,
+      clauseRows: clauseRows,
+      legacyTerms: legacyTerms,
+      today: today,
+      catalog: catalog,
+      catalogLoading: productsAsync.isLoading,
+      spotKey: spotKey,
+      spotAsk: spotAsk,
+      valueOf: valueOf,
+      missingTemplateField: missingTemplateField,
+      previewCtx: previewCtx,
+      priced: priced,
+      livePriced: livePriced,
+      hasPricedLines: hasPricedLines,
+      updating: updating,
+      hasRecurringLine: hasRecurringLine,
+      writeCtx: writeCtx,
+      editPatch: editPatch,
+      canSubmit: canSubmit,
+      blockReason: block,
+      incompleteReason: incompleteReason(hasTemplate: hasTemplate, partyChosen: partyChosen, hasNoLines: hasNoLines),
+      validityInPast: validityInPast,
+    );
+  }
+
+  static String _productTypeId(Product p) {
+    final v = p.raw['product_type'] ?? p.raw['product_type_id'];
+    if (v is String) return v;
+    if (v is Map) return (v['product_type_id'] ?? v['id'] ?? '').toString();
+    return '';
+  }
+
+  // ── Build ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    _adoptRouteLead();
-    final products = ref.watch(productsProvider).valueOrNull ?? const <Product>[];
-    final active = products.where((p) => p.active).toList();
-    // The org's Quote layout. Empty until it loads (and in mock mode), which
-    // every `shows()` below reads as "render it" — so the form is never held
-    // behind the schema call.
-    final schema = ref.watch(quoteSchemaProvider);
-    // The org's fields, minus the ones this screen renders itself. Non-empty
-    // means the org has a layout to honour, and the section below replaces the
-    // built-in title / valid-until / notes / terms boxes with it.
-    final formSchema = quoteFormSchema(schema);
-    final schemaDriven = formSchema.editableColumns.isNotEmpty;
-    final templates = ref.watch(quoteTemplatesProvider);
-
-    int total = 0;
-    for (final line in _lines) {
-      final p = _productById(products, line.productId);
-      if (p != null) {
-        total += (p.priceNum * (_qtyOf(line) ?? 0)).round();
-      }
-    }
-
+    final v = _buildView();
+    final title = !_isEdit
+        ? 'New quote'
+        : v.readOnly
+            ? 'Quote ${v.quote?.number ?? ''}'.trim()
+            : 'Edit quote ${v.quote?.number ?? ''}'.trim();
     return Container(
       color: AppColors.bgDetail,
       child: Column(
         children: [
-          _header(context),
+          _header(title),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 20.h),
-              children: [
-                _sectionLabel('Link'),
-                AppTextField(
-                  label: 'Lead',
-                  required: true,
-                  readOnly: true,
-                  value: _lead?.name,
-                  // The fetch is usually instant, but on a cold open it is a
-                  // round trip — a tap that appears to do nothing invites the
-                  // second tap that used to produce the false "no leads".
-                  hint: _loadingLeads
-                      ? 'Loading leads…'
-                      : 'Search by name, company or #id',
-                  suffixIcon: PhosphorIconsRegular.magnifyingGlass,
-                  onTap: _pickLead,
-                ),
-                SizedBox(height: 6.h),
-                Row(
-                  children: [
-                    Icon(
-                        _lead == null
-                            ? PhosphorIconsRegular.magnifyingGlass
-                            : PhosphorIconsRegular.link,
-                        size: 14.sp,
-                        color: AppColors.textPlaceholder),
-                    SizedBox(width: 6.w),
-                    Flexible(
-                      child: Text(
-                          _lead == null
-                              ? 'Pick the lead this quote is for — it is required'
-                              : '${_lead!.company ?? _lead!.name} · #${_lead!.id}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 14.h),
-                if (schemaDriven) ...[
-                  _sectionLabel('Details'),
-                  LeadSchemaForm(
-                    key: _schemaFormKey,
-                    schema: formSchema,
-                    row: null,
-                    // Quote columns are written under their own names. The
-                    // default mapping is the Lead one, which renames `status`
-                    // to `status_id` — wrong here, and `status` is screen-owned
-                    // anyway.
-                    writeKey: (c) => c.name,
-                  ),
-                ] else if (schema.shows('quotation_title')) ...[
-                  AppTextField(
-                      label: schema.labelOf('quotation_title', 'Quote title'),
-                      controller: _titleCtrl,
-                      hint: 'e.g. Showroom fit-out — phase 2'),
-                  SizedBox(height: 14.h),
-                ],
-                // Real templates, by id. Hidden when the org has none — the
-                // server then applies its default on create.
-                if (templates.isNotEmpty) ...[
-                  _chipField(
-                    label: schema.labelOf('template', 'Template'),
-                    options: [for (final t in templates) t.name],
-                    selected: _templateName(templates),
-                    onSelect: (name) => setState(() => _templateId =
-                        templates.firstWhere((t) => t.name == name).id),
-                  ),
-                  SizedBox(height: 14.h),
-                ],
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: AppTextField(
-                        label: 'Owner',
-                        readOnly: true,
-                        value: MockUsers.of(_owner).name,
-                        onTap: _pickOwner,
-                      ),
-                    ),
-                    SizedBox(width: 9.w),
-                    Expanded(child: _currencyField()),
-                  ],
-                ),
-                SizedBox(height: 22.h),
-                _sectionLabel('Line items · from product catalog'),
-                for (int i = 0; i < _lines.length; i++) ...[
-                  if (i > 0) SizedBox(height: 10.h),
-                  _lineItem(i, products, active),
-                ],
-                SizedBox(height: 10.h),
-                GestureDetector(
-                  onTap: () => setState(() => _lines.add(_QuoteLine(''))),
-                  child: Container(
-                    height: 44.h,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(11.r),
-                      border: Border.all(color: AppColors.borderInput, width: 1.5),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(PhosphorIconsBold.plus, size: 14.sp, color: AppColors.textLabelAlt),
-                        SizedBox(width: 7.w),
-                        Text('Add product line', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(height: 12.h),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text('Quote total', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                    SizedBox(width: 10.w),
-                    Text(_fmtAmt(total), style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                  ],
-                ),
-                SizedBox(height: 2.h),
-                Align(
-                  alignment: Alignment.centerRight,
-                  // Says what the total is, which depends on the tax basis:
-                  // "tax-free" read as a promise on an INCLUSIVE quote.
-                  child: Text(
-                      switch (_amountsAre) {
-                        'INCLUSIVE' => 'Tax included in these amounts',
-                        'EXCLUSIVE' => 'Before tax — tax is added on the invoice',
-                        _ => 'Tax-free — product amounts only',
-                      },
-                      style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                ),
-                SizedBox(height: 22.h),
-                if (ref.watch(accountingActiveProvider)) ..._taxSection(),
-                _sectionLabel('Payment & validity'),
-                _chipField(
-                  label: schema.labelOf('payment_type', 'Payment type'),
-                  required: true,
-                  options: [for (final p in QuotePaymentType.values) p.label],
-                  selected: _payType.label,
-                  onSelect: (label) => setState(() => _payType = QuotePaymentType.values
-                      .firstWhere((p) => p.label == label)),
-                ),
-                // The API requires a count (>= 2) for an even split only.
-                if (_payType.needsInstallmentCount) ...[
-                  SizedBox(height: 14.h),
-                  AppTextField(label: 'Number of installments (min 2)', controller: _installmentsCtrl, hint: 'e.g. 3', keyboardType: TextInputType.number),
-                ],
-                if (_payType == QuotePaymentType.subscription &&
-                    schema.shows('billing_period_days')) ...[
-                  SizedBox(height: 14.h),
-                  AppTextField(
-                      label: schema.labelOf('billing_period_days', 'Billing period (days)'),
-                      controller: _billingCtrl,
-                      hint: 'e.g. 30',
-                      keyboardType: TextInputType.number),
-                ],
-                // Rendered here only when there is no org layout to honour
-                // (mock mode, a failed schema call, an org with no config).
-                // Otherwise the Details section above already owns them.
-                if (!schemaDriven) ...[
-                  if (schema.shows('valid_until')) ...[
-                    SizedBox(height: 14.h),
-                    AppTextField(
-                        label: schema.labelOf('valid_until', 'Valid until'),
-                        controller: _validCtrl,
-                        hint: 'e.g. 2026-09-04'),
-                  ],
-                  if (schema.shows('notes')) ...[
-                    SizedBox(height: 14.h),
-                    AppTextField(
-                        label: schema.labelOf('notes', 'Notes'),
-                        controller: _notesCtrl,
-                        multiline: true,
-                        hint: 'Notes shown on the quote…'),
-                  ],
-                  if (schema.shows('terms_and_conditions')) ...[
-                    SizedBox(height: 14.h),
-                    AppTextField(
-                        label: schema.labelOf('terms_and_conditions', 'Terms & conditions'),
-                        controller: _termsCtrl,
-                        multiline: true,
-                        hint: 'The T&C text printed on the quote…'),
-                  ],
-                ],
-              ],
-            ),
+            child: v.quoteLoading
+                ? (v.quoteError != null
+                    ? Padding(
+                        padding: EdgeInsets.all(16.w),
+                        child: QbNotice(
+                          tone: QbTone.danger,
+                          icon: PhosphorIconsRegular.warningCircle,
+                          children: [
+                            qbNoticeText(v.quoteError is AppError
+                                ? (v.quoteError as AppError).message
+                                : 'Could not load the quote.')
+                          ],
+                        ),
+                      )
+                    : const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)))
+                : _savedQuote != null
+                    ? ListView(
+                        padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 20.h),
+                        children: [_savedNotice(_savedQuote!)],
+                      )
+                    : _form(v),
           ),
-          _actionBar(context, products),
+          if (!v.quoteLoading) _actionBar(v),
         ],
       ),
     );
   }
 
-  /// Accounting's three quote fields (handover §9.3): the tax basis, the place
-  /// of supply and a contract reference. All three lock once a payment is
-  /// recorded against the quote.
-  List<Widget> _taxSection() {
+  Widget _form(_View v) {
+    final ro = v.readOnly;
+    final q = v.quote;
     final stateName = ref.watch(gstStateNameProvider);
+    final flags = paymentFlags(_draft.payType);
+    final payOptions = [
+      for (final o in payTypeOptions)
+        if (!(v.hasRecurringLine && o.$1 == 'subscription')) o,
+    ];
+    return ListView(
+      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 20.h),
+      children: [
+        // ── Notices ──
+        if (ro)
+          Padding(
+            padding: EdgeInsets.only(top: 8.h),
+            child: QbNotice(
+              tone: _lockFailure != null ? QbTone.danger : QbTone.warning,
+              icon: PhosphorIconsRegular.lockSimple,
+              // As on web: offered while the quote is revisable, and after a
+              // QUOTE_LOCKED refusal only when the server suggests REVISE.
+              action: _canRevise && (_lockFailure == null || _lockFailure!.nextAction == 'REVISE')
+                  ? TextButton(
+                      onPressed: () => context.pop('revise'),
+                      child: const Text('Revise quote'),
+                    )
+                  : null,
+              children: [
+                qbNoticeText(_lockFailure != null
+                    ? '${_lockFailure!.bareMessage} Your changes were not saved.'
+                    : (_focusPayment ? paymentLockedCopy : lockedCopy)),
+              ],
+            ),
+          ),
+        if (_isEdit && !ro && (q?.approvalIsPending ?? false))
+          Padding(
+            padding: EdgeInsets.only(top: 8.h),
+            child: QbNotice(
+                tone: QbTone.warning,
+                icon: PhosphorIconsRegular.shieldWarning,
+                children: [qbNoticeText(approvalCopyNeutral)]),
+          ),
+        if (!ro && v.hidden.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: 8.h),
+            child: QbNotice(
+                tone: QbTone.info,
+                icon: PhosphorIconsRegular.eyeSlash,
+                children: [qbNoticeText(hiddenFieldsNotice(v.hidden))]),
+          ),
+        // A customer-mode refusal is shown under the customer picker instead.
+        if (_saveError != null && !(v.mode == QuoteFor.customer && !_isEdit))
+          Padding(
+            padding: EdgeInsets.only(top: 8.h),
+            child: QbNotice(
+                tone: QbTone.danger, icon: PhosphorIconsRegular.warningCircle, children: [qbNoticeText(_saveError!)]),
+          ),
+
+        // ── Template + title ──
+        const QbSectionLabel('Quote'),
+        const QbFieldLabel('Template', required: true),
+        SizedBox(height: 7.h),
+        QbPickerBox(
+          text: v.templateOptions.where((t) => t.id == v.templateId).firstOrNull?.name ?? '',
+          placeholder: v.templatesLoading
+              ? 'Loading templates…'
+              : v.templateFallback
+                  ? (_isEdit ? (q?.templateName.isNotEmpty == true ? q!.templateName : 'Current template') : 'Organisation’s default template')
+                  : 'Select a template…',
+          error: _fieldErrors.containsKey('template'),
+          onTap: ro || v.templateFallback
+              ? null
+              : () async {
+                  final id = await qbPickOne(context,
+                      title: 'Template',
+                      options: [for (final t in v.templateOptions) (t.id, t.name)],
+                      selected: v.templateId);
+                  if (id != null) {
+                    _patch((d) => d.copyWith(templateChoice: id, sectionPicks: null));
+                    _spotConfirmed = false;
+                  }
+                },
+        ),
+        _fieldError('template'),
+        SizedBox(height: 14.h),
+        _textField(
+          label: 'Quote title',
+          ctrl: _titleCtrl,
+          hint: 'e.g. CRM Annual Plan – ABC Corp',
+          disabled: ro || v.hidden.contains('quotation_title'),
+          errorKey: 'quotation_title',
+          onChanged: (t) => _patch((d) => d.copyWith(title: t)),
+        ),
+        SizedBox(height: 14.h),
+
+        // ── Party ──
+        ..._partySection(v),
+
+        // ── Lines ──
+        SizedBox(height: 8.h),
+        QuoteLinesEditor(
+          items: _draft.items,
+          // Editing a line hands the lines to the client: a pending
+          // server-side flip is dropped.
+          onItemsChange: (items) => _patch((d) => d.copyWith(items: items, linesDirty: true, serverFlip: null)),
+          catalog: v.catalog,
+          catalogLoading: v.catalogLoading,
+          priced: v.priced,
+          pricing: !ro && v.updating,
+          amountsAre: v.amountsAre,
+          disabled: ro || v.hidden.contains('line_items'),
+          recurringEnabled: v.recurringEnabled,
+          rateMaster: v.taxDefaults?.rateMaster ?? false,
+        ),
+        _fieldError('line_items'),
+        SizedBox(height: 14.h),
+
+        // ── Totals ──
+        QuoteTotalsBlock(
+          summary: ro ? q?.taxSummary : (v.hasPricedLines ? _preview?.summary : null),
+          taxableTotal: v.hasPricedLines ? _preview?.taxableTotal : null,
+          grandTotal: v.hasPricedLines ? _preview?.grandTotal : null,
+          loading: !ro && v.hasPricedLines && _preview == null && _previewError == null,
+          updating: !ro && _preview != null && v.updating,
+          error: !ro && v.hasPricedLines ? _previewError : null,
+          discountPct: q?.discountPct ?? '',
+          chargeSummary: ro ? q?.chargeSummary : (v.hasPricedLines ? _preview?.chargeSummary : null),
+        ),
+
+        // ── Payment ──
+        QbSectionLabel('Payment & validity', key: _paymentKey),
+        QbChipField(
+          label: 'Payment type',
+          required: true,
+          disabled: ro,
+          options: payOptions,
+          selected: _draft.payType,
+          onSelect: (p) => _patch((d) => d.copyWith(payType: p)),
+        ),
+        _fieldError('payment_type'),
+        if (flags.installments || flags.billing) SizedBox(height: 14.h),
+        if (flags.installments || flags.billing)
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (flags.installments)
+              Expanded(
+                child: _textField(
+                  label: '# Installments',
+                  ctrl: _installmentsCtrl,
+                  hint: 'min 2',
+                  disabled: ro,
+                  numeric: true,
+                  errorKey: 'num_installments',
+                  onChanged: (t) => _patch((d) => d.copyWith(installments: t)),
+                ),
+              ),
+            if (flags.installments && flags.billing) SizedBox(width: 9.w),
+            if (flags.billing)
+              Expanded(
+                child: _textField(
+                  label: 'Billing period (days)',
+                  ctrl: _billingCtrl,
+                  hint: 'e.g. 30',
+                  disabled: ro,
+                  numeric: true,
+                  errorKey: 'billing_period_days',
+                  onChanged: (t) => _patch((d) => d.copyWith(billing: t)),
+                ),
+              ),
+          ]),
+        SizedBox(height: 14.h),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _validUntilField(v)),
+          SizedBox(width: 9.w),
+          Expanded(
+            child: _dateField(
+              label: 'Due date',
+              value: _draft.dueDate,
+              disabled: ro || v.hidden.contains('due_date'),
+              errorKey: 'due_date',
+              onPick: (d) => _patch((x) => x.copyWith(dueDate: d)),
+              // A date can be changed on an edit, not cleared.
+              onClear: _isEdit ? null : () => _patch((x) => x.copyWith(dueDate: '')),
+            ),
+          ),
+        ]),
+
+        // ── Tax & contract ──
+        const QbSectionLabel('Tax'),
+        QbChipField(
+          label: 'Amounts are',
+          required: true,
+          disabled: ro,
+          options: [for (final e in quoteAmountsAreLabels.entries) (e.key, e.value)],
+          selected: v.amountsAre,
+          onSelect: (to) => _changeAmountsAre(v, to),
+        ),
+        if (v.amountsAre.isEmpty && !ro) QbHint(v.taxDefaults == null ? 'Loading…' : 'Select…'),
+        SizedBox(height: 14.h),
+        const QbFieldLabel('Place of supply'),
+        SizedBox(height: 7.h),
+        QbPickerBox(
+          text: _draft.placeOfSupply.isEmpty ? '' : stateName(_draft.placeOfSupply),
+          placeholder: 'Select a state…',
+          error: _fieldErrors.containsKey('place_of_supply_state_code'),
+          onTap: ro
+              ? null
+              : () async {
+                  final code = await pickGstState(context, ref,
+                      selected: _draft.placeOfSupply.isEmpty ? null : _draft.placeOfSupply);
+                  if (code != null && mounted) _patch((d) => d.copyWith(placeOfSupply: code));
+                },
+          trailing: !ro && _draft.placeOfSupply.isNotEmpty
+              ? GestureDetector(
+                  onTap: () => _patch((d) => d.copyWith(placeOfSupply: '')),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6.w),
+                    child: Icon(PhosphorIconsRegular.x, size: 14.sp, color: AppColors.textPlaceholder),
+                  ),
+                )
+              : null,
+        ),
+        _fieldError('place_of_supply_state_code'),
+        SizedBox(height: 14.h),
+        _textField(
+          label: 'Contract reference',
+          ctrl: _contractCtrl,
+          hint: 'e.g. MSA-2026-014',
+          disabled: ro || v.hidden.contains('contract_ref'),
+          errorKey: 'contract_ref',
+          maxLength: 140,
+          onChanged: (t) => _patch((d) => d.copyWith(contractRef: t)),
+        ),
+
+        // ── Template fields / sections / quote details ──
+        if (!v.hidden.contains('field_values'))
+          TemplateFieldsSection(
+            fields: v.templateFields,
+            valueOf: v.valueOf,
+            onChange: (key, value) => _patch((d) => d.copyWith(fieldEdits: {...d.fieldEdits, key: value})),
+            warnings: _isEdit ? (q?.fieldValuesWarnings ?? const []) : const [],
+            loading: v.templateFieldsLoading,
+            error: v.templateFieldsError,
+            showMissing: _attemptedSave,
+            disabled: ro,
+          ),
+        if (v.headings.isNotEmpty)
+          QuoteSectionsEditor(
+            headings: v.headings,
+            picks: v.sectionPicks,
+            onPicksChange: (p) => _patch((d) => d.copyWith(sectionPicks: p)),
+            loading: v.sectionsLoading,
+            error: v.sectionsError,
+            showMissing: _attemptedSave,
+            disabled: ro || (q?.isLocked ?? false),
+          ),
+        if (v.layoutConfigured && !ro && v.spotAsk.isNotEmpty) ...[
+          const QbSectionLabel('Quote details'),
+          Row(children: [
+            Expanded(
+              child: Text(
+                  _isEdit
+                      ? '${v.spotAsk.length} field${v.spotAsk.length == 1 ? '' : 's'} typed for this quote (bill-to / ship-to / reference …).'
+                      : '${v.spotAsk.length} field${v.spotAsk.length == 1 ? '' : 's'} to fill in — asked when you create the quote.',
+                  style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+            ),
+            SizedBox(width: 8.w),
+            GestureDetector(
+              onTap: () => _openSpot(v, confirmLabel: 'Apply'),
+              child: Container(
+                height: 34.h,
+                padding: EdgeInsets.symmetric(horizontal: 12.w),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(10.r),
+                  border: Border.all(color: const Color(0xFFE6E7EA)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(PhosphorIconsRegular.pencilSimple, size: 13.sp, color: AppColors.textLabelAlt),
+                  SizedBox(width: 5.w),
+                  Text(_isEdit ? 'Edit details' : 'Fill in now',
+                      style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textLabelAlt)),
+                ]),
+              ),
+            ),
+          ]),
+        ],
+        if (_attemptedSave && v.missingSections.isNotEmpty && !ro) ...[
+          SizedBox(height: 10.h),
+          QbNotice(
+            tone: QbTone.warning,
+            icon: PhosphorIconsRegular.lockSimple,
+            children: [qbNoticeText(mandatoryHeadingsNotice(v.missingSections))],
+          ),
+        ],
+
+        // ── Notes ──
+        const QbSectionLabel('Notes'),
+        _textField(
+          label: 'Notes',
+          ctrl: _notesCtrl,
+          hint: 'Notes shown on the quote..',
+          multiline: true,
+          disabled: ro || v.hidden.contains('notes'),
+          errorKey: 'notes',
+          onChanged: (t) => _patch((d) => d.copyWith(notes: t)),
+        ),
+
+        // ── Terms — the clause list; the Item Quote layout prints sections instead ──
+        if (!v.layoutConfigured)
+          QuoteClausesEditor(
+            rows: v.clauseRows,
+            onRowsChange: (rows) => _patch((d) => d.copyWith(clauseRows: rows)),
+            library: v.library,
+            libraryLoading: v.libraryLoading,
+            libraryError: v.libraryError,
+            today: v.today,
+            legacy: v.legacyTerms,
+            terms: _draft.terms,
+            onTermsChange: (t) => _patch((d) => d.copyWith(terms: t)),
+            termsDisabled: v.hidden.contains('terms_and_conditions'),
+            disabled: ro,
+          ),
+      ],
+    );
+  }
+
+  List<Widget> _partySection(_View v) {
+    final q = v.quote;
+    if (_isEdit) {
+      final isLead = (q?.leadName ?? '').isNotEmpty;
+      return [
+        AppTextField(
+          label: isLead ? 'Lead' : 'Customer',
+          readOnly: true,
+          value: isLead ? q!.leadName : (q?.customerName.isNotEmpty == true ? q!.customerName : '—'),
+          suffixIcon: PhosphorIconsRegular.lockSimple,
+        ),
+      ];
+    }
+    if (v.leadLocked || v.customerLocked) {
+      final pick = v.leadLocked ? _leadPick : _customerPick;
+      return [
+        AppTextField(
+          label: v.leadLocked ? 'Lead' : 'Customer',
+          required: true,
+          readOnly: true,
+          value: pick?.label ?? (v.leadLocked ? 'This lead' : 'This customer'),
+          suffixIcon: PhosphorIconsRegular.lockSimple,
+        ),
+        if ((pick?.sub ?? '').isNotEmpty) QbHint(pick!.sub),
+        if (v.customerLocked && _saveError != null) QbHint(_customerModeError(_saveError!), error: true),
+      ];
+    }
+    final mode = v.mode;
+    final pick = mode == QuoteFor.lead ? _leadPick : _customerPick;
+    final id = mode == QuoteFor.lead ? _draft.leadId : _draft.customerId;
     return [
-      _sectionLabel('Tax'),
-      _chipField(
-        label: 'Prices are',
-        options: amountsAreLabels.values.toList(),
-        selected: amountsAreLabels[_amountsAre] ?? '',
-        onSelect: (v) => setState(
-            () => _amountsAre = amountsAreLabels.entries.firstWhere((e) => e.value == v).key),
-      ),
-      SizedBox(height: 14.h),
+      const QbFieldLabel('Quote for', required: true),
+      SizedBox(height: 8.h),
+      Row(children: [
+        QbChip(
+          label: 'Lead',
+          icon: PhosphorIconsRegular.user,
+          selected: mode == QuoteFor.lead,
+          onTap: () => setState(() {
+            _draft = _draft.copyWith(quoteFor: QuoteFor.lead);
+            _saveError = null;
+          }),
+        ),
+        SizedBox(width: 8.w),
+        QbChip(
+          label: 'Customer',
+          icon: PhosphorIconsRegular.buildings,
+          selected: mode == QuoteFor.customer,
+          onTap: () => setState(() {
+            _draft = _draft.copyWith(quoteFor: QuoteFor.customer);
+            _saveError = null;
+          }),
+        ),
+      ]),
+      QbHint(mode == QuoteFor.lead ? leadModeHint : customerModeHint),
+      SizedBox(height: 12.h),
       AppTextField(
-        label: 'Place of supply',
+        label: mode == QuoteFor.lead ? 'Lead' : 'Customer',
+        required: true,
         readOnly: true,
-        value: _pos == null ? null : stateName(_pos),
-        hint: 'From the customer (automatic)',
-        onTap: () async {
-          final code = await pickGstState(context, ref, selected: _pos);
-          if (code != null && mounted) setState(() => _pos = code);
-        },
+        value: id.isEmpty ? null : (pick?.label ?? id),
+        hint: mode == QuoteFor.lead
+            ? 'Search leads by name, company, email or phone…'
+            : 'Search customers by name, company, email…',
+        suffixIcon: PhosphorIconsRegular.magnifyingGlass,
+        errorText: _fieldErrors[mode == QuoteFor.lead ? 'lead' : 'customer']?.firstOrNull,
+        onTap: () => _pickParty(mode),
       ),
-      SizedBox(height: 14.h),
-      AppTextField(label: 'Contract reference', controller: _contractRefCtrl, hint: 'Optional — PO or contract no.'),
-      SizedBox(height: 22.h),
+      if (id.isNotEmpty && (pick?.sub ?? '').isNotEmpty) QbHint(pick!.sub),
+      if (mode == QuoteFor.customer && _saveError != null) QbHint(_customerModeError(_saveError!), error: true),
     ];
   }
 
-  Widget _header(BuildContext context) {
+  /// Copy shown inline when the server refuses a customer-mode create.
+  static String _customerModeError(String message) => message.isNotEmpty ? message : customerNoLeadCopy;
+
+  Widget _validUntilField(_View v) {
+    final today = DateTime.now();
+    final error = v.validityInPast ? 'The validity date can’t be in the past.' : null;
+    return _dateField(
+      label: 'Quote valid until',
+      value: _draft.validUntil,
+      disabled: v.readOnly || v.hidden.contains('valid_until'),
+      errorKey: 'valid_until',
+      errorText: error,
+      // Every quote expires: no validity date in the past.
+      firstDate: DateTime(today.year, today.month, today.day),
+      onPick: (d) => _patch((x) => x.copyWith(validUntil: d)),
+      // Changed on an edit, never cleared (the API takes a date, not a blank).
+      onClear: _isEdit ? null : () => _patch((x) => x.copyWith(validUntil: '')),
+    );
+  }
+
+  Widget _dateField({
+    required String label,
+    required String value,
+    required bool disabled,
+    required String errorKey,
+    required ValueChanged<String> onPick,
+    VoidCallback? onClear,
+    String? errorText,
+    DateTime? firstDate,
+  }) {
+    final err = errorText ?? _fieldErrors[errorKey]?.firstOrNull;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      QbFieldLabel(label),
+      SizedBox(height: 7.h),
+      QbPickerBox(
+        text: value.isEmpty ? '' : formatApiDay(value),
+        placeholder: 'Pick a date',
+        icon: PhosphorIconsRegular.calendarBlank,
+        error: err != null,
+        onTap: disabled
+            ? null
+            : () async {
+                final now = DateTime.now();
+                final first = firstDate ?? DateTime(now.year - 2);
+                var initial = DateTime.tryParse(value) ?? now;
+                if (initial.isBefore(first)) initial = first;
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: initial,
+                  firstDate: first,
+                  lastDate: DateTime(now.year + 5),
+                );
+                if (picked != null) onPick(isoDay(picked));
+              },
+        trailing: !disabled && onClear != null && value.isNotEmpty
+            ? GestureDetector(
+                onTap: onClear,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6.w),
+                  child: Icon(PhosphorIconsRegular.x, size: 14.sp, color: AppColors.textPlaceholder),
+                ),
+              )
+            : null,
+      ),
+      if (err != null) QbHint(err, error: true),
+    ]);
+  }
+
+  Widget _textField({
+    required String label,
+    required TextEditingController ctrl,
+    required String hint,
+    required bool disabled,
+    required String errorKey,
+    required ValueChanged<String> onChanged,
+    bool multiline = false,
+    bool numeric = false,
+    int? maxLength,
+  }) {
+    return AppTextField(
+      label: label,
+      controller: ctrl,
+      hint: hint,
+      readOnly: disabled,
+      value: disabled ? ctrl.text : null,
+      multiline: multiline,
+      keyboardType: numeric ? TextInputType.number : null,
+      inputFormatters: [
+        if (numeric) FilteringTextInputFormatter.digitsOnly,
+        if (maxLength != null) LengthLimitingTextInputFormatter(maxLength),
+      ],
+      errorText: _fieldErrors[errorKey]?.firstOrNull,
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _fieldError(String key) {
+    final msg = _fieldErrors[key]?.firstOrNull;
+    return msg == null ? const SizedBox.shrink() : QbHint(msg, error: true);
+  }
+
+  /// "<number> is saved." + the discount-approval notice + the saved totals.
+  Widget _savedNotice(SavedQuote s) {
+    final pending = s.approvalIsPending;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text.rich(TextSpan(
+        style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
+        children: [
+          TextSpan(
+              text: s.number.isEmpty ? 'The quote' : s.number,
+              style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+          const TextSpan(text: ' is saved.'),
+        ],
+      )),
+      SizedBox(height: 14.h),
+      if (pending)
+        QbNotice(
+          tone: QbTone.warning,
+          icon: PhosphorIconsRegular.shieldWarning,
+          children: [
+            qbNoticeText(_isEdit ? approvalCopyNeutral : approvalCopy, strong: true),
+            if (s.discountPct.isNotEmpty) qbNoticeText('Discount on this quote: ${pct2(s.discountPct)}.'),
+            qbNoticeText('${_isEdit ? '' : 'Your approver has been notified. '}You can keep working on the quote meanwhile.',
+                muted: true),
+          ],
+        ),
+      if (s.fieldValuesWarnings.isNotEmpty)
+        QbNotice(
+          tone: QbTone.warning,
+          icon: PhosphorIconsRegular.warning,
+          children: [for (final w in s.fieldValuesWarnings) qbNoticeText(w)],
+        ),
+      if (s.taxSummary != null)
+        QuoteTotalsBlock(
+          summary: s.taxSummary,
+          // The approval notice already states the discount.
+          discountPct: pending ? '' : s.discountPct,
+        )
+      else
+        Text('Quote total: ${formatMoneyStr(s.raw['total_amount'])}',
+            style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+    ]);
+  }
+
+  Widget _header(String title) {
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 14.h),
       decoration: const BoxDecoration(
@@ -585,7 +1196,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.pop(),
+            onTap: () => _savedQuote != null ? _finish(_savedQuote!) : context.pop(),
             child: Container(
               width: 38.w,
               height: 38.w,
@@ -603,8 +1214,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('New quote', style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                Text('Line items come from the product catalog',
+                Text(title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                Text('Line items from the catalog or typed',
                     style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
               ],
             ),
@@ -614,356 +1228,185 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     );
   }
 
-  Widget _sectionLabel(String text) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(2.w, 14.h, 2.w, 12.h),
-      child: Text(text.toUpperCase(),
-          style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)),
-    );
-  }
-
-  Widget _chipField({
-    required String label,
-    bool required = false,
-    required List<String> options,
-    required String selected,
-    required ValueChanged<String> onSelect,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(label, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-            if (required)
-              Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
-          ],
-        ),
-        SizedBox(height: 8.h),
-        Wrap(
-          spacing: 8.w,
-          runSpacing: 8.h,
-          children: [
-            for (final o in options)
-              GestureDetector(
-                onTap: () => onSelect(o),
-                child: Container(
-                  height: 38.h,
-                  padding: EdgeInsets.symmetric(horizontal: 14.w),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: selected == o ? AppColors.blueSubtle : AppColors.white,
-                    borderRadius: BorderRadius.circular(10.r),
-                    border: Border.all(
-                      color: selected == o ? const Color(0xFFA6D1FF) : const Color(0xFFE6E7EA),
-                      width: selected == o ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Text(o,
-                      style: AppText.custom(
-                          size: 13,
-                          weight: selected == o ? FontWeight.w700 : FontWeight.w600,
-                          color: selected == o ? AppColors.navy : AppColors.textLabelAlt)),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _currencyField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Currency', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-        SizedBox(height: 7.h),
-        Container(
-          height: 44.h,
-          padding: EdgeInsets.symmetric(horizontal: 13.w),
-          decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text('INR — Indian Rupee (₹)',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-              ),
-              Icon(PhosphorIconsRegular.lockSimple, size: 14.sp, color: AppColors.textPlaceholder),
-            ],
+  Widget _actionBar(_View v) {
+    Widget bar(List<Widget> children, {Widget? above}) => Container(
+          padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 22.h),
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            border: Border(top: BorderSide(color: AppColors.borderCardSoft)),
           ),
-        ),
-      ],
-    );
-  }
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (above != null) ...[above, SizedBox(height: 8.h)],
+            Row(children: children),
+          ]),
+        );
 
-  Widget _lineItem(int index, List<Product> all, List<Product> active) {
-    final line = _lines[index];
-    final selected = _productById(all, line.productId);
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(13.r),
-        border: Border.all(color: const Color(0xFFE6E7EA)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            height: 44.h,
-            padding: EdgeInsets.symmetric(horizontal: 12.w),
+    if (_savedQuote != null) {
+      return bar([Expanded(child: qbSheetButton('Done', primary: true, onTap: () => _finish(_savedQuote!)))]);
+    }
+    if (v.readOnly) {
+      return bar([Expanded(child: qbSheetButton('Close', primary: false, onTap: () => context.pop()))]);
+    }
+    // Say why the button is disabled — otherwise a cleared quantity reads as a
+    // dead button.
+    final reason = v.blockReason.isNotEmpty ? v.blockReason : v.incompleteReason;
+    final label = _isEdit ? (_saving ? 'Saving…' : 'Save changes') : (_saving ? 'Creating…' : 'Create quote');
+    return bar(
+      above: reason.isEmpty
+          ? null
+          : Text(reason,
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w600,
+                  color: v.blockReason.isNotEmpty ? AppColors.error : AppColors.textMuted)),
+      [
+        GestureDetector(
+          onTap: _saving ? null : () => context.pop(),
+          child: Container(
+            width: 100.w,
+            height: 48.h,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(11.r),
-              border: Border.all(color: AppColors.borderInput, width: 1.5),
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(12.r),
+              border: Border.all(color: const Color(0xFFE6E7EA)),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: line.productId.isEmpty ? '' : line.productId,
-                isExpanded: true,
-                icon: Icon(PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.textMuted2),
-                style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
-                items: [
-                  DropdownMenuItem(
-                    value: '',
-                    child: Text('Select product…',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                  ),
-                  for (final p in active)
-                    DropdownMenuItem(
-                      value: p.id,
-                      child: Text('${p.name} — ${p.price}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
-                    ),
-                ],
-                onChanged: (v) => setState(() => line.productId = v ?? ''),
-              ),
-            ),
+            child: Text('Cancel', style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
           ),
-          SizedBox(height: 9.h),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 74.w,
-                height: 44.h,
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: EdgeInsets.symmetric(horizontal: 12.w),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(11.r),
-                    border: Border.all(color: AppColors.borderInput, width: 1.5),
-                  ),
-                  child: TextField(
-                    controller: line.qtyCtrl,
-                    // `.number` shows a digits-only pad on iOS, so a fractional
-                    // quantity could not physically be typed.
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                      // Digits, one dot, at most three decimals.
-                      TextInputFormatter.withFunction((oldValue, newValue) =>
-                          RegExp(r'^\d*\.?\d{0,3}$').hasMatch(newValue.text)
-                              ? newValue
-                              : oldValue),
-                    ],
-                    onChanged: (_) => setState(() {}),
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
-                    cursorColor: AppColors.blueBright,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      hintText: 'Qty',
-                      hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(width: 9.w),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Unit price', style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                    Text(selected != null ? '${selected.price} ${selected.unit}' : '—',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
-                  ],
-                ),
-              ),
-              SizedBox(width: 8.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Line total', style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                  Text(
-                    selected != null
-                        ? _fmtAmt((selected.priceNum * (_qtyOf(line) ?? 0)).round())
-                        : '₹0',
-                    style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary),
-                  ),
-                ],
-              ),
-              SizedBox(width: 8.w),
-              GestureDetector(
-                onTap: () => setState(() {
-                  if (_lines.length > 1) {
-                    _lines.removeAt(index).qtyCtrl.dispose();
-                  }
-                }),
-                child: Container(
-                  width: 32.w,
-                  height: 32.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(9.r),
-                    border: Border.all(color: const Color(0xFFF3C1C1)),
-                  ),
-                  child: Icon(PhosphorIconsRegular.trash, size: 15.sp, color: AppColors.error),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionBar(BuildContext context, List<Product> products) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        border: Border(top: BorderSide(color: AppColors.borderCardSoft)),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => context.pop(),
+        ),
+        SizedBox(width: 10.w),
+        Expanded(
+          child: GestureDetector(
+            onTap: v.canSubmit ? () => _save(v) : null,
             child: Container(
-              width: 100.w,
               height: 48.h,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(12.r),
-                border: Border.all(color: const Color(0xFFE6E7EA)),
-              ),
-              child: Text('Cancel', style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-            ),
-          ),
-          SizedBox(width: 10.w),
-          Expanded(
-            child: GestureDetector(
-              onTap: _saving ? null : () => _submit(products),
-              child: Container(
-                height: 48.h,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    color: _saving ? AppColors.textPlaceholder : AppColors.navy,
-                    borderRadius: BorderRadius.circular(12.r)),
-                child: _saving
-                    ? SizedBox(
-                        width: 18.w,
-                        height: 18.w,
-                        child: const CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.white),
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
-                          SizedBox(width: 8.w),
-                          Text('Create quote', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
-                        ],
+                  color: v.canSubmit ? AppColors.navy : AppColors.textPlaceholder,
+                  borderRadius: BorderRadius.circular(12.r)),
+              child: _saving
+                  ? Row(mainAxisSize: MainAxisSize.min, children: [
+                      SizedBox(
+                        width: 16.w,
+                        height: 16.w,
+                        child: const CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
                       ),
-              ),
+                      SizedBox(width: 8.w),
+                      Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                    ])
+                  : Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
+                      SizedBox(width: 8.w),
+                      Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                    ]),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickOwner() async {
-    final roster = ref.read(rosterProvider);
-    final chosen = await showClozrSheet<String>(
-      context: context,
-      builder: (ctx) => _OwnerSheet(current: _owner, roster: roster),
-    );
-    if (chosen != null) setState(() => _owner = chosen);
-  }
-
-  Product? _productById(List<Product> products, String id) {
-    if (id.isEmpty) return null;
-    for (final p in products) {
-      if (p.id == id) return p;
-    }
-    return null;
-  }
-}
-
-/// Owner picker, over the shared sheet chrome.
-///
-/// The rows **scroll**. The roster is as long as the org is, and this sheet
-/// used to lay them out in a plain Column inside a default-height modal — which
-/// caps at 9/16 of the screen and overflowed by 426px once the team filled it,
-/// leaving the last owners unreachable.
-class _OwnerSheet extends StatelessWidget {
-  const _OwnerSheet({required this.current, required this.roster});
-  final String current;
-  final List<AppUser> roster;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SheetHeader(title: 'Owner', onClose: () => Navigator.of(context).pop()),
-        Flexible(
-          child: ListView(
-            shrinkWrap: true,
-            padding: EdgeInsets.only(bottom: 24.h),
-            children: [
-              for (final r in roster)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pop(r.id),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 13.h),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 38.w,
-                          height: 38.w,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(color: r.color, shape: BoxShape.circle),
-                          child: Text(r.initials, style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.white)),
-                        ),
-                        SizedBox(width: 12.w),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(r.name, style: AppText.custom(size: 14.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
-                              Text(r.role, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-                            ],
-                          ),
-                        ),
-                        if (r.id == current) Icon(PhosphorIconsBold.check, size: 18.sp, color: AppColors.success),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
           ),
         ),
       ],
     );
   }
+}
+
+/// Everything the build derives from the draft + server data, computed once
+/// per build.
+class _View {
+  const _View({
+    required this.quote,
+    required this.quoteLoading,
+    required this.quoteError,
+    required this.readOnly,
+    required this.leadLocked,
+    required this.customerLocked,
+    required this.mode,
+    required this.templatesLoading,
+    required this.templateOptions,
+    required this.templateId,
+    required this.templateFallback,
+    required this.hidden,
+    required this.amountsAre,
+    required this.taxDefaults,
+    required this.recurringEnabled,
+    required this.templateFields,
+    required this.templateFieldsLoading,
+    required this.templateFieldsError,
+    required this.layoutConfigured,
+    required this.headings,
+    required this.sectionsLoading,
+    required this.sectionsError,
+    required this.sectionPicks,
+    required this.missingSections,
+    required this.library,
+    required this.libraryLoading,
+    required this.libraryError,
+    required this.clauseRows,
+    required this.legacyTerms,
+    required this.today,
+    required this.catalog,
+    required this.catalogLoading,
+    required this.spotKey,
+    required this.spotAsk,
+    required this.valueOf,
+    required this.missingTemplateField,
+    required this.previewCtx,
+    required this.priced,
+    required this.livePriced,
+    required this.hasPricedLines,
+    required this.updating,
+    required this.hasRecurringLine,
+    required this.writeCtx,
+    required this.editPatch,
+    required this.canSubmit,
+    required this.blockReason,
+    required this.incompleteReason,
+    required this.validityInPast,
+  });
+
+  final SavedQuote? quote;
+  final bool quoteLoading;
+  final Object? quoteError;
+  final bool readOnly;
+  final bool leadLocked;
+  final bool customerLocked;
+  final QuoteFor mode;
+  final bool templatesLoading;
+  final List<QuoteTemplateOption> templateOptions;
+  final String templateId;
+  final bool templateFallback;
+  final Set<String> hidden;
+  final String amountsAre;
+  final QuoteTaxDefaults? taxDefaults;
+  final bool recurringEnabled;
+  final List<TemplateField> templateFields;
+  final bool templateFieldsLoading;
+  final String? templateFieldsError;
+  final bool layoutConfigured;
+  final List<SectionHeading> headings;
+  final bool sectionsLoading;
+  final String? sectionsError;
+  final List<SectionPick> sectionPicks;
+  final List<SectionHeading> missingSections;
+  final List<LibraryClause> library;
+  final bool libraryLoading;
+  final String? libraryError;
+  final List<ClauseRow> clauseRows;
+  final bool legacyTerms;
+  final String today;
+  final List<Product> catalog;
+  final bool catalogLoading;
+  final ({String templateId, String leadId, String customerId, String quotationId}) spotKey;
+  final List<SpotInputField> spotAsk;
+  final Object Function(TemplateField) valueOf;
+  final bool missingTemplateField;
+  final PreviewContext previewCtx;
+  final Map<String, List<PricedLine>> priced;
+  final Map<String, List<PricedLine>> livePriced;
+  final bool hasPricedLines;
+  final bool updating;
+  final bool hasRecurringLine;
+  final BuilderWriteContext writeCtx;
+  final Map<String, dynamic>? editPatch;
+  final bool canSubmit;
+  final String blockReason;
+  final String incompleteReason;
+  final bool validityInPast;
 }

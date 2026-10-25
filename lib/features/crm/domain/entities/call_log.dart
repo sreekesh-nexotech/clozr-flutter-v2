@@ -28,6 +28,9 @@ class CallLog extends Equatable {
   /// CDN recording URL; `''` when nothing was recorded.
   final String recordingUrl;
 
+  /// Transcription of the recording; `''` until one has run.
+  final String transcript;
+
   const CallLog({
     required this.id,
     required this.leadId,
@@ -38,6 +41,7 @@ class CallLog extends Equatable {
     required this.time,
     this.summary = '',
     this.recordingUrl = '',
+    this.transcript = '',
   });
 
   bool get isIncoming => direction == 'incoming';

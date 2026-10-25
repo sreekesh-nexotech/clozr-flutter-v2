@@ -111,6 +111,16 @@ class Quote extends Equatable {
   /// Null keeps the old wording, so nothing changes until the field arrives.
   final String? amountsAre;
 
+  /// `grand_total` (taxable + GST) in rupees — what the webapp's Grand total
+  /// column shows and sorts by. Falls back to [amountNum] when absent.
+  final int grandTotalNum;
+
+  /// The payment plan raised when the quote was accepted. A quote with one (or
+  /// in a converted status) cannot be deleted — the server answers 409
+  /// QUOTE_HAS_PAYMENTS — so the list disables Delete with the webapp's reason.
+  final String? paymentPlanId;
+  final bool isConverted;
+
   const Quote({
     required this.id,
     this.uuid = '',
@@ -131,7 +141,13 @@ class Quote extends Equatable {
     required this.items,
     this.note,
     this.amountsAre,
+    this.grandTotalNum = 0,
+    this.paymentPlanId,
+    this.isConverted = false,
   });
+
+  /// Whether the webapp would disable Delete for this quote.
+  bool get isDeleteBlocked => isConverted || (paymentPlanId ?? '').isNotEmpty;
 
   /// True only when the server has explicitly said the amounts include tax.
   bool get isTaxInclusive => (amountsAre ?? '').toUpperCase() == 'INCLUSIVE';

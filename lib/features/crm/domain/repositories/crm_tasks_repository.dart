@@ -5,6 +5,10 @@ import '../entities/view_schema.dart';
 abstract class CrmTasksRepository {
   Future<List<CrmTask>> getTasks();
 
+  /// The task list narrowed server-side by the webapp's list params
+  /// (`status__in`, `assigned_to__not`, `search`, …).
+  Future<List<CrmTask>> getTasksQuery(Map<String, dynamic> query);
+
   /// The tasks linked to one lead — the Tasks tab on the lead detail screen.
   /// Scoped by the backend, not by filtering the org-wide list.
   Future<List<CrmTask>> getTasksForLead(String leadId);
@@ -19,7 +23,8 @@ abstract class CrmTasksRepository {
   ///
   /// Unmapped by design: the panel renders the columns the org configured, so
   /// it needs values keyed by field name. Null when no such task is visible.
-  Future<Map<String, dynamic>?> getTaskRow(String id);
+  /// [isFollowup] adds `?is_followup=true` — without it a follow-up is a 404.
+  Future<Map<String, dynamic>?> getTaskRow(String id, {bool isFollowup = false});
 
   /// Creates a task from the Add-task sheet's fields
   /// (`title` / `task_type` / `due_date` / `description`). Returns the created
@@ -34,10 +39,12 @@ abstract class CrmTasksRepository {
   Future<ViewSchema> getTaskListSchema();
 
   /// `PATCH /crm/tasks/{id}/` — saves an edit built from the org's schema.
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields);
+  /// [isFollowup] adds `?is_followup=true`: a follow-up is only found under
+  /// that flag, and the plain task URL answers 404 for it.
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false});
 
-  /// `DELETE /crm/tasks/{id}/`.
-  Future<void> deleteTask(String id);
+  /// `DELETE /crm/tasks/{id}/` (`?is_followup=true` for a follow-up).
+  Future<void> deleteTask(String id, {bool isFollowup = false});
 
   /// Moves a task to the status matching the UI key
   /// (`todo | inprogress | blocked | done`).

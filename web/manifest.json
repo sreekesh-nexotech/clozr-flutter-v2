@@ -3,7 +3,7 @@
     "short_name": "Clozr",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#EDE8EF",
+    "background_color": "#FFFFFF",
     "theme_color": "#00113B",
     "description": "A new Flutter project.",
     "orientation": "portrait-primary",

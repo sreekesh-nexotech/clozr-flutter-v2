@@ -113,6 +113,10 @@ class ApiService {
     _authInterceptor.onSessionExpired = handler;
   }
 
+  /// The server's reason for the last forced sign-out (a terminal 401 code),
+  /// or null when the session simply expired.
+  String? get signOutReason => _authInterceptor.lastSignOutReason;
+
   /// [quiet] keeps a refusal off [failures]: for optional, best-effort reads
   /// (a filter's option list, a status probe) whose caller already falls back
   /// on its own. Without it, a role that can read a list but not its side
@@ -127,8 +131,23 @@ class ApiService {
   Future<dynamic> put(String path, {Object? body}) =>
       _run(() => _dio.put<dynamic>(path, data: body));
 
-  Future<dynamic> patch(String path, {Object? body}) =>
-      _run(() => _dio.patch<dynamic>(path, data: body));
+  /// [headers] carries per-request headers — `If-Match` for optimistic locking
+  /// on record edits.
+  Future<dynamic> patch(String path, {Object? body, Map<String, dynamic>? headers}) =>
+      _run(() => _dio.patch<dynamic>(path,
+          data: body, options: headers == null ? null : Options(headers: headers)));
+
+  /// [patch] that also hands back the HTTP status — a due-date move answers
+  /// 202 when it went to a manager for approval instead of being applied.
+  Future<(int status, dynamic data)> patchWithStatus(String path, {Object? body}) async {
+    int status = 0;
+    final data = await _run(() async {
+      final res = await _dio.patch<dynamic>(path, data: body);
+      status = res.statusCode ?? 0;
+      return res;
+    });
+    return (status, data);
+  }
 
   Future<dynamic> delete(String path, {Object? body}) =>
       _run(() => _dio.delete<dynamic>(path, data: body));
@@ -155,6 +174,14 @@ class ApiService {
     }
   }
 
+  /// Withdraws [error] from [failures] when the caller has already explained
+  /// it on screen (a closing-note prompt, a "Changed elsewhere" message), so
+  /// the shell's generic toast does not repeat it in raw form. Must be called
+  /// within the shell's short coalescing window, i.e. straight from the catch.
+  void handled(AppError error) {
+    if (identical(_failures.value, error)) _failures.value = null;
+  }
+
   Future<dynamic> _run(Future<Response<dynamic>> Function() call, {bool quiet = false}) async {
     try {
       final res = await call();
@@ -178,4 +205,13 @@ class ApiService {
       throw error;
     }
   }
+}
+
+/// `If-Match` for an optimistic-lock write: the record's `updated_at` as last
+/// read, quoted as an entity tag (the webapp's contract). Null — no header, so
+/// last write wins as before — when the version is unknown.
+Map<String, dynamic>? ifMatchHeaders(String? version) {
+  final v = version?.trim() ?? '';
+  if (v.isEmpty) return null;
+  return {'If-Match': '"${v.replaceAll('"', '')}"'};
 }

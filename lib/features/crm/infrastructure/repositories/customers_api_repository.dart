@@ -48,8 +48,8 @@ class CustomersApiRepository implements CustomersRepository {
 
   /// Writes are remote-only and drop the cached list so the next read refetches.
   @override
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields) async {
-    await _remote.updateCustomer(id, fields);
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version}) async {
+    await _remote.updateCustomer(id, fields, version: version);
     await AppCache.remove(AppCache.crmCache, _cacheKey);
   }
 

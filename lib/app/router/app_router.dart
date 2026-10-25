@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../core/auth/module_access_gate.dart';
+import '../../features/auth/presentation/components/module_guard.dart';
 import '../../core/auth/session_gate.dart';
 import '../../core/config/api_config.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
@@ -23,11 +24,14 @@ import '../../features/crm/presentation/screens/edit_customer_screen.dart';
 import '../../features/crm/presentation/screens/followups_screen.dart';
 import '../../features/crm/presentation/screens/followup_detail_screen.dart';
 import '../../features/crm/presentation/screens/tasks_screen.dart';
+import '../../features/crm/presentation/screens/due_date_approvals_screen.dart';
 import '../../features/crm/presentation/screens/edit_crm_task_screen.dart';
 import '../../features/crm/presentation/screens/task_detail_screen.dart';
 import '../../features/crm/presentation/screens/quotes_screen.dart';
 import '../../features/crm/presentation/screens/quote_detail_screen.dart';
 import '../../features/crm/presentation/screens/add_quote_screen.dart';
+import '../../features/crm/presentation/screens/quote_approvals_screen.dart';
+import '../../features/crm/presentation/screens/quote_win_loss_screen.dart';
 import '../../features/crm/presentation/screens/payments_screen.dart';
 import '../../features/crm/presentation/screens/payment_detail_screen.dart';
 import '../../features/crm/presentation/screens/invoice_detail_screen.dart';
@@ -171,31 +175,37 @@ final GoRouter appRouter = GoRouter(
       // the observer that measures screen loads.
       observers: [SentryNavigatorObserver()],
       routes: [
-        // CRM
+        // CRM — each module's screens sit behind the webapp's ModuleGuard, so a
+        // role without the module gets the lock panel instead of a 403.
         _r(Routes.home, const CrmHomeScreen()),
-        _r(Routes.leads, const LeadsScreen()),
-        _push(Routes.leadDetail, const LeadDetailScreen()),
-        _push(Routes.addLead, const AddLeadScreen()),
-        _r(Routes.customers, const CustomersScreen()),
-        _push(Routes.customerDetail, const CustomerDetailScreen()),
-        _push(Routes.editCustomer, const EditCustomerScreen()),
-        _r(Routes.followups, const FollowupsScreen()),
-        _push(Routes.followupDetail, const FollowupDetailScreen()),
+        _r(Routes.leads, const ModuleGuard(module: 'lead', child: LeadsScreen())),
+        _push(Routes.leadDetail, const ModuleGuard(module: 'lead', child: LeadDetailScreen())),
+        _push(Routes.addLead, const ModuleGuard(module: 'lead', child: AddLeadScreen())),
+        _r(Routes.customers, const ModuleGuard(module: 'customer', child: CustomersScreen())),
+        _push(Routes.customerDetail, const ModuleGuard(module: 'customer', child: CustomerDetailScreen())),
+        _push(Routes.editCustomer, const ModuleGuard(module: 'customer', child: EditCustomerScreen())),
+        _r(Routes.followups, const ModuleGuard(module: 'followup', child: FollowupsScreen())),
+        _push(Routes.followupDetail, const ModuleGuard(module: 'followup', child: FollowupDetailScreen())),
         // A follow-up is a Task with `is_followup=true`, so the Task edit form
         // serves both — only the schema and the labels differ.
-        _push(Routes.editFollowup, const EditCrmTaskScreen(isFollowup: true)),
-        _r(Routes.tasks, const TasksScreen()),
-        _push(Routes.taskDetail, const TaskDetailScreen()),
-        _push(Routes.editCrmTask, const EditCrmTaskScreen()),
+        _push(Routes.editFollowup, const ModuleGuard(module: 'followup', child: EditCrmTaskScreen(isFollowup: true))),
+        _r(Routes.tasks, const ModuleGuard(module: 'task', child: TasksScreen())),
+        _push(Routes.taskDetail, const ModuleGuard(module: 'task', child: TaskDetailScreen())),
+        _push(Routes.editCrmTask, const ModuleGuard(module: 'task', child: EditCrmTaskScreen())),
         // Same schema-driven form, with no `?id=` — which is what puts it in
         // create mode.
-        _push(Routes.addCrmTask, const EditCrmTaskScreen()),
-        _r(Routes.quotes, const QuotesScreen()),
-        _push(Routes.quoteDetail, const QuoteDetailScreen()),
-        _push(Routes.addQuote, const AddQuoteScreen()),
-        _r(Routes.payments, const PaymentsScreen()),
-        _push(Routes.paymentDetail, const PaymentDetailScreen()),
-        _push(Routes.invoiceDetail, const InvoiceDetailScreen()),
+        _push(Routes.addCrmTask, const ModuleGuard(module: 'task', child: EditCrmTaskScreen())),
+        // Webapp: no module guard — the server scopes the rows.
+        _push(Routes.dueDateApprovals, const DueDateApprovalsScreen()),
+        _r(Routes.quotes, const ModuleGuard(module: 'quotation', child: QuotesScreen())),
+        _push(Routes.quoteDetail, const ModuleGuard(module: 'quotation', child: QuoteDetailScreen())),
+        _push(Routes.addQuote, const ModuleGuard(module: 'quotation', child: AddQuoteScreen())),
+        _push(Routes.editQuote, const ModuleGuard(module: 'quotation', child: AddQuoteScreen())),
+        _push(Routes.quoteApprovals, const ModuleGuard(module: 'quotation', child: QuoteApprovalsScreen())),
+        _push(Routes.quoteWinLoss, const ModuleGuard(module: 'quotation', child: QuoteWinLossScreen())),
+        _r(Routes.payments, const ModuleGuard(module: 'payment', child: PaymentsScreen())),
+        _push(Routes.paymentDetail, const ModuleGuard(module: 'payment', child: PaymentDetailScreen())),
+        _push(Routes.invoiceDetail, const ModuleGuard(module: 'payment', child: InvoiceDetailScreen())),
         _r(Routes.products, const ProductsScreen()),
         _push(Routes.productDetail, const ProductDetailScreen()),
         _r(Routes.billing, const BillingScreen()),

@@ -1,5 +1,6 @@
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
+import '../../../../../core/network/app_error.dart';
 import '../../../domain/entities/view_schema.dart';
 
 /// The org's Follow-ups layout: `GET /crm/tasks/schema/?view_type=…`.
@@ -29,9 +30,15 @@ class FollowupSchemaRemoteDataSource {
   /// not from a query param. A column visible on the card but hidden on the
   /// list therefore arrives with no value — which renders as absent, since the
   /// card skips empty values.
+  ///
+  /// A timeout or lost connection is **rethrown** rather than answered with
+  /// [ViewSchema.empty]: on a pull-to-refresh or a re-visit the provider then
+  /// keeps the layout it already has (`valueOrNull` holds the previous value
+  /// through an error), instead of a slow server silently swapping every card
+  /// back to the built-in layout.
   Future<ViewSchema> fetchCardSchema() async {
-    final mobile = await _fetch('mobile');
-    return mobile.isNotEmpty ? mobile : _fetch('list');
+    final mobile = await _fetch('mobile', rethrowOutage: true);
+    return mobile.isNotEmpty ? mobile : _fetch('list', rethrowOutage: true);
   }
 
   /// The layout for the Edit follow-up form.
@@ -43,13 +50,16 @@ class FollowupSchemaRemoteDataSource {
   /// actually store.
   Future<ViewSchema> fetchDetailSchema() => _fetch('detail');
 
-  Future<ViewSchema> _fetch(String viewType) async {
+  Future<ViewSchema> _fetch(String viewType, {bool rethrowOutage = false}) async {
     try {
       final body = await _api.get(ApiEndpoints.crmTaskSchema, query: {
         'view_type': viewType,
         'is_followup': true,
       });
       return ViewSchema.fromResponse(body);
+    } on AppError catch (e) {
+      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      return ViewSchema.empty;
     } on Object {
       return ViewSchema.empty;
     }

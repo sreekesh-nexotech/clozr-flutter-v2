@@ -22,6 +22,11 @@ class ApiEndpoints {
   static const leadSchema = '/crm/leads/schema/';
   static const leadBoard = '/crm/leads/board/';
   static String leadConvert(String id) => '/crm/leads/$id/convert/';
+  static String leadLostImpact(String id) => '/crm/leads/$id/lost-impact/';
+  /// Users a new record of `module` may be owned by / assigned to.
+  static const assignableUsers = '/management/assignable-users/';
+  static const assignableTeams = '/management/assignable-teams/';
+  static const leadLostReasons = '/crm/lead-lost-reasons/';
   static String leadAssignableUsers(String id) =>
       '/crm/leads/$id/assignable-users/';
   static const leadStatuses = '/crm/lead-statuses/';
@@ -43,6 +48,7 @@ class ApiEndpoints {
   // ── CRM: customers ──
   static const customers = '/crm/customers/';
   static String customer(String id) => '/crm/customers/$id/';
+  static String customerLostImpact(String id) => '/crm/customers/$id/lost-impact/';
   static const customerSchema = '/crm/customers/schema/';
   static const customerStatuses = '/crm/customer-statuses/';
   static String customerUpsell(String id) => '/crm/customers/$id/upsell/';
@@ -58,6 +64,11 @@ class ApiEndpoints {
   // ── CRM: call logs (telephony activity on a lead / customer) ──
   static const callLogs = '/crm/call-logs/';
   static String callLog(String id) => '/crm/call-logs/$id/';
+  static String callLogTranscribe(String id) => '/crm/call-logs/$id/transcribe/';
+  static String callLogSummarize(String id) => '/crm/call-logs/$id/summarize/';
+  static String exotelCallNote(String id) => '/crm/exotel/call-logs/$id/note/';
+  static String exotelCallTask(String id) => '/crm/exotel/call-logs/$id/task/';
+  static const exotelSyncCalls = '/crm/exotel/sync-calls/';
 
   // ── CRM: notes / attachments / products ──
   static const notes = '/crm/notes/';
@@ -86,6 +97,10 @@ class ApiEndpoints {
   static const notifications = '/crm/notifications/';
   static String notification(String id) => '/crm/notifications/$id/';
   static const notificationsMarkAllRead = '/crm/notifications/mark-all-read/';
+  static String notificationPin(String id) => '/crm/notifications/$id/pin/';
+  static String notificationUnpin(String id) => '/crm/notifications/$id/unpin/';
+  static String notificationSnooze(String id) => '/crm/notifications/$id/snooze/';
+  static String notificationUnsnooze(String id) => '/crm/notifications/$id/unsnooze/';
   static String notificationMarkRead(String id) =>
       '/crm/notifications/$id/mark-read/';
 

@@ -32,4 +32,10 @@ class PaymentsRepositoryImpl implements PaymentsRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     return false;
   }
+
+  @override
+  Future<void> deleteRecord(String recordId) async {
+    // Mock mode: nothing to delete server-side.
+    await Future<void>.delayed(AppConstants.mockLatency);
+  }
 }

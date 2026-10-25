@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../core/network/paginated.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_catalog.dart';
@@ -16,6 +18,7 @@ import '../filters/lead_filter_codec.dart';
 import '../filters/leads_filter_spec.dart';
 import 'crm_catalog_providers.dart';
 import 'saved_filters_providers.dart';
+import 'server_search_providers.dart';
 
 /// DI seam: mock-backed by default; API-backed when a base URL is configured.
 final leadsRepositoryProvider = Provider<LeadsRepository>((ref) {
@@ -104,16 +107,26 @@ final leadsProvider = FutureProvider<List<Lead>>(
   (ref) => ref.watch(leadsScopedProvider(const LeadListQuery()).future),
 );
 
-/// The Leads list itself: the My/All scope **and** the drawer filters, both
-/// resolved by the server.
+/// The Leads list itself: every lead the caller's role can see, narrowed by the
+/// drawer filters on the server — the webapp's list has no "My leads" scope.
 final leadsListProvider = FutureProvider<List<Lead>>(
   (ref) => ref.watch(
-    leadsScopedProvider(LeadListQuery(
-      mineOnly: !ref.watch(leadTeamAllProvider),
-      filters: ref.watch(leadFilterParamsProvider),
+    leadsScopedProvider(leadListQueryFor(
+      ref.watch(leadFilterParamsProvider),
+      archived: ref.watch(leadArchivedProvider),
     )).future,
   ),
 );
+
+/// The list query for [filters] in the current archived/active view. The
+/// webapp's Archived toggle is one more server param (`is_archive=true`) on the
+/// same list, so it rides in the filter map and stays part of the identity.
+LeadListQuery leadListQueryFor(Map<String, dynamic> filters, {bool archived = false}) =>
+    LeadListQuery(filters: {...filters, if (archived) 'is_archive': true});
+
+/// The webapp's "Archived" toggle at the end of the status chips: the list,
+/// the chip counts and the search all switch to archived leads only.
+final leadArchivedProvider = StateProvider<bool>((ref) => false);
 
 /// The same scope with the drawer filters dropped.
 ///
@@ -121,7 +134,7 @@ final leadsListProvider = FutureProvider<List<Lead>>(
 /// scope: a draft usually *widens* the current selection, and counting inside
 /// an already-filtered list could only ever count down.
 final leadsUnfilteredQueryProvider = Provider<LeadListQuery>(
-  (ref) => LeadListQuery(mineOnly: !ref.watch(leadTeamAllProvider)),
+  (ref) => leadListQueryFor(const {}, archived: ref.watch(leadArchivedProvider)),
 );
 
 /// One lead from the **record** endpoint — the detail screen's source.
@@ -176,8 +189,27 @@ final leadByIdProvider = Provider.family<Lead?, String>((ref, id) {
 
 // ── List UI state ──
 
-/// Active status tab on the Leads list.
-final leadTabProvider = StateProvider<String>((ref) => 'all');
+/// The status chips selected on the Leads list — empty is "All".
+///
+/// Multi-select like the webapp: chips OR-combine (its `status__in`), "All"
+/// clears the set, and [leadOtherTab] ("Other / no status") is exclusive.
+final leadTabProvider = StateProvider<Set<String>>((ref) => const {});
+
+/// A single chip pre-selected from elsewhere (the dashboard's stage tiles):
+/// `'all'` is the empty selection.
+Set<String> leadTabSelection(String tab) => tab == 'all' ? const {} : {tab};
+
+/// The webapp's "Other / no status" chip: leads whose stage is in no lane.
+const leadOtherTab = '__other__';
+
+/// Webapp `toggleStatusChip`: All clears, a status toggles (and drops Other),
+/// Other is exclusive both ways.
+Set<String> toggleLeadTab(Set<String> current, String id) {
+  if (id == 'all') return const {};
+  if (id == leadOtherTab) return current.contains(leadOtherTab) ? const {} : const {leadOtherTab};
+  final next = {...current}..remove(leadOtherTab);
+  return next.contains(id) ? (next..remove(id)) : (next..add(id));
+}
 
 /// Search query on the Leads list.
 final leadSearchProvider = StateProvider<String>((ref) => '');
@@ -185,15 +217,8 @@ final leadSearchProvider = StateProvider<String>((ref) => '');
 /// Whether the search field is expanded.
 final leadSearchOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Whether to show all leads (true) or only mine (false, the default) —
-/// the prototype's `teamAll` flag / "My leads" default view.
-///
-/// This is the scope [leadsListProvider] fetches with; flipping it is a
-/// refetch, not a client-side filter.
-final leadTeamAllProvider = StateProvider<bool>((ref) => false);
-
-/// The base list before the status tab is applied. The mine/all scope and the
-/// drawer filters are already applied by the source ([leadsScopedProvider]) —
+/// The base list before the status tab is applied. The drawer filters are
+/// already applied by the source ([leadsScopedProvider]) —
 /// the server does both in API mode — so nothing is re-filtered here.
 ///
 /// Note this means the tab counts reflect the active drawer filters, since
@@ -203,6 +228,37 @@ final leadBaseProvider = Provider<List<Lead>>(
   (ref) => ref.watch(leadsListProvider).valueOrNull ?? const [],
 );
 
+/// [leadBaseProvider] narrowed by the search box — what the tabs count and the
+/// list shows.
+final leadSearchedProvider = Provider<List<Lead>>((ref) {
+  final all = ref.watch(leadBaseProvider);
+  final q = ref.watch(leadSearchProvider).trim().toLowerCase();
+  if (q.isEmpty) return all;
+  // Same `?search=` the webapp sends — the server also matches email, phone and
+  // the other columns the card does not carry. Applied to the base so the tab
+  // counts follow the search, as on the web.
+  final matches = serverSearchMatcher(
+    ref,
+    ServerSearchKey(
+      endpoint: ApiEndpoints.leads,
+      idFields: const ['lead_id'],
+      query: q,
+      scope: {if (ref.watch(leadArchivedProvider)) 'is_archive': true},
+    ),
+  );
+  return all
+      .where((l) => matches([l.id], leadMatchesQuery(l, q)))
+      .toList();
+});
+
+/// The local half of the lead search — what the card itself can answer while
+/// the server round-trip is in flight.
+bool leadMatchesQuery(Lead l, String q) =>
+    l.name.toLowerCase().contains(q) ||
+    (l.company ?? '').toLowerCase().contains(q) ||
+    l.project.toLowerCase().contains(q) ||
+    l.id.toLowerCase().contains(q);
+
 /// The rows on screen: the base list narrowed by the active tab and the search
 /// box.
 ///
@@ -210,35 +266,31 @@ final leadBaseProvider = Provider<List<Lead>>(
 /// ran them, so [leadBaseProvider] *is* the matching set. Tab and search stay
 /// local because they run over that complete result, not over a partial page.
 final visibleLeadsProvider = Provider<List<Lead>>((ref) {
-  final base = ref.watch(leadBaseProvider);
-  final tab = ref.watch(leadTabProvider);
-  final q = ref.watch(leadSearchProvider).trim().toLowerCase();
-
+  final base = ref.watch(leadSearchedProvider);
+  final selected = ref.watch(leadTabProvider);
+  final lanes = {for (final t in ref.watch(leadTabsProvider)) if (t.id != 'all') t.id};
   Iterable<Lead> out = base;
-  // A tab tapped before the status catalog resolved can name a stage the org
-  // does not have ("Quote sent" vs its own "Proposal Sent"). Ignore a tab that
-  // is no longer in the vocabulary instead of silently emptying the list.
-  if (tab != 'all' && ref.watch(leadTabsProvider).any((t) => t.id == tab)) {
-    out = out.where((l) => l.stageKey == tab);
+  if (selected.contains(leadOtherTab)) {
+    out = out.where((l) => !lanes.contains(l.stageKey));
+  } else {
+    // A chip tapped before the status catalog resolved can name a stage the
+    // org does not have; ignore it instead of silently emptying the list.
+    final chosen = selected.where(lanes.contains).toSet();
+    if (chosen.isNotEmpty) out = out.where((l) => chosen.contains(l.stageKey));
   }
   // Mock mode has no query engine behind it, so the drawer is matched here.
   if (!ApiConfig.apiEnabled) {
     final filters = ref.watch(leadFiltersProvider);
     if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
   }
-  if (q.isNotEmpty) {
-    out = out.where((l) =>
-        l.name.toLowerCase().contains(q) ||
-        (l.company ?? '').toLowerCase().contains(q) ||
-        l.project.toLowerCase().contains(q) ||
-        l.id.toLowerCase().contains(q));
-  }
+  // The search box is already applied by [leadSearchedProvider].
   return out.toList();
 });
 
 /// Count of leads for a given tab key within [base].
-int leadTabCount(List<Lead> base, String key) {
+int leadTabCount(List<Lead> base, String key, {Set<String> lanes = const {}}) {
   if (key == 'all') return base.length;
+  if (key == leadOtherTab) return base.where((l) => !lanes.contains(l.stageKey)).length;
   return base.where((l) => l.stageKey == key).length;
 }
 
@@ -307,3 +359,84 @@ final leadTabsProvider = Provider<List<LeadTab>>((ref) => [
         ref.watch(leadBaseProvider),
       ),
     ]);
+
+
+/// Who a **new** lead may be owned by or assigned to — the webapp's
+/// `GET /management/assignable-users/?module=lead`. The server only returns
+/// staff and roles that can read leads; anyone else would be refused with
+/// "Cannot assign to …". Empty on failure, and the form then falls back to the
+/// org roster.
+final leadAssignableUsersProvider = FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
+  if (!ApiConfig.apiEnabled) return const [];
+  try {
+    final body = await ref.read(apiServiceProvider).get(
+      ApiEndpoints.assignableUsers,
+      query: {'module': 'lead', 'page_size': 200},
+      quiet: true,
+    );
+    return [
+      for (final u in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+        if (u['user_id'] != null)
+          CatalogOption(
+            id: '${u['user_id']}',
+            name: '${u['full_name'] ?? u['email'] ?? ''}'.trim(),
+          ),
+    ];
+  } on Object {
+    return const [];
+  }
+});
+
+/// Teams a lead may be assigned to — the webapp's
+/// `GET /management/assignable-teams/?module=lead` (readable by CRM roles,
+/// unlike `/management/teams/`).
+final leadAssignableTeamsProvider = FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
+  final body = await ref.read(apiServiceProvider).get(
+    ApiEndpoints.assignableTeams,
+    query: {'module': 'lead', 'page_size': 100},
+  );
+  return [
+    for (final t in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+      if ((t['team_id'] ?? t['id']) != null)
+        CatalogOption(id: '${t['team_id'] ?? t['id']}', name: '${t['name'] ?? ''}'),
+  ];
+});
+
+/// Users a new record of [module] (`task`, `followup`, …) may be assigned to —
+/// `GET /management/assignable-users/?module=…`, as the webapp's task forms
+/// ask. Empty on failure; callers then fall back to the org roster.
+/// `GET /management/assignable-teams/?module=` — the teams a record of that
+/// module may be assigned to (tasks read `module=task`).
+final assignableTeamsForModuleProvider =
+    FutureProvider.autoDispose.family<List<CatalogOption>, String>((ref, module) async {
+  if (!ApiConfig.apiEnabled) return const [];
+  final body = await ref.read(apiServiceProvider).get(
+    ApiEndpoints.assignableTeams,
+    query: {'module': module, 'page_size': 100},
+    quiet: true,
+  );
+  return [
+    for (final t in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+      if ((t['team_id'] ?? t['id']) != null)
+        CatalogOption(id: '${t['team_id'] ?? t['id']}', name: '${t['name'] ?? ''}'),
+  ];
+});
+
+final assignableUsersForModuleProvider =
+    FutureProvider.autoDispose.family<List<CatalogOption>, String>((ref, module) async {
+  if (!ApiConfig.apiEnabled) return const [];
+  try {
+    final body = await ref.read(apiServiceProvider).get(
+      ApiEndpoints.assignableUsers,
+      query: {'module': module, 'page_size': 200},
+      quiet: true,
+    );
+    return [
+      for (final u in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+        if (u['user_id'] != null)
+          CatalogOption(id: '${u['user_id']}', name: '${u['full_name'] ?? u['email'] ?? ''}'.trim()),
+    ];
+  } on Object {
+    return const [];
+  }
+});

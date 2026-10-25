@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/config/constants.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
+import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
@@ -32,11 +35,54 @@ import '../../application/providers/leads_providers.dart';
 /// `dashboard-crm/*` endpoints via [crmHomeProvider]: loading → skeleton,
 /// failure → an [ErrorState] with Retry, and data → the real figures (a missing
 /// or empty section renders an empty/zero state, never the const literals).
+void _quickAdd(BuildContext context, WidgetRef ref) {
+  final actions = [
+    if (hasPermission(ref, 'lead', PermVerb.create)) ('Add lead', PhosphorIconsRegular.userPlus, Routes.addLead),
+    if (hasPermission(ref, 'task', PermVerb.create)) ('Add task', PhosphorIconsRegular.checkSquare, Routes.addCrmTask),
+    // Webapp quick action `/customers?new=1`: the list with Add customer open.
+    if (hasPermission(ref, 'customer', PermVerb.create))
+      ('Add customer', PhosphorIconsRegular.buildings, '${Routes.customers}?new=1'),
+  ];
+  if (actions.isEmpty) {
+    ref.read(toastProvider.notifier).showError(permissionCopy(PermVerb.create));
+    return;
+  }
+  // The customers list is a top-level tab, so it is navigated to, not pushed.
+  void open(BuildContext c, String route) =>
+      route.startsWith(Routes.customers) ? c.go(route) : c.push(route);
+  if (actions.length == 1) {
+    open(context, actions.first.$3);
+    return;
+  }
+  showClozrSheet<void>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        SheetHeader(title: 'Quick add', onClose: () => Navigator.of(ctx).pop()),
+        for (final a in actions)
+          ListTile(
+            leading: Icon(a.$2, color: AppColors.navy),
+            title: Text(a.$1, style: AppText.bodyStrong()),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              open(context, a.$3);
+            },
+          ),
+        const SizedBox(height: 8),
+      ]),
+    ),
+  );
+}
+
 class CrmHomeScreen extends ConsumerWidget {
   const CrmHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Webapp dashboard quick actions: the `+` here offers each create the role
+    // allows ("Add lead", "Add task").
+    registerAdd(ref, AddAction(label: 'Quick add', run: (ctx) => _quickAdd(ctx, ref)));
     return Column(
       children: [
         _header(),
@@ -193,7 +239,7 @@ class CrmHomeScreen extends ConsumerWidget {
   // ── KPI grid (mock) ──
   Widget _kpiGrid(BuildContext context, WidgetRef ref) {
     void goLeads(String tab) {
-      ref.read(leadTabProvider.notifier).state = tab;
+      ref.read(leadTabProvider.notifier).state = leadTabSelection(tab);
       context.go(Routes.leads);
     }
 
@@ -246,7 +292,7 @@ class CrmHomeScreen extends ConsumerWidget {
   // ── KPI grid (API): fixed card chrome + values from the endpoint ──
   Widget _apiKpiGrid(BuildContext context, WidgetRef ref, List<CrmKpiValue> kpis) {
     void goLeads(String tab) {
-      ref.read(leadTabProvider.notifier).state = tab;
+      ref.read(leadTabProvider.notifier).state = leadTabSelection(tab);
       context.go(Routes.leads);
     }
 
@@ -362,7 +408,7 @@ class CrmHomeScreen extends ConsumerWidget {
                       frac: (data[i].$3 / maxV).clamp(0.07, 1.0),
                       dim: data[i].$1 == 'lost',
                       onTap: () {
-                        ref.read(leadTabProvider.notifier).state = data[i].$1;
+                        ref.read(leadTabProvider.notifier).state = leadTabSelection(data[i].$1);
                         context.go(Routes.leads);
                       },
                     ),
@@ -405,7 +451,7 @@ class CrmHomeScreen extends ConsumerWidget {
                         frac: (bars[i].count / maxV).clamp(0.07, 1.0),
                         dim: bars[i].tabKey == 'lost',
                         onTap: () {
-                          ref.read(leadTabProvider.notifier).state = bars[i].tabKey;
+                          ref.read(leadTabProvider.notifier).state = leadTabSelection(bars[i].tabKey);
                           context.go(Routes.leads);
                         },
                       ),
@@ -586,7 +632,7 @@ class CrmHomeScreen extends ConsumerWidget {
         context.go(Routes.tasks);
       }),
       _Attn('4', 'Lost after quote', delta: '+1', up: false, note: 'Worsening', noteColor: AppColors.error, onTap: () {
-        ref.read(leadTabProvider.notifier).state = 'lost';
+        ref.read(leadTabProvider.notifier).state = leadTabSelection('lost');
         context.go(Routes.leads);
       }),
     ];
@@ -613,7 +659,7 @@ class CrmHomeScreen extends ConsumerWidget {
         context.go(Routes.tasks);
       }),
       card(3, 'Lost after quote', () {
-        ref.read(leadTabProvider.notifier).state = 'lost';
+        ref.read(leadTabProvider.notifier).state = leadTabSelection('lost');
         context.go(Routes.leads);
       }),
     ];

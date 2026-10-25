@@ -15,7 +15,10 @@ abstract class CustomersRepository {
 
   /// Partial update — `PATCH /crm/customers/{id}/`. Used for the status pill,
   /// the owner (`assigned_to`) and the assignee set (`assignees`).
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields);
+  ///
+  /// [version] (the `updated_at` last read) is sent as `If-Match`, so an edit
+  /// made on a customer someone changed since is refused with 412.
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version});
 
   /// Spawns an upsell lead against this customer and moves it into the
   /// `upsell_in_progress` status. Returns the new lead's id when the response

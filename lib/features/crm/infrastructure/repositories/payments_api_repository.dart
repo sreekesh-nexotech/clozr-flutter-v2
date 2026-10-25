@@ -78,4 +78,12 @@ class PaymentsApiRepository implements PaymentsRepository {
     await AppCache.remove(AppCache.crmCache, _invoicesCacheKey);
     return posted;
   }
+
+  @override
+  Future<void> deleteRecord(String recordId) async {
+    await _remote.deleteRecord(recordId);
+    // The server recalculates the plan's totals, so both copies are stale.
+    await AppCache.remove(AppCache.crmCache, _cacheKey);
+    await AppCache.remove(AppCache.crmCache, _invoicesCacheKey);
+  }
 }

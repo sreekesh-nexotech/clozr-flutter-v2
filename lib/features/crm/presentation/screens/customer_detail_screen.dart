@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../data/api/roster.dart';
+import '../../application/providers/record_presence_providers.dart';
+import '../../../../core/network/api_endpoints.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../accounting/application/providers/accounting_providers.dart';
 import '../../../accounting/presentation/components/customer_accounting.dart';
 import '../../../accounting/presentation/sheets/party_tax_profile_sheet.dart';
-import '../../../accounting/presentation/sheets/record_receipt_sheet.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/models/note.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_refresh.dart';
@@ -21,16 +19,13 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
-import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
-import '../../application/record_rows.dart';
 import '../../application/providers/customers_providers.dart';
-import '../sheets/reassign_owner_sheet.dart';
 import '../components/option_picker_sheet.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/repositories/customers_repository.dart';
@@ -42,25 +37,24 @@ import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/customer.dart';
 import '../components/record_payment_sheet.dart';
-import '../../application/providers/attachments_providers.dart';
-import 'package:file_picker/file_picker.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../../../core/utils/relative_time.dart';
-import '../sheets/add_followup_sheet.dart';
-import '../sheets/add_task_sheet.dart';
-import '../../../../core/utils/attachment_link.dart';
-import '../../../../core/config/api_config.dart';
-import '../../domain/entities/lead_file.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/invoice.dart';
-import '../../domain/entities/followup.dart';
-import '../../domain/entities/crm_task.dart';
-import '../../domain/entities/call_log.dart';
 import '../components/crm_async.dart';
-import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
-import '../components/inline_edit_row.dart';
 import 'crm_status_sheet.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
+import '../../application/providers/lead_lifecycle_providers.dart';
+import '../components/customer_lost_dialog.dart';
+import '../components/customer_activity_tabs.dart';
+import '../components/customer_notes_card.dart';
+import '../components/customer_detail/customer_accounting_panel.dart';
+import '../components/customer_detail/customer_field_editor.dart';
+import '../components/customer_detail/customer_products_sheet.dart';
+import '../../application/customer_detail_rules.dart';
+import '../../../auth/application/providers/module_perm_providers.dart';
+import '../../../../core/network/network_providers.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
   const CustomerDetailScreen({super.key});
@@ -70,25 +64,32 @@ class CustomerDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
-  int _tab = 0;
   bool _infoMore = false;
 
-  /// True while a file upload is in flight, so the CTA reports progress and
-  /// refuses a second batch on top of the first.
-  bool _uploading = false;
 
   /// True while an upsell POST is in flight. The action is reachable from three
   /// places — the overflow menu, the Upsell button and the Leads tab's CTA — and
   /// it creates a record, so a second tap during the round trip would raise a
   /// second lead. Two were observed in one audit trail, 29s apart.
   bool _upselling = false;
+
+  /// A delete in flight, and the refusal banner (webapp `deleteError`).
+  bool _deleting = false;
+  String? _deleteError;
+
+  /// The "Changed elsewhere — Reload" banner for a refused non-inline edit
+  /// (webapp `useStaleRecordPrompt`).
+  ({String message, String unsaved})? _stale;
+  bool _staleReloading = false;
+  bool _staleReloaded = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
-  static const _baseTabs = ['Tasks', 'Call log', 'Follow-ups', 'Payments', 'Leads', 'Files'];
-
-  /// The activity tabs — plus Accounting while it is active (plan §5.3).
-  List<String> get _tabLabels =>
-      ref.watch(accountingActiveProvider) ? [..._baseTabs, 'Accounting'] : _baseTabs;
+  /// The record id whose row / activity tabs were refetched on open.
+  /// `customerRowProvider` and the tab providers live for the session, so
+  /// without this a customer reopened after a quote was accepted elsewhere
+  /// kept its first load (e.g. Opportunities "0 quotes"); the webapp
+  /// refetches the record every time its page opens.
+  String? _openedId;
 
   /// Scrolls the notes card into view and focuses the composer (#13).
   void _focusNotes() {
@@ -103,6 +104,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   void _openCustomerMenu(Customer cust) {
     final toast = ref.read(toastProvider.notifier);
     final first = cust.name.split(' ').first;
+    // Webapp gating: quotes need quotation.create, a payment payment.create,
+    // an upsell customer.update; removing the customer customer.delete.
+    final canQuote = hasPermission(ref, 'quotation', PermVerb.create);
+    final canPay = hasPermission(ref, 'payment', PermVerb.create);
+    final canUpdate = hasPermission(ref, 'customer', PermVerb.update);
+    final perm = ref.read(modulePermProvider('customer'));
+    final deleteControl = customerDeleteControl(
+      readOnly: isReadOnlyRole(read: perm.read, create: perm.create, update: perm.update, delete: perm.delete),
+      canDelete: hasPermission(ref, 'customer', PermVerb.delete),
+      row: ref.read(customerRowProvider(cust.id)).valueOrNull,
+    );
     showActionMenu(
       context,
       actions: [
@@ -111,16 +123,24 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         MenuAction(
             icon: PhosphorIconsRegular.filePlus,
             label: 'Create quote',
+            enabled: canQuote,
+            sublabel: canQuote ? null : permissionCopy(PermVerb.create),
             onTap: () => _createQuote(cust)),
         MenuAction(
             icon: PhosphorIconsRegular.wallet,
             label: 'Record payment',
+            enabled: canPay,
+            sublabel: canPay ? null : permissionCopy(PermVerb.create),
             onTap: () => _recordPayment(cust)),
         MenuAction(
           icon: PhosphorIconsFill.trendUp,
           label: 'Create upsell lead',
-          enabled: !_upselling,
-          sublabel: _upselling ? 'Already raising one…' : null,
+          enabled: !_upselling && canUpdate,
+          sublabel: !canUpdate
+              ? permissionCopy(PermVerb.update)
+              : _upselling
+                  ? 'Already raising one…'
+                  : null,
           onTap: () => _createUpsell(cust),
         ),
         // The bottom bar's pencil now opens the edit form, so the note
@@ -136,11 +156,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               label: 'Tax profile',
               sublabel: 'GSTIN, PAN and registration',
               onTap: () => showPartyTaxProfileSheet(context, kind: 'customer', partyId: cust.id, title: cust.name)),
-        MenuAction(
-            icon: PhosphorIconsRegular.archive,
-            label: 'Archive customer',
-            destructive: true,
-            onTap: () => _archiveCustomer(cust)),
+        // Webapp: Delete (no archive on the detail page). Hidden for a
+        // read-only role; disabled with the reason without `delete` or when
+        // the server says this customer can never be deleted.
+        if (deleteControl.visible)
+          MenuAction(
+              icon: PhosphorIconsRegular.trash,
+              label: _deleting ? 'Deleting…' : 'Delete',
+              destructive: true,
+              enabled: deleteControl.enabled && !_deleting,
+              sublabel: deleteControl.reason,
+              onTap: () => _deleteCustomer(cust)),
       ],
     );
   }
@@ -218,67 +244,132 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     ref.invalidate(customerInvoicesProvider(cust.id));
   }
 
-  // ── Archive ──
+  // ── Delete ──
 
-  /// Archives the customer — `PATCH { is_archived: true }`.
+  /// Deletes the customer — `DELETE /crm/customers/{id}/` (webapp SL 56).
   ///
-  /// Behind a confirmation, and it leaves the screen on success: the list
-  /// excludes archived customers by default (`?is_archived=true` to see them),
-  /// so staying here would sit on a record that has dropped out of every list
-  /// behind it.
-  Future<void> _archiveCustomer(Customer cust) async {
+  /// Behind the webapp's confirm. On success: "Customer deleted" and back to
+  /// the customers list. A refusal (409 PARTY_HAS_BOOKS, 403, 404) keeps the
+  /// customer and shows the reason in a banner under the header.
+  Future<void> _deleteCustomer(Customer cust) async {
+    if (_deleting) return;
+    final name = _nameOf(cust);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Archive customer?'),
-        content: Text('${cust.name} will be hidden from the customers list. '
-            'Their quotes, payments and history are kept.'),
+        title: const Text('Delete this customer?'),
+        content: Text('$name and its details will be permanently removed. A customer that accounting '
+            'records (invoices, receipts or payments) reference can’t be deleted.'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Archive', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete customer', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
 
-    final toast = ref.read(toastProvider.notifier);
+    setState(() {
+      _deleting = true;
+      _deleteError = null;
+    });
+    final api = ref.read(apiServiceProvider);
     try {
-      await ref
-          .read(customersRepositoryProvider)
-          .updateCustomer(cust.id, {'is_archived': true});
-    } on Object catch (e) {
+      await api.delete(ApiEndpoints.customer(cust.id));
+    } on AppError catch (e) {
+      api.handled(e);
       if (!mounted) return;
-      toast.showError(e is AppError ? e.message : 'Could not archive the customer.');
+      setState(() {
+        _deleting = false;
+        _deleteError = customerDeleteErrorCopy(e);
+      });
       return;
     }
     if (!mounted) return;
-    // The `customersScopedProvider` **family**, not the thin `customersProvider`
-    // wrapper around one of its members — the family is what the Customers
-    // list screen's own query (`customersListProvider`, a different member,
-    // keyed by the drawer's filters) actually needs invalidated to refetch.
+    setState(() => _deleting = false);
     ref.invalidate(customersScopedProvider);
-    // Leave first: this record is gone from the list this screen was opened
-    // from, and its own providers would keep refetching a row nothing lists.
-    context.pop();
-    toast.show('Customer archived');
+    ref.read(toastProvider.notifier).show('Customer deleted');
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(Routes.customers);
+    }
   }
 
-  /// The customer's owner.
-  ///
-  /// The mapped value first, then what this session last wrote. `assigned_to` is
-  /// absent from both the list and the retrieve payload for an org that has not
-  /// made it visible, so without the fallback a successful reassignment had
-  /// nothing to show and the block read "Unknown" indefinitely. Server value
-  /// wins whenever there is one, so this disappears on its own once the field is
-  /// exposed.
-  String _ownerOf(Customer cust) {
-    if (cust.owner.isNotEmpty) return cust.owner;
-    return ref.watch(customerOwnerOverrideProvider)[cust.id] ?? '';
+  // ── Writes ──
+
+  /// The record's version (`updated_at` as last read), sent as `If-Match`.
+  String? _versionOf(String id) {
+    final v = ref.read(customerRowProvider(id)).valueOrNull?['updated_at'];
+    return v is String && v.trim().isNotEmpty ? v : null;
+  }
+
+  /// Re-reads the record (the stale-record "Reload"), so the next save
+  /// carries the latest version.
+  Future<void> _reloadRecord(String id) async {
+    ref.invalidate(customerRowProvider(id));
+    ref.invalidate(customersScopedProvider);
+    await ref.read(customerRowProvider(id).future);
+  }
+
+  /// One customer PATCH with `If-Match`. Null on success (the record is then
+  /// re-read before returning, so a second quick edit carries the new
+  /// version); otherwise the error, already withdrawn from the shell's raw
+  /// toast so the caller can explain it in place.
+  Future<AppError?> _patch(Customer cust, Map<String, dynamic> body) async {
+    try {
+      await ref.read(customersRepositoryProvider).updateCustomer(cust.id, body, version: _versionOf(cust.id));
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      return e;
+    }
+    ref.invalidate(customersScopedProvider);
+    await _reloadRecord(cust.id);
+    return null;
+  }
+
+  /// [_patch] for a non-inline edit (status, assignees): a stale refusal
+  /// raises the page's "Changed elsewhere — Reload" banner naming what was
+  /// not saved; anything else is the server's own sentence as a toast.
+  Future<bool> _write(Customer cust, Map<String, dynamic> body,
+      {required String success, required String unsaved}) async {
+    final e = await _patch(cust, body);
+    if (!mounted) return false;
+    if (e == null) {
+      ref.read(toastProvider.notifier).show(success);
+      return true;
+    }
+    final err = customerWriteError(e);
+    if (err.stale) {
+      setState(() {
+        _stale = (message: e.message, unsaved: unsaved);
+        _staleReloaded = false;
+      });
+    } else {
+      ref.read(toastProvider.notifier).showError(err.message);
+    }
+    return false;
+  }
+
+  /// An inline field save: "Customer updated", or the message for under the
+  /// field (the editor stays open with the typed value).
+  Future<({String message, bool stale})?> _saveFieldPatch(Customer cust, Map<String, dynamic> patch) async {
+    if (!hasPermission(ref, 'customer', PermVerb.update)) {
+      return (message: permissionCopy(PermVerb.update), stale: false);
+    }
+    final e = await _patch(cust, patch);
+    if (!mounted) return null;
+    if (e != null) return customerWriteError(e);
+    ref.read(toastProvider.notifier).show('Customer updated');
+    return null;
+  }
+
+  /// The display name — the record's when it has landed.
+  String _nameOf(Customer cust) {
+    final n = ref.read(customerRowProvider(cust.id)).valueOrNull?['name'];
+    return n is String && n.trim().isNotEmpty ? n.trim() : cust.name;
   }
 
   /// The pill colour for an org status. Derived from its **type** — the
@@ -310,6 +401,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   /// back to the built-in vocabulary with no `onSelect` — the previous
   /// toast-only behaviour, because there is no id to persist.
   void _openStatusSheet(Customer cust) {
+    if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
     final statuses = ref.read(customerStatusesProvider);
     if (statuses.isEmpty) {
       showCrmStatusSheet(
@@ -333,24 +425,48 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     );
   }
 
-  /// Writes the new status, then refreshes the record and the list so the pill
-  /// here and the tab counts there follow.
-  Future<void> _setStatus(Customer cust, String statusId) async {
-    final toast = ref.read(toastProvider.notifier);
-    try {
-      await ref
-          .read(customersRepositoryProvider)
-          .updateCustomer(cust.id, {'status': statusId});
-    } on Object catch (e) {
-      if (!mounted) return;
-      // A rejected write must not leave a status on screen that never saved.
-      toast.showError(e is AppError ? e.message : 'Could not update the status.');
+  /// Writes the new status (webapp `changeStatus` / `moveStatus`).
+  ///
+  /// Moving **into** a Lost status first opens "Move to <status>"
+  /// (`CustomerLostModal`): the reason is required and the sheet lists the
+  /// deals the move closes. A `409 LOST_HAS_OPEN_INVOICES` (an invoice issued
+  /// after the sheet opened) re-opens it listing those invoices.
+  Future<void> _setStatus(Customer cust, String statusId, {List<CustomerLostImpact> blocked = const []}) async {
+    final statuses = ref.read(customerStatusesProvider);
+    final target = statuses.where((s) => s.id == statusId).firstOrNull;
+    final current = statuses.where((s) => s.id == _currentStatusId(statuses, cust)).firstOrNull;
+    LostChoice? lost;
+    if (target?.statusType == 'lost' && current?.statusType != 'lost') {
+      lost = await showCustomerLostDialog(context,
+          customerId: cust.id, statusName: target!.name, blocked: blocked);
+      if (lost == null || !mounted) return;
+    }
+    final e = await _patch(cust, {'status': statusId, ...?lost?.toBody()});
+    if (!mounted) return;
+    if (e == null) {
+      ref.invalidate(customerRowProvider(cust.id));
+      ref.read(toastProvider.notifier).show(lost != null
+          ? 'Marked ${target?.name ?? 'Lost'} — its open deals were closed'
+          : 'Status updated');
       return;
     }
-    if (!mounted) return;
-    ref.invalidate(customersScopedProvider);
-    ref.invalidate(customerRowProvider(cust.id));
-    toast.show('Status updated');
+    if (e.code == lostHasOpenInvoicesCode && lost != null) {
+      final impacts = customerLostImpactsFromCause(e.causeMap.isNotEmpty ? e.causeMap : e.extra);
+      if (impacts.isNotEmpty) {
+        await _setStatus(cust, statusId, blocked: impacts);
+        return;
+      }
+    }
+    final err = customerWriteError(e);
+    if (err.stale) {
+      setState(() {
+        _stale = (message: e.message, unsaved: 'Status → ${target?.name ?? 'the new status'}');
+        _staleReloaded = false;
+      });
+    } else {
+      // A rejected write must not leave a status on screen that never saved.
+      ref.read(toastProvider.notifier).showError(err.message);
+    }
   }
 
   // ── Upsell ──
@@ -407,95 +523,89 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     }
   }
 
-  // ── Owner & assignees ──
+  // ── Assignees ──
+  //
+  // Webapp "Assigned to": a customer has no single owner — `assignees` is a
+  // flat set (embedded users on read, a UUID array on write), managed as one
+  // add/remove list.
 
-  /// Reassigns the account manager (`assigned_to`).
-  ///
-  /// Candidates come from the org roster: unlike a lead, a customer has no
-  /// `assignable-users` endpoint, so there is no server-side opinion about who
-  /// is eligible for *this* record.
-  Future<void> _reassignOwner(Customer cust) async {
-    final roster = ref.read(rosterProvider);
+  /// "Add assignee": only assignable users (`/management/assignable-users/
+  /// ?module=customer`) not already assigned.
+  Future<void> _addAssignee(Customer cust) async {
+    if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
     final toast = ref.read(toastProvider.notifier);
-    if (roster.isEmpty) {
-      toast.show('No teammates have loaded yet — try again in a moment.');
-      return;
-    }
-    final picked = await showReassignOwnerSheet(
-      context: context,
-      users: [for (final u in roster) CatalogOption(id: u.id, name: u.name)],
-      currentOwnerId: _ownerOf(cust),
-    );
-    if (picked == null || !mounted) return;
-    if (UserDirectory.mapUserId(picked) == _ownerOf(cust)) return; // unchanged
-
-    final id = UserDirectory.realUserId(picked);
-    if (id == null) {
-      toast.showError('That user is not one the server knows.');
-      return;
-    }
+    final current = [for (final a in customerAssignees(ref.read(customerRowProvider(cust.id)).valueOrNull)) a.id];
+    List<CatalogOption> users;
     try {
-      await ref
-          .read(customersRepositoryProvider)
-          .updateCustomer(cust.id, {'assigned_to': id});
+      users = await ref.read(assignableUsersForModuleProvider('customer').future);
     } on Object catch (e) {
       if (!mounted) return;
-      toast.showError(e is AppError ? e.message : 'Could not reassign the owner.');
+      toast.showError(e is AppError ? e.message : 'Could not load the user list.');
       return;
     }
     if (!mounted) return;
-    // Remembered because the payload will not echo it back — see
-    // [customerOwnerOverrideProvider].
-    ref.read(customerOwnerOverrideProvider.notifier).update(
-        (state) => {...state, cust.id: UserDirectory.mapUserId(id)});
-    ref.invalidate(customersScopedProvider);
-    ref.invalidate(customerRowProvider(cust.id));
-    toast.show('Owner reassigned');
-  }
-
-  /// Adds or removes the customer's assignees.
-  ///
-  /// `assignees` is a many-to-many, so the write replaces the whole list — there
-  /// is no add-one endpoint. Built from [Customer.team], **not** the display list
-  /// in the row above: that one has the owner filtered out for readability, and
-  /// saving it would silently unassign them.
-  Future<void> _editAssignees(Customer cust) async {
-    final roster = ref.read(rosterProvider);
     final picked = await showOptionPicker(
       context: context,
-      title: 'Assignees',
-      multi: true,
-      options: [for (final u in roster) CatalogOption(id: u.id, name: u.name)],
-      selected: {...cust.team},
-      emptyNote: 'No teammates have loaded yet. Open a few records, or ask an '
-          'admin to check your access to the members list.',
+      title: 'Add assignee',
+      options: assignableNotAssigned<CatalogOption>(users, (u) => u.id, current),
+      selected: const {},
+      emptyNote: 'Everyone who can be assigned already is.',
     );
-    if (picked == null || !mounted) return;
+    if (picked == null || picked.isEmpty || !mounted) return;
+    final id = picked.first;
+    if (current.contains(id)) return;
+    final name = users.where((u) => u.id == id).map((u) => u.name).firstOrNull ?? '';
+    await _write(cust, {'assignees': [...current, id]},
+        success: 'Assignee added', unsaved: 'Add assignee $name'.trim());
+  }
 
-    // Only ids the server knows; a prototype id is dropped rather than sent.
-    final ids = [
-      for (final id in picked)
-        if (UserDirectory.realUserId(id) != null) UserDirectory.realUserId(id)!,
-    ];
-    if (ids.length == cust.team.length &&
-        ids.toSet().containsAll(cust.team.map(UserDirectory.realUserId))) {
-      return; // nothing actually changed
-    }
+  /// The chip's ×.
+  Future<void> _removeAssignee(Customer cust, ({String id, String name}) who) async {
+    if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
+    final current = [for (final a in customerAssignees(ref.read(customerRowProvider(cust.id)).valueOrNull)) a.id];
+    await _write(cust, {'assignees': [for (final i in current) if (i != who.id) i]},
+        success: 'Assignee removed', unsaved: 'Remove assignee ${who.name}'.trim());
+  }
 
-    final toast = ref.read(toastProvider.notifier);
+  // ── Products ──
+
+  /// The webapp's Products dialog — whole-number quantities, then
+  /// `PATCH {products: [{product_id, quantity}]}` → "Products updated".
+  Future<void> _editProducts(Customer cust) async {
+    if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
+    List<CatalogOption> options;
     try {
-      await ref
-          .read(customersRepositoryProvider)
-          .updateCustomer(cust.id, {'assignees': ids});
-    } on Object catch (e) {
-      if (!mounted) return;
-      toast.showError(e is AppError ? e.message : 'Could not update the assignees.');
-      return;
+      options = await ref.read(productCatalogProvider.future);
+    } on Object {
+      options = const [];
     }
     if (!mounted) return;
-    ref.invalidate(customersScopedProvider);
-    ref.invalidate(customerRowProvider(cust.id));
-    toast.show(ids.isEmpty ? 'Assignees cleared' : 'Assignees updated');
+    await showCustomerProductsSheet(
+      context,
+      current: ref.read(customerRowProvider(cust.id)).valueOrNull?['products'],
+      options: options,
+      onSave: (patch) async {
+        final e = await _patch(cust, patch);
+        if (!mounted) return null;
+        if (e != null) return customerWriteError(e);
+        ref.read(toastProvider.notifier).show('Products updated');
+        return null;
+      },
+    );
+  }
+
+  /// Opens the editor for one information row.
+  Future<void> _editField(Customer cust, CustomerInfoField field) async {
+    if (field.kind == InfoEditKind.products) {
+      await _editProducts(cust);
+      return;
+    }
+    await showCustomerFieldEditor(
+      context,
+      field: field,
+      onSave: (patch) => _saveFieldPatch(cust, patch),
+      onReload: () => _reloadRecord(cust.id),
+    );
   }
 
   /// Wraps a loading / error / not-found state under the section app bar so the
@@ -508,6 +618,20 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             Expanded(child: child),
           ],
         ),
+      );
+
+  /// "Customer not found" with a way back to the list, which is refreshed so the stale
+  /// row disappears too.
+  Widget _notFound(BuildContext context) => EmptyState(
+        icon: PhosphorIconsRegular.userCircle,
+        title: 'Customer not found',
+        body: 'It may have been deleted or moved.',
+        ctaLabel: 'Go to customers',
+        onCta: () {
+          // The list screen watches its own family member, so drop them all.
+          ref.invalidate(customersScopedProvider);
+          context.pop();
+        },
       );
 
   @override
@@ -540,6 +664,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     ref.invalidate(customerStatusCatalogProvider);
     ref.invalidate(customerActivityLogProvider(id));
     refreshFollowups(ref);
+    refreshCustomerActivityTabs(ref, id);
     ref.invalidate(leadsScopedProvider);
     ref.invalidate(crmNotesProvider);
     await settle([
@@ -560,45 +685,23 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
   Widget _buildCustomer(BuildContext context, String id) {
     final cust = ref.watch(customerByIdProvider(id));
-    if (cust == null) {
-      return _stateScaffold(const EmptyState(
-        icon: PhosphorIconsRegular.userCircle,
-        title: 'Customer not found',
-        body: 'This customer may have been removed or you no longer have access to it.',
-      ));
+    if (cust == null) return _stateScaffold(_notFound(context));
+    // The row above comes from the loaded list, which can outlive the record:
+    // ask the record endpoint, and show the webapp's not-found state on a 404.
+    final gone = ref.watch(recordGoneProvider(RecordProbe(ApiEndpoints.customer(cust.id)))).valueOrNull ?? false;
+    if (gone) return _stateScaffold(_notFound(context));
+
+    if (_openedId != cust.id) {
+      _openedId = cust.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(customerRowProvider(cust.id));
+        refreshCustomerActivityTabs(ref, cust.id);
+      });
     }
 
     final meta = StatusMeta$.customer[cust.status] ?? StatusMeta$.customer['active']!;
 
-    // Notes thread (#13). `apiModel` is what wires it to the backend: without
-    // it the thread stays local-only even in API mode, so a note — and any
-    // file attached to it — was composed, shown, and never sent anywhere. The
-    // builder below is the **mock-mode** seed; the remote notifier ignores it
-    // and loads `GET /crm/notes/?related_to=customer&related_to_id=…` instead.
-    final notesSeed = CrmNotesSeed(cust.id, () => [
-          NoteEntry(
-            id: '${cust.id}-n0',
-            author: 'You',
-            time: '2h ago',
-            via: 'Call',
-            body: 'Spoke with ${cust.name.split(' ').first}. Ongoing work on track; discussing an upsell.',
-          ),
-          NoteEntry(
-            id: '${cust.id}-n1',
-            author: 'Anjana Menon',
-            time: '1d ago',
-            via: 'Email',
-            avatarColor: AppColors.blueBright,
-            body: 'Shared the revised BOQ. Client happy with progress on ${cust.project}.',
-          ),
-          NoteEntry(
-            id: '${cust.id}-n2',
-            author: 'You',
-            time: '3d ago',
-            body: '${cust.industry} account since ${cust.since}. Value ${cust.value}.',
-          ),
-        ], apiModel: 'customer');
-    final notes = ref.watch(crmNotesProvider(notesSeed));
 
     return Container(
       color: AppColors.bgDetail,
@@ -620,26 +723,50 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
               children: [
+                if (_stale != null) ...[_staleBanner(cust), SizedBox(height: 14.h)],
                 _profileCard(cust, meta),
                 SizedBox(height: 14.h),
+                if (_deleteError != null) ...[
+                  _banner(
+                    icon: PhosphorIconsRegular.warning,
+                    tone: AppColors.error,
+                    bg: AppColors.tintRed,
+                    child: Text(_deleteError!, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textBody)),
+                    onDismiss: () => setState(() => _deleteError = null),
+                  ),
+                  SizedBox(height: 14.h),
+                ],
+                if (CustomerHeaderFacts.fromRow(ref.watch(customerRowProvider(cust.id)).valueOrNull).isConverted) ...[
+                  _banner(
+                    icon: PhosphorIconsRegular.lock,
+                    tone: AppColors.success,
+                    bg: AppColors.tintGreen,
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(
+                          text: convertedBannerLead,
+                          style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      TextSpan(
+                          text: convertedBannerBody,
+                          style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textBody)),
+                    ])),
+                  ),
+                  SizedBox(height: 14.h),
+                ],
                 _scoreCard(cust),
                 SizedBox(height: 14.h),
                 _infoCard(cust),
                 SizedBox(height: 14.h),
-                _activityCard(cust),
-                SizedBox(height: 14.h),
-                NotesThread(
-                  author: ref.watch(noteAuthorProvider),
-                  key: _notesKey,
-                  notes: notes,
-                  onAddNote: (body, atts) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
-                  onAddReply: (noteId, body) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
-                  onTogglePin: (noteId) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).togglePin(noteId),
+                CustomerActivityTabs(
+                  customer: cust,
+                  onUpsell: () => _createUpsell(cust),
+                  onRecordPayment: () => _recordPayment(cust),
                 ),
                 SizedBox(height: 14.h),
+                CustomerNotesCard(customer: cust, threadKey: _notesKey),
+                SizedBox(height: 14.h),
+                // Webapp `CustomerAccountingPanel`: only while accounting is
+                // active, and only with at least one acc_* grant.
+                CustomerAccountingPanel(customerId: cust.id, customerName: cust.name),
                 _activityLogCard(cust),
               ],
               ),
@@ -652,27 +779,26 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Widget _profileCard(Customer cust, StatusMeta meta) {
-    // Company when there is one, location otherwise.
-    //
-    // Both are read from the **detail row** first: `cust` comes from the list,
-    // which is trimmed to the org's `list` config and need not carry
-    // `organization_name` or `address` at all (this org's does not). The detail
-    // row does, and it is already fetched for the information card below — so the
-    // header fills in the moment it lands instead of staying blank.
+    // The header reads the **detail record** (webapp header): the list row is
+    // trimmed to the org's mobile config and carries none of these facts.
     final row = ref.watch(customerRowProvider(cust.id)).valueOrNull;
-    String fromRow(String key) => (row?[key] ?? '').toString().trim();
-    final company = fromRow('organization_name').isNotEmpty
-        ? fromRow('organization_name')
-        : (cust.company ?? '').trim();
-    final location = fromRow('address').isNotEmpty
-        ? fromRow('address')
-        : cust.location.trim();
-    final subtitle = company.isNotEmpty ? company : location;
-    // Same reason as `company`/`location` above: `since` is mapped from
-    // `status_entered_at`, which this org's list config does not carry, so the
-    // entity's copy is empty and the line rendered as a bare "Customer since"
-    // with no date. The detail row does carry it.
-    final since = _monthYear(row?['status_entered_at']) ?? cust.since;
+    final facts = CustomerHeaderFacts.fromRow(row);
+    final name = (row?['name'] is String && (row!['name'] as String).trim().isNotEmpty)
+        ? (row['name'] as String).trim()
+        : cust.name;
+    final initials = UserDirectory.initialsOf(name);
+    final canUpdate = hasPermission(ref, 'customer', PermVerb.update);
+
+    Widget stat(String label, num value) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label.toUpperCase(),
+                style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+            SizedBox(height: 2.h),
+            Text(webMoney(value),
+                style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+          ],
+        );
 
     return ClozrCard(
       radius: 18,
@@ -688,63 +814,67 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 height: 62.w,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(15.r)),
-                child: Text(cust.initials, style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.navy, letterSpacing: 0.4)),
+                child: Text(initials, style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.navy, letterSpacing: 0.4)),
               ),
               SizedBox(width: 13.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(cust.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                        ),
-                        if (cust.isUpsell) ...[SizedBox(width: 8.w), _upsellBadge()],
-                      ],
-                    ),
-                    // The id used to lead this line as "#C2001 · Kalyan Silks".
-                    // Server ids are UUIDs, which read as noise and crowd out the
-                    // company, so only the human-meaningful half is shown — and
-                    // nothing at all when the customer carries neither company
-                    // nor location. Same treatment as the lead header.
-                    if (subtitle.isNotEmpty) ...[
-                      SizedBox(height: 3.h),
-                      Text(subtitle,
+                    Text(name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+                    if (facts.isConverted || facts.isUpsell || cust.isUpsell) ...[
+                      SizedBox(height: 5.h),
+                      Wrap(
+                        spacing: 6.w,
+                        runSpacing: 4.h,
+                        children: [
+                          if (facts.isConverted) _textBadge('CONVERTED', AppColors.success, AppColors.tintGreen),
+                          if (facts.isUpsell || cust.isUpsell) _upsellBadge(),
+                        ],
+                      ),
+                    ],
+                    // "B2B · <GSTIN>" — accounting active + acc_setup only.
+                    CustomerB2bBadge(customerId: cust.id),
+                    if (facts.subtitle.isNotEmpty) ...[
+                      SizedBox(height: 4.h),
+                      Text(facts.subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
                     ],
-                    // A record with no status date at all says nothing, rather
-                    // than labelling a blank.
-                    if (since.isNotEmpty) ...[
+                    if (facts.since.isNotEmpty) ...[
                       SizedBox(height: 5.h),
                       Row(
                         children: [
-                          Icon(PhosphorIconsRegular.clock, size: 13.sp, color: AppColors.textPlaceholder),
+                          Icon(PhosphorIconsRegular.calendarBlank, size: 13.sp, color: AppColors.textPlaceholder),
                           SizedBox(width: 5.w),
-                          Text('Customer since $since', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted2)),
+                          Text('Customer since ${facts.since}',
+                              style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted2)),
                         ],
                       ),
                     ],
-                    CustomerB2bBadge(customerId: cust.id),
                   ],
                 ),
               ),
-              SizedBox(width: 8.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(cust.value, style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                  SizedBox(height: 1.h),
-                  Text('VALUE', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
-                ],
-              ),
             ],
           ),
+          if (facts.dealValue != null || facts.received != null) ...[
+            SizedBox(height: 14.h),
+            Row(
+              children: [
+                if (facts.dealValue != null) Expanded(child: stat('Value (excl. GST)', facts.dealValue!)),
+                if (facts.received != null) Expanded(child: stat('Received (incl. GST)', facts.received!)),
+              ],
+            ),
+          ],
+          if (facts.isLost) ...[
+            SizedBox(height: 10.h),
+            Text('Lost: ${facts.lostReason}',
+                style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.error)),
+          ],
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
           Row(
             children: [
@@ -765,8 +895,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
                         SizedBox(width: 8.w),
                         Flexible(child: Text(meta.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textBody))),
-                        SizedBox(width: 6.w),
-                        Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textMuted2),
+                        if (canUpdate) ...[
+                          SizedBox(width: 6.w),
+                          Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textMuted2),
+                        ],
                       ],
                     ),
                   ),
@@ -775,7 +907,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               SizedBox(width: 10.w),
               Expanded(
                 child: GestureDetector(
-                  onTap: () => _createUpsell(cust),
+                  onTap: () {
+                    if (ensurePermission(ref, 'customer', PermVerb.update)) _createUpsell(cust);
+                  },
                   child: Container(
                     height: 44.h,
                     alignment: Alignment.center,
@@ -793,6 +927,93 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _textBadge(String label, Color fg, Color bg) => Container(
+        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7.r)),
+        child: Text(label, style: AppText.custom(size: 11, weight: FontWeight.w700, color: fg)),
+      );
+
+  /// A full-width notice card (delete refusal, converted, stale record).
+  Widget _banner({
+    required IconData icon,
+    required Color tone,
+    required Color bg,
+    required Widget child,
+    VoidCallback? onDismiss,
+    Widget? action,
+  }) {
+    return Container(
+      padding: EdgeInsets.all(12.r),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: tone.withOpacity(0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16.sp, color: tone),
+          SizedBox(width: 8.w),
+          Expanded(child: child),
+          if (action != null) ...[SizedBox(width: 8.w), action],
+          if (onDismiss != null)
+            GestureDetector(
+              onTap: onDismiss,
+              child: Padding(
+                padding: EdgeInsets.only(left: 8.w),
+                child: Icon(PhosphorIconsBold.x, size: 14.sp, color: AppColors.textMuted),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Webapp `StaleRecordNotice`: a status / assignee change refused because
+  /// the customer changed elsewhere. Names what was not saved; Reload re-reads.
+  Widget _staleBanner(Customer cust) {
+    final s = _stale!;
+    return _banner(
+      icon: PhosphorIconsRegular.arrowsClockwise,
+      tone: AppColors.warningDeep,
+      bg: AppColors.tintAmber,
+      onDismiss: () => setState(() => _stale = null),
+      action: _staleReloaded
+          ? null
+          : GestureDetector(
+              onTap: _staleReloading
+                  ? null
+                  : () async {
+                      setState(() => _staleReloading = true);
+                      await _reloadRecord(cust.id);
+                      if (!mounted) return;
+                      setState(() {
+                        _staleReloading = false;
+                        _staleReloaded = true;
+                      });
+                    },
+              child: Text(_staleReloading ? 'Reloading…' : 'Reload',
+                  style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Changed elsewhere — ${s.message}',
+              style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary)),
+          if (s.unsaved.isNotEmpty) ...[
+            SizedBox(height: 3.h),
+            Text('Not saved: ${s.unsaved}', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textBody)),
+          ],
+          if (_staleReloaded) ...[
+            SizedBox(height: 3.h),
+            Text('Latest version loaded — make the change again.',
+                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+          ],
         ],
       ),
     );
@@ -873,13 +1094,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   /// The built-in information rows, used when the org's `detail` layout has not
-  /// loaded (and in mock mode). Keeps the screen looking exactly as it did
-  /// before this became configurable.
-  ///
-  /// The two trailing placeholder rows are gone from the schema-driven path:
-  /// "Warranty period" was always a hard `—`, and "Custom fields: Configured in
-  /// web app" stood in for data the schema actually delivers, as
-  /// `custom_fields.<name>` columns that [recordRows] renders like any other.
+  /// loaded (and in mock mode). Read-only: nothing names the API fields.
   List<(String, String)> _fallbackInfoRows(Customer cust) => [
         ('Email', cust.email),
         ('Mobile', cust.phone),
@@ -890,66 +1105,54 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         ('Deal value', cust.value),
         ('Industry', cust.industry),
         ('Website', cust.website),
-        ('Warranty period', '—'),
-        ('Custom fields', 'Configured in web app'),
       ];
 
-  /// Saves one edited field of the customer information card
-  /// (`PATCH /crm/customers/{id}/`).
-  ///
-  /// The column name is the write key here: a customer's status is stored as
-  /// plain `status`, unlike a lead's `status_id` — which is why the shared row
-  /// takes the mapping from its caller rather than assuming the Lead one.
-  Future<void> _saveField(
-      Customer cust, String key, Object? value, String label) async {
-    try {
-      await ref
-          .read(customersRepositoryProvider)
-          .updateCustomer(cust.id, {key: value});
-      if (!mounted) return;
-      ref.invalidate(customerRowProvider(cust.id));
-      ref.invalidate(customersScopedProvider);
-      ref.read(toastProvider.notifier).show('$label updated');
-    } on AppError catch (e) {
-      if (!mounted) return;
-      ref.read(toastProvider.notifier).showError(e.message);
+  /// One information row: tap to edit when the field is editable (webapp
+  /// `InfoFieldList`); Source explains why it is read-only.
+  Widget _fieldRow(Customer cust, CustomerInfoField f, {bool last = false}) {
+    final row = DetailInfoRow(label: f.label, value: f.value, last: last);
+    if (f.hint != null) {
+      return Tooltip(message: f.hint!, triggerMode: TooltipTriggerMode.tap, child: row);
     }
+    if (!f.editable) return row;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _editField(cust, f),
+      child: row,
+    );
   }
 
+  Widget _eyebrow(String t) => Text(t,
+      style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6));
+
   Widget _infoCard(Customer cust) {
-    // The org's own detail layout drives these rows: which fields, in what
-    // order, under what labels. Empty schema (or a record that has not landed)
-    // → the built-in list above.
     final schema = ref.watch(customerDetailSchemaProvider);
     final row = ref.watch(customerRowProvider(cust.id)).valueOrNull;
-    final all = (schema.isEmpty || row == null)
-        ? [for (final r in _fallbackInfoRows(cust)) (r.$1, r.$2, null)]
-        : [
-            // `name` is the page header and `status` is the pill above; the
-            // people block below owns the owner/assignee columns.
-            for (final r in recordRows(row, schema, skip: const {
-              'name',
-              'status',
-              'lead_owner',
-              'assignees',
-              'assigned_team',
-            }))
-              (r.label, r.value, r.column),
-          ];
-    // Long layouts stay behind "Show more"; a short one shows whole. The
-    // built-in list is always 11 rows so the toggle used to be unconditional —
-    // an org layout can be shorter than the collapse point, and a "Show more"
-    // that reveals nothing is worse than none.
-    const collapseAt = 7;
-    final collapsible = all.length > collapseAt;
-    final rows = (_infoMore || !collapsible) ? all : all.take(collapseAt).toList();
-    final ownerId = _ownerOf(cust);
-    final owner = MockUsers.of(ownerId);
-    final assignees = cust.team.where((t) => t != ownerId).toList();
-    // Was derived from the mock user directory's `role` string, with a literal
-    // 'Team Kochi' as the fallback — so a customer the API says has no team,
-    // in an org that has no teams at all, still showed a plausible team name.
-    // Read the field the backend actually models; say nothing when it is unset.
+    // Without `update` nothing is editable (webapp `perms.can('update')`).
+    final canUpdate = ref.watch(modulePermProvider('customer')).update;
+    final industries = canUpdate ? ref.watch(industryCatalogProvider).valueOrNull : null;
+
+    final List<Widget> infoRows;
+    List<CustomerInfoField> billing = const [];
+    if (schema.isEmpty || row == null) {
+      final all = _fallbackInfoRows(cust);
+      infoRows = [for (final r in all) DetailInfoRow(label: r.$1, value: r.$2.isEmpty ? '—' : r.$2)];
+    } else {
+      final built = buildCustomerInfoFields(
+        row: row,
+        columns: schema.columns,
+        editable: canUpdate,
+        industryOptions: industries == null ? null : [for (final o in industries) (o.id, o.name)],
+        hasProductsEditor: true,
+      );
+      billing = built.billing;
+      infoRows = [for (final f in built.info) _fieldRow(cust, f)];
+    }
+    // Long layouts stay behind "Show more"; a short one shows whole.
+    const collapseAt = 8;
+    final collapsible = infoRows.length > collapseAt;
+    final rows = (_infoMore || !collapsible) ? infoRows : infoRows.take(collapseAt).toList();
+    final assignees = customerAssignees(row);
     final teamName = _teamNameOf(row?['assigned_team']);
 
     return ClozrCard(
@@ -960,120 +1163,98 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         children: [
           Text('Customer information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
-          // Long-press a row to edit it in place; a row that cannot be edited
-          // says why rather than ignoring the press.
-          for (final r in rows)
-            InlineEditRow(
-              label: r.$1,
-              display: r.$2,
-              column: r.$3,
-              rawValue: row?[r.$3?.name],
-              editForm: 'Edit customer',
-              onSave: (key, value) => _saveField(cust, key, value, r.$1),
-              onBlocked: (msg) => ref.read(toastProvider.notifier).show(msg),
-              child: DetailInfoRow(label: r.$1, value: r.$2),
-            ),
+          ...rows,
           if (collapsible)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _infoMore = !_infoMore),
-            child: Container(
-              margin: EdgeInsets.only(top: 6.h),
-              padding: EdgeInsets.only(top: 11.h, bottom: 2.h),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_infoMore ? 'Show less' : 'Show more', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
-                  SizedBox(width: 6.w),
-                  Icon(_infoMore ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.blueBright),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(height: 18.h),
-          Text('OWNER & ASSIGNEES', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6)),
-          SizedBox(height: 4.h),
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 10.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
-              children: [
-                Container(
-                  width: 42.w,
-                  height: 42.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: owner.color, borderRadius: BorderRadius.circular(12.r)),
-                  child: Text(owner.initials, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(owner.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                      SizedBox(height: 1.h),
-                      Text('Account owner', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                    ],
-                  ),
-                ),
-                _roundAction(PhosphorIconsRegular.arrowsClockwise, () => _reassignOwner(cust)),
-              ],
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 10.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Assignees', style: AppText.caption(color: AppColors.textMuted)),
-                      SizedBox(height: 4.h),
-                      if (assignees.isEmpty)
-                        Text('No assignees yet', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
-                      else
-                        Text(assignees.map((t) => MockUsers.of(t).name.split(' ').first).join(', '),
-                            style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
-                    ],
-                  ),
-                ),
-                _roundAction(PhosphorIconsRegular.userPlus, () => _editAssignees(cust)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.only(top: 10.h),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Assigned team', style: AppText.caption(color: AppColors.textMuted)),
-                SizedBox(height: 5.h),
-                Row(
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _infoMore = !_infoMore),
+              child: Container(
+                margin: EdgeInsets.only(top: 6.h),
+                padding: EdgeInsets.only(top: 11.h, bottom: 2.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: AppColors.textLabelAlt),
-                    SizedBox(width: 7.w),
-                    if (teamName.isEmpty)
-                      Text('No team assigned', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
-                    else
-                      Text(teamName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(_infoMore ? 'Show less' : 'Show more', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
+                    SizedBox(width: 6.w),
+                    Icon(_infoMore ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.blueBright),
                   ],
                 ),
+              ),
+            ),
+          if (billing.isNotEmpty) ...[
+            SizedBox(height: 18.h),
+            _eyebrow('BILLING & DELIVERY'),
+            SizedBox(height: 4.h),
+            for (final f in billing) _fieldRow(cust, f),
+          ],
+          SizedBox(height: 18.h),
+          Row(
+            children: [
+              Expanded(child: _eyebrow('ASSIGNED TO')),
+              if (canUpdate) _roundAction(PhosphorIconsRegular.userPlus, () => _addAssignee(cust)),
+            ],
+          ),
+          SizedBox(height: 8.h),
+          if (assignees.isEmpty)
+            Text('Unassigned', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
+          else
+            Wrap(
+              spacing: 8.w,
+              runSpacing: 8.h,
+              children: [for (final a in assignees) _assigneeChip(cust, a, removable: canUpdate)],
+            ),
+          if (teamName.isNotEmpty) ...[
+            SizedBox(height: 14.h),
+            Text('Assigned team', style: AppText.caption(color: AppColors.textMuted)),
+            SizedBox(height: 5.h),
+            Row(
+              children: [
+                Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: AppColors.textLabelAlt),
+                SizedBox(width: 7.w),
+                Text(teamName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  /// "Dec 2025" from an API timestamp; null when there is no usable date, so
-  /// callers can fall back rather than render an empty label.
-  static String? _monthYear(Object? value) {
-    final at = parseApiDate(value);
-    return at == null ? null : DateFormat('MMM yyyy').format(at.toLocal());
+  /// An assignee chip — initials, full name and ×.
+  Widget _assigneeChip(Customer cust, ({String id, String name}) a, {required bool removable}) {
+    final name = a.name.isEmpty ? 'User' : a.name;
+    return Container(
+      padding: EdgeInsets.fromLTRB(4.w, 4.h, removable ? 4.w : 10.w, 4.h),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(999.r),
+        border: Border.all(color: const Color(0xFFE6E7EA)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 24.w,
+            height: 24.w,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+            child: Text(UserDirectory.initialsOf(name),
+                style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+          ),
+          SizedBox(width: 7.w),
+          Text(name, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
+          if (removable)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _removeAssignee(cust, a),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                child: Icon(PhosphorIconsBold.x, size: 12.sp, color: AppColors.textMuted),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   /// The team's display name from `assigned_team`, which arrives either as a
@@ -1108,690 +1289,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(11.r), border: Border.all(color: const Color(0xFFE6E7EA))),
         child: Icon(icon, size: 17.sp, color: AppColors.textSecondary),
       ),
-    );
-  }
-
-  /// The activity card's CTA — one create path per tab, each carrying the
-  /// customer so the new record comes back in this screen's own scoped fetch.
-  ///
-  /// Tasks and follow-ups reuse the shared sheets, which already take a `lead`.
-  /// A customer has no equivalent parameter on them yet, so those two are raised
-  /// against the customer's originating lead when it has one; without one the
-  /// sheet would create an unattached record, so it says so instead of doing
-  /// that silently.
-  Future<void> _activityCta(Customer cust) async {
-    final toast = ref.read(toastProvider.notifier);
-    final lead = cust.leadId == null
-        ? null
-        : ref.read(leadByIdProvider(cust.leadId!));
-    switch (_tab) {
-      case 0:
-        if (lead == null) {
-          toast.show('Open the linked lead to add a task.');
-          return;
-        }
-        await showAddTaskSheet(context, ref, lead: lead);
-        ref.invalidate(customerTasksProvider(cust.id));
-      case 1:
-        toast.show('Log a call from the lead, or call from the bar below.');
-      case 2:
-        if (lead == null) {
-          toast.show('Open the linked lead to schedule a follow-up.');
-          return;
-        }
-        await showAddFollowupSheet(context, ref, lead: lead);
-        ref.invalidate(customerFollowupsProvider(cust.id));
-      case 3:
-        toast.show('Payments are recorded against an invoice.');
-      case 4:
-        // "New lead" against a customer *is* an upsell.
-        await _createUpsell(cust);
-      case 5:
-        await _uploadFiles(cust);
-      default:
-        // Accounting: money in when the role can post it, else a new invoice.
-        if (ref.read(accPermProvider('acc_settlement')).create) {
-          await showRecordReceiptSheet(context, customerId: cust.id);
-        } else {
-          await context.push('${Routes.accNewInvoice}?customer=${cust.id}');
-        }
-    }
-  }
-
-  /// Picks files off the device and posts them against this customer.
-  ///
-  /// One at a time, stopping at the first rejection — pushing the rest after a
-  /// failure usually just repeats it, and a half-finished batch is easier to
-  /// reason about when the count is reported.
-  Future<void> _uploadFiles(Customer cust) async {
-    if (_uploading) return;
-    final toast = ref.read(toastProvider.notifier);
-
-    FilePickerResult? picked;
-    try {
-      picked = await FilePicker.platform
-          .pickFiles(allowMultiple: true, withData: false);
-    } on Object catch (e) {
-      if (mounted) toast.showError('Could not open the file picker: $e');
-      return;
-    }
-    if (picked == null || !mounted) return; // cancelled
-
-    final files = [
-      for (final f in picked.files)
-        if (f.path != null) (path: f.path!, name: f.name),
-    ];
-    if (files.isEmpty) return;
-    if (!ApiConfig.apiEnabled) {
-      toast.show('Files upload once the app is connected to the API.');
-      return;
-    }
-
-    setState(() => _uploading = true);
-    final repo = ref.read(attachmentsRepositoryProvider);
-    var stored = 0;
-    String? failure;
-    for (final f in files) {
-      try {
-        final saved = await repo.uploadFile(
-          relatedTo: 'customer',
-          relatedToId: cust.id,
-          path: f.path,
-          name: f.name,
-        );
-        if (saved != null) stored++;
-      } on AppError catch (e) {
-        failure = e.message;
-        break;
-      }
-    }
-    if (!mounted) return;
-    setState(() => _uploading = false);
-
-    if (stored > 0) ref.invalidate(customerFilesProvider(cust.id));
-    if (failure != null) {
-      // Say what landed before what didn't, so a partial batch is not read as a
-      // total failure.
-      toast.showError(stored == 0 ? failure : '$stored uploaded · $failure');
-    } else {
-      toast.show(stored == 1 ? 'File uploaded' : '$stored files uploaded');
-    }
-  }
-
-  Widget _activityCard(Customer cust) {
-    final ctaLabels = [
-      'Add task', 'Log call', 'Add follow-up', 'Record payment', 'New lead', 'Upload file',
-      ref.watch(accPermProvider('acc_settlement')).create ? 'Record receipt' : 'New invoice',
-    ];
-    // Accounting can switch off under an open tab; fall back to the first.
-    if (_tab >= _tabLabels.length) _tab = 0;
-    final ctaLabel = _uploading && _tab == 5 ? 'Uploading…' : ctaLabels[_tab];
-    return ClozrCard(
-      radius: 18,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text('Customer activity', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
-              GestureDetector(
-                onTap: () => _activityCta(cust),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(9.r), border: Border.all(color: const Color(0xFFE6E7EA))),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_tab == 5 ? PhosphorIconsRegular.uploadSimple : PhosphorIconsBold.plus, size: 13.sp, color: AppColors.textSecondary),
-                      SizedBox(width: 6.w),
-                      Text(ctaLabel, style: AppText.bodyStrong()),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 14.h),
-          DetailUnderlineTabs(labels: _tabLabels, index: _tab, onChanged: (i) => setState(() => _tab = i)),
-          SizedBox(height: 6.h),
-          _tabContent(cust),
-        ],
-      ),
-    );
-  }
-
-  Widget _tabContent(Customer cust) {
-    switch (_tab) {
-      case 0:
-        return _tasksTab(cust);
-      case 1:
-        return _callLogTab(cust);
-      case 2:
-        return _followupsTab(cust);
-      case 3:
-        return _paymentsTab(cust);
-      case 4:
-        return _leadsTab(cust);
-      case 5:
-        return _filesTab(cust);
-      default:
-        return CustomerAccountingTab(customerId: cust.id);
-    }
-  }
-
-  /// Loading / error / empty / data for one activity tab.
-  ///
-  /// Every tab reads its own customer-scoped provider, so a failed fetch shows a
-  /// retry rather than an empty state — "nothing logged yet" and "we couldn't
-  /// load it" must not look the same.
-  Widget _tabAsync<T>(
-    AsyncValue<List<T>> async, {
-    required Widget empty,
-    required Widget Function(List<T> items) data,
-    required VoidCallback onRetry,
-  }) {
-    return async.when(
-      loading: () => ListSkeleton(
-        itemCount: 3,
-        itemHeight: 54.h,
-        padding: EdgeInsets.symmetric(vertical: 14.h),
-      ),
-      error: (e, _) => ErrorState.forError(crmAppError(e), onRetry: onRetry),
-      data: (items) => items.isEmpty ? empty : data(items),
-    );
-  }
-
-  /// The pill a task's status renders as — the org's own lane name, not the
-  /// built-in bucket it folds into. Twin of the lead detail's: an org running
-  /// Open / In Progress / Completed / Cancelled read "To do" / "Done" /
-  /// "Blocked" here, the last reversed in meaning rather than merely renamed.
-  StatusMeta _taskMeta(CrmTask t) {
-    final statuses = ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [];
-    final key = _taskStatus(t);
-    if (key == t.status) return crmTaskStatusMeta(t, statuses);
-    for (final s in statuses) {
-      if (crmTaskStatusKey(name: s.name, type: s.statusType) == key) {
-        return StatusMeta(s.name, crmTaskStatusColor(s));
-      }
-    }
-    return StatusMeta$.task[key] ?? StatusMeta$.task['todo']!;
-  }
-
-  /// A task's status with any session override laid on top, so ticking one here
-  /// and opening it on the task screen agree before either has refetched.
-  String _taskStatus(CrmTask t) =>
-      ref.watch(crmTaskStatusOverrideProvider)[t.id] ?? t.status;
-
-  /// Ticks a task done, or reopens it. Optimistic, then rolled back if the write
-  /// is refused — completing a task is not always allowed (an org can require a
-  /// note first), and a tick that stayed ticked would be a lie.
-  Future<void> _toggleTask(Customer cust, CrmTask t) async {
-    final next = _taskStatus(t) == 'done' ? 'todo' : 'done';
-    final prev = ref.read(crmTaskStatusOverrideProvider);
-    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, t.id: next};
-
-    if (ApiConfig.apiEnabled) {
-      try {
-        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, next);
-      } on AppError catch (e) {
-        final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
-        if (prev.containsKey(t.id)) {
-          rolled[t.id] = prev[t.id]!;
-        } else {
-          rolled.remove(t.id);
-        }
-        ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        if (mounted) ref.read(toastProvider.notifier).showError(e.message);
-        return;
-      }
-      if (!mounted) return;
-      ref.invalidate(customerTasksProvider(cust.id));
-      ref.invalidate(crmTasksProvider);
-      ref.invalidate(taskRowProvider(t.id));
-    }
-    if (mounted) {
-      ref
-          .read(toastProvider.notifier)
-          .show(next == 'done' ? 'Task completed' : 'Task reopened');
-    }
-  }
-
-  Widget _tasksTab(Customer cust) {
-    return _tabAsync<CrmTask>(
-      ref.watch(customerTasksProvider(cust.id)),
-      onRetry: () => ref.invalidate(customerTasksProvider(cust.id)),
-      empty: const DetailTabEmpty(
-          icon: PhosphorIconsRegular.checkSquare,
-          title: 'No tasks yet',
-          body: 'Tasks linked to this customer will appear here.'),
-      data: (tasks) => Column(
-        children: [
-          for (final t in tasks)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-              decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CrmCheckBox(
-                      done: _taskStatus(t) == 'done',
-                      onTap: () => _toggleTask(cust, t)),
-                  SizedBox(width: 12.w),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(t.titleClean,
-                              style: AppText.custom(
-                                      size: 14,
-                                      weight: FontWeight.w600,
-                                      color: _taskStatus(t) == 'done'
-                                          ? AppColors.textPlaceholder
-                                          : AppColors.textPrimary)
-                                  .copyWith(
-                                      decoration: _taskStatus(t) == 'done'
-                                          ? TextDecoration.lineThrough
-                                          : null)),
-                          SizedBox(height: 3.h),
-                          Text(
-                              '${t.due} · ${MockUsers.of(t.assignee).name.split(' ').first} · ${t.priority}',
-                              style: AppText.caption()),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8.w),
-                  _miniPill(_taskMeta(t)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _callLogTab(Customer cust) {
-    return _tabAsync<CallLog>(
-      ref.watch(customerCallLogsProvider(cust.id)),
-      onRetry: () => ref.invalidate(customerCallLogsProvider(cust.id)),
-      empty: const DetailTabEmpty(
-          icon: PhosphorIconsRegular.phone,
-          title: 'No calls logged',
-          body: 'Calls made to or received from this customer will appear here.'),
-      data: (calls) => Column(children: [for (final c in calls) _callRow(c)]),
-    );
-  }
-
-  /// One call row. The icon shows direction, the tint how it ended. A row with a
-  /// recording is tappable — only ever the CDN copy, since the raw Exotel link
-  /// 403s for anyone but Exotel.
-  Widget _callRow(CallLog c) {
-    final icon = c.isMissed
-        ? PhosphorIconsRegular.phoneX
-        : c.isIncoming
-            ? PhosphorIconsRegular.phoneIncoming
-            : PhosphorIconsRegular.phoneOutgoing;
-    final tone = c.isMissed
-        ? AppColors.error
-        : !c.connected
-            ? AppColors.textPlaceholder
-            : c.isIncoming
-                ? AppColors.blueBright
-                : AppColors.success;
-    final row = Container(
-      padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-      decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38.w,
-            height: 38.w,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-                color: AppColors.bgChipGrey,
-                borderRadius: BorderRadius.circular(11.r)),
-            child: Icon(icon, size: 18.sp, color: tone),
-          ),
-          SizedBox(width: 12.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: Text(c.outcome, style: AppText.bodyStrong())),
-                    if (c.hasRecording) ...[
-                      SizedBox(width: 6.w),
-                      Icon(PhosphorIconsFill.playCircle,
-                          size: 16.sp, color: AppColors.blueBright),
-                    ],
-                  ],
-                ),
-                SizedBox(height: 2.h),
-                Text(c.time, style: AppText.caption()),
-                if (c.summary.isNotEmpty) ...[
-                  SizedBox(height: 5.h),
-                  Text(c.summary,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(
-                              size: 12.5,
-                              weight: FontWeight.w500,
-                              color: AppColors.textMuted)
-                          .copyWith(height: 1.4)),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (!c.hasRecording) return row;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () async {
-        final failure = await openAttachment(c.recordingUrl);
-        if (failure != null && mounted) {
-          ref.read(toastProvider.notifier).showError(failure);
-        }
-      },
-      child: row,
-    );
-  }
-
-  Widget _followupsTab(Customer cust) {
-    return _tabAsync<Followup>(
-      ref.watch(customerFollowupsProvider(cust.id)),
-      onRetry: () => ref.invalidate(customerFollowupsProvider(cust.id)),
-      empty: const DetailTabEmpty(
-          icon: PhosphorIconsRegular.clock,
-          title: 'No follow-ups scheduled',
-          body: 'Follow-ups scheduled for this customer will appear here.'),
-      data: (fus) => Padding(
-        padding: EdgeInsets.only(top: 12.h),
-        child: Column(
-          children: [
-            for (final f in fus)
-              Container(
-                margin: EdgeInsets.only(bottom: 12.h),
-                padding: EdgeInsets.all(14.r),
-                decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14.r),
-                    border: Border.all(color: AppColors.borderCardSoft)),
-                child: GestureDetector(
-                  onTap: () =>
-                      context.push('${Routes.followupDetail}?id=${f.id}'),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 42.w,
-                        height: 42.w,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                            color: const Color(0xFFEEF1F4),
-                            borderRadius: BorderRadius.circular(12.r)),
-                        child: Icon(PhosphorIconsRegular.calendarBlank,
-                            size: 19.sp, color: AppColors.navy),
-                      ),
-                      SizedBox(width: 12.w),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(f.title.isEmpty ? '${f.kind} follow-up' : f.title,
-                                style: AppText.custom(
-                                    size: 14.5,
-                                    weight: FontWeight.w700,
-                                    color: AppColors.textPrimary)),
-                            SizedBox(height: 3.h),
-                            Text('${f.kind} · ${f.contact}',
-                                style: AppText.custom(
-                                    size: 12.5,
-                                    weight: FontWeight.w500,
-                                    color: AppColors.textMuted2)),
-                            SizedBox(height: 3.h),
-                            Text('${f.due} · ${f.time}',
-                                style: AppText.caption(
-                                    color: AppColors.textPlaceholder)),
-                          ],
-                        ),
-                      ),
-                      _miniPill(StatusMeta$.followup[f.status] ??
-                          StatusMeta$.followup['due']!),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// The Payments tab — the **invoice header** per customer
-  /// (`/quotations/payments/?customer_id=`), which is the level the docs render
-  /// first; tapping through opens the installment rows.
-  Widget _paymentsTab(Customer cust) {
-    return _tabAsync<Invoice>(
-      ref.watch(customerInvoicesProvider(cust.id)),
-      onRetry: () => ref.invalidate(customerInvoicesProvider(cust.id)),
-      empty: const DetailTabEmpty(
-          icon: PhosphorIconsRegular.receipt,
-          title: 'No payments yet',
-          body: 'Invoices raised against this customer will appear here.'),
-      data: (invoices) => Column(
-        children: [
-          for (final inv in invoices)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-              decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () =>
-                    context.push('${Routes.invoiceDetail}?id=${inv.id}'),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 38.w,
-                      height: 38.w,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                          color: AppColors.bgChipGrey,
-                          borderRadius: BorderRadius.circular(11.r)),
-                      child: Icon(PhosphorIconsRegular.receipt,
-                          size: 18.sp, color: AppColors.textSecondary),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(inv.id,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(
-                                  size: 14,
-                                  weight: FontWeight.w600,
-                                  color: AppColors.textPrimary)),
-                          SizedBox(height: 3.h),
-                          Text(inv.type, style: AppText.caption()),
-                        ],
-                      ),
-                    ),
-                    SizedBox(width: 8.w),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _miniPill(StatusMeta$.invoice[inv.status] ??
-                            StatusMeta$.invoice['partial']!),
-                        SizedBox(height: 5.h),
-                        Text(inv.total,
-                            style: AppText.custom(
-                                size: 13.5,
-                                weight: FontWeight.w700,
-                                color: AppColors.textPrimary)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// The Leads tab — `?parent_customer=`, which is the customer's **upsell**
-  /// leads. The original source lead is not a child of the customer, so it is
-  /// absent here by design; it lives in the record's `linked_leads`.
-  Widget _leadsTab(Customer cust) {
-    return _tabAsync<Lead>(
-      ref.watch(customerLeadsProvider(cust.id)),
-      onRetry: () => ref.invalidate(customerLeadsProvider(cust.id)),
-      empty: const DetailTabEmpty(
-          icon: PhosphorIconsRegular.users,
-          title: 'No upsell leads',
-          body: 'Leads raised against this customer will appear here.'),
-      data: (leads) => Column(
-        children: [
-          for (final l in leads)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-              decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => context.push('${Routes.leadDetail}?id=${l.id}'),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 38.w,
-                      height: 38.w,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                          color: AppColors.bgChipGrey,
-                          borderRadius: BorderRadius.circular(11.r)),
-                      child: Text(l.initials,
-                          style: AppText.custom(
-                              size: 12,
-                              weight: FontWeight.w700,
-                              color: AppColors.navy)),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(l.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(
-                                  size: 14,
-                                  weight: FontWeight.w600,
-                                  color: AppColors.textPrimary)),
-                          SizedBox(height: 3.h),
-                          Text(l.project, style: AppText.caption()),
-                        ],
-                      ),
-                    ),
-                    SizedBox(width: 8.w),
-                    Text(l.value,
-                        style: AppText.custom(
-                            size: 13.5,
-                            weight: FontWeight.w700,
-                            color: AppColors.textPrimary)),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// The Files tab — the shared polymorphic attachments table, `related_to=
-  /// customer`.
-  Widget _filesTab(Customer cust) {
-    return _tabAsync<LeadFile>(
-      ref.watch(customerFilesProvider(cust.id)),
-      onRetry: () => ref.invalidate(customerFilesProvider(cust.id)),
-      empty: const DetailTabEmpty(
-          icon: PhosphorIconsRegular.paperclip,
-          title: 'No files shared',
-          body: 'Drawings, BOQs and documents will appear here.'),
-      data: (files) => Column(
-        children: [
-          for (final f in files)
-            InkWell(
-              onTap: () async {
-                final failure = await openAttachment(f.url);
-                if (failure != null && mounted) {
-                  ref.read(toastProvider.notifier).showError(failure);
-                }
-              },
-              borderRadius: BorderRadius.circular(10.r),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 2.w),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38.w,
-                      height: 38.w,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                          color: AppColors.bgChipGrey,
-                          borderRadius: BorderRadius.circular(11.r)),
-                      child: Icon(PhosphorIconsRegular.paperclip,
-                          size: 18.sp, color: AppColors.textSecondary),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(f.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(
-                                  size: 14,
-                                  weight: FontWeight.w600,
-                                  color: AppColors.textPrimary)),
-                          SizedBox(height: 3.h),
-                          Text(
-                              [
-                                f.ext,
-                                if (f.uploadedAt.isNotEmpty) f.uploadedAt,
-                              ].join(' · '),
-                              style: AppText.caption()),
-                        ],
-                      ),
-                    ),
-                    SizedBox(width: 8.w),
-                    Icon(PhosphorIconsRegular.arrowSquareOut,
-                        size: 16.sp, color: AppColors.textPlaceholder),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _miniPill(StatusMeta meta) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 3.h),
-      decoration: BoxDecoration(color: meta.color.withOpacity(0.09), borderRadius: BorderRadius.circular(7.r)),
-      child: Text(meta.label, style: AppText.custom(size: 11, weight: FontWeight.w700, color: meta.color)),
     );
   }
 
@@ -1892,7 +1389,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           // The pencil beside WhatsApp opens the customer's edit form — the
           // same schema-driven form the org configures, not a note composer.
           _squareAction(PhosphorIconsBold.pencilSimple, AppColors.white,
-              () => context.push('${Routes.editCustomer}?id=${cust.id}'),
+              () {
+                if (ensurePermission(ref, 'customer', PermVerb.update)) {
+                  context.push('${Routes.editCustomer}?id=${cust.id}');
+                }
+              },
               border: const Color(0xFFB9C2D8), borderWidth: 1.5),
         ],
       ),

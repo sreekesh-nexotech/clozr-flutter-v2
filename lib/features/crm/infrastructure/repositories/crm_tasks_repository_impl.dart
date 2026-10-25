@@ -16,6 +16,10 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
     return _local.fetchTasks();
   }
 
+  /// Mock mode has no server side: the list is filtered on the device.
+  @override
+  Future<List<CrmTask>> getTasksQuery(Map<String, dynamic> query) => getTasks();
+
   /// Mock mode has no server-side filter, so the seed is narrowed here — the
   /// same result the API returns for `?related_to=lead&related_to_id=…`.
   @override
@@ -37,7 +41,7 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
   /// Mock mode has no record endpoint — null keeps the detail panel on its
   /// built-in row set rather than showing an empty schema-driven one.
   @override
-  Future<Map<String, dynamic>?> getTaskRow(String id) async => null;
+  Future<Map<String, dynamic>?> getTaskRow(String id, {bool isFollowup = false}) async => null;
 
   @override
   Future<CrmTask?> createTask(Map<String, dynamic> fields) async {
@@ -59,10 +63,10 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
   /// Mock mode has no backend, so an edit cannot persist; null keeps the
   /// caller on its optimistic path rather than claiming a save.
   @override
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields) async => null;
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false}) async => null;
 
   @override
-  Future<void> deleteTask(String id) async {}
+  Future<void> deleteTask(String id, {bool isFollowup = false}) async {}
 
   @override
   Future<void> setTaskStatusByKey(String taskId, String uiStatusKey) async {}

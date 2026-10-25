@@ -1,18 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
-import '../../../../core/filters/saved_view.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/mock_users.dart';
-import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/followup.dart';
 import '../providers/crm_catalog_providers.dart';
-import '../providers/followups_providers.dart';
-import 'tasks_filter_spec.dart' show parseCrmDate;
+import '../providers/leads_providers.dart';
+import '../providers/saved_filters_providers.dart';
+import 'tasks_filter_spec.dart';
 
-/// Follow-ups filter — spec-driven drawer (audit §4). Wired exactly like the
-/// Leads reference. Sections: Type & status · People & company · Due date.
+/// Follow-ups filter — the webapp's task drawer (`TasksListScreen` with
+/// `isFollowup`): Assignee, Status, Task type, Priority, Team and Due date,
+/// sent as the same `/crm/tasks/` params, so a saved view means the same thing
+/// on both lists.
 
 /// The built-in type vocabulary, used only when the org's catalog has not
 /// loaded (mock mode, or a failed fetch).
@@ -24,163 +26,72 @@ const List<String> kBuiltinFollowupTypes = [
   'Call', 'Email', 'Meeting', 'WhatsApp', 'Site visit', 'Payment',
 ];
 
-/// The records the loaded follow-ups hang off, sorted and de-duplicated.
+/// Build the Follow-ups drawer spec.
 ///
-/// Derived from the follow-ups themselves, not from lead/customer companies:
-/// a follow-up row carries no company, and `Followup.company` is really
-/// `related_to.label` — the linked lead or customer's own **name**. Offering
-/// company names against name values produced a filter that matched nothing.
-List<String> _relatedRecords(List<Followup> fus) {
-  final seen = <String>{};
-  for (final f in fus) {
-    if (f.company.isNotEmpty) seen.add(f.company);
-  }
-  final list = seen.toList()..sort();
-  return list;
-}
-
-/// Build the Follow-ups drawer spec (audit §4).
+/// The type options are the org's **follow-up** types, keyed by name — the
+/// value a row's `task_type` carries and `task_type__in` filters on. Users and
+/// teams are the server's `module=followup` pickers, as on the webapp.
 FilterSpec buildFollowupsFilterSpec({
-  required List<Followup> followups,
   List<AppUser> roster = MockUsers.reps,
   List<CatalogOption> typeCatalog = const [],
-  List<CatalogOption> statusCatalog = const [],
   List<CatalogOption> priorityCatalog = const [],
-}) {
-  final users = [
-    for (final u in roster) FilterOption(id: u.id, label: u.name),
-  ];
-  final companies = _relatedRecords(followups)
-      .map((c) => FilterOption(id: c, label: c))
-      .toList();
-  // The org's own types when the catalog has loaded, otherwise the built-in
-  // vocabulary. Both the option id and its label are the type **name**, which
-  // is what a follow-up row carries and what the matcher compares.
-  final typeNames = typeCatalog.isNotEmpty
-      ? [for (final t in typeCatalog) t.name]
-      : kBuiltinFollowupTypes;
-  final types = [
-    for (final t in typeNames) FilterOption(id: t, label: t),
-  ];
-  // The org's own task statuses. The built-in trio is a fallback only: it
-  // cannot express "In Progress" or "Cancelled", which real orgs use.
-  final statuses = statusCatalog.isNotEmpty
-      ? [for (final st in statusCatalog) FilterOption(id: st.key, label: st.name)]
-      : const [
-          FilterOption(id: 'due', label: 'Upcoming'),
-          FilterOption(id: 'overdue', label: 'Overdue'),
-          FilterOption(id: 'done', label: 'Done'),
-        ];
+  List<CatalogOption> statusCatalog = const [],
+  List<CatalogOption> teamCatalog = const [],
+  List<CatalogOption> assignableUsers = const [],
+}) =>
+    buildTasksFilterSpec(
+      title: 'Filter follow-ups by:',
+      roster: roster,
+      typeCatalog: [for (final t in typeCatalog) CatalogOption(id: t.name, name: t.name)],
+      builtinTypes: kBuiltinFollowupTypes,
+      priorityCatalog: priorityCatalog,
+      statusCatalog: statusCatalog,
+      teamCatalog: teamCatalog,
+      assignableUsers: assignableUsers,
+    );
 
-  // Priorities are offered under the org's **own** spelling, unmatched.
-  //
-  // Deliberately unlike the Tasks drawer, which folds them to the built-in
-  // Urgent/High/Medium/Low display vocabulary: `CrmTask.priority` is folded on
-  // the way in, but `Followup.priority` keeps the raw name the API sent. Folding
-  // here would offer "High" against rows carrying "high" and match nothing.
-  final priorities = [
-    for (final p in priorityCatalog)
-      FilterOption(
-        id: p.name,
-        label: p.name,
-        dot: StatusMeta$.priorityTone[priorityKey(p.name)]?.fg,
-      ),
-  ];
-
-  return FilterSpec(
-    title: 'Follow-ups',
-    sections: [
-      // Type and status carry the is / is not toggle, like the Leads drawer's
-      // Source / Product / Stage. The matcher already honoured `isNot` on every
-      // field here — these two simply never offered the control, so "everything
-      // except Email" could not be expressed.
-      FilterSection(title: 'Type & status', fields: [
-        FilterField(
-            id: 'types',
-            label: 'Type',
-            control: FilterControl.checkboxIsNot,
-            isNotToggle: true,
-            twoCol: true,
-            options: types),
-        FilterField(
-            id: 'statuses',
-            label: 'Status',
-            control: FilterControl.checkboxIsNot,
-            isNotToggle: true,
-            twoCol: true,
-            options: statuses),
-      ]),
-      // Omitted entirely when the catalog has not loaded: an empty checkbox
-      // group is a section that cannot do anything, and there is no built-in
-      // priority vocabulary a follow-up row would match.
-      if (priorities.isNotEmpty)
-        FilterSection(title: 'Priority', fields: [
-          FilterField(
-              id: 'priorities',
-              label: 'Priority',
-              control: FilterControl.checkboxIsNot,
-              isNotToggle: true,
-              options: priorities),
-        ]),
-      FilterSection(title: 'People & company', fields: [
-        FilterField(
-            id: 'owners',
-            label: 'Assigned to',
-            control: FilterControl.searchSelect,
-            searchable: true,
-            isNotToggle: true,
-            placeholder: 'Search user…',
-            options: users),
-        // Labelled for what the value actually is. A follow-up row carries no
-        // company: this is `related_to.label`, the linked lead or customer's
-        // own name, so calling it "Company" named the wrong thing.
-        FilterField(
-            id: 'companies',
-            label: 'Related to',
-            control: FilterControl.searchSelect,
-            searchable: true,
-            isNotToggle: true,
-            placeholder: 'Search lead or customer…',
-            options: companies),
-      ]),
-      FilterSection(title: 'Due date', fields: [
-        const FilterField(
-            id: 'due',
-            label: 'Due date',
-            control: FilterControl.dateRange,
-            dateChips: ['overdue', 'today', 'tomorrow', 'next7', 'next30', 'next60', 'next90']),
-      ]),
-    ],
-  );
-}
-
-/// Evaluate a follow-up against applied filter values.
+/// Evaluate a follow-up against applied filter values — mock mode only; the
+/// API runs the drawer server-side.
 bool followupMatchesFilters(Followup f, FilterValues v) {
+  if (!FilterMatch.matchAnyOf(v.choice('assignees'), [f.owner])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('types'), [f.kind])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('statuses'), [f.statusKey])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('priorities'), [f.priority])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('owners'), [f.owner])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('companies'), [f.company])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('priorities'), [priorityKey(f.priority)])) return false;
   if (!FilterMatch.matchDate(v.date('due'), parseCrmDate(f.due))) return false;
   return true;
 }
 
 // ── Providers ──
 
-/// The Follow-ups drawer spec, derived from the company universe.
-final followupsFilterSpecProvider = Provider<FilterSpec>((ref) {
-  return buildFollowupsFilterSpec(
-    followups: ref.watch(followupsAllProvider),
+/// The Follow-ups drawer spec, with the org's own vocabularies.
+final followupsFilterSpecProvider = Provider<FilterSpec>(
+  (ref) => buildFollowupsFilterSpec(
     roster: ref.watch(rosterProvider),
     typeCatalog: ref.watch(followupTypeOptionsProvider),
-    statusCatalog: ref.watch(taskStatusOptionsProvider),
     priorityCatalog: ref.watch(taskPriorityOptionsProvider),
-  );
-});
+    statusCatalog: ref.watch(taskStatusOptionsProvider),
+    teamCatalog: ref.watch(assignableTeamsForModuleProvider('followup')).valueOrNull ?? const [],
+    assignableUsers: ref.watch(assignableUsersForModuleProvider('followup')).valueOrNull ?? const [],
+  ),
+);
+
+/// The drawer as `/crm/tasks/` params — the Tasks codec, since the params and
+/// a saved view's `filter_definition` are the same on both lists.
+final followupFilterCodecProvider = Provider<TaskFilterCodec>((ref) => TaskFilterCodec(
+      statuses: ref.watch(taskStatusOptionsProvider),
+      priorities: ref.watch(taskPriorityOptionsProvider),
+    ));
 
 /// Applied drawer filters for the Follow-ups list (the source of the badge).
-final followupFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final followupFiltersProvider = StateProvider<FilterValues>((ref) {
+  // A new sign-in rebuilds the API service; the next user starts unfiltered.
+  ref.watch(apiServiceProvider);
+  return FilterValues();
+});
 
-/// Saved views for the Follow-ups list (bookmark chips).
-final followupSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+/// Saved views on the Follow-ups list — `/crm/saved-filters/?module=task`,
+/// the **same** set the Tasks list shows (webapp: follow-ups have no module
+/// of their own). Its own controller so applying a view here does not apply
+/// it on Tasks.
+final followupSavedFiltersProvider = StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
+  (ref) => SavedFiltersController(module: 'task', remote: ref.watch(savedFiltersRemoteProvider)),
+);

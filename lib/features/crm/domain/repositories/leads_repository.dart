@@ -62,5 +62,9 @@ abstract class LeadsRepository {
   ///
   /// Returns the updated lead, or null when the response shape is unexpected.
   /// Throws on a rejected write (a converted lead is frozen — `403`).
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields);
+  ///
+  /// [version] is the record's `updated_at` as last read; when given it goes
+  /// out as `If-Match`, and a save on a lead changed elsewhere since is refused
+  /// (412, a conflict) instead of overwriting that change.
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version});
 }

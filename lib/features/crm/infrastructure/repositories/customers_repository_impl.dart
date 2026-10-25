@@ -57,7 +57,7 @@ class CustomersRepositoryImpl implements CustomersRepository {
   /// Mock mode has no backend, so a write is a no-op rather than a failure —
   /// the screens apply their own optimistic state and stay usable.
   @override
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields) async {
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
   }
 

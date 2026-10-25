@@ -5,6 +5,12 @@ import '../domain/entities/view_schema.dart';
 ///
 /// Kept apart from the widget so the request shape is testable without pumping
 /// a screen — the payload contract is the part that must not drift.
+///
+/// Superseded on screen: the New / Edit quote builder now follows the webapp
+/// builder through `quote_builder/quote_builder_draft.dart` (Lead / Customer
+/// mode, pinned prices, free-text lines, clauses, template fields, the
+/// changed-keys PATCH). These types stay for the callers and tests that still
+/// build a bare create body.
 
 /// One line item on a draft quote.
 class QuoteDraftLine {

@@ -41,9 +41,10 @@ void main() {
         statusNames: _statusNames,
       )!;
 
+      // The webapp's wording: "Updated lead", detail "status: New → Qualified".
       expect(e.kind, AuditEventKind.statusChanged);
-      expect(e.title, 'Status changed to Qualified');
-      expect(e.subtitle, 'From New · by Admin Acme');
+      expect(e.title, 'Updated lead');
+      expect(e.subtitle, 'status: New → Qualified · by Admin Acme');
     });
 
     test('an unknown stage still reads sensibly, never as a uuid', () {
@@ -53,13 +54,13 @@ void main() {
         }),
       )!;
 
-      expect(e.title, 'Status changed');
-      expect(e.title, isNot(contains('0d49d620')));
+      expect(e.title, 'Updated lead');
+      expect(e.subtitle, isNot(contains('0d49d620')));
     });
   });
 
   group('child writes', () {
-    test('a note rolled up onto the lead reads as "Note added"', () {
+    test('a note rolled up onto the lead reads as "Created note"', () {
       final e = AuditLogRemoteDataSource.mapEntry(
         _row(id: 'a2', changes: {
           'related_change': {'type': 'Note', 'action': 'create', 'record_id': 'n1'},
@@ -67,7 +68,7 @@ void main() {
       )!;
 
       expect(e.kind, AuditEventKind.noteAdded);
-      expect(e.title, 'Note added');
+      expect(e.title, 'Created note');
       expect(e.subtitle, 'by Admin Acme');
     });
 
@@ -79,20 +80,48 @@ void main() {
       )!;
 
       expect(e.kind, AuditEventKind.childAdded);
-      expect(e.title, 'Attachment added');
+      expect(e.title, 'Created Attachment');
     });
   });
 
   group('field writes', () {
-    test('one field names it, with the _id suffix stripped', () {
+    test('an id-only field names the field instead of printing the id', () {
       final e = AuditLogRemoteDataSource.mapEntry(
         _row(id: 'a4', changes: {
-          'request_body': {'lead_owner_id': 'u1'},
+          'request_body': {'lead_owner': '0d49d620-1b84-4f0c-a049-4301e7816235'},
         }),
       )!;
 
       expect(e.kind, AuditEventKind.fieldChanged);
-      expect(e.title, 'Lead owner updated');
+      expect(e.title, 'Updated lead');
+      expect(e.subtitle, 'Changed lead owner · by Admin Acme');
+    });
+
+    test('scalar fields show old → new from the before snapshot', () {
+      final e = AuditLogRemoteDataSource.mapEntry(
+        _row(id: 'a4b', changes: {
+          'before': {'email': 'old@x.in'},
+          'request_body': {'email': 'new@x.in'},
+        }),
+      )!;
+
+      expect(e.subtitle, 'email: old@x.in → new@x.in · by Admin Acme');
+    });
+
+    test('a recorded diff is the whole story', () {
+      final e = AuditLogRemoteDataSource.mapEntry(
+        _row(id: 'a4c', changes: {
+          'request_body': {'status_id': 'x'},
+          'diff': [
+            {'field': 'status', 'label': 'Status', 'old': 'Contacted', 'new': 'Qualified'},
+            {'field': 'lead_score', 'label': 'Lead score', 'old': 10, 'new': 20},
+            {'field': 'assignees', 'label': 'Assignees', 'added': ['Asha'], 'removed': []},
+          ],
+        }),
+      )!;
+
+      expect(e.title, 'Updated lead');
+      expect(e.subtitle, 'Status: Contacted → Qualified; Assignees: +Asha · by Admin Acme');
     });
 
     test('several fields are counted, then listed', () {
@@ -102,8 +131,8 @@ void main() {
         }),
       )!;
 
-      expect(e.title, '3 fields updated');
-      expect(e.subtitle, startsWith('Email, Mobile no, Website'));
+      expect(e.title, 'Updated lead');
+      expect(e.subtitle, startsWith('email: a@b.c, contact: +91, website: x'));
     });
   });
 
@@ -132,16 +161,16 @@ void main() {
         _row(id: 'a8', changes: {'something_new': true}),
       )!;
 
-      expect(e.title, 'Record updated');
+      expect(e.title, 'Updated lead');
       expect(e.kind, AuditEventKind.other);
     });
 
-    test('a missing actor leaves the byline empty rather than "by "', () {
+    test('a missing actor reads as the system, like the webapp', () {
       final e = AuditLogRemoteDataSource.mapEntry(
         _row(id: 'a9', actor: '', action: 'create'),
       )!;
 
-      expect(e.subtitle, isEmpty);
+      expect(e.subtitle, 'by System');
     });
 
     test('mapEntries drops junk and keeps the order it was given', () {
@@ -219,6 +248,27 @@ void main() {
           AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Quote')!.title,
           'Quote created');
       expect(AuditLogRemoteDataSource.mapEntry(createRow())!.title, 'Lead created');
+      expect(
+          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Customer')!.title,
+          'Customer created');
+    });
+
+    test('tasks and follow-ups use the webapp\'s "Created task" wording', () {
+      Map<String, dynamic> row(String action) => {
+            'audit_log_id': 'c2',
+            'action': action,
+            'timestamp': '2026-08-12T17:45:00Z',
+            'changes': {
+              'request_body': {'title': 'Call back'},
+            },
+          };
+
+      expect(AuditLogRemoteDataSource.mapEntry(row('create'), recordLabel: 'Task')!.title,
+          'Created task');
+      expect(AuditLogRemoteDataSource.mapEntry(row('create'), recordLabel: 'Follow-up')!.title,
+          'Created follow-up');
+      expect(AuditLogRemoteDataSource.mapEntry(row('update'), recordLabel: 'Task')!.title,
+          'Updated task');
     });
   });
 }

@@ -48,77 +48,21 @@ Followup _fu({
     );
 
 List<String> _typeOptions({List<CatalogOption> catalog = const []}) {
-  final spec = buildFollowupsFilterSpec(
-    followups: const [],
-    typeCatalog: catalog,
-  );
-  final field = spec.sections
-      .expand((s) => s.fields)
-      .firstWhere((f) => f.id == 'types');
+  final spec = buildFollowupsFilterSpec(typeCatalog: catalog);
+  final field = spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'types');
   return [for (final o in field.options) o.id];
 }
 
-List<String> _priorityOptions({List<CatalogOption> catalog = const []}) {
-  final spec = buildFollowupsFilterSpec(
-    followups: const [],
-    priorityCatalog: catalog,
-  );
-  final fields = spec.sections.expand((s) => s.fields).where((f) => f.id == 'priorities');
-  return fields.isEmpty ? const [] : [for (final o in fields.first.options) o.id];
-}
+FilterValues _v(Map<String, FilterValue> m) => FilterValues(m);
 
 void main() {
-  group('priority', () {
-    test('offers the org spelling, unfolded', () {
-      // `Followup.priority` keeps the raw API name, unlike `CrmTask.priority`
-      // which is folded to the built-in display vocabulary. Offering "High"
-      // here would match nothing on a row carrying "high".
-      expect(_priorityOptions(catalog: _orgPriorities),
-          ['low', 'medium', 'high', 'critical']);
-    });
-
-    test('filters rows by that spelling', () {
-      final values = FilterValues()..['priorities'] = ChoiceValue(ids: {'high'});
-
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), values), isTrue);
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), values), isFalse);
-    });
-
-    test('is negatable like the rest of the drawer', () {
-      final values = FilterValues()
-        ..['priorities'] = ChoiceValue(ids: {'low'}, isNot: true);
-
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), values), isFalse);
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'critical'), values), isTrue);
-    });
-
-    test('the section is omitted when the catalog has not loaded', () {
-      // An empty checkbox group is a section that can do nothing, and there is
-      // no built-in priority vocabulary a follow-up row would match.
-      expect(_priorityOptions(), isEmpty);
-    });
-  });
-
   group('the drawer offers the org’s types', () {
-    test('uses the catalog when it has loaded', () {
-      expect(_typeOptions(catalog: _orgTypes),
-          ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site Visit']);
+    test('uses the catalog when it has loaded, by name', () {
+      expect(_typeOptions(catalog: _orgTypes), ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site Visit']);
     });
 
     test('no longer offers a type this org does not have', () {
-      final options = _typeOptions(catalog: _orgTypes);
-
-      expect(options, isNot(contains('Payment')),
-          reason: 'the hard-coded list invented it');
-    });
-
-    test('spells the type exactly as the org does', () {
-      final options = _typeOptions(catalog: _orgTypes);
-
-      // Matching is an exact string compare, so the old 'Site visit' could
-      // never match a row carrying 'Site Visit'.
-      expect(options, contains('Site Visit'));
-      expect(options, isNot(contains('Site visit')));
+      expect(_typeOptions(catalog: _orgTypes), isNot(contains('Payment')));
     });
 
     test('falls back to the built-in list when the catalog is empty', () {
@@ -126,68 +70,24 @@ void main() {
     });
   });
 
-  group('matching against the org spelling', () {
-    test('the org type now filters its rows', () {
-      final values = FilterValues()
-        ..['types'] = ChoiceValue(ids: {'Site Visit'});
-
-      expect(followupMatchesFilters(_fu(kind: 'Site Visit'), values), isTrue);
-      expect(followupMatchesFilters(_fu(kind: 'Call'), values), isFalse);
+  group('matching (mock mode — the API filters server-side)', () {
+    test('the org type filters its rows', () {
+      expect(followupMatchesFilters(_fu(kind: 'Site Visit'), _v({'types': ChoiceValue(ids: {'Site Visit'})})), isTrue);
+      expect(followupMatchesFilters(_fu(kind: 'Call'), _v({'types': ChoiceValue(ids: {'Site Visit'})})), isFalse);
     });
 
-    test('the old hard-coded spelling matched nothing — why this mattered', () {
-      final values = FilterValues()
-        ..['types'] = ChoiceValue(ids: {'Site visit'});
-
-      expect(followupMatchesFilters(_fu(kind: 'Site Visit'), values), isFalse);
-    });
-  });
-
-  group('is / is not', () {
-    FilterField fieldNamed(String id) => buildFollowupsFilterSpec(
-          followups: const [],
-          typeCatalog: _orgTypes,
-        ).sections.expand((s) => s.fields).firstWhere((f) => f.id == id);
-
-    test('every choice field in the drawer offers the toggle', () {
-      for (final id in ['types', 'statuses', 'owners', 'companies']) {
-        expect(fieldNamed(id).isNotToggle, isTrue,
-            reason: '$id should be negatable');
-      }
+    test('priority matches the folded label the drawer offers', () {
+      final spec = buildFollowupsFilterSpec(priorityCatalog: _orgPriorities);
+      final ids = spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'priorities').options.map((o) => o.id);
+      expect(ids, contains('High'));
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), _v({'priorities': ChoiceValue(ids: {'High'})})), isTrue);
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), _v({'priorities': ChoiceValue(ids: {'High'})})), isFalse);
     });
 
-    test('"is not" on Type excludes the chosen types, keeps the rest', () {
-      final values = FilterValues()
-        ..['types'] = ChoiceValue(ids: {'Email'}, isNot: true);
-
-      expect(followupMatchesFilters(_fu(kind: 'Email'), values), isFalse);
-      expect(followupMatchesFilters(_fu(kind: 'Call'), values), isTrue);
-    });
-
-    test('"is not" on Status excludes the chosen statuses', () {
-      final values = FilterValues()
-        ..['statuses'] = ChoiceValue(ids: {'done'}, isNot: true);
-
-      expect(followupMatchesFilters(_fu(kind: 'Call', status: 'done'), values), isFalse);
-      expect(followupMatchesFilters(_fu(kind: 'Call', status: 'due'), values), isTrue);
-    });
-
-    test('negating several types excludes all of them', () {
-      final values = FilterValues()
-        ..['types'] = ChoiceValue(ids: {'Email', 'WhatsApp'}, isNot: true);
-
-      expect(followupMatchesFilters(_fu(kind: 'Email'), values), isFalse);
-      expect(followupMatchesFilters(_fu(kind: 'WhatsApp'), values), isFalse);
-      expect(followupMatchesFilters(_fu(kind: 'Meeting'), values), isTrue);
-    });
-
-    test('flipping to "is not" without picking anything filters nothing', () {
-      final values = FilterValues()
-        ..['types'] = ChoiceValue(ids: {}, isNot: true);
-
-      expect(followupMatchesFilters(_fu(kind: 'Email'), values), isTrue);
-      // …and does not light up the filter badge.
-      expect(values.activeCount, 0);
+    test('"is not" on priority excludes the chosen ones', () {
+      final v = _v({'priorities': ChoiceValue(ids: {'High'}, isNot: true)});
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), v), isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), v), isTrue);
     });
   });
 

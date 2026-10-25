@@ -6,7 +6,11 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../accounting/presentation/components/product_tax_profile_card.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/models/note.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/notes_thread.dart';
+import '../../../../data/api/roster.dart';
+import '../../../../data/api/user_directory.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -16,10 +20,10 @@ import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
-import '../../../notes/application/providers/notes_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/utils/relative_time.dart';
 import '../../application/providers/audit_log_providers.dart';
+import '../../application/providers/crm_notes_providers.dart';
 import '../../application/product_columns.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
@@ -29,7 +33,7 @@ import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/package_composition.dart';
 import '../../domain/entities/product.dart';
 import '../components/crm_async.dart';
-import '../components/finance_widgets.dart';
+import '../components/finance_widgets.dart' hide NoteEntry;
 
 /// Product detail — header (name + active toggle + edit), description,
 /// performance, pricing, details and notes.
@@ -42,7 +46,7 @@ class ProductDetailScreen extends ConsumerWidget {
     // The row and its notes are their own calls; reloading only the list left
     // both stale under a pull.
     ref.invalidate(productDetailProvider(id));
-    ref.invalidate(productNotesProvider(id));
+    ref.invalidate(crmNotesProvider(_notesSeed(id, null)));
     ref.invalidate(productActivityLogProvider(id));
     // The org's own detail layout drives the Details card, and an admin can
     // change it while the app is open — a pull is the moment to re-read it.
@@ -50,7 +54,6 @@ class ProductDetailScreen extends ConsumerWidget {
     await settle([
       ref.read(productsProvider.future),
       ref.read(productDetailProvider(id).future),
-      ref.read(productNotesProvider(id).future),
       ref.read(productActivityLogProvider(id).future),
       ref.read(productDetailSchemaFutureProvider.future),
     ]);
@@ -98,27 +101,6 @@ class ProductDetailScreen extends ConsumerWidget {
         body: 'This catalog item may have been removed or you no longer have access to it.',
       ));
     }
-
-    // The entity's own `notes` are the mock seed's; a real product's notes come
-    // from the polymorphic notes endpoint, which is empty in mock mode.
-    final fetched = ref.watch(productNotesProvider(id)).valueOrNull ?? const [];
-    final notes = fetched.isNotEmpty
-        ? [
-            for (final n in fetched)
-              NoteEntry(
-                  initials: _initials(n.author),
-                  author: n.author,
-                  time: n.time,
-                  body: n.body),
-          ]
-        : [
-            for (final n in product.notes)
-              NoteEntry(
-                  initials: _initials(n.author),
-                  author: n.author,
-                  time: n.time,
-                  body: n.body),
-          ];
 
     return Container(
       color: AppColors.bgDetail,
@@ -174,12 +156,7 @@ class ProductDetailScreen extends ConsumerWidget {
                 // unless accounting is active and setup is readable.
                 if (!product.isPackage && ApiConfig.apiEnabled) ProductTaxProfileCard(productId: product.id),
                 SizedBox(height: 14.h),
-                NotesCard(
-                  title: 'Notes',
-                  countLabel: '${notes.length} ${notes.length == 1 ? 'note' : 'notes'}',
-                  notes: notes,
-                  onSend: (body) => _addNote(ref, id, body),
-                ),
+                _notesThread(ref, id, product),
                 if (ApiConfig.apiEnabled) ...[
                   SizedBox(height: 14.h),
                   _activityCard(ref, id),
@@ -704,37 +681,38 @@ class ProductDetailScreen extends ConsumerWidget {
     }
   }
 
-  /// Posts an internal note against the product
-  /// (`/crm/notes/` with `related_to=product`, verified live).
-  ///
-  /// The composer used to toast "Note added" and post nothing, so the note
-  /// vanished the moment the card reloaded.
-  Future<void> _addNote(WidgetRef ref, String id, String body) async {
-    final text = body.trim();
-    if (text.isEmpty) return;
-    if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show('Note added');
-      return;
-    }
-    try {
-      await ref.read(notesRepositoryProvider).addNote(
-            relatedTo: 'product',
-            relatedToId: id,
-            body: text,
-          );
-      ref.invalidate(productNotesProvider(id));
-      ref.read(toastProvider.notifier).show('Note added');
-    } on AppError catch (e) {
-      ref.read(toastProvider.notifier).showError(e.message);
-    }
+  /// The notes thread's seed: the product's remote notes (`related_to=product`)
+  /// in API mode, the catalog item's own seed notes otherwise.
+  static CrmNotesSeed _notesSeed(String id, Product? product) => CrmNotesSeed(
+        id,
+        () => [
+          for (final (i, n) in (product?.notes ?? const []).indexed)
+            NoteEntry(id: 'product-note-$i', author: n.author, time: n.time, body: n.body),
+        ],
+        apiModel: 'product',
+      );
+
+  /// Webapp NotesPanel (`product`): the shared notes section — Tag, Insert,
+  /// replies and the author's pin / edit / delete. Products have no mention
+  /// source on the webapp, so there is no Mention picker.
+  Widget _notesThread(WidgetRef ref, String id, Product product) {
+    final seed = _notesSeed(id, product);
+    final notifier = ref.read(crmNotesProvider(seed).notifier);
+    return NotesThread(
+      author: ref.watch(noteAuthorProvider),
+      notes: ref.watch(crmNotesProvider(seed)),
+      onAddNote: (body, atts) => notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) => notifier.addReply(noteId, body, ref.read(noteAuthorProvider)),
+      webappToolbar: true,
+      noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
+      currentUserId: UserDirectory.currentUserId,
+      onAddTypedNote: (body, atts, typeId, typeName, mentions) => notifier.addNote(body, atts, ref.read(noteAuthorProvider),
+          noteTypeId: typeId, noteTypeName: typeName, mentionedUserIds: mentions, authorId: UserDirectory.currentUserId),
+      onTogglePin: notifier.togglePin,
+      onEditNote: (id, body) => notifier.editNote(id, body),
+      onDeleteNote: notifier.deleteNote,
+    );
   }
 
   static String _orDash(String v) => v.isEmpty ? '—' : v;
-
-  String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts.first.substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
-  }
 }

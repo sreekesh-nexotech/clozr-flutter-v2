@@ -76,6 +76,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _busy = true;
       _error = null;
     });
+    ref.read(signOutReasonProvider.notifier).state = null;
     try {
       await action();
     } on AppError catch (e) {
@@ -137,9 +138,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               });
           }
         },
-        // A wrong password comes back as a bare 401; the generic "session
-        // expired" copy would be misleading on a fresh sign-in.
-        mapError: (e) => e.type == AppErrorType.unauthorized
+        // A refused sign-in shows the server's own words, as the webapp does
+        // ("No active account found with the given credentials" — which also
+        // covers a deactivated account). Only a bare 401 with no message
+        // falls back, since "session expired" would mislead on a fresh sign-in.
+        mapError: (e) => e.type == AppErrorType.unauthorized &&
+                e.message == 'Your session has expired. Please sign in again.'
             ? 'Incorrect email or password.'
             : null,
       );
@@ -172,6 +176,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     if (_backupCodes.isNotEmpty) return _backupCodesView();
+    final reason = ref.watch(signOutReasonProvider);
+    final signOutMessage = reason == null ? null : signOutReasonMessages[reason];
     return Scaffold(
       backgroundColor: AppColors.bgScreen,
       body: SafeArea(
@@ -207,6 +213,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: AppText.bodyMuted(),
                   ),
                   SizedBox(height: 24.h),
+                  if (_error == null && signOutMessage != null) ...[
+                    // The webapp's sign-out notice: why the server ended the
+                    // last session, until the next sign-in attempt.
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.r),
+                      decoration: BoxDecoration(
+                        color: AppColors.blueBright.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10.r),
+                      ),
+                      child: Text(
+                        signOutMessage,
+                        style: AppText.caption(color: AppColors.blueBright),
+                      ),
+                    ),
+                    SizedBox(height: 16.h),
+                  ],
                   if (_error != null) ...[
                     Container(
                       padding: EdgeInsets.all(12.r),

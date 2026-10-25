@@ -9,7 +9,12 @@ import 'shell_providers.dart';
 /// single global `+` is always contextual to the current screen. When a screen
 /// registers nothing, the nav falls back to a route-based default.
 class AddAction {
-  const AddAction({required this.label, required this.run});
+  const AddAction({required this.label, required this.run, this.module});
+
+  /// The backend module the action creates in. When set, the `+` checks the
+  /// role's `can_create` there first and, without it, says so instead of
+  /// opening a form the server would refuse (webapp: disabled "Add …").
+  final String? module;
 
   /// e.g. "Add lead", "New project" — used for a11y / tooltip.
   final String label;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -16,6 +17,11 @@ import '../../domain/entities/view_schema.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 import 'option_picker_sheet.dart';
 import '../sheets/add_sheet_kit.dart';
+import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_text_styles.dart';
+import '../../application/providers/leads_providers.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/domain/entities/acc_masters.dart';
 
 /// A lead form built from the org's own layout rather than a fixed field list.
 ///
@@ -36,6 +42,15 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
     this.writeKey,
     this.writeMulti,
     this.diffAgainstRow = false,
+    this.includeCustomFields = false,
+    this.hiddenColumns = const {},
+    this.initialChoices = const {},
+    this.alwaysSendCustomBooleans = false,
+    this.onValueChanged,
+    this.mobileRequired = true,
+    this.requiredOnly,
+    this.webAddLeadForm = false,
+    this.hints = const {},
   });
 
   /// The org's detail layout. Only [ViewSchema.editableColumns] are rendered.
@@ -83,6 +98,47 @@ class LeadSchemaForm extends ConsumerStatefulWidget {
   /// rewrites every configured column.
   final bool diffAgainstRow;
 
+  /// Also render the org's custom fields and write them as
+  /// `custom_fields: {<slug>: value}` (the lead form, like the webapp's).
+  final bool includeCustomFields;
+
+  /// Columns not rendered at all (a task's `committed_due_date` on create).
+  final Set<String> hiddenColumns;
+
+  /// The id a choice column starts on when creating (the org's default
+  /// status / priority), until the user picks.
+  final Map<String, String> initialChoices;
+
+  /// Webapp task form: a custom boolean is always sent, unticked as false.
+  final bool alwaysSendCustomBooleans;
+
+  /// Told after a picker or date changes a value (the task form watches its
+  /// type and due date).
+  final VoidCallback? onValueChanged;
+
+  /// Whether `mobile_no` is required even when the org has not fixed it. A
+  /// lead needs a contact number; a customer (webapp Add customer) needs only
+  /// its name.
+  final bool mobileRequired;
+
+  /// When set, exactly these columns are required (and starred) — nothing the
+  /// schema flags `is_fixed` adds to it. The customer forms pass `{'name'}`:
+  /// on web only the name is required, while the customer schema marks the
+  /// SLA columns fixed, which made the form refuse to save without them.
+  final Set<String>? requiredOnly;
+
+  /// Webapp Add lead (`toLeadCreateForm` + `addLeadFields`): the org's layout
+  /// plus Lead owner / Assignees / Team when the layout hides one, and the
+  /// "Contact name" / "Contact phone" / "WhatsApp number" labels.
+  final bool webAddLeadForm;
+
+  /// Placeholder overrides by column (webapp Add customer: the name's
+  /// "e.g. Acme Retail Pvt Ltd"); others keep "Enter <label>…".
+  final Map<String, String> hints;
+
+  bool _isRequiredCol(ViewColumn c, bool fallback) =>
+      requiredOnly == null ? fallback : requiredOnly!.contains(c.name);
+
   @override
   ConsumerState<LeadSchemaForm> createState() => LeadSchemaFormState();
 }
@@ -123,6 +179,71 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   final Map<String, String> _seededText = {};
   final Map<String, String?> _seededPhone = {};
 
+  /// Inline error per column name — the webapp shows field errors under the
+  /// input they belong to, its own checks and the server's alike.
+  final Map<String, String> _errors = {};
+
+  /// One key per rendered column, so the first error can be scrolled to.
+  final Map<String, GlobalKey> _fieldKeys = {};
+
+  /// Webapp "WhatsApp same as phone": off by default; while on, the WhatsApp
+  /// box mirrors the contact phone and is not editable.
+  bool _whatsappSame = false;
+
+  /// Quantity typed per selected product (blank means 1), for a lead's
+  /// `products` — sent as `{product_id, quantity}` like the webapp.
+  final Map<String, TextEditingController> _qty = {};
+
+  List<ViewColumn> get _columns {
+    final lead = widget.schema.column('lead_name') != null;
+    final cols = [
+      for (final c in widget.includeCustomFields ? widget.schema.formColumns : widget.schema.editableColumns)
+        if (!widget.hiddenColumns.contains(c.name) && !(lead && neverLeadInputs(c.name))) c,
+    ];
+    if (!widget.webAddLeadForm) return cols;
+    var order = cols.fold<int>(0, (m, c) => c.order > m ? c.order : m);
+    for (final extra in addLeadAssignmentColumns) {
+      if (!cols.any((c) => c.name == extra.name)) cols.add(extra.withOrder(++order));
+    }
+    return [for (final c in cols) c.withLabel(addLeadLabel(c.name) ?? c.label)];
+  }
+
+  /// Lead columns the webapp never renders as inputs, whatever the org's
+  /// layout shows: the consent stamp (written by web-form intake only), the
+  /// call telemetry (`CALL_STAT_KEYS`, read-only) and the dial-code
+  /// companions (each phone input carries its own picker).
+  static bool neverLeadInputs(String name) =>
+      const {
+        'consent_captured_at',
+        'consent_notice_version',
+        'last_call_at',
+        'last_call_outcome',
+        'consecutive_unanswered_calls',
+        'calls_last_7d',
+      }.contains(name) ||
+      name.endsWith('_country_code');
+
+  /// Webapp `ASSIGNMENT_FIELDS`: always on the Add lead form.
+  static const addLeadAssignmentColumns = [
+    ViewColumn(name: 'lead_owner', label: 'Lead owner', order: 0, type: 'foreignkey', inFields: true, relatedModel: 'User'),
+    ViewColumn(name: 'assignees', label: 'Assignees', order: 0, type: 'manytomany', inFields: true, relatedModel: 'User'),
+    ViewColumn(name: 'assigned_team', label: 'Team', order: 0, type: 'foreignkey', inFields: true, relatedModel: 'Team'),
+  ];
+
+  /// Webapp Add lead labels (LD-15).
+  static String? addLeadLabel(String name) => switch (name) {
+        'lead_name' => 'Contact name',
+        'mobile_no' => 'Contact phone',
+        'whatsapp_no' => 'WhatsApp number',
+        _ => null,
+      };
+
+  static const unassignedOwner = '__unassigned__';
+  static const noneOption = '__none__';
+  static const indianMobileMessage =
+      'Enter a 10-digit Indian mobile number starting with 6, 7, 8 or 9.';
+  static const quantityMessage = 'Quantity must be more than 0, with at most 3 decimals.';
+
   @override
   void initState() {
     super.initState();
@@ -144,25 +265,36 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     for (final c in _phone.values) {
       c.dispose();
     }
+    for (final c in _qty.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   /// Copies the record into the fields, once.
   void _seed() {
-    final columns = widget.schema.editableColumns;
+    final columns = _columns;
     if (columns.isEmpty) return;
     final row = widget.row;
     // A new lead has no record to wait for; an edit does.
     if (row == null) return;
     _seeded = true;
 
+    final custom = row['custom_fields'] is Map ? row['custom_fields'] as Map : const {};
     for (final c in columns) {
-      final raw = row[c.name];
+      final raw = c.isCustom ? custom[c.customKey] : row[c.name];
       if (_isPhoneColumn(c)) {
         _phoneController(c.name).setPendingSeed(raw?.toString());
         _seededPhone[c.name] = raw?.toString();
       } else if (c.isChoice) {
         _raw[c.name] = raw;
+        if (_isProducts(c) && raw is List) {
+          for (final p in raw) {
+            if (p is Map && p['product_id'] != null && p['quantity'] != null) {
+              _qtyController('${p['product_id']}').text = _trimQty('${p['quantity']}');
+            }
+          }
+        }
       } else {
         _controller(c.name).text = _textOf(raw);
         _seededText[c.name] = _controller(c.name).text;
@@ -184,11 +316,94 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   PhoneController _phoneController(String name) =>
       _phone.putIfAbsent(name, PhoneController.new);
 
+  TextEditingController _qtyController(String productId) =>
+      _qty.putIfAbsent(productId, TextEditingController.new);
+
+  /// "1.000" → "1": the record pads quantities to three places.
+  static String _trimQty(String q) {
+    if (!q.contains('.')) return q;
+    final t = q.replaceAll(RegExp(r'0+$'), '');
+    return t.endsWith('.') ? t.substring(0, t.length - 1) : t;
+  }
+
+  bool _isProducts(ViewColumn c) => c.name == 'products' && c.relatedModel == 'Product';
+  bool _isOwner(ViewColumn c) => c.name == 'lead_owner' && c.relatedModel == 'User';
+  bool get _isCreate => !widget.diffAgainstRow;
+
+  bool get _hasBothPhones {
+    final names = {for (final c in _columns) c.name};
+    return names.contains('mobile_no') && names.contains('whatsapp_no');
+  }
+
+  /// Webapp `indianMobileProblem`: only a +91 number is checked, and its
+  /// national part must be ten digits starting 6–9.
+  static bool _indianMobileOk(PhoneController p) {
+    if (p.iso2 != 'IN') return true;
+    return RegExp(r'^[6-9][0-9]{9}$').hasMatch(p.digits.text.replaceAll(RegExp(r'\D'), ''));
+  }
+
+  /// Puts [errors] (column or API key → message) under their inputs and
+  /// scrolls to the first one. API keys are folded onto the column they
+  /// came from: `status_id` → `status`, `*_country_code` → the number,
+  /// `first_name`/`last_name` → `lead_name`.
+  void showErrors(Map<String, String> errors) {
+    final columns = {for (final c in _columns) c.name};
+    String? colFor(String key) {
+      if (columns.contains(key)) return key;
+      if (key == 'status_id' && columns.contains('status')) return 'status';
+      if (key.endsWith('_country_code')) {
+        final n = key.replaceFirst('_country_code', '_no');
+        if (columns.contains(n)) return n;
+      }
+      if ((key == 'first_name' || key == 'last_name') && columns.contains('lead_name')) return 'lead_name';
+      if (columns.contains('custom_fields.$key')) return 'custom_fields.$key';
+      return null;
+    }
+
+    setState(() {
+      _errors.clear();
+      for (final e in errors.entries) {
+        final col = colFor(e.key);
+        if (col != null) _errors.putIfAbsent(col, () => e.value);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final c in _columns) {
+        if (!_errors.containsKey(c.name)) continue;
+        final ctx = _fieldKeys[c.name]?.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 250));
+        }
+        break;
+      }
+    });
+  }
+
+  /// The current text of a plain or text-choice column (`task_type` gives the
+  /// picked label, `due_date` the ISO date).
+  String valueOf(String name) => _controller(name).text;
+
+  /// Whether any server error key landed under an input.
+  bool hasInlineError(String key) =>
+      _errors.containsKey(key) ||
+      (key == 'status_id' && _errors.containsKey('status')) ||
+      ((key == 'first_name' || key == 'last_name') && _errors.containsKey('lead_name'));
+
   /// The id currently selected for a choice column — the user's pick if they
   /// made one, otherwise whatever the record holds.
-  String? _selectedId(ViewColumn c) => _choice.containsKey(c.name)
-      ? _choice[c.name]
-      : _idOf(_raw[c.name], _optionsFor(c));
+  String? _selectedId(ViewColumn c) {
+    if (_choice.containsKey(c.name)) return _choice[c.name];
+    if (_isCreate && widget.initialChoices[c.name] != null) return widget.initialChoices[c.name];
+    if (_isOwner(c)) {
+      // A new lead starts as mine (webapp pre-fills me); a record with no
+      // owner reads as Unassigned.
+      final raw = _raw[c.name];
+      if (raw == null) return _isCreate ? 'me' : unassignedOwner;
+      final id = raw is Map ? raw['user_id']?.toString() : raw.toString();
+      return id == null || id.isEmpty ? unassignedOwner : UserDirectory.mapUserId(id);
+    }
+    return _idOf(_raw[c.name], _optionsFor(c));
+  }
 
   List<String> _selectedIds(ViewColumn c) =>
       _multi[c.name] ?? _idsOf(_raw[c.name], _optionsFor(c));
@@ -203,6 +418,20 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   /// re-picking the value that was already set reads as unchanged, and a
   /// catalog arriving late does not register as an edit on its own.
   bool _isChanged(ViewColumn c) {
+    if (c.name == 'whatsapp_no' && _whatsappSame) return true;
+    if (_isProducts(c)) {
+      final raw = _raw[c.name];
+      final was = <String, String>{
+        if (raw is List)
+          for (final p in raw)
+            if (p is Map && p['product_id'] != null) '${p['product_id']}': _trimQty('${p['quantity'] ?? '1'}'),
+      };
+      final now = <String, String>{
+        for (final id in _selectedIds(c))
+          id: _qtyController(id).text.trim().isEmpty ? '1' : _qtyController(id).text.trim(),
+      };
+      return was.length != now.length || now.entries.any((e) => was[e.key] != e.value);
+    }
     if (_isPhoneColumn(c)) {
       final seeded = _seededPhone[c.name];
       final now = _phoneController(c.name).toE164();
@@ -212,6 +441,7 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     }
     switch (c.type) {
       case 'foreignkey':
+        if (_isOwner(c)) return _choice.containsKey(c.name);
         return _selectedId(c) != _idOf(_raw[c.name], _optionsFor(c));
       case 'manytomany':
         final now = _selectedIds(c).toSet();
@@ -230,7 +460,10 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   Map<String, dynamic> get payload {
     final out = <String, dynamic>{};
     final diffing = widget.diffAgainstRow && _seeded;
-    for (final c in widget.schema.editableColumns) {
+    final customChanged = _columns.any((c) => c.isCustom && (!diffing || _isChanged(c)));
+    for (final c in _columns) {
+      // Collected into one `custom_fields` object below.
+      if (c.isCustom) continue;
       // An untouched field is not an instruction. Sending it anyway rewrote
       // every configured column on every save, and made an empty payload —
       // the caller's "nothing changed" signal — unreachable.
@@ -243,8 +476,32 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
         // (whatsapp_no) omitting the key is the safer default than clearing
         // a number the record already had, should a prefill race leave it
         // looking empty for a frame.
-        final value = _phoneController(c.name).toE164();
+        final source = c.name == 'whatsapp_no' && _whatsappSame ? 'mobile_no' : c.name;
+        final value = _phoneController(source).toE164();
         if (value != null) out[key] = value;
+        continue;
+      }
+      if (_isOwner(c)) {
+        final picked = _selectedId(c);
+        // Webapp: Unassigned is an explicit null; "me" on a create is left to
+        // the server, which makes the creator the owner.
+        if (picked == unassignedOwner) {
+          out[key] = null;
+        } else if (picked != null && !(_isCreate && picked == 'me')) {
+          final id = UserDirectory.realUserId(picked);
+          if (id != null) out[key] = id;
+        }
+        continue;
+      }
+      if (_isProducts(c)) {
+        out[key] = [
+          for (final id in _selectedIds(c))
+            if (_known(c, id) != null)
+              {
+                'product_id': id,
+                'quantity': _qtyController(id).text.trim().isEmpty ? '1' : _qtyController(id).text.trim(),
+              },
+        ];
         continue;
       }
       switch (c.type) {
@@ -255,27 +512,108 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
           // unresolved value would either 400 or overwrite it with rubbish.
           final id = _writeId(c, _known(c, _selectedId(c)));
           // Omitted rather than sent as null: null *clears* the field, and a
-          // value we could not resolve is not an instruction to clear it.
-          if (id != null) out[key] = id;
+          // value we could not resolve is not an instruction to clear it —
+          // unless the user explicitly picked "No territory" on an edit.
+          if (id != null) {
+            out[key] = id;
+          } else if (diffing && _choice.containsKey(c.name) && _choice[c.name] == null) {
+            out[key] = null;
+          }
         case 'manytomany':
-          final ids = <String>[
+          var ids = <String>[
             for (final id in _selectedIds(c))
               if (_writeId(c, _known(c, id)) != null) _writeId(c, _known(c, id))!,
           ];
+          final owner = c.name == 'assignees' && widget.optionsByColumn.containsKey('assignees') ? _ownerOf() : null;
+          if (owner != null) {
+            // Webapp: assignees = [owner, ...extras]; the owner is always one.
+            ids = [owner, ...ids.where((i) => i != owner)];
+            if (ids.length == 1 && _isCreate) continue;
+          }
           out[key] = widget.writeMulti?.call(c, ids) ?? ids;
         case 'boolean':
-          out[key] = _controller(c.name).text.trim().toLowerCase() == 'yes';
+          // Webapp tri-state: Yes / No / blank (unknown), and a blank is left
+          // out of a create rather than written as No.
+          final b = _boolValue(c);
+          if (b != null || !_isCreate) out[key] = b;
         default:
           // Typed coercion lives in `schemaWriteValue` — a number field's box
           // has to be sent as a number, and an empty one as null rather than
           // `""`, which the API rejects outright.
           final text = _choiceValue(c, _controller(c.name).text);
-          final value = schemaWriteValue(c.type, text);
-          if (!identical(value, absentValue)) out[key] = value;
+          final value = switch (_dealKind(c)) {
+            _DealKind.money => _moneyValue(text),
+            _DealKind.gstin => _gstin(text).isEmpty ? null : _gstin(text),
+            _ => schemaWriteValue(c.type, text),
+          };
+          if (identical(value, absentValue)) continue;
+          // Webapp: a blank optional field is simply not sent on a create.
+          if (_isCreate && (value == null || value == '')) continue;
+          out[key] = value;
       }
+    }
+    if (customChanged) {
+      final custom = <String, dynamic>{
+        // An edit sends the whole object, so fields this form does not show
+        // keep their stored values.
+        if (diffing && widget.row?['custom_fields'] is Map)
+          ...Map<String, dynamic>.from(widget.row!['custom_fields'] as Map),
+      };
+      for (final c in _columns) {
+        if (!c.isCustom) continue;
+        final v = _customValue(c);
+        if (v == null && _isCreate) continue;
+        custom[c.customKey] = v;
+      }
+      if (custom.isNotEmpty) out['custom_fields'] = custom;
     }
     return out;
   }
+
+  /// Yes → true, No → false, nothing picked → null.
+  bool? _boolValue(ViewColumn c) => switch (_controller(c.name).text.trim().toLowerCase()) {
+        'yes' => true,
+        'no' => false,
+        _ => null,
+      };
+
+  /// A custom field's value as the webapp sends it; null when blank.
+  Object? _customValue(ViewColumn c) {
+    if (c.type == 'boolean') return _boolValue(c) ?? (widget.alwaysSendCustomBooleans ? false : null);
+    final text = _choiceValue(c, _controller(c.name).text).trim();
+    if (text.isEmpty) return null;
+    if (c.type == 'number' || c.type == 'decimal') return num.tryParse(text) ?? text;
+    return text;
+  }
+
+  // ── deal / billing fields (webapp `dealFields.ts`) ──
+
+  static _DealKind _dealKind(ViewColumn c) => switch (c.name) {
+        'budget_min' || 'budget_max' => _DealKind.money,
+        'gstin' => _DealKind.gstin,
+        'billing_pincode' || 'delivery_pincode' => _DealKind.pincode,
+        'billing_state_code' || 'delivery_state_code' => _DealKind.state,
+        _ => _DealKind.none,
+      };
+
+  static const amountMessage = 'Enter an amount, e.g. 150000 or 150000.50';
+
+  /// Webapp `parseMoney`: commas, spaces and ₹ are ignored; up to 2 decimals.
+  static String _moneyText(String raw) => raw.replaceAll(RegExp(r'[,\s₹]'), '');
+  static bool _moneyOk(String raw) {
+    final t = _moneyText(raw);
+    return t.isEmpty || RegExp(r'^-?\d+(\.\d{1,2})?$').hasMatch(t);
+  }
+
+  /// Sent as a 2-place decimal string (`"150000.00"`), blank as null.
+  static Object? _moneyValue(String raw) {
+    final t = _moneyText(raw);
+    if (t.isEmpty) return null;
+    final n = num.tryParse(t);
+    return n == null ? absentValue : n.toStringAsFixed(2);
+  }
+
+  static String _gstin(String raw) => raw.replaceAll(RegExp(r'\s'), '').toUpperCase();
 
   /// Friendly, field-level validation the schema itself does not encode.
   ///
@@ -290,24 +628,74 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   /// Returns one message per problem field, in schema order, so a caller can
   /// show the first or all of them.
   List<String> validate() {
-    final errors = <String>[];
-    for (final c in widget.schema.editableColumns) {
+    final found = <String, String>{};
+    for (final c in _columns) {
       if (_isPhoneColumn(c)) {
+        if (c.name == 'whatsapp_no' && _whatsappSame) continue;
         final phone = _phoneController(c.name);
-        final required = c.isFixed || c.name == 'mobile_no';
+        final required = widget._isRequiredCol(c, c.isFixed || (widget.mobileRequired && c.name == 'mobile_no'));
         if (required && phone.isBlank) {
-          errors.add('${c.label} is required');
+          found[c.name] = 'This field is required.';
+        } else if (!phone.isBlank && !_indianMobileOk(phone)) {
+          found[c.name] = indianMobileMessage;
         } else if (!phone.isBlank && !phone.isComplete) {
-          errors.add('${c.label}: ${phoneDigitsMessage(phone.rule)}');
+          found[c.name] = phoneDigitsMessage(phone.rule);
         }
         continue;
       }
-      final required = c.isFixed || c.name == 'lead_name';
+      if (_isProducts(c)) {
+        for (final id in _selectedIds(c)) {
+          final q = _qtyController(id).text.trim();
+          if (q.isNotEmpty &&
+              (!RegExp(r'^\d+(\.\d{1,3})?$').hasMatch(q) || (double.tryParse(q) ?? 0) <= 0)) {
+            found[c.name] = quantityMessage;
+          }
+        }
+        continue;
+      }
+      // Only what the form marks with "*" is required. `is_protected` (folded
+      // into isFixed) means the column can't be hidden from the org's layout —
+      // the webapp never makes a picker such as Assigned Team mandatory for it,
+      // and a role that cannot list teams could otherwise never save a lead.
+      final picker = c.type == 'foreignkey' || c.type == 'manytomany' ||
+          c.type == 'date' || c.type == 'datetime' || c.type == 'boolean';
+      final required = widget._isRequiredCol(c, (c.isFixed && !picker) || c.name == 'lead_name' || c.isRequired);
       if (required && _isBlank(c)) {
-        errors.add('${c.label} is required');
+        found[c.name] = c.name == 'lead_name' ? 'Enter a contact name' : 'This field is required.';
+      } else if (_dealKind(c) == _DealKind.money && !_moneyOk(_controller(c.name).text)) {
+        found[c.name] = amountMessage;
+      } else if (c.isCustom) {
+        final m = _customProblem(c);
+        if (m != null) found[c.name] = m;
       }
     }
-    return errors;
+    showErrors(found);
+    return [for (final c in _columns) if (found[c.name] != null) found[c.name]!];
+  }
+
+  /// Webapp `validateCustomFieldValue` messages for a filled custom field.
+  String? _customProblem(ViewColumn c) {
+    final t = _controller(c.name).text.trim();
+    if (t.isEmpty) return null;
+    switch (c.customType) {
+      case 'number':
+      case 'decimal':
+        return num.tryParse(t) == null ? 'Must be a numeric value.' : null;
+      case 'date':
+        return RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t) ? null : 'Must be a date (YYYY-MM-DD).';
+      case 'datetime':
+        return RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}').hasMatch(t) ? null : 'Must be a date and time.';
+      case 'dropdown':
+      case 'multi_select':
+        return c.hasChoices && !c.choices.any((ch) => ch.$1 == _choiceValue(c, t)) ? 'Pick one of the options.' : null;
+      case 'email':
+        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t) ? null : 'Must be a valid email address.';
+      case 'url':
+        return RegExp(r'^https?://\S+$').hasMatch(t) ? null : 'Must be a valid URL (http:// or https://).';
+      case 'text':
+        return t.length > ViewColumn.customTextMax ? 'Must be at most 255 characters.' : null;
+    }
+    return null;
   }
 
   bool _isBlank(ViewColumn c) {
@@ -362,7 +750,12 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   /// model the column points at.
   List<CatalogOption> _optionsFor(ViewColumn c) {
     final override = widget.optionsByColumn[c.name];
-    if (override != null) return override;
+    if (override != null) {
+      // Webapp: the additional-assignee picker never offers the primary owner.
+      final owner = c.name == 'assignees' ? _ownerOf() : null;
+      return owner == null ? override : [for (final o in override) if (o.id != owner) o];
+    }
+    if (_isOwner(c)) return _ownerOptions();
     // The field's own model choices, when the schema reported them. Ahead of the
     // related-model switch below because a choice field has no related model.
     if (c.hasChoices) {
@@ -381,7 +774,11 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       case 'LeadSource':
         return ref.read(leadSourcesProvider);
       case 'Territory':
-        return ref.read(territoryOptionsProvider);
+        // Webapp: "No territory" first, then the tree with groups greyed out.
+        return [
+          const CatalogOption(id: noneOption, name: 'No territory'),
+          ...ref.read(territoryOptionsProvider),
+        ];
       case 'Industry':
         return ref.read(industryOptionsProvider);
       case 'Product':
@@ -396,6 +793,38 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       default:
         return const [];
     }
+  }
+
+  /// The picked primary owner (`assigned_to`) of a task form, if any.
+  String? _ownerOf() {
+    for (final col in _columns) {
+      if (col.name == 'assigned_to') return _selectedId(col);
+    }
+    return null;
+  }
+
+  /// Webapp owner options: "Unassigned", "<me> (you)", then everyone else
+  /// the server says may own a lead (`assignable-users?module=lead`).
+  List<CatalogOption> _ownerOptions() {
+    final me = UserDirectory.currentUserId;
+    final users = ref.read(leadAssignableUsersProvider).valueOrNull ?? const [];
+    final source = users.isNotEmpty
+        ? users
+        : [for (final u in ref.read(rosterProvider)) CatalogOption(id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name)];
+    String myName = 'Me';
+    final others = <CatalogOption>[];
+    for (final u in source) {
+      if (u.id == me) {
+        myName = u.name.isEmpty ? myName : u.name;
+      } else {
+        others.add(CatalogOption(id: UserDirectory.mapUserId(u.id), name: u.name));
+      }
+    }
+    return [
+      const CatalogOption(id: unassignedOwner, name: 'Unassigned'),
+      CatalogOption(id: 'me', name: '$myName (you)'),
+      ...others,
+    ];
   }
 
   // ── reading values out of the record ──
@@ -468,6 +897,9 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   // ── pickers ──
 
   Future<void> _pickOne(ViewColumn c) async {
+    // A closing picker hands focus back to the last text box, popping the
+    // keyboard over the form — let go of it first.
+    FocusManager.instance.primaryFocus?.unfocus();
     final picked = await showOptionPicker(
       context: context,
       title: c.label,
@@ -478,12 +910,25 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     );
     // Dismissed without choosing — leave the field as it was.
     if (picked == null || !mounted) return;
-    setState(() => _choice[c.name] = picked.isEmpty ? null : picked.first);
+    setState(() {
+      _choice[c.name] = picked.isEmpty || picked.first == noneOption ? null : picked.first;
+      _errors.remove(c.name);
+      if (c.name == 'assigned_to' && _choice[c.name] != null) {
+        for (final col in _columns) {
+          if (col.name == 'assignees') {
+            _multi[col.name] = [for (final id in _selectedIds(col)) if (id != _choice[c.name]) id];
+          }
+        }
+      }
+    });
   }
 
   /// Picks a value for a text column whose options the caller supplied. The
   /// **name** is written, not an id — the API stores this one as text.
   Future<void> _pickTextChoice(ViewColumn c) async {
+    // A closing picker hands focus back to the last text box, popping the
+    // keyboard over the form — let go of it first.
+    FocusManager.instance.primaryFocus?.unfocus();
     final options = _optionsFor(c);
     final current = _controller(c.name).text.trim();
     final picked = await showOptionPicker(
@@ -505,6 +950,7 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
         ? ''
         : options.firstWhere((o) => o.id == picked.first).name;
     setState(() => _controller(c.name).text = name);
+    widget.onValueChanged?.call();
   }
 
   /// A date (or date+time) column. Picked, never typed: the box's text is sent
@@ -514,6 +960,7 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     final current = DateTime.tryParse(_controller(c.name).text.trim());
     return AppTextField(
       label: c.label,
+      required: c.isRequired,
       readOnly: true,
       value: current == null
           ? null
@@ -527,12 +974,19 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   }
 
   Future<void> _pickDate(ViewColumn c, {required bool withTime}) async {
+    // A closing picker hands focus back to the last text box, popping the
+    // keyboard over the form — let go of it first.
+    FocusManager.instance.primaryFocus?.unfocus();
     final ctrl = _controller(c.name);
     final current = DateTime.tryParse(ctrl.text.trim());
     final day = await pickSheetDate(context, ctrl.text);
     if (day == null || !mounted) return;
     if (!withTime) {
-      setState(() => ctrl.text = sheetIsoDate(day));
+      setState(() {
+        ctrl.text = sheetIsoDate(day);
+        _errors.remove(c.name);
+      });
+      widget.onValueChanged?.call();
       return;
     }
     // A datetime column needs both halves, so the time picker follows. Skipping
@@ -544,7 +998,27 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     setState(() => ctrl.text = '${sheetIsoDate(day)}T${sheetTimeLabel(time)}:00');
   }
 
+  bool get _dueDateBlank {
+    for (final col in _columns) {
+      if (col.name == 'due_date') return _controller('due_date').text.trim().isEmpty;
+    }
+    return false;
+  }
+
   Widget _timeField(ViewColumn c) {
+    // Webapp: a task's due time waits for its due date.
+    if (c.name == 'due_time' && _dueDateBlank) {
+      return Opacity(
+        opacity: 0.55,
+        child: AppTextField(
+          label: c.label,
+          readOnly: true,
+          value: '',
+          hint: 'Set a due date first',
+          suffixIcon: PhosphorIconsRegular.clock,
+        ),
+      );
+    }
     return AppTextField(
       label: c.label,
       readOnly: true,
@@ -556,13 +1030,40 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
   }
 
   Future<void> _pickTime(ViewColumn c) async {
+    // A closing picker hands focus back to the last text box, popping the
+    // keyboard over the form — let go of it first.
+    FocusManager.instance.primaryFocus?.unfocus();
     final ctrl = _controller(c.name);
     final picked = await pickSheetTime(context, ctrl.text);
     if (picked == null || !mounted) return;
     setState(() => ctrl.text = sheetTimeLabel(picked));
   }
 
+  Future<void> _pickState(ViewColumn c, List<GstState> states) async {
+    // A closing picker hands focus back to the last text box, popping the
+    // keyboard over the form — let go of it first.
+    FocusManager.instance.primaryFocus?.unfocus();
+    final picked = await showOptionPicker(
+      context: context,
+      title: c.label,
+      options: [
+        const CatalogOption(id: noneOption, name: '—'),
+        for (final st in states) CatalogOption(id: st.code, name: '${st.name} (${st.code})'),
+      ],
+      selected: {_controller(c.name).text.trim()},
+      emptyNote: 'Loading states…',
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    setState(() {
+      _controller(c.name).text = picked.first == noneOption ? '' : picked.first;
+      _errors.remove(c.name);
+    });
+  }
+
   Future<void> _pickMany(ViewColumn c) async {
+    // A closing picker hands focus back to the last text box, popping the
+    // keyboard over the form — let go of it first.
+    FocusManager.instance.primaryFocus?.unfocus();
     final picked = await showOptionPicker(
       context: context,
       title: c.label,
@@ -573,7 +1074,14 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
           'organisation yet.',
     );
     if (picked == null || !mounted) return;
-    setState(() => _multi[c.name] = picked.toList());
+    setState(() {
+      _multi[c.name] = picked.toList();
+      _errors.remove(c.name);
+    });
+  }
+
+  void _clearError(ViewColumn c) {
+    if (_errors.remove(c.name) != null) setState(() {});
   }
 
   // ── rendering ──
@@ -586,14 +1094,18 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
     ref.watch(leadSourceCatalogProvider);
     ref.watch(territoryCatalogProvider);
     ref.watch(industryCatalogProvider);
+    ref.watch(leadAssignableUsersProvider);
     if (!_seeded) _seed();
 
-    final columns = widget.schema.editableColumns;
+    final columns = _columns;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final c in columns) ...[
-          _field(c),
+          KeyedSubtree(
+            key: _fieldKeys.putIfAbsent(c.name, GlobalKey.new),
+            child: _decorated(c),
+          ),
           SizedBox(height: 14.h),
         ],
       ],
@@ -611,19 +1123,174 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       c.type != 'manytomany' &&
       (widget.optionsByColumn.containsKey(c.name) || c.hasChoices);
 
+  /// [_field] plus what the webapp puts around it: the field's error, the
+  /// WhatsApp-same-as-phone switch, the Unassigned owner hint and the
+  /// per-product quantities.
+  Widget _decorated(ViewColumn c) {
+    final error = _errors[c.name];
+    final showError = error != null && !_isPhoneColumn(c) && !_usesErrorText(c);
+    final extras = <Widget>[
+      if (c.name == 'whatsapp_no' && _hasBothPhones) _whatsappSameToggle(),
+      _field(c),
+      if (showError) _errorLine(error),
+      if (_isOwner(c) && _selectedId(c) == unassignedOwner && error == null)
+        _hint('No owner — the lead is seen through its team and assignees.'),
+      if (c.isCustom && c.customType == 'text' && error == null)
+        _hint('${_controller(c.name).text.length}/${ViewColumn.customTextMax}'),
+      if (c.relatedModel == 'Territory' && error == null && _optionsFor(c).any((o) => o.disabled))
+        _hint('Greyed-out groups only organise territories — pick one inside.'),
+      if (_isProducts(c)) ..._quantityRows(c),
+    ];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: extras);
+  }
+
+  /// Whether [_field] already renders [_errors] itself (as `errorText`).
+  bool _usesErrorText(ViewColumn c) =>
+      !_isTextChoice(c) &&
+      c.type != 'foreignkey' &&
+      c.type != 'manytomany' &&
+      c.type != 'boolean' &&
+      c.type != 'date' &&
+      c.type != 'datetime' &&
+      c.type != 'time';
+
+  Widget _errorLine(String text) => Padding(
+        padding: EdgeInsets.only(top: 6.h, left: 2.w),
+        child: Text(text, style: AppText.caption(color: AppColors.error)),
+      );
+
+  Widget _hint(String text) => Padding(
+        padding: EdgeInsets.only(top: 6.h, left: 2.w),
+        child: Text(text, style: AppText.caption()),
+      );
+
+  Widget _whatsappSameToggle() => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() {
+          _whatsappSame = !_whatsappSame;
+          _errors.remove('whatsapp_no');
+        }),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 8.h),
+          child: Row(
+            children: [
+              Icon(_whatsappSame ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.square,
+                  size: 18.sp, color: _whatsappSame ? AppColors.navy : AppColors.textMuted),
+              SizedBox(width: 8.w),
+              Text('WhatsApp same as phone', style: AppText.bodyStrong()),
+            ],
+          ),
+        ),
+      );
+
+  List<Widget> _quantityRows(ViewColumn c) {
+    final ids = [for (final id in _selectedIds(c)) if (_labelForId(c, id).isNotEmpty) id];
+    if (ids.isEmpty) return const [];
+    return [
+      SizedBox(height: 8.h),
+      for (final id in ids)
+        Padding(
+          padding: EdgeInsets.only(bottom: 6.h),
+          child: Row(
+            children: [
+              Expanded(child: Text(_labelForId(c, id), style: AppText.body(), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              SizedBox(width: 8.w),
+              Text('Qty', style: AppText.caption()),
+              SizedBox(width: 8.w),
+              SizedBox(
+                width: 84.w,
+                child: TextField(
+                  controller: _qtyController(id),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) {
+                    if (_errors.remove(c.name) != null) setState(() {});
+                  },
+                  decoration: InputDecoration(
+                    hintText: '1',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 9.h),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(9.r)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      _hint('Lead value = price excl. GST × quantity.'),
+    ];
+  }
+
   Widget _field(ViewColumn c) {
     if (_isPhoneColumn(c)) {
+      if (c.name == 'whatsapp_no' && _whatsappSame) {
+        final mirror = _phoneController('mobile_no').toE164();
+        return AppTextField(
+          label: c.label,
+          readOnly: true,
+          value: mirror == null ? 'Same as contact phone' : mirror.replaceFirst('+91', '+91 '),
+        );
+      }
       return PhoneInputField(
         label: c.label,
         controller: _phoneController(c.name),
-        required: c.isFixed || c.name == 'mobile_no',
+        required: widget._isRequiredCol(c, c.isFixed || (widget.mobileRequired && c.name == 'mobile_no')),
         hint: 'Enter ${c.label.toLowerCase()}…',
-        onChanged: () => setState(() {}),
+        errorText: _errors[c.name],
+        onChanged: () => setState(() => _errors.remove(c.name)),
       );
+    }
+    switch (_dealKind(c)) {
+      case _DealKind.money:
+        return AppTextField(
+          label: c.label,
+          controller: _controller(c.name),
+          errorText: _errors[c.name],
+          onChanged: (_) => _clearError(c),
+          hint: 'e.g. 150000',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        );
+      case _DealKind.gstin:
+        return AppTextField(
+          label: c.label,
+          controller: _controller(c.name),
+          errorText: _errors[c.name],
+          onChanged: (_) => _clearError(c),
+          hint: 'e.g. 32ABCDE1234F1Z5',
+          inputFormatters: [
+            FilteringTextInputFormatter.deny(RegExp(r'\s')),
+            const _UpperCaseFormatter(),
+            LengthLimitingTextInputFormatter(15),
+          ],
+        );
+      case _DealKind.pincode:
+        return AppTextField(
+          label: c.label,
+          controller: _controller(c.name),
+          errorText: _errors[c.name],
+          onChanged: (_) => _clearError(c),
+          hint: 'Enter ${c.label.toLowerCase()}…',
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
+        );
+      case _DealKind.state:
+        final states = ref.watch(gstStatesProvider).valueOrNull ?? const [];
+        final code = _controller(c.name).text.trim();
+        final match = states.where((st) => st.code == code).firstOrNull;
+        return AppTextField(
+          label: c.label,
+          readOnly: true,
+          value: code.isEmpty ? '' : (match == null ? code : '${match.name} (${match.code})'),
+          hint: states.isEmpty ? 'Loading states…' : 'Select a state',
+          suffixIcon: PhosphorIconsRegular.caretDown,
+          onTap: () => _pickState(c, states),
+        );
+      case _DealKind.none:
+        break;
     }
     if (_isTextChoice(c)) {
       return AppTextField(
         label: c.label,
+        required: c.isRequired,
         readOnly: true,
         value: _controller(c.name).text,
         hint: 'Select ${c.label.toLowerCase()}…',
@@ -657,19 +1324,25 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
         );
 
       case 'boolean':
-        final on = _controller(c.name).text.trim().toLowerCase() == 'yes';
+        // Tri-state like the webapp: neither chip lit is "Unknown", and
+        // tapping the lit chip again goes back to it.
+        final current = _boolValue(c);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SheetFieldLabel(c.label),
+            SheetFieldLabel(c.isRequired ? '${c.label} *' : c.label),
             Wrap(
               spacing: 8.w,
               children: [
                 for (final v in const ['Yes', 'No'])
                   SelectChip(
                     label: v,
-                    selected: (v == 'Yes') == on,
-                    onTap: () => setState(() => _controller(c.name).text = v),
+                    selected: current != null && (v == 'Yes') == current,
+                    onTap: () => setState(() {
+                      final ctrl = _controller(c.name);
+                      ctrl.text = ctrl.text == v ? '' : v;
+                      _errors.remove(c.name);
+                    }),
                   ),
               ],
             ),
@@ -681,7 +1354,10 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       case 'number':
         return AppTextField(
           label: c.label,
+          required: c.isRequired,
           controller: _controller(c.name),
+          errorText: _errors[c.name],
+          onChanged: (_) => _clearError(c),
           hint: '0',
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         );
@@ -700,18 +1376,43 @@ class LeadSchemaFormState extends ConsumerState<LeadSchemaForm> {
       case 'text':
         return AppTextField(
           label: c.label,
+          required: c.isRequired,
           controller: _controller(c.name),
+          errorText: _errors[c.name],
+          onChanged: (_) => _clearError(c),
           multiline: true,
           hint: 'Enter ${c.label.toLowerCase()}…',
         );
 
       default:
+        final counted = c.isCustom && c.customType == 'text';
         return AppTextField(
           label: c.label,
-          required: c.isFixed,
+          required: widget._isRequiredCol(c, c.isFixed || c.name == 'lead_name' || c.isRequired),
           controller: _controller(c.name),
-          hint: 'Enter ${c.label.toLowerCase()}…',
+          errorText: _errors[c.name],
+          // A counted box repaints its "n/255" on every keystroke.
+          onChanged: (_) => counted ? setState(() => _errors.remove(c.name)) : _clearError(c),
+          hint: widget.hints[c.name] ?? 'Enter ${c.label.toLowerCase()}…',
+          keyboardType: switch (c.customType) {
+            'email' => TextInputType.emailAddress,
+            'phone' => TextInputType.phone,
+            'url' => TextInputType.url,
+            _ => null,
+          },
+          inputFormatters: counted ? [LengthLimitingTextInputFormatter(ViewColumn.customTextMax)] : null,
         );
     }
   }
+}
+
+enum _DealKind { none, money, gstin, pincode, state }
+
+/// GSTIN is typed in capitals, as the webapp forces it.
+class _UpperCaseFormatter extends TextInputFormatter {
+  const _UpperCaseFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) =>
+      newValue.copyWith(text: newValue.text.toUpperCase());
 }

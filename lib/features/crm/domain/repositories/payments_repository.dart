@@ -22,4 +22,9 @@ abstract class PaymentsRepository {
     String? treatAs,
     String? gatewayRef,
   });
+
+  /// Deletes one record (`DELETE payment-records/{id}/`) — only an unpaid,
+  /// uninvoiced record on a milestone-based plan; the server recalculates
+  /// the plan's totals and refuses anything else with its reason.
+  Future<void> deleteRecord(String recordId);
 }

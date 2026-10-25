@@ -124,7 +124,8 @@ class FollowupsRemoteDataSource {
           e.key: e.value,
       'is_followup': true,
     };
-    final res = await _api.post(ApiEndpoints.crmTasks, body: body);
+    // Webapp `createTask`: the kind goes on the query too (`kindParams`).
+    final res = await _api.post(ApiEndpoints.crmTasks, body: body, query: const {'is_followup': 'true'});
     return res is Map<String, dynamic> ? followupFromJson(res) : null;
   }
 
@@ -136,7 +137,23 @@ class FollowupsRemoteDataSource {
         ? CrmTasksRemoteDataSource.statusIdForKey(statuses, 'done')
         : openStatusId(statuses);
     if (statusId == null) return;
-    await _api.patch(ApiEndpoints.crmTask(id), body: {'status_id': statusId});
+    // Webapp: `PATCH /crm/tasks/{id}/?is_followup=true` — without the flag the
+    // server does not find a follow-up and answers 404.
+    await _api.patch('${ApiEndpoints.crmTask(id)}?is_followup=true', body: {'status_id': statusId});
+  }
+
+  /// The org's lanes as `name` → `status_type`, for folding (see
+  /// [CrmTasksRemoteDataSource.statusTypes]). Never throws.
+  Future<Map<String, String>> statusTypes() async {
+    try {
+      return {
+        for (final s in await _statuses())
+          if (_str(s['name']) != null && _str(s['status_type']) != null)
+            _str(s['name'])!.trim().toLowerCase(): _str(s['status_type'])!,
+      };
+    } on Object {
+      return const {};
+    }
   }
 
   Future<List<Map<String, dynamic>>> _statuses() async {
@@ -151,10 +168,10 @@ class FollowupsRemoteDataSource {
   // ── mapping (static so tests + the API repository can reuse) ──
 
   static List<Followup> mapRows(List<Map<String, dynamic>> rows,
-      {DateTime? now}) {
+      {DateTime? now, Map<String, String> statusTypes = const {}}) {
     final out = <Followup>[];
     for (final row in rows) {
-      final fu = followupFromJson(row, now: now);
+      final fu = followupFromJson(row, now: now, statusTypes: statusTypes);
       if (fu != null) out.add(fu);
     }
     return out;
@@ -162,7 +179,8 @@ class FollowupsRemoteDataSource {
 
   /// One list row → [Followup]. Defensive on every field; a row without a
   /// `task_id` returns null (caller skips it).
-  static Followup? followupFromJson(Map<String, dynamic> json, {DateTime? now}) {
+  static Followup? followupFromJson(Map<String, dynamic> json,
+      {DateTime? now, Map<String, String> statusTypes = const {}}) {
     final id = _str(json['task_id']);
     if (id == null || id.isEmpty) return null;
 
@@ -179,6 +197,13 @@ class FollowupsRemoteDataSource {
         statusRaw is Map ? _str(statusRaw['name']) : _str(statusRaw);
     final dueDate = parseApiDate(json['due_date']);
     final desc = _str(json['description'])?.trim();
+    // The row carries no `status_type`; the org's lanes supply it, so a
+    // "Cancelled" follow-up is not read as an open one.
+    final statusType = (statusTypes[(statusName ?? '').trim().toLowerCase()] ??
+            (statusRaw is Map ? _str(statusRaw['status_type']) : null) ??
+            '')
+        .toLowerCase();
+    final folded = crmTaskStatusKey(name: statusName, type: statusType.isEmpty ? null : statusType);
 
     return Followup(
       raw: json,
@@ -191,7 +216,7 @@ class FollowupsRemoteDataSource {
       due: absoluteDate(dueDate),
       time: trimTime(json['due_time']),
       status: followupStatusKey(
-        isCompleted: crmTaskStatusKey(name: statusName) == 'done',
+        isCompleted: folded == 'done',
         dueDate: dueDate,
         now: now,
       ),
@@ -203,6 +228,10 @@ class FollowupsRemoteDataSource {
       // real statuses (see [Followup.statusName]).
       statusName: statusName ?? '',
       priority: _refName(json['priority']),
+      // Webapp `isTerminal`: no caption once completed or cancelled.
+      dueNote: folded == 'done' || const {'completed', 'cancelled'}.contains(statusType)
+          ? ''
+          : CrmTasksRemoteDataSource.dueNoteFor(dueDate, now: now),
     );
   }
 

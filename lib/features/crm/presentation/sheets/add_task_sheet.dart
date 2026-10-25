@@ -19,6 +19,11 @@ import '../../application/providers/crm_tasks_providers.dart';
 import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/lead.dart';
 import 'add_sheet_kit.dart';
+import 'linked_record_banner.dart';
+import '../../../../data/api/user_directory.dart';
+import '../../application/providers/leads_providers.dart';
+import '../../domain/entities/crm_catalog.dart';
+import '../../infrastructure/data_sources/remote/crm_tasks_remote_ds.dart';
 
 /// Add task — a focused-but-faithful port of the prototype's `addTask` sheet. On
 /// submit the new task is prepended to [crmTaskDraftsProvider] so it appears
@@ -27,19 +32,41 @@ import 'add_sheet_kit.dart';
 /// Pass [lead] when opening from a lead's Tasks tab: the sheet then shows the
 /// link, and the created task carries `related_to=lead` so it comes back in
 /// that lead's scoped fetch instead of floating unattached.
-Future<void> showAddTaskSheet(BuildContext context, WidgetRef ref, {Lead? lead}) {
+///
+/// Pass [customer] (id + display name) instead when opening from a customer's
+/// Tasks tab: the sheet shows "Linked to <customer>" and the task carries
+/// `related_to=customer` (webapp `AddTaskModal` with `relatedTo="customer"`).
+Future<void> showAddTaskSheet(BuildContext context, WidgetRef ref,
+    {Lead? lead, ({String id, String label})? customer}) async {
+  // The sheet reads the org's statuses, priorities, types and assignable
+  // users through the opener's ref, so it cannot repaint when they land —
+  // they are awaited first (briefly) instead of showing built-in chips.
+  try {
+    await Future.wait([
+      ref.read(taskStatusCatalogProvider.future),
+      ref.read(taskPriorityCatalogProvider.future),
+      ref.read(taskTypeCatalogProvider.future),
+      ref.read(assignableUsersForModuleProvider('task').future),
+    ]).timeout(const Duration(seconds: 6));
+  } on Object {
+    // Slow or failed — open with what has arrived.
+  }
+  if (!context.mounted) return;
   return showClozrSheet<void>(
     context: context,
-    builder: (_) => _AddTaskSheet(ref: ref, lead: lead),
+    builder: (_) => _AddTaskSheet(ref: ref, lead: lead, customer: lead == null ? customer : null),
   );
 }
 
 class _AddTaskSheet extends StatefulWidget {
-  const _AddTaskSheet({required this.ref, this.lead});
+  const _AddTaskSheet({required this.ref, this.lead, this.customer});
   final WidgetRef ref;
 
   /// The lead this task is being raised against, when opened from one.
   final Lead? lead;
+
+  /// The customer this task is being raised against, when opened from one.
+  final ({String id, String label})? customer;
 
   @override
   State<_AddTaskSheet> createState() => _AddTaskSheetState();
@@ -89,6 +116,45 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
   String _assignee = 'me';
   bool _showErrors = false;
 
+  /// The org's own task statuses a new task can start in (webapp: active,
+  /// not completed or cancelled), and the chosen one — the first open status
+  /// until the user picks.
+  List<CatalogOption> get _orgStatuses => [
+        for (final s in widget.ref.read(taskStatusOptionsProvider))
+          if (s.statusType == null || s.statusType == 'open' || s.statusType == 'in_progress') s,
+      ];
+  String? _statusId;
+  String? get _selectedStatusId {
+    final list = _orgStatuses;
+    if (list.isEmpty) return null;
+    if (_statusId != null && list.any((s) => s.id == _statusId)) return _statusId;
+    return (list.where((s) => s.statusType == 'open').firstOrNull ?? list.first).id;
+  }
+
+  /// The priority id for [_selectedPriority] in the org's catalog.
+  String? get _priorityId {
+    for (final p in widget.ref.read(taskPriorityOptionsProvider)) {
+      if (priorityKey(p.name) == _selectedPriority) return p.id;
+    }
+    return null;
+  }
+
+  /// Who the task may be assigned to: the server's list for `module=task`.
+  List<CatalogOption> get _assignable {
+    final users = widget.ref.read(assignableUsersForModuleProvider('task')).valueOrNull ?? const [];
+    if (users.isEmpty) {
+      return [for (final r in widget.ref.read(rosterProvider)) CatalogOption(id: r.id, name: r.name)];
+    }
+    return [for (final u in users) CatalogOption(id: UserDirectory.mapUserId(u.id), name: u.name)];
+  }
+
+  String get _assigneeName {
+    for (final u in _assignable) {
+      if (u.id == _assignee) return u.name;
+    }
+    return MockUsers.of(_assignee).name;
+  }
+
   /// True while the create is in flight, so a second tap cannot post again.
   bool _saving = false;
 
@@ -111,7 +177,26 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
     }
     final lead = widget.lead;
     if (ApiConfig.apiEnabled) {
+      // Webapp: a past due date asks before creating an overdue task.
+      final iso = CrmTasksRemoteDataSource.isoDateOrNull(_due.text.trim());
+      final due = iso == null ? null : DateTime.tryParse(iso);
+      final today = DateTime.now();
+      if (due != null && due.isBefore(DateTime(today.year, today.month, today.day))) {
+        final go = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Create an overdue task?'),
+            content: Text('This task will be overdue — ${_due.text.trim()} has already passed.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Change date')),
+              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Create task')),
+            ],
+          ),
+        );
+        if (go != true || !mounted) return;
+      }
       setState(() => _saving = true);
+      final assignee = UserDirectory.realUserId(_assignee);
       try {
         await widget.ref.read(crmTasksRepositoryProvider).createTask({
           'title': _title.text.trim(),
@@ -119,8 +204,13 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
           'due_date': _due.text.trim(),
           'due_time': _dueTime.text.trim(),
           'description': _desc.text.trim(),
+          if (_selectedStatusId != null) 'status_id': _selectedStatusId,
+          if (_priorityId != null) 'priority': _priorityId,
+          if (assignee != null) 'assigned_to': assignee,
           if (lead != null) 'related_to': 'lead',
           if (lead != null) 'related_to_id': lead.id,
+          if (lead == null && widget.customer != null) 'related_to': 'customer',
+          if (lead == null && widget.customer != null) 'related_to_id': widget.customer!.id,
         });
       } on AppError catch (e) {
         // Refused — let the user correct it and try again.
@@ -132,7 +222,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
       // Every lead's Tasks tab reads its own scoped fetch, so the org-wide
       // list alone going stale is not enough to refresh them.
       widget.ref.invalidate(leadTasksProvider);
-      widget.ref.read(toastProvider.notifier).show('Task added');
+      widget.ref.read(toastProvider.notifier).show('Task created');
       if (mounted) Navigator.of(context).pop();
       return;
     }
@@ -171,7 +261,9 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
   }
 
   void _pickAssignee() {
-    final roster = widget.ref.read(rosterProvider);
+    final roster = [
+      for (final u in _assignable) (id: u.id, name: u.name, initials: _initials(u.name), role: ''),
+    ];
     showClozrSheet<void>(
       context: context,
       builder: (ctx) => Column(
@@ -228,12 +320,18 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
     );
   }
 
+  static String _initials(String name) =>
+      name.split(' ').where((p) => p.isNotEmpty).take(2).map((p) => p[0].toUpperCase()).join();
+
   @override
   Widget build(BuildContext context) {
     // Watched here so the chips swap from the built-in lists to the org's own
     // the moment the catalogs resolve, even with the sheet already open.
     widget.ref.watch(taskTypeOptionsProvider);
     widget.ref.watch(taskPriorityOptionsProvider);
+    widget.ref.watch(taskStatusOptionsProvider);
+    widget.ref.watch(assignableUsersForModuleProvider('task'));
+    final orgStatuses = _orgStatuses;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -250,6 +348,9 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
               children: [
                 if (widget.lead != null) ...[
                   LinkedLeadField(lead: widget.lead!),
+                  SizedBox(height: 14.h),
+                ] else if (widget.customer != null) ...[
+                  LinkedRecordBanner(label: widget.customer!.label),
                   SizedBox(height: 14.h),
                 ],
                 AppTextField(
@@ -272,13 +373,22 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                   spacing: 8.w,
                   runSpacing: 8.h,
                   children: [
-                    for (final k in StatusMeta$.task.keys)
-                      SelectChip(
-                        label: StatusMeta$.task[k]!.label,
-                        selected: _status == k,
-                        dot: StatusMeta$.task[k]!.color,
-                        onTap: () => setState(() => _status = k),
-                      ),
+                    if (orgStatuses.isNotEmpty)
+                      for (final s in orgStatuses)
+                        SelectChip(
+                          label: s.name,
+                          selected: _selectedStatusId == s.id,
+                          dot: s.color,
+                          onTap: () => setState(() => _statusId = s.id),
+                        )
+                    else
+                      for (final k in StatusMeta$.task.keys)
+                        SelectChip(
+                          label: StatusMeta$.task[k]!.label,
+                          selected: _status == k,
+                          dot: StatusMeta$.task[k]!.color,
+                          onTap: () => setState(() => _status = k),
+                        ),
                   ],
                 ),
                 SizedBox(height: 16.h),
@@ -317,7 +427,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                         readOnly: true,
                         onTap: _pickDueDate,
                         value: _due.text.isEmpty ? null : _due.text,
-                        hint: '24 Jun 2026',
+                        hint: 'Select due date',
                         suffixIcon: PhosphorIconsRegular.calendarBlank,
                       ),
                     ),
@@ -340,7 +450,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                   label: 'Assign to',
                   readOnly: true,
                   onTap: _pickAssignee,
-                  value: MockUsers.of(_assignee).name,
+                  value: _assigneeName,
                 ),
               ],
             ),

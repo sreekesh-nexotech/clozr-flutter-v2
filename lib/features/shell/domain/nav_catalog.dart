@@ -53,13 +53,24 @@ class NavEntry {
 /// single source of truth for both [AppDrawer] and the router's post-login
 /// landing screen — a module key gates the same entry the same way in both
 /// places, so a role's first screen is always one it can also see in the menu.
+/// The dashboard modules — any one of them unlocks the Dashboard, as on web
+/// (`DASHBOARD_MODULE_KEYS`). The server grants these four; a plain
+/// `dashboard` key is kept for older payloads that still send it.
+const List<String> dashboardModuleKeys = [
+  'admin_dashboard',
+  'crm_dashboard',
+  'pmo_dashboard',
+  'issue_dashboard',
+  'dashboard',
+];
+
 const List<NavEntry> navCatalog = [
   NavEntry(
       key: 'dashboard',
       label: 'Dashboard',
       icon: PhosphorIconsRegular.layout,
       path: Routes.dashboard,
-      modules: ['dashboard']),
+      modules: dashboardModuleKeys),
   NavEntry(
       key: 'crm',
       label: 'CRM',
@@ -170,16 +181,16 @@ const List<NavEntry> navCatalog = [
       ]),
 ];
 
-/// The Dashboard's panel tabs (`?tab=`) and the module keys that unlock each.
-/// They are the same keys that gate the matching drawer entry, so a role that
-/// cannot open the Helpdesk module does not get an (empty) Helpdesk panel on
-/// the Dashboard either. Business is the org overview: it is gated only by
-/// `dashboard` itself, which the whole screen already needs.
+/// The Dashboard's panel tabs (`?tab=`) and the module that unlocks each —
+/// webapp `DASH_TAB_MODULE`: Admin (our Business) ← `admin_dashboard`, CRM ←
+/// `crm_dashboard`, Operations ← `pmo_dashboard`, Helpdesk ←
+/// `issue_dashboard`. The legacy `dashboard` key keeps Business for older
+/// payloads.
 const Map<String, List<String>> dashboardPanelModules = {
-  'business': [],
-  'crm': ['lead', 'customer', 'quotation', 'payment', 'followup'],
-  'ops': ['project', 'project_task'],
-  'help': ['issue'],
+  'business': ['admin_dashboard', 'dashboard'],
+  'crm': ['crm_dashboard'],
+  'ops': ['pmo_dashboard'],
+  'help': ['issue_dashboard'],
 };
 
 /// The Dashboard tabs [access] may see, in nav order. `null` access (mock

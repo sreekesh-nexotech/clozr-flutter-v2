@@ -17,7 +17,18 @@ abstract class NotesRepository {
     required String relatedTo,
     required String relatedToId,
     required String body,
+    String? noteTypeId,
+    List<String> mentionedUserIds = const [],
   });
+
+  /// Edits a note's content. Throws when refused.
+  Future<void> updateNote({required String noteId, required String body, List<String> mentionedUserIds = const []});
+
+  /// Deletes a note and its replies. Throws when refused.
+  Future<void> deleteNote(String noteId);
+
+  /// The org's active note types, in order (empty when none / unavailable).
+  Future<List<NoteTypeOption>> noteTypes();
 
   /// Posts a reply under [noteId]; returns the mapped reply, or null on failure.
   Future<NoteReply?> addReply({

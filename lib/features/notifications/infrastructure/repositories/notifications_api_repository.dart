@@ -17,14 +17,15 @@ class NotificationsApiRepository implements NotificationsRepository {
   static const _key = 'feed';
 
   @override
-  Future<List<AppNotification>> getNotifications() async {
+  Future<List<AppNotification>> getNotifications({String? status}) async {
+    final key = status == null ? _key : '$_key:$status';
     try {
-      final rows = await _remote.fetchNotificationRows();
-      await AppCache.put(_box, _key, rows);
+      final rows = await _remote.fetchNotificationRows(status: status);
+      await AppCache.put(_box, key, rows);
       return _remote.mapRows(rows);
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
-        final cached = AppCache.get(_box, _key)?.data;
+        final cached = AppCache.get(_box, key)?.data;
         if (cached is List) return _remote.mapRows(cached);
       }
       rethrow;
@@ -59,4 +60,15 @@ class NotificationsApiRepository implements NotificationsRepository {
       // Best-effort; the next feed refresh reconciles.
     }
   }
+
+  @override
+  Future<void> setPinned(String id, bool pinned) =>
+      pinned ? _remote.pin(id) : _remote.unpin(id);
+
+  @override
+  Future<void> setSnoozed(String id, DateTime? until) =>
+      until == null ? _remote.unsnooze(id) : _remote.snooze(id, until);
+
+  @override
+  Future<int> unreadCount() => _remote.unreadCount();
 }

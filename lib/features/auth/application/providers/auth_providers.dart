@@ -196,8 +196,13 @@ class SessionController extends StateNotifier<SessionState> {
     await _clearLocalSession();
   }
 
-  /// 401 survived refresh-and-retry, or the session was revoked.
-  Future<void> forceLogout() => _clearLocalSession();
+  /// 401 survived refresh-and-retry, or the session was revoked. A reason the
+  /// server gave is kept for the login screen.
+  Future<void> forceLogout() {
+    final reason = _ref.read(apiServiceProvider).signOutReason;
+    if (reason != null) _ref.read(signOutReasonProvider.notifier).state = reason;
+    return _clearLocalSession();
+  }
 
   Future<void> _adoptSession(AuthSession session, {bool promoteGate = true}) async {
     // A new session must never inherit a prior tenant's cached data or the
@@ -284,6 +289,20 @@ class SessionController extends StateNotifier<SessionState> {
     SessionGate.instance.set(status);
   }
 }
+
+/// Why the last session was ended by the server (a terminal 401 code such as
+/// `user_inactive`), shown once on the login screen like the webapp's banner.
+/// Cleared by the next sign-in attempt.
+final signOutReasonProvider = StateProvider<String?>((ref) => null);
+
+/// Webapp `LoginScreen` copy for each terminal sign-out reason.
+const signOutReasonMessages = {
+  'session_force_signout': 'Your session has expired. Please sign in again.',
+  'session_expired': 'You were signed out due to inactivity.',
+  'session_revoked': 'Your session was ended. Please sign in again.',
+  'user_inactive': 'Your account is inactive. Contact your administrator.',
+  'session_outside_work_hours': 'Your work hours have ended. Sign in again with a reason to continue.',
+};
 
 final sessionControllerProvider =
     StateNotifierProvider<SessionController, SessionState>(

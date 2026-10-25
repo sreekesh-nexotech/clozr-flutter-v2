@@ -30,8 +30,19 @@ class _NoopNotesRepository implements NotesRepository {
     required String relatedTo,
     required String relatedToId,
     required String body,
+    String? noteTypeId,
+    List<String> mentionedUserIds = const [],
   }) async =>
       null;
+
+  @override
+  Future<void> updateNote({required String noteId, required String body, List<String> mentionedUserIds = const []}) async {}
+
+  @override
+  Future<void> deleteNote(String noteId) async {}
+
+  @override
+  Future<List<NoteTypeOption>> noteTypes() async => const [];
 
   @override
   Future<NoteReply?> addReply({

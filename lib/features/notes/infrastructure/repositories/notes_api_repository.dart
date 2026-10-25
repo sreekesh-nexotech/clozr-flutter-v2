@@ -19,8 +19,27 @@ class NotesApiRepository implements NotesRepository {
     required String relatedTo,
     required String relatedToId,
     required String body,
+    String? noteTypeId,
+    List<String> mentionedUserIds = const [],
   }) =>
-      _remote.addNote(relatedTo, relatedToId, body);
+      _remote.addNote(relatedTo, relatedToId, body,
+          noteTypeId: noteTypeId, mentionedUserIds: mentionedUserIds);
+
+  @override
+  Future<void> updateNote({required String noteId, required String body, List<String> mentionedUserIds = const []}) =>
+      _remote.updateNote(noteId, body, mentionedUserIds: mentionedUserIds);
+
+  @override
+  Future<void> deleteNote(String noteId) => _remote.deleteNote(noteId);
+
+  @override
+  Future<List<NoteTypeOption>> noteTypes() async {
+    try {
+      return await _remote.fetchNoteTypes();
+    } on Object {
+      return const [];
+    }
+  }
 
   @override
   Future<NoteReply?> addReply({

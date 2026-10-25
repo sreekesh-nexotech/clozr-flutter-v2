@@ -63,6 +63,15 @@ class AppError implements Exception {
   /// DRF field-level validation errors: `{field: [messages]}`.
   final Map<String, List<String>>? fieldErrors;
 
+  /// The server's own words for a toast: the first field message without its
+  /// `field:` prefix (webapp), else [message].
+  String get bareMessage {
+    for (final v in (fieldErrors ?? const <String, List<String>>{}).values) {
+      if (v.isNotEmpty) return v.first;
+    }
+    return message;
+  }
+
   /// The underlying exception, for logs only — never shown to the user.
   final Object? cause;
 
@@ -159,7 +168,9 @@ class AppError implements Exception {
     if (status == 401) return AppErrorType.unauthorized;
     if (status == 403) return AppErrorType.forbidden;
     if (status == 404) return AppErrorType.notFound;
-    if (status == 409) return AppErrorType.conflict;
+    // 412: an optimistic-lock refusal (`If-Match` was stale) — the record
+    // changed since it was read, which is a conflict like 409.
+    if (status == 409 || status == 412) return AppErrorType.conflict;
     if (status == 429) return AppErrorType.throttled;
     if (status == 400 || status == 422) return AppErrorType.validation;
     if (status >= 500) return AppErrorType.server;
@@ -172,6 +183,9 @@ class AppError implements Exception {
     if (status == 404) return 'Not found.';
     if (status == 409) {
       return 'That conflicts with the current state of this record. Refresh and try again.';
+    }
+    if (status == 412) {
+      return 'Someone else changed this record since you opened it. Reload to see the latest version.';
     }
     if (status == 429) return 'Too many attempts. Please wait and try again.';
     if (status >= 500) return 'Server error. Please try again shortly.';
@@ -219,10 +233,13 @@ class AppError implements Exception {
   static Map<String, dynamic>? _extractExtra(Object? body) {
     if (body is! Map) return null;
     final out = <String, dynamic>{};
-    for (final key in const ['rule', 'next', 'next_action', 'cause']) {
+    for (final key in const ['rule', 'next', 'next_action', 'cause', 'current_updated_at', 'modified_by', 'reasons']) {
       final v = body[key];
       if (v != null) out[key] = v;
     }
+    // A lead create refused by the org's duplicate rule.
+    final errors = body['errors'];
+    if (errors is Map && errors['duplicate'] is Map) out['duplicate'] = errors['duplicate'];
     return out.isEmpty ? null : out;
   }
 
@@ -250,6 +267,14 @@ class AppError implements Exception {
         if (msgs.isNotEmpty) out[key] = msgs;
       } else if (v is String) {
         out[key] = [v];
+      } else if (v is Map && key != 'duplicate') {
+        // One level of nesting — `custom_fields: {<slug>: "…"}` — keyed as
+        // `custom_fields.<slug>`, which is the schema's own column name.
+        for (final sub in v.entries) {
+          final sv = sub.value;
+          final msgs = sv is List ? sv.whereType<String>().toList() : [if (sv is String) sv];
+          if (msgs.isNotEmpty) out['$key.${sub.key}'] = msgs;
+        }
       }
     }
     return out.isEmpty ? null : out;

@@ -712,7 +712,10 @@ class _FilterSheetState extends State<_FilterSheet> {
                     height: 48.h,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-                    child: Text('Apply · $count ${count == 1 ? 'result' : 'results'}',
+                    child: Text(
+                        // A negative count means "not known before applying"
+                        // (a server-side filter) — the webapp's plain label.
+                        count < 0 ? 'Apply filters' : 'Apply · $count ${count == 1 ? 'result' : 'results'}',
                         style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
                   ),
                 ),

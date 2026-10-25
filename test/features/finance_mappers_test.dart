@@ -262,7 +262,8 @@ void main() {
       })!;
 
       expect(iv.custId, 'uuid-c');
-      expect(iv.type, 'Installments');
+      // The webapp's plan-type label, not a catch-all "Installments".
+      expect(iv.type, 'Milestone-based');
       expect(iv.settled, 1);
       expect(iv.of, 3);
       expect(iv.balance, '₹21.9L');
@@ -320,11 +321,12 @@ void main() {
       expect(p.paidCashNum, 700000);
       expect(p.method, 'Bank transfer');
       expect(p.status, 'paid');
-      expect(p.date, '12 Jun 2026');
+      // Webapp `rowDate`: the paid date, DD-MON-YYYY.
+      expect(p.date, '12-Jun-2026');
       expect(p.owner, '');
     });
 
-    test('pending future row: scheduled, Installment N label, dash method', () {
+    test('pending future row: Due (web maps pending → due), Installment N label, dash method', () {
       final p = paymentRecordFromApi({
         'record_id': 'uuid-r2',
         'invoice_id': 'uuid-p',
@@ -342,28 +344,36 @@ void main() {
       expect(p.amount, '₹5L');
       expect(p.amountNum, 500000);
       expect(p.method, '—');
-      expect(p.status, 'scheduled');
-      expect(p.date, '1 Jul 2126');
+      expect(p.status, 'due');
+      expect(p.date, 'Due 01-Jul-2126');
     });
 
-    test('past-due pending row renders as overdue with Overdue date', () {
+    test('overdue is the server\'s call: overdue → "Overdue …", a past-due pending stays Due', () {
       final p = paymentRecordFromApi({
         'record_id': 'uuid-r3',
         'amount_expected': '1830000.00',
         'due_date': '2020-06-24',
+        'status': 'overdue',
+      })!;
+      expect(p.status, 'overdue');
+      expect(p.date, 'Overdue 24-Jun-2020');
+      expect(p.amount, '₹18.3L');
+
+      // The webapp does not re-derive overdue from the date (the server runs
+      // that sweep), so neither does the list.
+      final pending = paymentRecordFromApi({
+        'record_id': 'uuid-r3b',
+        'due_date': '2020-06-24',
         'status': 'pending',
       })!;
-
-      expect(p.status, 'overdue');
-      expect(p.date, 'Overdue 24 Jun 2020');
-      expect(p.amount, '₹18.3L');
+      expect(pending.status, 'due');
+      expect(pending.date, 'Due 24-Jun-2020');
     });
 
-    test('cancelled rows are skipped, valid siblings kept', () {
-      expect(
-        paymentRecordFromApi({'record_id': 'uuid-r4', 'status': 'cancelled'}),
-        isNull,
-      );
+    test('cancelled rows are kept as Cancelled (web lists them); junk skipped', () {
+      final c = paymentRecordFromApi({'record_id': 'uuid-r4', 'status': 'cancelled'})!;
+      expect(c.status, 'cancelled');
+      expect(c.isCancelled, isTrue);
 
       final list = paymentsFromApiRows([
         {'record_id': 'uuid-a', 'status': 'cancelled'},
@@ -371,8 +381,7 @@ void main() {
         <String, dynamic>{},
         'junk',
       ]);
-      expect(list, hasLength(1));
-      expect(list.single.id, 'uuid-b');
+      expect(list.map((p) => p.id), ['uuid-a', 'uuid-b']);
     });
 
     test('payment_method codes map onto the UI display strings', () {
@@ -427,13 +436,14 @@ void main() {
         <String, dynamic>{},
       ]);
 
-      // Cancelled and junk rows dropped; both live records carry the display id.
-      expect(payments, hasLength(2));
+      // Junk rows dropped, the cancelled one kept (struck through on the plan,
+      // "Cancelled" on the list); every record carries the display id.
+      expect(payments, hasLength(3));
       expect(invoice.id, 'QTN-2051');
       expect(payments.every((p) => p.invId == invoice.id), isTrue);
       // This is exactly the filter paymentsForInvoiceProvider applies.
       final schedule = payments.where((p) => p.invId == invoice.id).toList();
-      expect(schedule.map((p) => p.id), ['rec-1', 'rec-2']);
+      expect(schedule.map((p) => p.id), ['rec-1', 'rec-2', 'rec-3']);
     });
 
     test('falls back to the parent uuid when no quotation_number', () {

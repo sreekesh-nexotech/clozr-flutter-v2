@@ -41,6 +41,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   void initState() {
     super.initState();
     _searchCtrl.text = ref.read(prodSearchProvider);
+    // Coming back to Products: the rows and card layout were loaded on an
+    // earlier visit and would otherwise be shown as they were then. Re-fetch
+    // them, keeping the current cards on screen until the fresh ones arrive.
+    // Skipped on the first visit, whose fetches are already in flight.
+    if (ref.read(productsProvider).hasValue) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(productsProvider);
+        ref.invalidate(productListSchemaFutureProvider);
+        ref.invalidate(packageListSchemaFutureProvider);
+      });
+    }
   }
 
   @override
@@ -56,11 +68,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     // Contextual add: the bottom-nav `+` opens the Add product/package sheet.
     registerAdd(
       ref,
-      AddAction(label: 'Add product', run: (ctx) => showAddProductSheet(ctx, mode: mode)),
+      AddAction(label: 'Add product', module: 'product', run: (ctx) => showAddProductSheet(ctx, mode: mode)),
     );
 
     final all = ref.watch(allProductsProvider);
     final async = ref.watch(productsProvider);
+    // Both card layouts, watched here so each starts loading at mount.
+    final productSchema = ref.watch(productListSchemaProvider);
+    final packageSchema = ref.watch(packageListSchemaProvider);
     final cat = ref.watch(prodCatProvider);
     final searchOpen = ref.watch(prodSearchOpenProvider);
     final query = ref.watch(prodSearchProvider);
@@ -161,7 +176,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 itemBuilder: (context, i) {
                   final product = visible[i];
                   return ProductCard(
-                    schema: ref.watch(productListSchemaProvider),
+                    // Packages have their own View Settings layout.
+                    schema: product.isPackage ? packageSchema : productSchema,
                     product: product,
                     onTap: () => context.push('${Routes.productDetail}?id=${product.id}'),
                   );
@@ -186,10 +202,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     // admin's edit to the mobile card never appeared — and the org's config
     // does change under a running app.
     ref.invalidate(productListSchemaFutureProvider);
+    ref.invalidate(packageListSchemaFutureProvider);
     await settle([
       ref.read(productsProvider.future),
       ref.read(productTypeCatalogProvider.future),
       ref.read(productListSchemaFutureProvider.future),
+      ref.read(packageListSchemaFutureProvider.future),
     ]);
   }
 

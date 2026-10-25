@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../crm/application/providers/crm_tasks_providers.dart';
+import '../../../crm/application/providers/followups_providers.dart' show refreshFollowups;
+import '../../../../core/network/network_providers.dart';
+import '../../../../core/network/api_endpoints.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +14,7 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/notification_links.dart';
 import '../../application/providers/notifications_providers.dart';
 import '../../domain/entities/app_notification.dart';
 import '../components/notification_row.dart';
@@ -17,14 +22,32 @@ import '../components/notification_row.dart';
 /// Full-screen Notifications page: grouped (Today/Yesterday/Earlier), All|Unread
 /// segmented filter, Mark-all, deep-linking rows, pagination, and
 /// loading/empty states.
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
+  @override
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   static const _dayLabels = {'today': 'TODAY', 'yesterday': 'YESTERDAY', 'earlier': 'EARLIER'};
   static const _dayOrder = ['today', 'yesterday', 'earlier'];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    // The feed provider outlives the screen, so opening the inbox re-reads it
+    // — as the webapp's panel refetches on open — instead of showing what was
+    // loaded at sign-in.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notificationsProvider.notifier).refresh();
+      ref.invalidate(notificationsUnreadCountProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(notificationsProvider);
     final ctrl = ref.read(notificationsProvider.notifier);
 
@@ -85,14 +108,14 @@ class NotificationsScreen extends ConsumerWidget {
             ],
           ),
           SizedBox(height: 14.h),
+          _segmented(state, ctrl),
+          SizedBox(height: 10.h),
           Row(
             children: [
               Expanded(
                 child: Text('${state.unreadCount} unread',
                     style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
               ),
-              _segmented(state, ctrl),
-              SizedBox(width: 10.w),
               GestureDetector(
                 onTap: () {
                   ctrl.markAllRead();
@@ -118,9 +141,11 @@ class NotificationsScreen extends ConsumerWidget {
   Widget _segmented(NotificationsState state, NotificationsController ctrl) {
     Widget seg(String label, NotifFilter f) {
       final on = state.filter == f;
-      return GestureDetector(
+      return Expanded(
+        child: GestureDetector(
         onTap: () => ctrl.setFilter(f),
         child: Container(
+          alignment: Alignment.center,
           padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 5.h),
           decoration: BoxDecoration(
             color: on ? AppColors.white : Colors.transparent,
@@ -132,13 +157,19 @@ class NotificationsScreen extends ConsumerWidget {
           child: Text(label,
               style: AppText.custom(size: 12, weight: FontWeight.w700, color: on ? AppColors.navy : AppColors.textMuted)),
         ),
+        ),
       );
     }
 
     return Container(
       padding: EdgeInsets.all(2.r),
       decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [seg('All', NotifFilter.all), seg('Unread', NotifFilter.unread)]),
+      child: Row(children: [
+        seg('All', NotifFilter.all),
+        seg('Unread', NotifFilter.unread),
+        seg('Pinned', NotifFilter.pinned),
+        seg('Snoozed', NotifFilter.snoozed),
+      ]),
     );
   }
 
@@ -242,7 +273,13 @@ class NotificationsScreen extends ConsumerWidget {
               child: Icon(PhosphorIconsRegular.bellSlash, size: 30.sp, color: AppColors.navy),
             ),
             SizedBox(height: 16.h),
-            Text(filter == NotifFilter.unread ? 'No unread notifications' : 'No notifications',
+            Text(
+                switch (filter) {
+                  NotifFilter.unread => 'No unread notifications',
+                  NotifFilter.pinned => 'No pinned notifications',
+                  NotifFilter.snoozed => 'No snoozed notifications',
+                  NotifFilter.all => 'No notifications',
+                },
                 style: AppText.sectionTitle()),
             SizedBox(height: 6.h),
             Text(filter == NotifFilter.unread ? "You've read everything. Nice work." : 'New updates will show up here.',
@@ -273,6 +310,22 @@ class NotificationsScreen extends ConsumerWidget {
               Navigator.pop(ctx);
               ctrl.toggleRead(n.id);
             }),
+            _menuItem(ctx, n.pinned ? PhosphorIconsRegular.pushPinSlash : PhosphorIconsRegular.pushPin,
+                n.pinned ? 'Unpin' : 'Pin', () async {
+              Navigator.pop(ctx);
+              final err = await ctrl.setPinned(n.id, !n.pinned);
+              if (err != null) ref.read(toastProvider.notifier).showError(err);
+            }),
+            _menuItem(ctx, PhosphorIconsRegular.alarm, n.snoozed ? 'Unsnooze' : 'Snooze', () async {
+              Navigator.pop(ctx);
+              final err = await ctrl.setSnoozed(n.id, !n.snoozed);
+              final toast = ref.read(toastProvider.notifier);
+              if (err != null) {
+                toast.showError(err);
+              } else if (!n.snoozed) {
+                toast.show('Snoozed for ${notificationSnoozeHours}h');
+              }
+            }),
             _menuItem(ctx, PhosphorIconsRegular.trash, 'Delete', () {
               Navigator.pop(ctx);
               ctrl.delete(n.id);
@@ -302,7 +355,63 @@ class NotificationsScreen extends ConsumerWidget {
     );
   }
 
+  /// A task / follow-up notification names its record only in the text
+  /// (`You have been assigned to task: "Send quote".`) — the API sends no id —
+  /// so the record is looked up by that title and opened; the list otherwise.
+  ///
+  /// Follow-ups are Task rows too and their `TaskAssigned` reads the same, so
+  /// both kinds are searched — follow-ups first for a `FollowUp…` event.
+  Future<void> _openTask(BuildContext context, AppNotification n, {bool followupFirst = false}) async {
+    final m = RegExp(r'"([^"]+)"').firstMatch('${n.title} ${n.body}');
+    final title = m?.group(1)?.trim() ?? '';
+    // The lists may predate the record this notification is about.
+    ref.invalidate(crmTasksProvider);
+    refreshFollowups(ref);
+    Future<String?> find(bool followup) async {
+      try {
+        final body = await ref.read(apiServiceProvider).get(ApiEndpoints.crmTasks,
+            query: {'search': title, 'is_followup': '$followup', 'page_size': 20}, quiet: true);
+        final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
+        for (final r in rows) {
+          if (r is Map && '${r['title'] ?? ''}'.trim() == title) return '${r['task_id'] ?? r['id']}';
+        }
+      } on Object {
+        // Fall back to the list.
+      }
+      return null;
+    }
+
+    String? route;
+    if (title.isNotEmpty) {
+      for (final followup in followupFirst ? const [true, false] : const [false, true]) {
+        final id = await find(followup);
+        if (id != null) {
+          route = followup ? '${Routes.followupDetail}?id=$id' : '${Routes.taskDetail}?id=$id';
+          break;
+        }
+      }
+    }
+    if (!context.mounted) return;
+    context.push(route ?? (followupFirst ? Routes.followups : Routes.tasks));
+  }
+
   void _openTarget(BuildContext context, AppNotification n) {
+    final type = n.type.toLowerCase();
+    if (n.targetKind == 'list' && n.targetId == 'tasks' && type.startsWith('task')) {
+      _openTask(context, n);
+      return;
+    }
+    if (n.targetKind == 'list' && n.targetId == 'followups' && type.startsWith('followup')) {
+      _openTask(context, n, followupFirst: true);
+      return;
+    }
+    if (n.targetKind == 'list') {
+      final link = notificationLinkFor(n.type, n.title);
+      if (link != null) {
+        _openLinked(context, link, _listRoute(n.targetId));
+        return;
+      }
+    }
     String? route;
     switch (n.targetKind) {
       case 'lead':
@@ -333,6 +442,48 @@ class NotificationsScreen extends ConsumerWidget {
     if (route != null) context.push(route);
   }
 
+  /// Opens the record a lead / quote / mention notification names (see
+  /// [notificationLinkFor]); [fallback] — the module list — when the lookup
+  /// finds nothing, as before.
+  Future<void> _openLinked(BuildContext context, NotificationLink link, String fallback) async {
+    final api = ref.read(apiServiceProvider);
+    String? route;
+    try {
+      switch (link) {
+        case QuoteByNumber(:final number):
+          route = '${Routes.quoteDetail}?id=${Uri.encodeQueryComponent(number)}';
+        case LeadByName(:final name):
+          final body = await api.get(ApiEndpoints.leads, query: {'search': name, 'page_size': 20}, quiet: true);
+          final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
+          for (final r in rows) {
+            if (r is Map && '${r['lead_name'] ?? r['name'] ?? ''}'.trim().toLowerCase() == name.toLowerCase()) {
+              route = '${Routes.leadDetail}?id=${r['lead_id'] ?? r['id']}';
+              break;
+            }
+          }
+        case NoteByContent(:final content):
+          final body = await api.get(ApiEndpoints.notes, query: {'page_size': 100}, quiet: true);
+          final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
+          for (final r in rows) {
+            if (r is! Map || !noteMatchesMention('${r['content'] ?? ''}', content)) continue;
+            final src = noteSourceOf(Map<String, dynamic>.from(r));
+            route = switch (src?.$1) {
+              'lead' => '${Routes.leadDetail}?id=${src!.$2}',
+              'customer' => '${Routes.customerDetail}?id=${src!.$2}',
+              'quotation' || 'quote' => '${Routes.quoteDetail}?id=${src!.$2}',
+              'task' => '${Routes.taskDetail}?id=${src!.$2}',
+              _ => null,
+            };
+            if (route != null) break;
+          }
+      }
+    } on Object {
+      // Fall back to the list.
+    }
+    if (!context.mounted) return;
+    context.push(route ?? fallback);
+  }
+
   /// A notification's module list. Record-level links are not possible — the
   /// API sends no source-object id on the row or its detail — so the row opens
   /// the list its event belongs to.
@@ -347,6 +498,7 @@ class NotificationsScreen extends ConsumerWidget {
       case 'billing':
         return Routes.billing;
       case 'leads':
+      case 'mention':
         return Routes.leads;
       case 'followups':
         return Routes.followups;

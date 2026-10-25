@@ -6,7 +6,6 @@ import '../../../../../core/network/api_service.dart';
 import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/inr_format.dart';
 import '../../../../../core/utils/relative_time.dart';
-import '../../../../../data/api/status_keys.dart';
 import '../../../domain/entities/payment.dart';
 
 /// Raw payment-record endpoints. `/quotations/payment-records/` rows ARE the
@@ -82,12 +81,20 @@ class PaymentsRemoteDataSource {
     });
     return res is Map && res['posted_receipt_id'] != null;
   }
+
+  /// `DELETE /quotations/payment-records/{id}/`. The server allows it only
+  /// for a record on a milestone-type (`installment_custom`) plan that is
+  /// neither paid nor linked to a tax document, then recalculates the plan;
+  /// anything else is refused with its reason.
+  Future<void> deleteRecord(String recordId) =>
+      _api.delete(ApiEndpoints.paymentRecord(recordId));
 }
 
 // ── JSON → entity mapping (public so the repository and tests reuse it) ──
 
 /// Maps a list of raw `/quotations/payment-records/` rows, skipping malformed
-/// and cancelled entries.
+/// entries. Cancelled records are kept (status `cancelled`): the webapp lists
+/// them with a "Cancelled" pill and the plan schedule strikes them through.
 List<Payment> paymentsFromApiRows(List<dynamic> rows) {
   final out = <Payment>[];
   for (final r in rows) {
@@ -100,12 +107,11 @@ List<Payment> paymentsFromApiRows(List<dynamic> rows) {
 }
 
 /// Maps one `/quotations/payment-records/` row → [Payment]. Returns null for
-/// unusable (no id) and `cancelled` rows — both are skipped, never fatal.
+/// an unusable (no id) row — skipped, never fatal.
 Payment? paymentRecordFromApi(Map<String, dynamic> row) {
   final id = _str(row['record_id']);
   if (id == null) return null;
   final rawStatus = _str(row['status']);
-  if ((rawStatus ?? '').toLowerCase() == 'cancelled') return null;
   try {
     final due = parseApiDate(row['due_date']);
     final paid = parseApiDate(row['paid_date']);
@@ -120,8 +126,16 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
     final gstTds = parseAmount(row['gst_tds_deducted']);
     final gstTcs = parseAmount(row['gst_tcs_deducted']);
     final bankCharge = parseAmount(row['bank_charge']);
-    final statusKey = paymentStatusKey(status: rawStatus, dueDate: due);
+    final statusKey = recordStatusKey(rawStatus);
     final installmentNumber = row['installment_number'];
+    final settledValue = paidAmt + tds + bankCharge -
+        parseAmount(row['amount_refunded']) +
+        parseAmount(row['amount_refund_not_due']);
+    // Gross due falls back to the expected amount (no GST estimate outside
+    // accounting), and the incl.-GST main figure to the gross — as on web.
+    final dueGross = _dec(row['amount_due_gross']) ?? expected;
+    final dueInclGst = _dec(row['amount_due_incl_gst']) ?? dueGross;
+    final settlement = _str(row['settlement_state']);
     return Payment(
       id: id,
       custId: _str(row['customer_id']),
@@ -153,12 +167,30 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
       gatewayRef: _str(row['gateway_ref']),
       method: paymentMethodDisplay(row['payment_method']),
       status: statusKey,
-      date: paid != null
-          ? absoluteDate(paid)
-          : (statusKey == 'overdue'
-              ? 'Overdue ${absoluteDate(due)}'
-              : absoluteDate(due)),
+      // Webapp `rowDate`: "05-Oct-2026" / "Overdue 05-Oct-2026" / "Due …".
+      date: paymentRowDate(status: statusKey, dueOn: due, paidOn: paid),
       owner: '',
+      installmentNumber: installmentNumber is num ? installmentNumber.toInt() : 0,
+      leadName: _str(row['lead_name']),
+      settlementState: const {'pending', 'partly_paid', 'paid'}.contains(settlement)
+          ? settlement!
+          : (statusKey == 'paid' ? 'paid' : 'pending'),
+      amountExpected: expected,
+      amountPaid: paidAmt,
+      amountDueInclGst: dueInclGst,
+      amountDueBasis: const {'INVOICE', 'ESTIMATE', 'AS_QUOTED'}
+              .contains(_str(row['amount_due_basis']))
+          ? _str(row['amount_due_basis'])
+          : null,
+      balanceDue: _dec(row['balance_due']) ??
+          (statusKey == 'paid'
+              ? (dueGross - settledValue).clamp(0.0, double.infinity)
+              : dueGross),
+      dueOn: due,
+      paidOn: paid,
+      methodCode: _str(row['payment_method']),
+      invoiceBlockedReason: _str(row['invoice_blocked_reason']),
+      cancelReason: _str(row['cancel_reason']),
     );
   } on Object {
     return null;
@@ -178,12 +210,37 @@ String paymentMethodDisplay(Object? code) {
       return 'Cash';
     case 'cheque':
       return 'Cheque';
+    case 'auto_debit':
+      return 'Auto-debit';
     default:
       return '—';
   }
 }
 
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
+
+/// A money field that is actually present, parsed; null when absent/blank.
+double? _dec(Object? v) {
+  if (v == null || (v is String && v.trim().isEmpty)) return null;
+  return parseAmount(v);
+}
+
+/// Backend `PaymentRecord.status` → the list's key, as the webapp's DTO maps
+/// it: `pending` is **Due** (whatever its date — the server itself moves a
+/// past-due record to `overdue`), `paid` / `overdue` / `cancelled` pass
+/// through. Nothing is ever `scheduled`.
+String recordStatusKey(String? status) {
+  switch ((status ?? '').toLowerCase()) {
+    case 'paid':
+      return 'paid';
+    case 'overdue':
+      return 'overdue';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return 'due';
+  }
+}
 
 /// A money field as its exact decimal string, whether sent as text or number.
 String? _money(Object? v) {
@@ -209,6 +266,9 @@ RecordSummary? recordSummaryFromApi(Object? v) {
     receiptStatus: _str(r['status']),
     receiptAmount: _money(r['amount']),
     receiptDate: _str(r['receipt_date']),
+    adjustmentState: v['adjustments'] is Map
+        ? _str((v['adjustments'] as Map)['state'])
+        : null,
   );
   return summary.hasDocument || summary.hasReceipt ? summary : null;
 }

@@ -26,7 +26,12 @@ import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_schema.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
 import '../components/crm_async.dart';
+import '../components/duplicate_notice.dart';
 import '../components/lead_schema_form.dart';
+import '../../../../app/router/routes.dart';
+import '../../application/providers/crm_catalog_providers.dart';
+import '../components/lead_lifecycle_sheets.dart';
+import '../../../../core/network/network_providers.dart';
 
 /// Add lead — a grouped form (Contact / Deal / Qualification / Schedule /
 /// Pipeline). Static submit validates name + phone, then toasts and pops.
@@ -71,6 +76,16 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   /// two writes.
   bool _saving = false;
 
+  /// The org's duplicate rule matched: refused ([_dupBlocked]) or saved with
+  /// a warning, in which case [_createdId] is the lead that was saved.
+  LeadDuplicate? _dup;
+  bool _dupBlocked = false;
+  String? _createdId;
+  final _scroll = ScrollController();
+
+  /// Newer record version learned from a 412, used for the next save.
+  String? _version;
+
   /// Whether the record has been copied into the fields yet. One-shot, so a
   /// late-arriving detail fetch never overwrites what the user has typed.
   bool _prefilled = false;
@@ -109,11 +124,26 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Webapp: the Add lead modal refetches its option lists each time it
+    // opens. The catalogs live for the session here, so a team (or source,
+    // status, territory, product) added since was missing until a restart.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final p in [teamCatalogProvider, leadSourceCatalogProvider, leadStatusCatalogProvider, territoryCatalogProvider, productCatalogProvider]) {
+        ref.invalidate(p);
+      }
+    });
+  }
+
+  @override
   void dispose() {
     for (final c in [_name, _email, _company, _project, _value, _industry, _website, _employees, _revenue, _territory, _fitout, _nextFu, _expClose, _source, _note]) {
       c.dispose();
     }
     _phone.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -125,7 +155,11 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
 
   Future<void> _submit() async {
     if (_saving) return;
-    setState(() => _showErrors = true);
+    setState(() {
+      _showErrors = true;
+      // A blocked match is re-checked by this attempt.
+      if (_dupBlocked) _dup = null;
+    });
 
     final schema = ref.read(leadDetailSchemaProvider);
     final dynamicForm = schema.editableColumns.isNotEmpty;
@@ -144,14 +178,15 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     if (dynamicForm) {
       final errors = _formKey.currentState?.validate() ?? const <String>[];
       if (errors.isNotEmpty) {
-        ref.read(toastProvider.notifier).show(errors.first);
+        // Shown under each field by the form; the toast repeats the first.
+        ref.read(toastProvider.notifier).showError(errors.first);
         return;
       }
     }
 
     final editingId = _editingId;
     final editing = editingId.isNotEmpty;
-    final done = editing ? 'Lead updated' : 'Lead added';
+    final done = editing ? 'Lead updated' : 'Lead created';
 
     if (!ApiConfig.apiEnabled) {
       ref.read(toastProvider.notifier).show(done);
@@ -162,7 +197,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     // The org's layout is also the org's writable set, so when it is available
     // it decides the payload. The hand-written map stays as the fallback for a
     // failed schema fetch.
-    final fields = dynamicForm
+    var fields = dynamicForm
         ? (_formKey.currentState?.payload ?? const <String, dynamic>{})
         : LeadsRemoteDataSource.leadWriteFields(
             name: _name.text,
@@ -176,17 +211,49 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
       return;
     }
 
+    // A Lost stage needs its reason (webapp: "Choose a lost reason." under the
+    // status on Add lead) — asked here rather than letting the server refuse.
+    final statusValue = fields['status_id'] ?? fields['status'];
+    if (statusValue != null && fields['lost_reason'] == null) {
+      final stage = ref.read(leadStatusesProvider).where((s) => s.id == '$statusValue').firstOrNull;
+      if (stage?.statusType == 'lost') {
+        final lost = await showLostReasonSheet(context,
+            kind: 'lead', recordId: editingId, statusName: stage!.name);
+        if (lost == null || !mounted) return;
+        fields = {...fields, ...lost.toBody()};
+      }
+    }
+
     setState(() => _saving = true);
     try {
       final repo = ref.read(leadsRepositoryProvider);
+      LeadDuplicate? warned;
+      String? createdId;
       if (editing) {
-        await repo.updateLead(editingId, fields);
+        // The version the form was filled from goes out as `If-Match`, so a
+        // lead changed elsewhere since is refused rather than overwritten.
+        await repo.updateLead(editingId, fields, version: _version ?? _rowVersion(editingId));
       } else {
-        await repo.createLead(fields);
+        final created = await repo.createLead(fields);
+        // Webapp `warn` policy: the 201 carries the match under `warnings`.
+        warned = LeadDuplicate.fromWarnings(created?.raw['warnings']);
+        createdId = created?.id;
       }
       if (!mounted) return;
       // Both ownership scopes can contain the lead — refresh either view.
       ref.invalidate(leadsScopedProvider);
+      if (warned != null) {
+        // Saved, but kept open on the matches with a single "Done".
+        setState(() {
+          _saving = false;
+          _dup = warned;
+          _dupBlocked = false;
+          _createdId = createdId;
+        });
+        _scrollToTop();
+        ref.read(toastProvider.notifier).show('Lead created — possible duplicate');
+        return;
+      }
       // An edit also moves the record the detail screen is showing behind us.
       if (editing) ref.invalidate(leadDetailProvider(editingId));
       ref.read(toastProvider.notifier).show(done);
@@ -194,8 +261,60 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).showError(e.message);
+      if (editing && e.statusCode == 412) {
+        // Nothing was written. Keep everything typed, show who changed it, and
+        // move to the newer version: only the fields edited here are sent, so
+        // saving again applies them on top of that change instead of undoing it.
+        final current = e.extra?['current_updated_at'];
+        if (current is String && current.isNotEmpty) _version = current;
+        ref.invalidate(leadDetailProvider(editingId));
+        ref.read(toastProvider.notifier).showError('Changed elsewhere — ${e.message}');
+        return;
+      }
+      final dup = LeadDuplicate.parse(e.extra?['duplicate']);
+      if (!editing && dup != null) {
+        ref.read(apiServiceProvider).handled(e);
+        setState(() {
+          _dup = dup;
+          _dupBlocked = true;
+        });
+        _scrollToTop();
+        ref.read(toastProvider.notifier).showError('This lead already exists');
+        return;
+      }
+      // Webapp: each field error goes under its input (scrolled to), and the
+      // toast carries the server's own words without the `field:` prefix.
+      final fieldErrors = e.fieldErrors ?? const <String, List<String>>{};
+      final firsts = {
+        for (final f in fieldErrors.entries)
+          if (f.value.isNotEmpty) f.key: f.value.first,
+      };
+      if (firsts.isNotEmpty) _formKey.currentState?.showErrors(firsts);
+      // Explained here (under the field, without the `field:` prefix), so the
+      // shell's raw failure toast stands down.
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(firsts.isNotEmpty
+          ? firsts.values.first
+          : (e.message.isEmpty ? (editing ? 'Could not save your change.' : 'Could not create the lead.') : e.message));
     }
+  }
+
+  void _scrollToTop() {
+    if (_scroll.hasClients) {
+      _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
+  void _openFromNotice(String route) {
+    // Leaving a saved (warned) create, or abandoning a blocked one.
+    context.pop();
+    context.push(route);
+  }
+
+  /// `updated_at` of the record the edit form was filled from.
+  String? _rowVersion(String id) {
+    final v = ref.read(leadRowProvider(id)).valueOrNull?['updated_at'];
+    return v is String && v.isNotEmpty ? v : null;
   }
 
   void _pickOwner() {
@@ -285,8 +404,17 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                         onRetry: () => ref.invalidate(leadRowProvider(editingId)),
                       )
                     : ListView(
+                        controller: _scroll,
                         padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
                         children: [
+                          if (_dup != null)
+                            DuplicateNotice(
+                              duplicate: _dup!,
+                              blocked: _dupBlocked,
+                              newLeadId: _createdId,
+                              onOpenLead: (id) => _openFromNotice('${Routes.leadDetail}?id=$id'),
+                              onOpenCustomer: (id) => _openFromNotice('${Routes.customerDetail}?id=$id'),
+                            ),
                           FormSection(
                             title: 'Lead',
                             children: [
@@ -294,6 +422,15 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                                 key: _formKey,
                                 schema: schema,
                                 row: rowAsync.valueOrNull ?? const {},
+                                // Edits send only what changed: resending every
+                                // field undid concurrent changes and cleared
+                                // assignees the form never showed.
+                                diffAgainstRow: editing,
+                                includeCustomFields: true,
+                                // Webapp: only the contact name is required; the
+                                // phone is optional unless the org makes it so.
+                                mobileRequired: false,
+                                webAddLeadForm: !editing,
                               ),
                             ],
                           ),
@@ -301,7 +438,19 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                       ),
           ),
           StickyActionBar(
-            children: [
+            children: _dup != null && !_dupBlocked
+                ? [
+                    // Webapp: a warned create is already saved — only "Done".
+                    Expanded(
+                      child: PrimaryButton(
+                        label: 'Done',
+                        icon: PhosphorIconsBold.check,
+                        height: 48,
+                        onTap: () => context.pop(),
+                      ),
+                    ),
+                  ]
+                : [
               PrimaryButton(
                   label: 'Cancel',
                   ghost: true,

@@ -96,7 +96,7 @@ class LeadsRepositoryImpl implements LeadsRepository {
   /// No-op — mock mode has nothing to persist to. Returning null keeps the
   /// form on its toast-only path rather than claiming the edit was saved.
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields) async {
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return null;
   }

@@ -57,7 +57,10 @@ class CustomerFilterCodec {
     // Companies are free text on the customer, not a catalog — the param takes
     // the names themselves.
     _encodeChoice(out, v.choice('companies'), 'organization_name', const []);
-    _encodeChoice(out, v.choice('owners'), 'assigned_to', const [], toUser: true);
+    // `assignees`, not `assigned_to`: the customer filter set ignores
+    // `assigned_to__in` (the list comes back unfiltered — verified on dev, and
+    // what the webapp sends), while `assignees__in` / `__not` filter.
+    _encodeChoice(out, v.choice('owners'), 'assignees', const [], toUser: true);
 
     final value = v.range('value');
     if (value != null && value.isActive) {
@@ -123,7 +126,10 @@ class CustomerFilterCodec {
     _decodeChoice(def, v, 'sources', _sourceParam, (id) => _nameOf(sources, id));
     _decodeChoice(def, v, 'products', 'products', (id) => _nameOf(products, id));
     _decodeChoice(def, v, 'companies', 'organization_name', (id) => id);
+    // Views saved by the webapp still carry the old `assigned_to` key.
     _decodeChoice(def, v, 'owners', 'assigned_to',
+        (id) => id == currentUserId ? 'me' : id);
+    _decodeChoice(def, v, 'owners', 'assignees',
         (id) => id == currentUserId ? 'me' : id);
 
     final min = _int(def['revenue__min']);

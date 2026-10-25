@@ -61,6 +61,19 @@ import '../sheets/add_followup_sheet.dart';
 import '../sheets/add_task_sheet.dart';
 import '../sheets/log_call_sheet.dart';
 import 'crm_status_sheet.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
+import '../../application/providers/customers_providers.dart';
+import '../../application/providers/lead_lifecycle_providers.dart';
+import '../components/lead_lifecycle_sheets.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
+import '../components/call_log_actions.dart';
+import '../components/sla_clocks_section.dart';
+import '../components/closing_note.dart';
+import 'package:intl/intl.dart';
+import '../../../../core/utils/money_format.dart';
+import '../components/whatsapp_draft_sheet.dart';
+import '../../../messages/domain/entities/conversation.dart' show waDigits;
+import '../../../../core/network/network_providers.dart';
 
 /// Lead detail — profile card, lead-score/AI card, information card with
 /// owner & assignees, a tabbed activity card (Tasks / Call log / Follow-ups /
@@ -147,48 +160,144 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// above: that display list has the owner filtered out for readability, and
   /// saving it would silently unassign them.
   Future<void> _editAssignees(Lead lead) async {
-    final roster = ref.read(rosterProvider);
+    if (!_canEditPeople(lead)) return;
+    final toast = ref.read(toastProvider.notifier);
+    final row = ref.read(leadRowProvider(lead.id)).valueOrNull;
+    final owner = _ownerOf(row);
+    final current = [for (final a in _assigneesOf(row)) a.$1];
+    List<CatalogOption> users;
+    try {
+      users = await ref.read(assignableUsersProvider(lead.id).future);
+    } on Object catch (e) {
+      if (!mounted) return;
+      toast.showError(e is AppError ? e.message : 'Could not load the user list.');
+      return;
+    }
+    if (!mounted) return;
+    // Webapp: the owner is not offered as an assignee.
+    final options = [
+      for (final u in users)
+        if (UserDirectory.realUserId(u.id) != owner?.$1) u,
+    ];
     final picked = await showOptionPicker(
       context: context,
       title: 'Assignees',
       multi: true,
-      options: [
-        for (final u in roster) CatalogOption(id: u.id, name: u.name),
-      ],
-      selected: {...lead.team},
-      emptyNote: 'No teammates have loaded yet. Open a few records, or ask an '
-          'admin to check your access to the members list.',
+      options: options,
+      selected: {for (final id in current) UserDirectory.mapUserId(id)},
+      emptyNote: 'No options available',
     );
     if (picked == null || !mounted) return;
-
-    // Ids the API will accept — the directory holds prototype users too, and
-    // it rejects those outright.
     final ids = [
       for (final id in picked)
         if (UserDirectory.realUserId(id) != null) UserDirectory.realUserId(id)!,
     ];
-    if (ids.length == lead.team.length &&
-        ids.toSet().containsAll(lead.team.map(UserDirectory.realUserId))) {
-      return; // nothing actually changed
-    }
+    final added = ids.where((i) => !current.contains(i)).length;
+    final removed = current.where((i) => !ids.contains(i)).length;
+    if (added == 0 && removed == 0) return;
+    await _patchLead(lead, {'assignees': ids},
+        success: removed == 0
+            ? 'Assignee added'
+            : added == 0
+                ? 'Assignee removed'
+                : 'Assignees updated');
+  }
 
+  /// Owner, assignees and team follow the webapp's `canEditFields`: not on a
+  /// converted or Won-locked lead, and only with lead.update.
+  bool _canEditPeople(Lead lead) {
+    final toast = ref.read(toastProvider.notifier);
+    if (_conversionOf(lead).isConverted) {
+      toast.show('This lead has converted — edit the customer instead.');
+      return false;
+    }
+    if (lead.status == 'won') {
+      toast.show('Won — details are locked. Move it out of Won to edit.');
+      return false;
+    }
+    return ensurePermission(ref, 'lead', PermVerb.update);
+  }
+
+  /// The upsell's `parent_customer` — sent as a bare id or as an object.
+  static String? _parentCustomerId(Map<String, dynamic>? row) {
+    final p = row?['parent_customer'];
+    if (p is Map) return p['customer_id']?.toString();
+    final s = p?.toString();
+    return s == null || s.isEmpty ? null : s;
+  }
+
+  String _parentCustomerName(Map<String, dynamic>? row) {
+    final p = row?['parent_customer'];
+    if (p is Map && p['name'] != null) return '${p['name']}';
+    final id = _parentCustomerId(row);
+    if (id == null) return '—';
+    final c = ref.watch(customerRowProvider(id)).valueOrNull;
+    return '${c?['name'] ?? c?['customer_name'] ?? '—'}';
+  }
+
+  /// `(user_id, name)` of the record's `lead_owner`, or null when unowned.
+  static (String, String)? _ownerOf(Map<String, dynamic>? row) {
+    final o = row?['lead_owner'];
+    if (o is Map && o['user_id'] != null) {
+      final name = '${o['full_name'] ?? ''}'.trim();
+      return ('${o['user_id']}', name.isEmpty ? '${o['email'] ?? '—'}' : name);
+    }
+    return null;
+  }
+
+  /// `(user_id, name)` for each of the record's `assignees`.
+  static List<(String, String)> _assigneesOf(Map<String, dynamic>? row) {
+    final list = row?['assignees'];
+    if (list is! List) return const [];
+    return [
+      for (final a in list)
+        if (a is Map && a['user_id'] != null)
+          ('${a['user_id']}', '${a['full_name'] ?? a['email'] ?? ''}'.trim()),
+    ];
+  }
+
+  /// `(team_id, name)` of the record's `assigned_team`, or null.
+  static (String, String)? _teamOf(Map<String, dynamic>? row) {
+    final t = row?['assigned_team'];
+    if (t is Map && (t['team_id'] ?? t['id']) != null) {
+      return ('${t['team_id'] ?? t['id']}', '${t['name'] ?? ''}');
+    }
+    return null;
+  }
+
+  /// Assign, change or remove the lead's team (webapp "Assign team" /
+  /// "Change assigned team" / "Remove team").
+  Future<void> _editTeam(Lead lead) async {
+    if (!_canEditPeople(lead)) return;
+    final toast = ref.read(toastProvider.notifier);
+    final team = _teamOf(ref.read(leadRowProvider(lead.id)).valueOrNull);
+    List<CatalogOption> teams;
     try {
-      await ref
-          .read(leadsRepositoryProvider)
-          .updateLead(lead.id, {'assignees': ids});
-    } on AppError catch (e) {
+      teams = await ref.read(leadAssignableTeamsProvider.future);
+    } on Object catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).showError(e.message);
+      toast.showError(e is AppError ? e.message : 'Could not load the teams.');
       return;
     }
     if (!mounted) return;
-    // The record, its raw twin behind the edit form, and both list scopes all
-    // carry assignees.
-    ref.invalidate(leadDetailProvider(lead.id));
-    ref.invalidate(leadRowProvider(lead.id));
-    ref.invalidate(leadsScopedProvider);
-    ref.read(toastProvider.notifier).show(
-        ids.isEmpty ? 'Assignees cleared' : 'Assignees updated');
+    final picked = await showOptionPicker(
+      context: context,
+      title: team == null ? 'Assign team' : 'Change assigned team',
+      options: [
+        if (team != null) const CatalogOption(id: '__remove__', name: 'Remove team'),
+        ...teams,
+      ],
+      selected: {if (team != null) team.$1},
+      emptyNote: 'No options available',
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    final id = picked.first;
+    if (id == team?.$1) return;
+    if (id == '__remove__') {
+      await _patchLead(lead, {'assigned_team': null}, success: 'Team removed');
+    } else {
+      await _patchLead(lead, {'assigned_team': id}, success: 'Team assigned');
+    }
   }
 
   /// Opens the lead form in edit mode. Reached from two places — the overflow
@@ -198,39 +307,93 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// A converted lead is frozen server-side (`403` on `PATCH`); say so instead
   /// of opening a form whose save could only fail.
   void _editLead(Lead lead) {
-    if (lead.status == 'won') {
+    final conversion = _conversionOf(lead);
+    if (conversion.isConverted) {
       ref
           .read(toastProvider.notifier)
           .show('This lead has converted — edit the customer instead.');
       return;
     }
+    // Won but not converted: the webapp locks the fields and only lets the
+    // status move.
+    if (lead.status == 'won') {
+      ref.read(toastProvider.notifier).show('Won — details are locked. Move it out of Won to edit.');
+      return;
+    }
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
     context.push('${Routes.addLead}?id=${lead.id}');
   }
 
-  void _openLeadMenu(Lead lead, bool converted) {
+  /// The record's conversion state. The list row behind [Lead] omits these
+  /// keys, so they come from the raw record.
+  LeadConversion _conversionOf(Lead lead) => LeadConversion.fromRow(
+        ref.read(leadRowProvider(lead.id)).valueOrNull,
+        isWon: lead.status == 'won',
+      );
+
+  void _openLeadMenu(Lead lead, LeadConversion conversion) {
     final toast = ref.read(toastProvider.notifier);
+    final converted = conversion.isConverted;
+    final canUpdate = hasPermission(ref, 'lead', PermVerb.update);
+    final isWon = lead.status == 'won';
+    // Webapp header rules: only a Won lead converts; a pending approval or a
+    // quote-mode org waiting on an accepted quote holds it back.
+    final convertBlock = !isWon
+        ? 'Lead must be in a Won status before conversion.'
+        : conversion.pendingApproval
+            ? 'Pending approval'
+            : conversion.waitingForQuote
+                ? 'Won · converts when a quote is accepted'
+                : !canUpdate
+                    ? permissionCopy(PermVerb.update)
+                    : null;
     showActionMenu(
       context,
       actions: [
         MenuAction(icon: PhosphorIconsFill.phone, label: 'Call lead', onTap: () => _callLead(lead)),
         MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => _openWhatsapp(lead)),
         MenuAction(icon: PhosphorIconsRegular.envelopeSimple, label: 'Send email', onTap: () => toast.show('Composing email…')),
+        if (converted)
+          MenuAction(
+            icon: PhosphorIconsRegular.buildings,
+            label: 'View customer',
+            sublabel: conversion.customerName,
+            enabled: conversion.customerId != null,
+            onTap: () => context.push('${Routes.customerDetail}?id=${conversion.customerId}'),
+          )
+        else
+          MenuAction(
+            icon: PhosphorIconsRegular.handshake,
+            label: 'Convert to customer',
+            enabled: convertBlock == null,
+            sublabel: convertBlock,
+            onTap: () => _convert(lead),
+          ),
         MenuAction(
-          icon: PhosphorIconsRegular.handshake,
-          label: 'Convert to customer',
-          enabled: !converted,
-          sublabel: converted ? 'Already converted' : null,
-          onTap: () => toast.show('Converting to customer…'),
+          icon: PhosphorIconsRegular.userSwitch,
+          label: 'Reassign owner',
+          enabled: !converted && canUpdate,
+          sublabel: converted
+              ? 'Locked — lead converted'
+              : canUpdate
+                  ? null
+                  : permissionCopy(PermVerb.update),
+          onTap: () => _reassignOwner(lead),
         ),
-        MenuAction(icon: PhosphorIconsRegular.userSwitch, label: 'Reassign owner', onTap: () => _reassignOwner(lead)),
         // The sticky bar's pencil now opens Edit lead, so the notes composer
         // keeps its shortcut here rather than losing one entirely.
         MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
         MenuAction(
           icon: PhosphorIconsRegular.pencilSimple,
           label: 'Edit lead',
-          enabled: !converted,
-          sublabel: converted ? 'Locked — lead converted' : null,
+          enabled: !converted && !isWon && canUpdate,
+          sublabel: converted
+              ? 'Locked — lead converted'
+              : isWon
+                  ? 'Won — details are locked. Move it out of Won to edit.'
+                  : canUpdate
+                      ? null
+                      : permissionCopy(PermVerb.update),
           onTap: () => _editLead(lead),
         ),
       ],
@@ -293,6 +456,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // The record is authoritative — it is the only source carrying the owner,
     // email, mobile, WhatsApp and territory. The list row stands in until it
     // lands so the page paints straight away rather than flashing a skeleton.
+    // A 404 means the lead was deleted or merged since the list loaded — the
+    // list row must not stand in for it then, or a record that no longer
+    // exists stays on screen looking editable.
+    final gone = record.hasError && crmAppError(record.error!).type == AppErrorType.notFound;
+    if (gone) return _notFound();
     final lead = record.valueOrNull ?? ref.watch(leadByIdProvider(id));
     if (lead != null) return _buildLead(context, lead);
 
@@ -304,12 +472,21 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       ));
     }
     // Loaded, and the server has no such lead for this caller.
-    return _stateScaffold(const EmptyState(
-      icon: PhosphorIconsRegular.magnifyingGlass,
-      title: 'Lead not found',
-      body: 'This lead may have been removed or you no longer have access to it.',
-    ));
+    return _notFound();
   }
+
+  /// The webapp's "Lead not found" state, with a way back to the list. The list
+  /// is refreshed on the way out so the stale row is gone too.
+  Widget _notFound() => _stateScaffold(EmptyState(
+        icon: PhosphorIconsRegular.magnifyingGlass,
+        title: 'Lead not found',
+        body: 'It may have been deleted or merged, or the link is incomplete.',
+        ctaLabel: 'Go to leads',
+        onCta: () {
+          ref.invalidate(leadsScopedProvider);
+          context.pop();
+        },
+      ));
 
   /// Places a call to the lead. [LeadCallService] picks the route — Exotel
   /// click-to-call when the org has telephony, the device dialler otherwise —
@@ -354,24 +531,39 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     }
   }
 
-  /// Opens WhatsApp for the lead. [LeadWhatsappService] picks the route — the
-  /// CRM's own thread when one exists, the WhatsApp app otherwise — and this
-  /// only navigates and reports.
+  /// Opens WhatsApp for the lead, as the webapp's chat icon does: the lead's
+  /// own CRM thread when one exists, otherwise a draft chat in the app
+  /// (template required). It never hands off to the device's WhatsApp.
   ///
   /// The in-app route marks the thread read on open, which is the step the API
   /// reference calls out as the one that is easy to miss: rendering messages
   /// has no side effect, so the header's unread badge only clears because
   /// `POST /conversations/<id>/read/` was fired here.
   Future<void> _openWhatsapp(Lead lead) async {
+    final phone = _waMobileOf(lead);
     final outcome = await ref
         .read(leadWhatsappServiceProvider)
-        .open(leadId: lead.id, phone: lead.phone);
+        .open(leadId: lead.id, phone: phone, openExternally: false);
     if (!mounted) return;
+    // Webapp: no thread yet → a draft chat in the app, template required.
+    if (outcome.result == LeadWhatsappResult.noThread) {
+      await showWhatsappDraftSheet(
+        context,
+        name: lead.name,
+        phoneDigits: waDigits(phone),
+        onSent: () {
+          ref.invalidate(conversationsProvider);
+          _openWhatsapp(lead);
+        },
+      );
+      return;
+    }
 
     final note = switch (outcome.result) {
       LeadWhatsappResult.openedThread => null,
       LeadWhatsappResult.handedToWhatsapp => 'Opening WhatsApp…',
-      LeadWhatsappResult.noNumber => 'This lead has no phone number.',
+      LeadWhatsappResult.noNumber => 'No phone number on this lead.',
+      LeadWhatsappResult.noThread => null,
       LeadWhatsappResult.whatsappUnavailable =>
         'Could not open WhatsApp on this device.',
       LeadWhatsappResult.lookupFailed => null,
@@ -390,12 +582,25 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     context.push('${Routes.chat}?id=$conversationId');
   }
 
+  /// The number the WhatsApp chat uses: the lead's `mobile_no` only, as the
+  /// webapp reads it — no fallback to `phone`. The record row first, then the
+  /// list row; mock mode (no API row) keeps the entity's number.
+  String _waMobileOf(Lead lead) {
+    final row = ref.read(leadRowProvider(lead.id)).valueOrNull;
+    if (row == null && lead.raw.isEmpty) return lead.phone;
+    final v = row?['mobile_no'] ?? lead.raw['mobile_no'];
+    return v is String ? v.trim() : '';
+  }
+
   /// Reassigns the lead to another user.
   ///
   /// The candidates come from the record's own `assignable-users` endpoint, not
   /// the org roster — the server decides who is eligible for *this* lead.
   Future<void> _reassignOwner(Lead lead) async {
+    if (!_canEditPeople(lead)) return;
     final toast = ref.read(toastProvider.notifier);
+    final row = ref.read(leadRowProvider(lead.id)).valueOrNull;
+    final ownerId = _ownerOf(row)?.$1;
     List<CatalogOption> users;
     try {
       users = await ref.read(assignableUsersProvider(lead.id).future);
@@ -410,26 +615,25 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       return;
     }
 
+    // Webapp: the current owner is not offered.
+    users = [for (final u in users) if (UserDirectory.realUserId(u.id) != ownerId) u];
+    if (users.isEmpty) {
+      toast.show('No one else can be assigned to this lead.');
+      return;
+    }
     final picked = await showReassignOwnerSheet(
       context: context,
       users: users,
       currentOwnerId: lead.owner,
     );
     if (picked == null || !mounted) return;
-    if (UserDirectory.mapUserId(picked) == lead.owner) return; // unchanged
-
-    try {
-      await ref.read(leadsRepositoryProvider).updateLead(lead.id, {'lead_owner': picked});
-      // The PATCH response omits `lead_owner` (it is trimmed out of the write
-      // echo), so the new owner has to be read back rather than taken from it.
-      ref.invalidate(leadDetailProvider(lead.id));
-      ref.invalidate(leadsScopedProvider);
-      if (!mounted) return;
-      toast.show('Owner reassigned');
-    } on Object catch (e) {
-      if (!mounted) return;
-      toast.show(e is AppError ? e.message : 'Could not reassign the owner.');
-    }
+    final newOwner = UserDirectory.realUserId(picked);
+    if (newOwner == null || newOwner == ownerId) return; // unchanged
+    // The new owner leaves the assignee set, as the webapp's reassign does.
+    await _patchLead(lead, {
+      'lead_owner': newOwner,
+      'assignees': [for (final a in _assigneesOf(row)) if (a.$1 != newOwner) a.$1],
+    }, success: 'Owner reassigned');
   }
 
   /// Opens the stage picker.
@@ -439,6 +643,12 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// back to the built-in vocabulary with no `onSelect` — the prototype's
   /// toast-only behaviour, because there is nothing to persist to.
   void _openStatusSheet(Lead lead, List<CatalogOption> statuses) {
+    // A converted lead is frozen; the status needs lead.update (webapp).
+    if (_conversionOf(lead).isConverted) {
+      ref.read(toastProvider.notifier).show('This lead has converted — edit the customer instead.');
+      return;
+    }
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
     if (statuses.isEmpty) {
       showCrmStatusSheet(
         context: context,
@@ -465,19 +675,36 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           .where((s) => s.key == currentKey)
           .map((s) => s.id)
           .firstOrNull ?? '',
-      onSelect: (statusId) => _setStatus(lead, statusId),
+      onSelect: (statusId) => _setStatus(lead, statusId, statuses),
     );
   }
 
   /// Writes the new stage, then refreshes the record and every lead list so the
   /// card pill and the tab counts follow.
-  Future<void> _setStatus(Lead lead, String statusId) async {
+  ///
+  /// A Lost stage first asks why (webapp "Move to Lost"): the reason is
+  /// required, and open invoices are credited only when the user agreed.
+  Future<void> _setStatus(Lead lead, String statusId, [List<CatalogOption> statuses = const []]) async {
+    final target = statuses.where((s) => s.id == statusId).firstOrNull;
+    LostChoice? lost;
+    if (target?.statusType == 'lost') {
+      lost = await showLostReasonSheet(context,
+          kind: 'lead', recordId: lead.id, statusName: target!.name);
+      if (lost == null || !mounted) return;
+    }
     try {
-      await ref.read(leadsRepositoryProvider).updateLeadStatus(lead.id, statusId);
+      if (lost != null) {
+        await ref
+            .read(leadsRepositoryProvider)
+            .updateLead(lead.id, {'status_id': statusId, ...lost.toBody()});
+      } else {
+        await ref.read(leadsRepositoryProvider).updateLeadStatus(lead.id, statusId);
+      }
       ref.invalidate(leadDetailProvider(lead.id));
+      ref.invalidate(leadRowProvider(lead.id));
       ref.invalidate(leadsScopedProvider);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show('Status updated');
+      ref.read(toastProvider.notifier).show(target != null ? 'Status set to ${target.name}' : 'Status updated');
     } on Object catch (e) {
       if (!mounted) return;
       // A rejected write must not leave a stage on screen that was never saved.
@@ -500,9 +727,12 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // Same resolution the list card uses, so the pill here and the pill there
     // never disagree about a lead's stage name or colour.
     final meta = leadStatusMeta(lead, statuses);
-    // "Converted" is derived from the lead itself (won deals are locked from
-    // re-conversion); the separate customers list is no longer fetched here.
-    final converted = lead.status == 'won';
+    // Conversion state comes from the record (`is_converted`,
+    // `converted_customer`, …) — Won alone does not mean converted.
+    final conversion = LeadConversion.fromRow(
+      ref.watch(leadRowProvider(lead.id)).valueOrNull,
+      isWon: lead.status == 'won',
+    );
 
     // Notes thread (#13). `apiModel` is what wires it to the backend: without
     // it the thread is local-only even in API mode, so a note — and any file
@@ -544,7 +774,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             onBack: () => context.pop(),
             trailing: DetailIconAction(
               icon: PhosphorIconsBold.dotsThreeVertical,
-              onTap: () => _openLeadMenu(lead, converted),
+              onTap: () => _openLeadMenu(lead, conversion),
             ),
           ),
           Expanded(
@@ -560,12 +790,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               children: [
                 _profileCard(lead, meta, statuses),
                 SizedBox(height: 14.h),
+                ..._lifecycleBanners(lead, conversion),
                 // The whole score card is one configurable column; an org that
                 // hides `lead_score` should not see a card about it.
                 if (ref.watch(leadDetailSchemaProvider).shows('lead_score')) ...[
                   _scoreCard(lead),
                   SizedBox(height: 14.h),
                 ],
+                // Webapp: the SLA section sits above Lead information, and
+                // only when the lead has clocks.
+                LeadSlaClocks(leadId: lead.id),
                 _infoCard(lead),
                 SizedBox(height: 14.h),
                 _activityCard(lead),
@@ -578,6 +812,26 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
                   onAddReply: (noteId, body) =>
                       ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
+                  // Webapp NotesPanel: tag, @mention (the lead's assignable
+                  // users), author-only pin/edit/delete, read-only once converted.
+                  webappToolbar: true,
+                  noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
+                  mentionables: [
+                    for (final u in ref.watch(assignableUsersProvider(lead.id)).valueOrNull ?? const <CatalogOption>[])
+                      (id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name),
+                  ],
+                  currentUserId: UserDirectory.currentUserId,
+                  readOnly: conversion.isConverted,
+                  onAddTypedNote: (body, atts, typeId, typeName, mentions) => ref
+                      .read(crmNotesProvider(notesSeed).notifier)
+                      .addNote(body, atts, ref.read(noteAuthorProvider),
+                          noteTypeId: typeId,
+                          noteTypeName: typeName,
+                          mentionedUserIds: mentions,
+                          authorId: UserDirectory.currentUserId),
+                  onTogglePin: (id) => ref.read(crmNotesProvider(notesSeed).notifier).togglePin(id),
+                  onEditNote: (id, body) => ref.read(crmNotesProvider(notesSeed).notifier).editNote(id, body),
+                  onDeleteNote: (id) => ref.read(crmNotesProvider(notesSeed).notifier).deleteNote(id),
                 ),
                 SizedBox(height: 14.h),
                 _activityLogCard(lead),
@@ -589,6 +843,89 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Webapp banners: CONVERTED with the customer, the Won lock, a pending
+  /// approval, the quote-mode wait, and the recorded lost reason.
+  List<Widget> _lifecycleBanners(Lead lead, LeadConversion c) {
+    Widget banner(IconData icon, Color fg, Color bg, String text, {VoidCallback? onTap, String? action}) =>
+        Padding(
+          padding: EdgeInsets.only(bottom: 14.h),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
+            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12.r)),
+            child: Row(
+              children: [
+                Icon(icon, size: 15.sp, color: fg),
+                SizedBox(width: 8.w),
+                Expanded(child: Text(text, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: fg))),
+                if (onTap != null && action != null)
+                  GestureDetector(
+                    onTap: onTap,
+                    child: Text(action, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                  ),
+              ],
+            ),
+          ),
+        );
+    final isWon = lead.status == 'won';
+    return [
+      if (c.isConverted)
+        banner(PhosphorIconsFill.lock, AppColors.success, AppColors.tintGreen,
+            'CONVERTED${c.customerName != null ? ' · ${c.customerName}' : ''}',
+            action: c.customerId != null ? 'View customer' : null,
+            onTap: c.customerId != null ? () => context.push('${Routes.customerDetail}?id=${c.customerId}') : null)
+      else if (isWon && c.pendingApproval)
+        banner(PhosphorIconsRegular.hourglass, AppColors.warningDeep, AppColors.tintAmber,
+            'Conversion requested — waiting for a manager to approve')
+      else if (isWon && c.waitingForQuote)
+        banner(PhosphorIconsRegular.clock, AppColors.warningDeep, AppColors.tintAmber,
+            'Won · converts when a quote is accepted')
+      else if (isWon)
+        banner(PhosphorIconsFill.lock, AppColors.textSecondary, AppColors.bgLight,
+            'Won — details are locked. Move it out of Won to edit.',
+            action: 'Convert', onTap: () => _convert(lead))
+      else if (!isWon && c.pendingApproval)
+        banner(PhosphorIconsRegular.hourglass, AppColors.warningDeep, AppColors.tintAmber, 'Conversion requested'),
+      if (lead.status == 'lost')
+        banner(PhosphorIconsFill.xCircle, AppColors.error, AppColors.tintRed, 'Lost reason: ${c.lostReasonText}'),
+    ];
+  }
+
+  /// Webapp convert: confirm, `POST /crm/leads/{id}/convert/`, and on a
+  /// `CUSTOMER_MATCH` let the user attach to a match or name a new customer.
+  /// No navigation after — the page refreshes into its CONVERTED state.
+  Future<void> _convert(Lead lead) async {
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+    if (!await confirmConvertLead(context) || !mounted) return;
+    final toast = ref.read(toastProvider.notifier);
+    Map<String, dynamic> body = const {};
+    while (true) {
+      ConvertResult result;
+      try {
+        result = await convertLead(ref, lead.id, body);
+      } on AppError catch (e) {
+        if (mounted) toast.showError(e.message);
+        return;
+      }
+      if (!mounted) return;
+      switch (result) {
+        case NeedsCustomerChoice(:final match):
+          final choice = await showCustomerMatchSheet(context, match);
+          if (choice == null || !mounted) return;
+          body = choice;
+          continue;
+        case ConversionRequested():
+          toast.show('Conversion requested — waiting for approval');
+        case Converted(:final customerName, :final attached):
+          toast.show(attached ? 'Added to customer — $customerName' : 'Converted to customer — $customerName');
+      }
+      break;
+    }
+    ref.invalidate(leadDetailProvider(lead.id));
+    ref.invalidate(leadRowProvider(lead.id));
+    ref.invalidate(leadsScopedProvider);
+    ref.invalidate(customersScopedProvider);
   }
 
   // ── Profile ──
@@ -696,8 +1033,23 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               ),
               SizedBox(width: 10.w),
               Expanded(
-                child: GestureDetector(
-                  onTap: () => context.push(Routes.addQuote),
+                // Webapp: Create quote is offered only on a lead that has not
+                // converted (a converted lead is frozen) and with
+                // quotation.create. Greyed rather than hidden; a tap says why,
+                // as the activity card's add control does.
+                child: Opacity(
+                  opacity: !_conversionOf(lead).isConverted && hasPermission(ref, 'quotation', PermVerb.create) ? 1 : 0.45,
+                  child: GestureDetector(
+                  onTap: () {
+                    if (_conversionOf(lead).isConverted) {
+                      ref.read(toastProvider.notifier).show('This lead has converted — add activity on the customer instead.');
+                      return;
+                    }
+                    // Webapp: the lead's Create quote presets the lead.
+                    if (ensurePermission(ref, 'quotation', PermVerb.create)) {
+                      context.push('${Routes.addQuote}?leadId=${lead.id}');
+                    }
+                  },
                   child: Container(
                     height: 44.h,
                     alignment: Alignment.center,
@@ -711,6 +1063,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       ],
                     ),
                   ),
+                ),
                 ),
               ),
             ],
@@ -833,16 +1186,101 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// coerced by the column's type — a `PATCH` carrying the whole record would
   /// re-submit values the user never looked at.
   Future<void> _saveField(Lead lead, String key, Object? value, String label) async {
-    try {
-      await ref.read(leadsRepositoryProvider).updateLead(lead.id, {key: value});
-      if (!mounted) return;
-      ref.invalidate(leadRowProvider(lead.id));
-      ref.invalidate(leadDetailProvider(lead.id));
-      ref.read(toastProvider.notifier).show('$label updated');
-    } on AppError catch (e) {
-      if (!mounted) return;
-      ref.read(toastProvider.notifier).showError(e.message);
+    // Webapp `canEditFields`: not converted, not Won-locked, and lead.update.
+    final toast = ref.read(toastProvider.notifier);
+    if (_conversionOf(lead).isConverted) {
+      toast.show('This lead has converted — edit the customer instead.');
+      return;
     }
+    // The stage itself may still move on a Won lead, and a Lost stage asks
+    // why — the same path as the status pill.
+    if (key == 'status_id' && value != null) {
+      if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+      await _setStatus(lead, '$value', ref.read(leadStatusesProvider));
+      return;
+    }
+    if (lead.status == 'won') {
+      toast.show('Won — details are locked. Move it out of Won to edit.');
+      return;
+    }
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+    // The name is stored as first/last; the webapp edits it that way.
+    var body = <String, dynamic>{key: value};
+    if (key == 'lead_name') {
+      final parts = '${value ?? ''}'.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+      if (parts.isEmpty) {
+        toast.showError('Enter a first name.');
+        return;
+      }
+      body = {'first_name': parts.first, 'last_name': parts.length > 1 ? parts.skip(1).join(' ') : null};
+    }
+    await _patchLead(lead, body, success: 'Saved');
+  }
+
+  /// One lead PATCH with the record's version as `If-Match`, as every webapp
+  /// write does: a change made elsewhere since this screen loaded is refused
+  /// with 412 instead of being overwritten.
+  Future<bool> _patchLead(Lead lead, Map<String, dynamic> body, {required String success}) async {
+    final toast = ref.read(toastProvider.notifier);
+    final version = ref.read(leadRowProvider(lead.id)).valueOrNull?['updated_at'];
+    try {
+      await ref
+          .read(leadsRepositoryProvider)
+          .updateLead(lead.id, body, version: version is String && version.isNotEmpty ? version : null);
+    } on AppError catch (e) {
+      if (!mounted) return false;
+      if (e.statusCode == 412) {
+        ref.read(apiServiceProvider).handled(e);
+        ref.invalidate(leadRowProvider(lead.id));
+        ref.invalidate(leadDetailProvider(lead.id));
+        toast.showError('Changed elsewhere — ${e.message}');
+      } else {
+        final first = e.fieldErrors?.values.where((v) => v.isNotEmpty).map((v) => v.first).firstOrNull;
+        toast.showError(first ?? e.message);
+      }
+      return false;
+    }
+    if (!mounted) return true;
+    ref.invalidate(leadRowProvider(lead.id));
+    ref.invalidate(leadDetailProvider(lead.id));
+    ref.invalidate(leadsScopedProvider);
+    toast.show(success);
+    return true;
+  }
+
+  /// Webapp `leadFieldRules` read-only columns: system-kept, never edited.
+  static const _readOnlyColumns = {
+    'reference', 'lead_score', 'lead_score_updated_at', 'stage_entered_at',
+    'last_followup_at', 'last_followup_type', 'activity', 'created_at',
+    'updated_at', 'lead_value', 'is_converted', 'converted_on', 'is_duplicate',
+    'is_upsell', 'parent_customer', 'created_by', 'modified_by', 'lost_reason',
+    'lost_reason_name', 'lost_reason_note', 'consent_captured_at',
+    'consent_notice_version', 'last_call_at', 'last_call_outcome',
+    'consecutive_unanswered_calls', 'calls_last_7d',
+  };
+
+  /// Picker columns the webapp edits in place, with a leading "—" to clear.
+  Future<void> _pickField(Lead lead, LeadColumn column, String label) async {
+    final options = switch (column.name) {
+      'lead_source' => ref.read(leadSourcesProvider),
+      // Webapp: groups are not offered here (except the lead's current one),
+      // and the list is flat.
+      'territory' => [
+          for (final o in ref.read(territoryOptionsProvider))
+            if (!o.disabled || o.name == lead.territory || o.id == lead.territory) CatalogOption(id: o.id, name: o.name),
+        ],
+      'industry' => ref.read(industryOptionsProvider),
+      _ => const <CatalogOption>[],
+    };
+    final picked = await showOptionPicker(
+      context: context,
+      title: label,
+      options: [const CatalogOption(id: '__none__', name: '—'), ...options],
+      selected: const {},
+      emptyNote: 'No ${label.toLowerCase()} options are configured for this organisation yet.',
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    await _saveField(lead, column.name, picked.first == '__none__' ? null : picked.first, label);
   }
 
   Widget _infoRow(
@@ -850,6 +1288,21 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     ({String label, String value, LeadColumn? column}) r,
     Map<String, dynamic>? row,
   ) {
+    final column = r.column;
+    if (column != null && _readOnlyColumns.contains(column.name)) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => ref.read(toastProvider.notifier).show('${r.label} is read-only.'),
+        child: DetailInfoRow(label: r.label, value: r.value),
+      );
+    }
+    if (column != null && const {'lead_source', 'territory', 'industry'}.contains(column.name)) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _pickField(lead, column, r.label),
+        child: DetailInfoRow(label: r.label, value: r.value),
+      );
+    }
     return InlineEditRow(
       label: r.label,
       display: r.value,
@@ -871,19 +1324,27 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // Already fetched for the Edit-lead form; read here so an inline edit seeds
     // from the stored value rather than the formatted one.
     final rawRow = ref.watch(leadRowProvider(lead.id)).valueOrNull;
-    final all = schema.isEmpty
-        ? _fallbackInfoRows(lead)
-        : leadDetailRows(lead, schema);
+    // The record names its territory by uuid only; show the catalog's name.
+    final territories = {for (final t in ref.watch(territoryOptionsProvider)) t.id: t.name};
+    final all = [
+      for (final r in schema.isEmpty ? _fallbackInfoRows(lead) : leadDetailRows(lead, schema))
+        r.column?.name == 'territory' && territories[r.value] != null
+            ? (label: r.label, value: territories[r.value]!, column: r.column)
+            : r,
+    ];
     // Long layouts stay collapsed behind "Show more"; a short one shows whole.
     final collapsible = all.length > _infoRowsCollapsed;
     final rows =
         (_infoMore || !collapsible) ? all : all.take(_infoRowsCollapsed).toList();
-    final owner = MockUsers.of(lead.owner);
-    final assignees = lead.team.where((t) => t != lead.owner).toList();
-    final teamName = () {
-      final parts = owner.role.split('·');
-      return parts.length > 1 ? parts[1].trim() : 'Team Kochi';
-    }();
+    // People come from the record itself, as the webapp reads them.
+    final ownerRec = _ownerOf(rawRow);
+    final owner = MockUsers.of(ownerRec == null ? lead.owner : UserDirectory.mapUserId(ownerRec.$1));
+    final ownerName = ownerRec?.$2 ?? '—';
+    final ownerInitials = ownerRec == null
+        ? '—'
+        : ownerRec.$2.split(' ').where((p) => p.isNotEmpty).take(2).map((p) => p[0].toUpperCase()).join();
+    final assigneeNames = [for (final a in _assigneesOf(rawRow)) a.$2];
+    final team = _teamOf(rawRow);
 
     return ClozrCard(
       radius: 18,
@@ -896,7 +1357,19 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           // Long-press a row to edit it in place, for the fields the org's
           // layout says are writable. Read-only columns (`created_at`,
           // `lead_score`) and rows with no column behind them stay inert.
-          for (final r in rows) _infoRow(lead, r, rawRow),
+          // An upsell lead names the customer it was raised from; read-only,
+          // like the webapp's `parent_customer` column.
+          if (rawRow?['is_upsell'] == true && _parentCustomerId(rawRow) != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => context.push('${Routes.customerDetail}?id=${_parentCustomerId(rawRow)}'),
+              child: DetailInfoRow(
+                label: 'Parent customer',
+                value: _parentCustomerName(rawRow),
+              ),
+            ),
+          for (final r in rows)
+            if (!(r.column?.name == 'parent_customer' && rawRow?['is_upsell'] == true)) _infoRow(lead, r, rawRow),
           if (collapsible)
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -920,7 +1393,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             children: [
               Icon(PhosphorIconsRegular.handTap, size: 13.sp, color: AppColors.textPlaceholder),
               SizedBox(width: 6.w),
-              Text('Fields are edited in the web app', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+              Text('Long-press a field to edit it', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
             ],
           ),
           // The people block mirrors three configurable columns; when the org
@@ -941,14 +1414,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   height: 42.w,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(color: owner.color, borderRadius: BorderRadius.circular(12.r)),
-                  child: Text(owner.initials, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
+                  child: Text(ownerInitials, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
                 ),
                 SizedBox(width: 12.w),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(owner.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      Text(ownerName, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
                       SizedBox(height: 1.h),
                       Text('Lead owner', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
                     ],
@@ -971,10 +1444,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       Text(schema.labelOf('assignees', 'Assignees'),
                           style: AppText.caption(color: AppColors.textMuted)),
                       SizedBox(height: 4.h),
-                      if (assignees.isEmpty)
+                      if (assigneeNames.isEmpty)
                         Text('No assignees yet', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
                       else
-                        Text(assignees.map((t) => MockUsers.of(t).name.split(' ').first).join(', '),
+                        Text(assigneeNames.join(', '),
                             style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
                     ],
                   ),
@@ -984,7 +1457,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             ),
           ),
           if (schema.shows('assigned_team'))
-          Padding(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _editTeam(lead),
+            child: Padding(
             padding: EdgeInsets.only(top: 10.h),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -996,11 +1472,19 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   children: [
                     Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: AppColors.textLabelAlt),
                     SizedBox(width: 7.w),
-                    Text(teamName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Expanded(
+                      child: Text(team?.$2 ?? 'No team assigned',
+                          style: AppText.custom(
+                              size: 13.5,
+                              weight: team == null ? FontWeight.w500 : FontWeight.w700,
+                              color: team == null ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                    ),
+                    Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
                   ],
                 ),
               ],
             ),
+          ),
           ),
           ],
         ],
@@ -1021,9 +1505,34 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  bool get _ctaAllowed {
+    final need = switch (_tab) {
+      0 => ('task', PermVerb.create),
+      1 => ('call_log', PermVerb.create),
+      2 => ('followup', PermVerb.create),
+      3 => ('quotation', PermVerb.create),
+      _ => ('lead', PermVerb.update),
+    };
+    return hasPermission(ref, need.$1, need.$2);
+  }
+
   /// The activity card's CTA — one create path per tab, each carrying the lead
   /// so the new record comes back in this screen's own scoped fetch.
   Future<void> _activityCta(Lead lead) async {
+    // A converted lead takes no new activity (webapp hides these), and each
+    // add needs its own module's grant.
+    if (_conversionOf(lead).isConverted) {
+      ref.read(toastProvider.notifier).show('This lead has converted — add activity on the customer instead.');
+      return;
+    }
+    final need = switch (_tab) {
+      0 => ('task', PermVerb.create),
+      1 => ('call_log', PermVerb.create),
+      2 => ('followup', PermVerb.create),
+      3 => ('quotation', PermVerb.create),
+      _ => ('lead', PermVerb.update),
+    };
+    if (!ensurePermission(ref, need.$1, need.$2)) return;
     switch (_tab) {
       case 0:
         await showAddTaskSheet(context, ref, lead: lead);
@@ -1106,7 +1615,13 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           Row(
             children: [
               Expanded(child: Text('Lead activity', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
-              GestureDetector(
+              // Webapp: a converted lead has no add controls at all; without
+              // the module's create grant the control is greyed (tapping says
+              // why, as the webapp's tooltip does).
+              if (!_conversionOf(lead).isConverted)
+              Opacity(
+                opacity: _ctaAllowed ? 1 : 0.45,
+                child: GestureDetector(
                 onTap: () => _activityCta(lead),
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
@@ -1120,6 +1635,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     ],
                   ),
                 ),
+              ),
               ),
             ],
           ),
@@ -1157,6 +1673,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     required Widget empty,
     required Widget Function(List<T> items) data,
     required VoidCallback onRetry,
+    String subject = 'this',
   }) {
     return async.when(
       loading: () => ListSkeleton(
@@ -1164,10 +1681,33 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         itemHeight: 54.h,
         padding: EdgeInsets.symmetric(vertical: 14.h),
       ),
-      error: (e, _) => ErrorState.forError(crmAppError(e), onRetry: onRetry),
+      error: (e, _) {
+        final err = crmAppError(e);
+        // Webapp: a 403 is a quiet lock notice, not an error with Retry.
+        if (err.statusCode == 403) return _lockNotice(subject);
+        return ErrorState.forError(err, onRetry: onRetry);
+      },
       data: (items) => items.isEmpty ? empty : data(items),
     );
   }
+
+  /// Webapp `failureCopy` for a forbidden tab.
+  Widget _lockNotice(String subject) => Padding(
+        padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 4.w),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(PhosphorIconsRegular.lockSimple, size: 16.sp, color: AppColors.textMuted),
+            SizedBox(width: 8.w),
+            Expanded(
+              child: Text(
+                'Your account isn’t permitted to view $subject. Ask a workspace admin if you think that’s wrong.',
+                style: AppText.body(color: AppColors.textMuted),
+              ),
+            ),
+          ],
+        ),
+      );
 
   /// A task's status, with any session override laid on top.
   ///
@@ -1223,7 +1763,23 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           rolled.remove(t.id);
         }
         ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        if (mounted) ref.read(toastProvider.notifier).showError(e.message);
+        if (!mounted) return;
+        // The org wants a closing note first: ask for it, post it, retry.
+        if (next == 'done' && needsClosingNote(e)) {
+          final done = await completeWithClosingNote(context, ref,
+              taskId: t.id,
+              title: t.title,
+              followup: false,
+              cause: e,
+              complete: () => ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, 'done'));
+          if (done && mounted) {
+            ref.invalidate(leadTasksProvider(lead.id));
+            ref.invalidate(crmTasksProvider);
+            ref.invalidate(taskRowProvider(t.id));
+          }
+          return;
+        }
+        ref.read(toastProvider.notifier).showError(e.message);
         return;
       }
       if (!mounted) return;
@@ -1247,6 +1803,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     return _tabAsync<CrmTask>(
       ref.watch(leadTasksProvider(lead.id)),
       onRetry: () => ref.invalidate(leadTasksProvider(lead.id)),
+      subject: 'tasks for this lead',
       empty: const DetailTabEmpty(icon: PhosphorIconsRegular.checkSquare, title: 'No tasks yet', body: 'Tasks linked to this lead will appear here.'),
       data: (tasks) => Column(
         children: [
@@ -1269,7 +1826,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                             style: AppText.custom(size: 14, weight: FontWeight.w600, color: _taskStatus(t) == 'done' ? AppColors.textPlaceholder : AppColors.textPrimary)
                                 .copyWith(decoration: _taskStatus(t) == 'done' ? TextDecoration.lineThrough : null)),
                         SizedBox(height: 3.h),
-                        Text('${t.due} · ${MockUsers.of(t.assignee).name.split(' ').first} · ${t.priority}', style: AppText.caption()),
+                        Text(_taskSubline(t), style: AppText.caption()),
                       ],
                     ),
                   ),
@@ -1278,7 +1835,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 // Reads through the override like the checkbox and title do —
                 // on the raw status the pill kept the old lane after a tick
                 // here, or after a status change made on the task detail.
-                _miniPill(_taskMeta(t)),
+                _miniPill(_taskBadge(t) ?? _taskMeta(t)),
               ],
             ),
           ),
@@ -1287,12 +1844,80 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  static final _dueFormat = DateFormat('dd MMM yyyy');
+
+  DateTime? _taskDueDate(CrmTask t) {
+    try {
+      return _dueFormat.parseStrict(t.due.trim());
+    } on FormatException {
+      return DateTime.tryParse(t.due.trim());
+    }
+  }
+
+  /// Webapp row sub-line: "Completed", "Due <date>" or "No due date", then
+  /// the assignee.
+  String _taskSubline(CrmTask t) {
+    final due = _taskDueDate(t);
+    final when = _taskStatus(t) == 'done'
+        ? 'Completed'
+        : due == null
+            ? 'No due date'
+            : 'Due ${_dueFormat.format(due)}';
+    final who = MockUsers.of(t.assignee).name;
+    return who.isEmpty || who == 'Unknown' ? when : '$when · ${who.split(' ').first}';
+  }
+
+  /// Webapp badge: Done, else Overdue / Today / Upcoming by the due date; null
+  /// (the status pill) when there is no date.
+  StatusMeta? _taskBadge(CrmTask t) {
+    if (_taskStatus(t) == 'done') return const StatusMeta('Done', AppColors.success);
+    final due = _taskDueDate(t);
+    if (due == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(due.year, due.month, due.day);
+    if (day.isBefore(today)) return const StatusMeta('Overdue', AppColors.error);
+    if (day == today) return const StatusMeta('Today', AppColors.error);
+    return const StatusMeta('Upcoming', AppColors.blueBright);
+  }
+
   Widget _callLogTab(Lead lead) {
-    return _tabAsync<CallLog>(
-      ref.watch(leadCallLogsProvider(lead.id)),
-      onRetry: () => ref.invalidate(leadCallLogsProvider(lead.id)),
-      empty: const DetailTabEmpty(icon: PhosphorIconsRegular.phone, title: 'No calls logged', body: 'Calls made to or received from this lead will appear here.'),
-      data: (calls) => Column(children: [for (final c in calls) _callRow(c)]),
+    final converted = _conversionOf(lead).isConverted;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Webapp: "Sync from Exotel" beside Add call log — not on a converted
+        // lead, and only with call-log create.
+        if (!converted)
+          Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (!ensurePermission(ref, 'call_log', PermVerb.create)) return;
+                showExotelSyncSheet(context, ref, leadId: lead.id);
+              },
+              child: Padding(
+                padding: EdgeInsets.only(top: 8.h, bottom: 2.h),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(PhosphorIconsRegular.arrowsClockwise, size: 13.sp,
+                      color: hasPermission(ref, 'call_log', PermVerb.create) ? AppColors.navy : AppColors.textPlaceholder),
+                  SizedBox(width: 5.w),
+                  Text('Sync from Exotel',
+                      style: AppText.captionStrong(
+                          color: hasPermission(ref, 'call_log', PermVerb.create) ? AppColors.navy : AppColors.textPlaceholder)),
+                ]),
+              ),
+            ),
+          ),
+        _tabAsync<CallLog>(
+          ref.watch(leadCallLogsProvider(lead.id)),
+          onRetry: () => ref.invalidate(leadCallLogsProvider(lead.id)),
+          subject: 'call logs for this lead',
+          empty: const DetailTabEmpty(icon: PhosphorIconsRegular.phone, title: 'No calls logged yet.', body: 'Calls made to or received from this lead will appear here.'),
+          data: (calls) => Column(children: [for (final c in calls) _callRow(c, lead, allowActivity: !converted)]),
+        ),
+      ],
     );
   }
 
@@ -1309,7 +1934,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// answered (green out / blue in), unanswered (grey) or missed (red). A row
   /// with a recording is tappable: the play control used to be an inert
   /// waveform glyph, so a recorded call could be seen but never heard.
-  Widget _callRow(CallLog c) {
+  Widget _callRow(CallLog c, Lead lead, {required bool allowActivity}) {
     final icon = c.isMissed
         ? PhosphorIconsRegular.phoneX
         : c.isIncoming
@@ -1364,10 +1989,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         ],
       ),
     );
-    if (!c.hasRecording) return row;
+    // Webapp `CallLogActions`: note / task / transcribe / summarize, plus
+    // playing the recording. Nothing to offer → the row stays inert.
+    final hasActions = allowActivity || c.hasRecording || (c.transcript.isNotEmpty && c.summary.isEmpty);
+    if (!hasActions) return row;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _openRecording(c),
+      onTap: () => showCallLogActions(context, ref,
+          call: c, leadId: lead.id, allowActivity: allowActivity, onPlay: () => _openRecording(c)),
       child: row,
     );
   }
@@ -1376,6 +2005,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     return _tabAsync<Followup>(
       ref.watch(leadFollowupsProvider(lead.id)),
       onRetry: () => ref.invalidate(leadFollowupsProvider(lead.id)),
+      subject: 'follow-ups for this lead',
       empty: const DetailTabEmpty(icon: PhosphorIconsRegular.clock, title: 'No follow-ups scheduled', body: 'Follow-ups scheduled for this lead will appear here.'),
       data: (fus) => Padding(
         padding: EdgeInsets.only(top: 12.h),
@@ -1391,6 +2021,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Padding(
+                      padding: EdgeInsets.only(top: 10.h, right: 10.w),
+                      child: CrmCheckBox(done: f.status == 'done', onTap: () => _toggleFollowup(lead, f)),
+                    ),
                     Container(
                       width: 42.w,
                       height: 42.w,
@@ -1406,9 +2040,15 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                           Text(f.title.isEmpty ? '${f.kind} follow-up' : f.title,
                               style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
                           SizedBox(height: 3.h),
-                          Text('${f.kind} · ${f.contact}', style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
-                          SizedBox(height: 3.h),
-                          Text('${f.due.replaceAll(' 2026', '')} · ${f.time}', style: AppText.caption(color: AppColors.textPlaceholder)),
+                          // Webapp row: "<type> · <date>", then the description.
+                          Text(
+                              '${f.kind.trim().isEmpty ? 'Follow-up' : f.kind}'
+                              '${f.due.trim().isEmpty || f.due.contains('No due') ? '' : ' · ${f.due}'}',
+                              style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                          if (f.description.trim().isNotEmpty) ...[
+                            SizedBox(height: 3.h),
+                            Text(f.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.caption(color: AppColors.textPlaceholder)),
+                          ],
                         ],
                       ),
                     ),
@@ -1423,16 +2063,53 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
+  /// Completes or reopens a follow-up from the lead's tab, as the webapp's
+  /// checkbox does — with the closing-note step when the org requires one.
+  Future<void> _toggleFollowup(Lead lead, Followup f) async {
+    if (_conversionOf(lead).isConverted) return;
+    final done = f.status != 'done';
+    final repo = ref.read(followupsRepositoryProvider);
+    try {
+      await repo.setFollowupDone(f.id, done);
+    } on AppError catch (e) {
+      if (!mounted) return;
+      if (done && needsClosingNote(e)) {
+        final ok = await completeWithClosingNote(context, ref,
+            taskId: f.id,
+            title: f.title.isEmpty ? f.kind : f.title,
+            followup: true,
+            cause: e,
+            complete: () => repo.setFollowupDone(f.id, true));
+        if (ok && mounted) {
+          ref.invalidate(leadFollowupsProvider(lead.id));
+          refreshFollowups(ref);
+        }
+        return;
+      }
+      ref.read(toastProvider.notifier).showError(e.message);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(leadFollowupsProvider(lead.id));
+    refreshFollowups(ref);
+    ref.read(toastProvider.notifier).show(done ? 'Follow-up completed' : 'Task reopened');
+  }
+
   Widget _quotesTab(Lead lead) {
     return _tabAsync<Quote>(
       ref.watch(leadQuotesProvider(lead.id)),
       onRetry: () => ref.invalidate(leadQuotesProvider(lead.id)),
+      subject: 'quotes for this lead',
       empty: DetailTabEmpty(
         icon: PhosphorIconsRegular.fileText,
         title: 'No quotes yet',
         body: 'Create a quotation to share pricing with this lead.',
-        cta: GestureDetector(
-          onTap: () => context.push(Routes.addQuote),
+        // Webapp: no add control on a converted lead or without
+        // quotation.create (the header control explains why).
+        cta: _conversionOf(lead).isConverted || !hasPermission(ref, 'quotation', PermVerb.create)
+            ? null
+            : GestureDetector(
+          onTap: () => context.push('${Routes.addQuote}?leadId=${lead.id}'),
           child: Container(
             height: 42.h,
             padding: EdgeInsets.symmetric(horizontal: 18.w),
@@ -1449,7 +2126,87 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           ),
         ),
       ),
-      data: (quotes) => Column(children: [for (final q in quotes) _quoteRow(q)]),
+      data: (quotes) {
+        // Webapp row data (totals, created date, status colour) comes from the
+        // raw rows; the mapped list still decides what exists.
+        final raw = {
+          for (final r in ref.watch(leadQuoteRowsProvider(lead.id)).valueOrNull ?? const <Map<String, dynamic>>[])
+            '${r['quotation_id']}': r,
+        };
+        return Column(children: [
+          for (final q in quotes) raw[q.uuid] != null ? _quoteRawRow(raw[q.uuid]!) : _quoteRow(q),
+        ]);
+      },
+    );
+  }
+
+  static final _quoteDate = DateFormat('dd MMM yyyy');
+
+  /// Webapp Quotes-tab row: number over "<created> · Valid till <date>", the
+  /// org's status pill, the pre-tax amount and "excl. GST · ₹… incl. GST".
+  Widget _quoteRawRow(Map<String, dynamic> r) {
+    String? date(Object? v) {
+      final d = DateTime.tryParse('${v ?? ''}');
+      return d == null ? null : _quoteDate.format(d.toLocal());
+    }
+
+    final status = r['status'] is Map ? r['status'] as Map : const {};
+    final statusName = '${status['name'] ?? '—'}';
+    final hex = '${status['color'] ?? ''}'.replaceFirst('#', '');
+    final color = hex.length == 6 ? Color(int.parse('FF$hex', radix: 16)) : AppColors.textMuted;
+    final created = date(r['created_at']);
+    final valid = date(r['valid_until']);
+    final sub = [if (created != null) created, if (valid != null) 'Valid till $valid'].join(' · ');
+    final amount = r['taxable_total'] ?? r['total_amount'] ?? 0;
+    final grand = r['grand_total'];
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      child: GestureDetector(
+        onTap: () => context.push('${Routes.quoteDetail}?id=${r['quotation_id']}'),
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38.w,
+              height: 38.w,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsRegular.fileText, size: 18.sp, color: AppColors.textSecondary),
+            ),
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${r['quotation_number'] ?? '—'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                  SizedBox(height: 3.h),
+                  if (sub.isNotEmpty) Text(sub, style: AppText.caption()),
+                  SizedBox(height: 5.h),
+                  _miniPill(StatusMeta(statusName, color)),
+                ],
+              ),
+            ),
+            SizedBox(width: 8.w),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(formatMoneyStr(amount).replaceAll('.00', ''),
+                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                if (grand != null) ...[
+                  SizedBox(height: 3.h),
+                  Text('excl. GST · ${formatMoneyStr(grand).replaceAll('.00', '')} incl. GST',
+                      style: AppText.caption()),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1505,6 +2262,7 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     return _tabAsync<LeadFile>(
       ref.watch(leadFilesProvider(lead.id)),
       onRetry: () => ref.invalidate(leadFilesProvider(lead.id)),
+      subject: 'files for this lead',
       empty: const DetailTabEmpty(
         icon: PhosphorIconsRegular.paperclip,
         title: 'No files shared',

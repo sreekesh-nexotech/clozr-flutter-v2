@@ -77,14 +77,43 @@ class NotesRemoteDataSource {
 
   /// Creates a top-level note; returns the mapped created row (null on shape
   /// surprise — the caller keeps its optimistic entry).
-  Future<NoteEntry?> addNote(
-      String relatedTo, String relatedToId, String body) async {
+  Future<NoteEntry?> addNote(String relatedTo, String relatedToId, String body,
+      {String? noteTypeId, List<String> mentionedUserIds = const []}) async {
     final res = await _api.post(ApiEndpoints.notes, body: {
       'content': body,
       'related_to': relatedTo,
       'related_to_id': relatedToId,
+      if (noteTypeId != null) 'note_type': noteTypeId,
+      if (mentionedUserIds.isNotEmpty) 'mentioned_user_ids': mentionedUserIds,
     });
     return res is Map<String, dynamic> ? noteFromJson(res) : null;
+  }
+
+  /// `PATCH /crm/notes/{id}/` with the new content (webapp "Edit note").
+  Future<void> updateNote(String noteId, String content, {List<String> mentionedUserIds = const []}) =>
+      _api.patch(ApiEndpoints.note(noteId), body: {
+        'content': content,
+        if (mentionedUserIds.isNotEmpty) 'mentioned_user_ids': mentionedUserIds,
+      });
+
+  /// `DELETE /crm/notes/{id}/` — removes the note and its replies.
+  Future<void> deleteNote(String noteId) => _api.delete(ApiEndpoints.note(noteId));
+
+  /// `GET /crm/note-types/` — active types, in the org's order.
+  Future<List<NoteTypeOption>> fetchNoteTypes() async {
+    final body = await _api.get(ApiEndpoints.noteTypes, query: {'page_size': 100}, quiet: true);
+    final rows = body is Map && body['results'] is List ? body['results'] as List : (body is List ? body : const []);
+    final out = <({String id, String name, String color, int pos})>[];
+    for (final r in rows) {
+      if (r is! Map || r['is_active'] == false || r['note_type_id'] == null) continue;
+      out.add((
+          id: '${r['note_type_id']}',
+          name: '${r['name'] ?? ''}',
+          color: '${r['color'] ?? ''}',
+          pos: (r['position'] as num?)?.toInt() ?? 0));
+    }
+    out.sort((a, b) => a.pos.compareTo(b.pos));
+    return [for (final t in out) (id: t.id, name: t.name, color: t.color)];
   }
 
   /// `POST /crm/attachments/` (multipart) — attaches one picked file to a note.
@@ -106,7 +135,7 @@ class NotesRemoteDataSource {
       'related_to': 'note',
       'related_to_id': noteId,
       'name': attachment.name,
-      'file_upload': await MultipartFile.fromFile(path, filename: attachment.name),
+      'file_upload': await MultipartFile.fromFile(path, filename: path.split('/').last),
     });
     final res = await _api.postForm(ApiEndpoints.attachments, form);
     if (res is! Map<String, dynamic>) return null;
@@ -151,6 +180,8 @@ class NotesRemoteDataSource {
 
     return NoteEntry(
       id: id,
+      authorId: by is Map ? _str(by['user_id']) : _str(by),
+      noteType: typeName,
       author: (by is Map ? _str(by['full_name']) : null) ?? 'Unknown',
       time: relativeTime(parseApiDate(json['created_at']), now: now),
       body: _str(json['content']) ?? '',

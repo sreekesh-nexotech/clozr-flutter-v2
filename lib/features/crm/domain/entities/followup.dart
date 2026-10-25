@@ -44,6 +44,10 @@ class Followup extends Equatable {
   /// The org's priority name ("High", "Medium"). Empty when unset.
   final String priority;
 
+  /// Webapp due caption: "2d overdue" / "Today" / "In 2d", or empty — none on
+  /// a completed or cancelled follow-up.
+  final String dueNote;
+
     /// The row exactly as the API sent it.
   ///
   /// The typed fields cover the card's fixed frame; this is what makes the rest
@@ -67,6 +71,7 @@ class Followup extends Equatable {
     this.description = '',
     this.statusName = '',
     this.priority = '',
+    this.dueNote = '',
   });
 
   bool get isMine => owner == 'me';

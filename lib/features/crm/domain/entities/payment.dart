@@ -14,7 +14,13 @@ class RecordSummary extends Equatable {
     this.receiptStatus,
     this.receiptAmount,
     this.receiptDate,
+    this.adjustmentState,
   });
+
+  /// `adjustments.state` — what accounting did to the money after the fact
+  /// (`RECEIPT_REVERSED | REFUNDED | PARTLY_REFUNDED | CREDITED |
+  /// PARTLY_CREDITED`). Wins over "Paid" on the row's pill, as on web.
+  final String? adjustmentState;
 
   final String? documentId;
   final String? documentNumber;
@@ -30,8 +36,10 @@ class RecordSummary extends Equatable {
   bool get hasReceipt => receiptId != null;
 
   @override
-  List<Object?> get props =>
-      [documentId, documentNumber, documentStatus, documentPaymentState, receiptId, receiptStatus];
+  List<Object?> get props => [
+        documentId, documentNumber, documentStatus, documentPaymentState,
+        receiptId, receiptStatus, adjustmentState,
+      ];
 }
 
 /// A CRM payment / installment. Fields mirror the prototype's `payments` seed
@@ -103,6 +111,47 @@ class Payment extends Equatable {
   final String? bankAccountId;
   final String? gatewayRef;
 
+  // ── Webapp parity (payment list, PY-005) — every figure is the server's ──
+
+  /// `installment_number`; 0 when absent.
+  final int installmentNumber;
+
+  /// `lead_name` — the deal's lead. Shown with a LEAD badge when the record
+  /// has no customer yet (a quote accepted before its lead was converted).
+  final String? leadName;
+
+  /// `settlement_state`: `pending | partly_paid | paid`. "Paid" only once
+  /// the balance is 0 — a record marked paid with GST still open is
+  /// `partly_paid`. Derived from [status] when the server does not send it.
+  final String settlementState;
+
+  /// `amount_expected` / `amount_paid` with paise (the `*Num` ints round).
+  final double amountExpected;
+  final double amountPaid;
+
+  /// `amount_due_incl_gst` — the row's MAIN figure: the linked tax invoice's
+  /// total, else the quote's GST estimate, else the amount as quoted. Falls
+  /// back to `amount_due_gross`, then [amountExpected].
+  final double amountDueInclGst;
+
+  /// `amount_due_basis`: `INVOICE | ESTIMATE | AS_QUOTED`; null on an older
+  /// backend.
+  final String? amountDueBasis;
+
+  /// `balance_due` — the open gross balance.
+  final double balanceDue;
+
+  /// `due_date` / `paid_date` as calendar days.
+  final DateTime? dueOn;
+  final DateTime? paidOn;
+
+  /// `payment_method` exactly as sent (`bank_transfer`, …); null when unset.
+  final String? methodCode;
+
+  /// `invoice_blocked_reason` (`CUSTOMER_REQUIRED`), `cancel_reason`.
+  final String? invoiceBlockedReason;
+  final String? cancelReason;
+
   const Payment({
     required this.id,
     required this.custId,
@@ -128,7 +177,32 @@ class Payment extends Equatable {
     this.treatAs,
     this.bankAccountId,
     this.gatewayRef,
+    this.installmentNumber = 0,
+    this.leadName,
+    this.settlementState = 'pending',
+    this.amountExpected = 0,
+    this.amountPaid = 0,
+    this.amountDueInclGst = 0,
+    this.amountDueBasis,
+    this.balanceDue = 0,
+    this.dueOn,
+    this.paidOn,
+    this.methodCode,
+    this.invoiceBlockedReason,
+    this.cancelReason,
   });
+
+  /// The server cancelled this record (plan closed, credited, …).
+  bool get isCancelled => status == 'cancelled';
+
+  /// Accounting issued a tax document for it — it settles through that
+  /// document and can be neither deleted nor auto-cancelled.
+  bool get isLinkedToDocument =>
+      linkedDocumentId != null || recordSummary?.documentId != null;
+
+  /// No customer yet: the row names the lead instead, with a LEAD badge.
+  bool get isLeadOnly =>
+      (custName == null || custName!.isEmpty) && (leadName ?? '').isNotEmpty;
 
   /// Everything deducted from the contracted amount before cash arrived.
   int get deductionsNum => tdsNum + gstTdsNum + gstTcsNum + bankChargeNum;
@@ -147,6 +221,8 @@ class Payment extends Equatable {
     String? date,
     String? method,
     int? paidCashNum,
+    String? settlementState,
+    DateTime? paidOn,
   }) =>
       Payment(
         id: id,
@@ -173,8 +249,40 @@ class Payment extends Equatable {
         treatAs: treatAs,
         bankAccountId: bankAccountId,
         gatewayRef: gatewayRef,
+        installmentNumber: installmentNumber,
+        leadName: leadName,
+        settlementState: settlementState ?? this.settlementState,
+        amountExpected: amountExpected,
+        amountPaid: amountPaid,
+        amountDueInclGst: amountDueInclGst,
+        amountDueBasis: amountDueBasis,
+        balanceDue: balanceDue,
+        dueOn: dueOn,
+        paidOn: paidOn ?? this.paidOn,
+        methodCode: methodCode,
+        invoiceBlockedReason: invoiceBlockedReason,
+        cancelReason: cancelReason,
       );
 
   @override
   List<Object?> get props => [id];
+}
+
+const _mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/// The webapp's canonical calendar day, `DD-MON-YYYY` (`05-Oct-2026`). A
+/// date-only value is a calendar day, so no time-zone shift is applied.
+String dayMonYear(DateTime? d) =>
+    d == null ? '' : '${d.day.toString().padLeft(2, '0')}-${_mon[d.month - 1]}-${d.year}';
+
+/// Webapp `rowDate`: a paid record shows its paid date, an overdue one
+/// "Overdue <due>", a pending one "Due <due>", a cancelled one its due date;
+/// an em dash when the date it needs is missing.
+String paymentRowDate({required String status, DateTime? dueOn, DateTime? paidOn}) {
+  if (status == 'paid') return paidOn == null ? '—' : dayMonYear(paidOn);
+  if (dueOn == null) return '—';
+  final d = dayMonYear(dueOn);
+  if (status == 'overdue') return 'Overdue $d';
+  if (status == 'due' || status == 'scheduled') return 'Due $d';
+  return d;
 }

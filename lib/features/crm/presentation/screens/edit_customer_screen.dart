@@ -6,14 +6,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/customer_form_rules.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/customer_activity_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../domain/entities/crm_catalog.dart';
+import '../components/customer_address_fields.dart';
 import '../components/lead_schema_form.dart';
 
 /// Edit customer — the org's own Customer layout, rendered as a form.
@@ -34,9 +37,36 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   final _formKey = GlobalKey<LeadSchemaFormState>();
   bool _saving = false;
 
+  /// Newer record version learned from a 412, used for the next save.
+  String? _version;
+
+  /// The billing / delivery address and GSTIN block, seeded from the record
+  /// the first time it is on screen.
+  CustomerAddressController? _address;
+
+  @override
+  void dispose() {
+    _address?.dispose();
+    super.dispose();
+  }
+
   Future<void> _save(String id) async {
     if (_saving) return;
-    final payload = _formKey.currentState?.payload ?? const <String, dynamic>{};
+    final form = _formKey.currentState;
+    final row = ref.read(customerRowProvider(id)).valueOrNull;
+    // Only the name is required (webapp); its message sits under the field.
+    if (form != null &&
+        ref.read(customerDetailSchemaProvider).column('name') != null &&
+        form.valueOf('name').trim().isEmpty) {
+      form.showErrors({'name': customerNameRequiredMessage});
+      _address?.clearErrors();
+      return;
+    }
+    _address?.clearErrors();
+    final payload = <String, dynamic>{
+      ...?form?.payload,
+      ...?_address?.patchAgainst(row),
+    };
     if (payload.isEmpty) {
       ref.read(toastProvider.notifier).show('Nothing to save');
       return;
@@ -44,7 +74,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
 
     setState(() => _saving = true);
     try {
-      await ref.read(customersRepositoryProvider).updateCustomer(id, payload);
+      // `If-Match` with the version the form was filled from: a customer
+      // changed elsewhere since is refused instead of silently edited.
+      final seeded = ref.read(customerRowProvider(id)).valueOrNull?['updated_at'];
+      await ref.read(customersRepositoryProvider).updateCustomer(id, payload,
+          version: _version ?? (seeded is String ? seeded : null));
       if (!mounted) return;
       // The record and every list holding a copy are now stale. Invalidating
       // the `customersScopedProvider` family — not just the thin
@@ -57,9 +91,40 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       ref.read(toastProvider.notifier).show('Customer updated');
       context.pop();
     } on AppError catch (e) {
+      // This form explains every refusal itself (under the field, the
+      // duplicate panel or its own toast) — keep the shell's raw
+      // "field: msg" toast from repeating it.
+      ref.read(apiServiceProvider).handled(e);
       if (!mounted) return;
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).showError(e.message);
+      if (e.statusCode == 412) {
+        // Nothing was written; keep what was typed and adopt the newer version,
+        // so saving again applies just these edits on top of the other change.
+        final current = e.extra?['current_updated_at'];
+        if (current is String && current.isNotEmpty) _version = current;
+        ref.read(toastProvider.notifier).showError('Changed elsewhere — ${e.message}');
+        return;
+      }
+      // Field messages go under their inputs; a toast only for what has none.
+      final errors = firstFieldErrors(e.fieldErrors);
+      final inAddress = _address?.showServerErrors(errors) ?? const <String>{};
+      final rest = {
+        for (final x in errors.entries)
+          if (!inAddress.contains(x.key)) x.key: x.value,
+      };
+      form?.showErrors(rest);
+      final unplaced = [
+        for (final k in rest.keys)
+          if (form == null || !form.hasInlineError(k)) k,
+      ];
+      if (rest.length == unplaced.length && (_address?.hasErrors ?? false)) {
+        _address!.scrollToFirstError();
+      }
+      if (errors.isEmpty) {
+        ref.read(toastProvider.notifier).showError(e.message);
+      } else if (unplaced.isNotEmpty) {
+        ref.read(toastProvider.notifier).showError(errors[unplaced.first]!);
+      }
     }
   }
 
@@ -102,7 +167,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                           style: AppText.body(color: AppColors.textMuted),
                         ),
                       )
-                    else
+                    else ...[
                       LeadSchemaForm(
                         key: _formKey,
                         schema: schema,
@@ -111,6 +176,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                         // rewriting all 12 configured columns.
                         diffAgainstRow: true,
                         row: row.valueOrNull,
+                        // Only the name is required for a customer.
+                        mobileRequired: false,
+                        requiredOnly: const {'name'},
+                        // The address / GSTIN columns are the block's below.
+                        hiddenColumns: addressOwnedColumns,
                         // The same two overrides the Add customer sheet needs.
                         // A customer writes its status as plain `status`, where
                         // the Lead default renames it to `status_id` — the wrong
@@ -134,6 +204,14 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                             ],
                         },
                       ),
+                    ],
+                    if (row.hasValue) ...[
+                      SizedBox(height: 18.h),
+                      CustomerAddressFields(
+                        controller: _address ??=
+                            CustomerAddressController(row: row.valueOrNull),
+                      ),
+                    ],
                   ],
                 ),
             },

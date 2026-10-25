@@ -4,10 +4,11 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
-import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
@@ -20,6 +21,7 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/tasks_filter_spec.dart';
+import '../../application/filters/followups_filter_spec.dart' show followupSavedFiltersProvider;
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/leads_providers.dart';
@@ -27,6 +29,8 @@ import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
 import '../components/task_card.dart';
 import '../components/saved_chip_row.dart' as chips;
+import '../../application/providers/saved_filters_providers.dart';
+import 'due_date_approvals_screen.dart' show pendingDueDateCountProvider;
 
 /// Tasks list — checkbox cards with status pills, wired to the spec-driven
 /// filter engine and the contextual Add task sheet.
@@ -108,7 +112,33 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.text = ref.read(crmTaskSearchProvider);
+    // Coming back to Tasks: the rows, card layout and lanes were loaded on an
+    // earlier visit and would otherwise be shown as they were then. Re-fetch
+    // them, keeping the current cards on screen until the fresh ones arrive.
+    // Skipped on the first visit, whose fetches are already in flight.
+    if (ref.read(crmTasksProvider).hasValue) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(crmTasksProvider);
+        ref.invalidate(taskListSchemaFutureProvider);
+        ref.invalidate(taskStatusCatalogProvider);
+      });
+    }
+    // Webapp: the saved filters are re-read whenever the list mounts. Loading
+    // them only once per session left the chips missing for good if that one
+    // call failed (offline, a timeout).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(taskSavedFiltersProvider.notifier).load();
+    });
+    // A query left behind by a collapsed box would filter the list with
+    // nothing on screen saying so; only keep it while the box is open.
+    if (!ref.read(crmTaskSearchOpenProvider) && ref.read(crmTaskSearchProvider).isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(crmTaskSearchProvider.notifier).state = '';
+      });
+    } else {
+      _searchCtrl.text = ref.read(crmTaskSearchProvider);
+    }
   }
 
   @override
@@ -125,12 +155,15 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       // The org's own Task layout, not the built-in sheet's fixed field set —
       // the sheet collected five boxes and could not offer status, priority,
       // assignee, team or duration at all.
-      AddAction(label: 'Add task', run: (ctx) => ctx.push(Routes.addCrmTask)),
+      AddAction(label: 'Add task', module: 'task', run: (ctx) => ctx.push(Routes.addCrmTask)),
     );
 
-    final all = ref.watch(crmTasksAllProvider);
-    final async = ref.watch(crmTasksProvider);
+    // Counts come from the server-filtered rows (search, drawer, saved view)
+    // and ignore the chip selection — the webapp's board counts.
+    final all = ApiConfig.apiEnabled ? ref.watch(crmTasksBaseProvider) : ref.watch(crmTasksAllProvider);
+    final async = ApiConfig.apiEnabled ? ref.watch(crmTasksQueriedProvider) : ref.watch(crmTasksProvider);
     final tab = ref.watch(crmTaskTabProvider);
+    final selected = ref.watch(crmTaskChipsProvider);
     final searchOpen = ref.watch(crmTaskSearchOpenProvider);
     final query = ref.watch(crmTaskSearchProvider);
     final filterCount = ref.watch(crmTaskFiltersProvider).activeCount;
@@ -139,13 +172,16 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     // snapshot them unloaded and fall back to the built-in vocabularies.
     ref.watch(taskTypeOptionsProvider);
     ref.watch(taskPriorityOptionsProvider);
-    final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
+    // Kept loaded for the drawer: the server's task assignees and teams.
+    ref.watch(assignableUsersForModuleProvider('task'));
+    ref.watch(assignableTeamsForModuleProvider('task'));
 
     // The org's own lanes drive the tab row — names, order, colour and count,
     // straight from `GET /crm/crm-task-statuses/`. Empty (still loading, failed
     // fetch, mock mode) falls back per mode: the seeded lane names in API mode,
     // the built-in vocabulary only where there is no API to disagree with.
     final statuses = ref.watch(taskStatusOptionsProvider);
+    final otherCount = all.where((t) => crmTaskInNoLane(t, statuses)).length;
     final tabs = <(String, String, Color?)>[
       for (final (k, lbl) in _pseudoTabs) (k, lbl, null),
       if (_deepLinkTabs.containsKey(tab)) (tab, _deepLinkTabs[tab]!, null),
@@ -159,14 +195,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     // The org's list-card layout: which of the card's slots to render.
     final cardSchema = ref.watch(taskListSchemaProvider);
 
-    String? relatedLineFor(String? leadId) {
-      if (leadId == null) return null;
-      for (final l in leads) {
-        if (l.id == leadId) return '${l.company ?? l.name} · #${l.id}';
-      }
-      return null;
-    }
-
     return Column(
       children: [
         ListHeader(
@@ -179,7 +207,15 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               title: 'Tasks',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(crmTaskSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () {
+                // Collapsing the box drops the query, like clearing the webapp's
+                // search box — a hidden query would keep narrowing the list.
+                if (searchOpen) {
+                  _searchCtrl.clear();
+                  ref.read(crmTaskSearchProvider.notifier).state = '';
+                }
+                ref.read(crmTaskSearchOpenProvider.notifier).state = !searchOpen;
+              },
               onFilter: _openFilters,
             ),
             if (searchOpen) ...[
@@ -204,14 +240,33 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                     TabChip(
                       label: '$lbl (${crmTaskTabCount(all, k)})',
                       dotColor: dot,
-                      active: _tabActive(tab, k, statuses),
-                      onTap: () => ref.read(crmTaskTabProvider.notifier).state = k,
+                      active: k == 'all'
+                          ? tab == 'all' && selected.isEmpty
+                          : _deepLinkTabs.containsKey(k)
+                              ? tab == k
+                              : selected.contains(k) || (selected.isEmpty && _tabActive(tab, k, statuses)),
+                      onTap: () => _tapChip(k),
+                    ),
+                  // Webapp "Other / no status": only when some task sits in no
+                  // lane, or it is selected.
+                  if (otherCount > 0 || selected.contains(crmTaskOtherChip))
+                    TabChip(
+                      label: 'Other / no status ($otherCount)',
+                      active: selected.contains(crmTaskOtherChip),
+                      onTap: () => _tapChip(crmTaskOtherChip),
                     ),
                 ],
               ),
             ),
-            SizedBox(height: 12.h),
-            _savedViewRow(filterCount),
+            _approvalsLink(),
+            // Webapp: the row shows once there is a saved filter or a filter
+            // applied.
+            if (ref.watch(taskSavedFiltersProvider).filters.isNotEmpty ||
+                filterCount > 0 ||
+                ref.watch(taskSavedFiltersProvider).activeId != null) ...[
+              SizedBox(height: 12.h),
+              _savedViewRow(filterCount),
+            ],
             SizedBox(height: 14.h),
           ],
         ),
@@ -227,14 +282,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                   // So the gesture still works with nothing to scroll.
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    EmptyState(
-                      icon: PhosphorIconsRegular.funnel,
-                      title: 'No tasks found',
-                      body: 'Try a different status, clear filters, or add a new task.',
-                      ctaLabel: 'Add task',
-                      ctaIcon: PhosphorIconsBold.plus,
-                      onCta: () => context.push(Routes.addCrmTask),
-                    ),
+                    _isNarrowed()
+                        ? EmptyState(
+                            icon: PhosphorIconsRegular.funnel,
+                            title: 'No tasks match your filters',
+                            body: 'Try widening your search or clearing a filter to see more.',
+                            ctaLabel: 'Clear filters',
+                            ctaIcon: PhosphorIconsBold.xCircle,
+                            onCta: _resetListView,
+                          )
+                        : EmptyState(
+                            icon: PhosphorIconsRegular.funnel,
+                            title: 'No tasks yet',
+                            body: 'Tasks track the work your team needs to get done. Add your first one to get started.',
+                            ctaLabel: 'Add task',
+                            ctaIcon: PhosphorIconsBold.plus,
+                            onCta: () => context.push(Routes.addCrmTask),
+                          ),
                   ],
                 );
               }
@@ -252,9 +316,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                   return TaskCard(
                     task: t,
                     schema: cardSchema,
-                    relatedLine: relatedLineFor(t.leadId),
                     onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
-                    onToggle: () => _toggleTask(t),
+                    onCall: () => ref.read(toastProvider.notifier).show('Calling ${_callee(t)}…'),
                   );
                 },
               );
@@ -265,31 +328,49 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     );
   }
 
-  /// Toggles a task's done state with an optimistic override. In API mode the
-  /// write is awaited: on failure the override is rolled back to its prior value
-  /// and the error is surfaced; the success toast fires only after the write
-  /// lands. Mock mode is unchanged (optimistic + success toast).
-  Future<void> _toggleTask(CrmTask t) async {
-    final done = t.status == 'done';
-    final newStatus = done ? 'todo' : 'done';
-    final prev = ref.read(crmTaskStatusOverrideProvider);
-    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, t.id: newStatus};
-    if (ApiConfig.apiEnabled) {
-      try {
-        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, newStatus);
-      } on AppError catch (e) {
-        final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
-        if (prev.containsKey(t.id)) {
-          rolled[t.id] = prev[t.id]!;
-        } else {
-          rolled.remove(t.id);
-        }
-        ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        ref.read(toastProvider.notifier).showError(e.message);
-        return;
-      }
+  /// Webapp chip rules: "All" clears; statuses multi-select; Other exclusive.
+  void _tapChip(String k) {
+    if (_deepLinkTabs.containsKey(k)) {
+      ref.read(crmTaskTabProvider.notifier).state = k;
+      ref.read(crmTaskChipsProvider.notifier).state = const {};
+      return;
     }
-    ref.read(toastProvider.notifier).show(done ? 'Task reopened' : 'Task marked complete');
+    ref.read(crmTaskTabProvider.notifier).state = 'all';
+    ref.read(crmTaskChipsProvider.notifier).update((s) => toggleCrmTaskChip(s, k));
+  }
+
+  /// Webapp toolbar "Due date approvals (N)" — shown to everyone; the server
+  /// decides what each user may approve.
+  Widget _approvalsLink() {
+    if (!ApiConfig.apiEnabled) return const SizedBox.shrink();
+    final n = ref.watch(pendingDueDateCountProvider).valueOrNull ?? 0;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () async {
+          await context.push(Routes.dueDateApprovals);
+          // A decision there changes what is still waiting.
+          if (mounted) ref.invalidate(pendingDueDateCountProvider);
+        },
+        child: Padding(
+          padding: EdgeInsets.only(top: 10.h),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(PhosphorIconsRegular.sealCheck, size: 15.sp, color: AppColors.navy),
+            SizedBox(width: 6.w),
+            Text(n > 0 ? 'Due date approvals ($n)' : 'Due date approvals', style: AppText.captionStrong(color: AppColors.navy)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// Who the card's Call button rings: the record the task is about (the
+  /// webapp card's call action), else the task's title.
+  String _callee(CrmTask t) {
+    final related = t.raw['related_to'];
+    final label = related is Map ? '${related['label'] ?? ''}'.trim() : '';
+    return label.isNotEmpty ? label.split(' ').first : t.titleClean;
   }
 
   // ── Filter drawer ──
@@ -299,6 +380,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   /// without restarting.
   Future<void> _refresh() async {
     ref.invalidate(crmTasksProvider);
+    ref.invalidate(pendingDueDateCountProvider);
     ref.invalidate(taskStatusCatalogProvider);
     ref.invalidate(taskTypeCatalogProvider);
     ref.invalidate(taskPriorityCatalogProvider);
@@ -307,6 +389,9 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       ref.read(crmTasksProvider.future),
       ref.read(taskStatusCatalogProvider.future),
       ref.read(taskListSchemaFutureProvider.future),
+      // Reloaded through the controller, not invalidated: it also holds which
+      // view is applied, and that is the user's choice, not server state.
+      ref.read(taskSavedFiltersProvider.notifier).load(),
     ]);
   }
 
@@ -314,68 +399,120 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final spec = ref.read(crmTasksFilterSpecProvider);
     final current = ref.read(crmTaskFiltersProvider);
     final base = ref.read(crmTasksAllProvider);
-    final activeView = ref.read(crmTaskSavedViewsProvider).active;
+    final saved = ref.read(taskSavedFiltersProvider);
+    final activeView = saved.active;
 
     final result = await showFilterSheet(
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((t) => crmTaskMatchesFilters(t, draft)).length,
+      // Filters run server-side in API mode, so no device-side guess at the
+      // count (webapp: "Apply filters").
+      previewCount: ApiConfig.apiEnabled
+          ? (_) => -1
+          : (draft) => base.where((t) => crmTaskMatchesFilters(t, draft)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(crmTaskSavedViewsProvider).views.map((v) => v.name).toSet(),
-      onSaveView: (name, draft) {
-        ref.read(crmTaskSavedViewsProvider.notifier).upsert(name, draft);
-        ref.read(toastProvider.notifier).show('View "$name" saved');
-      },
+      existingViewNames: {for (final v in saved.filters) v.name},
+      onSaveView: _saveView,
     );
     if (result == null) return;
 
     ref.read(crmTaskFiltersProvider.notifier).state = result;
-    final views = ref.read(crmTaskSavedViewsProvider);
-    if (views.active != null && views.active!.values != result) {
-      ref.read(crmTaskSavedViewsProvider.notifier).deactivate();
+    // Webapp: applying the drawer leaves the saved view.
+    if (activeView != null &&
+        !sameFilterDefinition(ref.read(taskFilterCodecProvider).encode(result), activeView.definition)) {
+      ref.read(taskSavedFiltersProvider.notifier).deactivate();
     }
     ref.read(toastProvider.notifier).show('Filters applied');
   }
 
+  /// Webapp: "View saved" / "View updated" (same name overwrites), empty
+  /// filters refused with "Add at least one filter before saving.".
+  Future<void> _saveView(String name, FilterValues draft) async {
+    final toast = ref.read(toastProvider.notifier);
+    final definition = ref.read(taskFilterCodecProvider).encode(draft);
+    if (definition.isEmpty) {
+      toast.showError('Add at least one filter before saving.');
+      return;
+    }
+    final updating = ref.read(taskSavedFiltersProvider).filters.any((f) => f.name.toLowerCase() == name.trim().toLowerCase());
+    final error = await ref.read(taskSavedFiltersProvider.notifier).save(name, definition);
+    if (error != null) {
+      toast.showError(error);
+      return;
+    }
+    // Follow-ups show the same `module=task` set from their own copy.
+    ref.invalidate(followupSavedFiltersProvider);
+    toast.show(updating ? 'View updated' : 'View saved');
+  }
+
+  /// Deletes a saved view after the chip's × and confirm.
+  Future<void> _removeView(String id) async {
+    final wasActive = ref.read(taskSavedFiltersProvider).activeId == id;
+    final error = await ref.read(taskSavedFiltersProvider.notifier).remove(id);
+    if (error != null) {
+      ref.read(toastProvider.notifier).showError(error);
+      return;
+    }
+    ref.invalidate(followupSavedFiltersProvider);
+    // Webapp: deleting the applied filter only drops the chip; its filters stay
+    // applied, so the list does not change under the user.
+    if (wasActive) ref.read(taskSavedFiltersProvider.notifier).deactivate();
+    ref.read(toastProvider.notifier).show('View deleted');
+  }
+
   // ── Saved-view row: saved bookmark chips + Clear ──
   Widget _savedViewRow(int filterCount) {
-    final saved = ref.watch(crmTaskSavedViewsProvider);
+    final saved = ref.watch(taskSavedFiltersProvider);
     return SizedBox(
       height: 34.h,
       child: chips.SavedChipRow(
-        views: [for (final v in saved.views) chips.SavedView(v.id, v.name)],
+        views: [for (final v in saved.filters) chips.SavedView(v.id, v.name)],
         active: {if (saved.activeId != null) saved.activeId!},
         showClearAlways: filterCount > 0,
         onToggle: _toggleView,
         onClear: _clearFilters,
+        onRemove: _removeView,
+        webappStyle: true,
       ),
     );
   }
 
+  /// Webapp `applyPreset`: a tap applies the view — tapping the applied one
+  /// applies it again (it is turned off with Clear filters).
   void _toggleView(String id) {
-    final saved = ref.read(crmTaskSavedViewsProvider);
-    if (saved.activeId == id) {
-      ref.read(crmTaskSavedViewsProvider.notifier).deactivate();
-      ref.read(crmTaskFiltersProvider.notifier).state = FilterValues();
-      return;
-    }
-    // The chip was built from an earlier snapshot of the saved-view list. If
-    // the view was deleted or renamed elsewhere between render and tap,
-    // `firstWhere` threw a StateError inside a tap handler - a red screen in
-    // debug, a swallowed tap in release. Fail inert and say so instead.
-    final view = saved.views.where((v) => v.id == id).firstOrNull;
+    final saved = ref.read(taskSavedFiltersProvider);
+    final view = saved.filters.where((v) => v.id == id).firstOrNull;
     if (view == null) {
       ref.read(toastProvider.notifier).show('That view is no longer available.');
       return;
     }
-    ref.read(crmTaskSavedViewsProvider.notifier).apply(id);
-    ref.read(crmTaskFiltersProvider.notifier).state = view.values.copy();
-    ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+    // Webapp: applying a view fills the drawer and clears the status chips.
+    ref.read(taskSavedFiltersProvider.notifier).apply(id);
+    ref.read(crmTaskChipsProvider.notifier).state = const {};
+    ref.read(crmTaskFiltersProvider.notifier).state =
+        ref.read(taskFilterCodecProvider).decode(view.definition, ref.read(crmTasksFilterSpecProvider));
+  }
+
+  /// Whether a search, status chip or drawer filter is narrowing the list —
+  /// the webapp then says "match your filters" instead of "yet".
+  bool _isNarrowed() =>
+      ref.read(crmTaskSearchProvider).trim().isNotEmpty ||
+      ref.read(crmTaskFiltersProvider).activeCount > 0 ||
+      ref.read(crmTaskChipsProvider).isNotEmpty ||
+      ref.read(crmTaskTabProvider) != 'all';
+
+  /// The empty state's "Clear filters": search, chip and drawer back to all.
+  void _resetListView() {
+    _searchCtrl.clear();
+    ref.read(crmTaskSearchProvider.notifier).state = '';
+    ref.read(crmTaskTabProvider.notifier).state = 'all';
+    ref.read(crmTaskChipsProvider.notifier).state = const {};
+    _clearFilters();
   }
 
   void _clearFilters() {
-    ref.read(crmTaskSavedViewsProvider.notifier).clearActive();
+    ref.read(taskSavedFiltersProvider.notifier).deactivate();
     ref.read(crmTaskFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('Filters cleared');
   }

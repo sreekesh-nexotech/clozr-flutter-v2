@@ -18,21 +18,6 @@ import 'tasks_filter_spec.dart' show parseCrmDate;
 /// Customers filter — spec-driven drawer (audit §6). Wired exactly like the
 /// Leads reference. Sections: Status & source · Ownership · Value & tenure.
 
-/// Company universe across leads + customers (the audit's company list).
-List<String> _allCompanies(List<Lead> leads, List<Customer> customers) {
-  final seen = <String>{};
-  for (final l in leads) {
-    final c = l.company;
-    if (c != null && c.isNotEmpty) seen.add(c);
-  }
-  for (final c in customers) {
-    final name = c.company ?? c.name;
-    if (name.isNotEmpty) seen.add(name);
-  }
-  final list = seen.toList()..sort();
-  return list;
-}
-
 /// Build the Customers drawer spec (audit §6). Sources and products are derived
 /// from the current customer set (admin-configurable / "distinct" in the audit).
 FilterSpec buildCustomersFilterSpec({
@@ -64,9 +49,6 @@ FilterSpec buildCustomersFilterSpec({
   final users = [
     for (final u in roster) FilterOption(id: u.id, label: u.name),
   ];
-  final companies = _allCompanies(leads, customers)
-      .map((c) => FilterOption(id: c, label: c))
-      .toList();
   final products = productCatalog.isNotEmpty
       ? [for (final o in productCatalog) FilterOption(id: o.id, label: o.name)]
       : (customers.map((c) => c.project).toSet().toList()..sort())
@@ -100,14 +82,6 @@ FilterSpec buildCustomersFilterSpec({
             placeholder: 'Search owner…',
             options: users),
         FilterField(
-            id: 'companies',
-            label: 'Company',
-            control: FilterControl.searchSelect,
-            searchable: true,
-            isNotToggle: true,
-            placeholder: 'Search company…',
-            options: companies),
-        FilterField(
             id: 'products',
             label: 'Product / Service',
             control: FilterControl.searchSelect,
@@ -137,7 +111,8 @@ FilterSpec buildCustomersFilterSpec({
 bool customerMatchesFilters(Customer c, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('statuses'), [c.status])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('sources'), [c.source])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('owners'), [c.owner])) return false;
+  // Account manager = any assignee (customers have no single owner).
+  if (!FilterMatch.matchAnyOf(v.choice('owners'), [c.owner, ...c.team])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('companies'), [c.company ?? c.name])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('products'), [c.project])) return false;
   if (!FilterMatch.matchRange(v.range('value'), c.valueNum, scale: 100000)) return false;

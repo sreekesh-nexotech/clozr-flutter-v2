@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/api_endpoints.dart';
+import 'server_search_providers.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/invoice.dart';
@@ -9,6 +11,7 @@ import '../../infrastructure/data_sources/remote/invoices_remote_ds.dart';
 import '../../infrastructure/repositories/invoices_api_repository.dart';
 import '../../infrastructure/repositories/invoices_repository_impl.dart';
 import 'crm_party_providers.dart';
+import '../payments_list_view.dart';
 import 'payments_providers.dart';
 
 /// DI seam: mock-backed without a base URL, API-backed otherwise.
@@ -49,6 +52,10 @@ final invoiceByIdProvider = Provider.family<Invoice?, String>((ref, id) {
   for (final iv in invoices) {
     if (iv.id == id) return iv;
   }
+  // A plan's `payment_id` resolves too (deep links, record → plan hops).
+  for (final iv in invoices) {
+    if (iv.uuid.isNotEmpty && iv.uuid == id) return iv;
+  }
   return null;
 });
 
@@ -85,10 +92,31 @@ final visibleInvoicesProvider = Provider<List<Invoice>>((ref) {
   Iterable<Invoice> out = invoices;
   if (tab != 'all') out = out.where((x) => x.status == tab);
   if (q.isNotEmpty) {
-    out = out.where((x) => ('${x.id} ${invoiceWho(x, lookup)}').toLowerCase().contains(q));
+    final matches = serverSearchMatcher(
+      ref,
+      ServerSearchKey(endpoint: ApiEndpoints.payments, idFields: const ['payment_id'], query: q),
+    );
+    // Webapp haystack: plan id, customer, quote number, customer id — plus
+    // the lead name a lead-only plan is shown under.
+    final leads = ref.watch(planLeadNamesProvider);
+    out = out.where((x) => matches([x.uuid],
+        ('${x.id} ${x.uuid} ${invoiceWho(x, lookup)} ${x.quoteId ?? ''} ${x.custId ?? ''} ${leads[x.uuid] ?? ''}')
+            .toLowerCase()
+            .contains(q)));
   }
   return out.toList();
 });
+
+/// Lead name per plan uuid, from the payment records — the plan list row has
+/// no lead name, so a lead-only plan would otherwise read "—".
+final planLeadNamesProvider = Provider<Map<String, String>>(
+  (ref) => planLeadNames(ref.watch(allPaymentsProvider)),
+);
+
+/// "n/m settled" record counts per plan uuid (webapp `planCounts`).
+final planRecordCountsProvider = Provider<Map<String, PlanRecordCount>>(
+  (ref) => planRecordCounts(ref.watch(allPaymentsProvider)),
+);
 
 int invTabCount(List<Invoice> invoices, String key) {
   if (key == 'all') return invoices.length;

@@ -40,6 +40,13 @@ class CrmTasksApiRepository implements CrmTasksRepository {
   }
 
   @override
+  Future<List<CrmTask>> getTasksQuery(Map<String, dynamic> query) async {
+    final types = _remote.statusTypes();
+    final rows = await _remote.fetchTaskRows(query: query);
+    return CrmTasksRemoteDataSource.mapRows(rows, statusTypes: await types);
+  }
+
+  @override
   Future<List<CrmTask>> getTasksForLead(String leadId) async {
     final key = '${_cacheKey}_lead_$leadId';
     final types = _remote.statusTypes();
@@ -69,10 +76,10 @@ class CrmTasksApiRepository implements CrmTasksRepository {
 
   /// The record endpoint, cached per id so an opened task still reads offline.
   @override
-  Future<Map<String, dynamic>?> getTaskRow(String id) async {
+  Future<Map<String, dynamic>?> getTaskRow(String id, {bool isFollowup = false}) async {
     final key = 'crm_task_$id';
     try {
-      final row = await _remote.fetchTaskRow(id);
+      final row = await _remote.fetchTaskRow(id, isFollowup: isFollowup);
       if (row != null) await AppCache.put(AppCache.crmCache, key, row);
       return row;
     } on AppError catch (e) {
@@ -92,15 +99,15 @@ class CrmTasksApiRepository implements CrmTasksRepository {
   }
 
   @override
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields) async {
-    final task = await _remote.updateTask(id, fields);
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false}) async {
+    final task = await _remote.updateTask(id, fields, isFollowup: isFollowup);
     await _dropCaches(id);
     return task;
   }
 
   @override
-  Future<void> deleteTask(String id) async {
-    await _remote.deleteTask(id);
+  Future<void> deleteTask(String id, {bool isFollowup = false}) async {
+    await _remote.deleteTask(id, isFollowup: isFollowup);
     await _dropCaches(id);
   }
 

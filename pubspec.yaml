@@ -111,19 +111,18 @@ dev_dependencies:
 # Launcher icons. Regenerate with `dart run flutter_launcher_icons` after
 # changing the source art.
 #
-# The source lockup is a wide wordmark (1.9:1), so Android gets a separate
-# padded foreground: the adaptive-icon mask only guarantees the inner 66% of
-# the canvas, and the full-bleed art would lose its edges to the circle crop.
+# The source is the square app mark on white, already padded inside the
+# adaptive-icon safe zone, so it serves as the Android foreground as-is.
 flutter_launcher_icons:
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/appIcon-regular-512px.png"
   android: true
-  adaptive_icon_background: "#EDE8EF"
-  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/appIcon-regular-512px.png"
   ios: true
   remove_alpha_ios: true
   web:
     generate: true
-    background_color: "#EDE8EF"
+    background_color: "#FFFFFF"
     theme_color: "#00113B"
   macos:
     generate: true

@@ -49,8 +49,11 @@ class AppHeaderBar extends ConsumerWidget {
                 .watch(conversationsProvider)
                 .conversations
                 .fold<int>(0, (sum, c) => sum + c.unread);
-    final unreadNotifs =
-        hasUnread ?? (ref.watch(notificationsProvider).unreadCount > 0);
+    // The polled server count, as the webapp's bell; the loaded feed is the
+    // fallback until the first answer lands.
+    final polled = ref.watch(notificationsUnreadCountProvider).valueOrNull;
+    final unreadNotifs = hasUnread ??
+        ((polled ?? ref.watch(notificationsProvider).unreadCount) > 0);
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

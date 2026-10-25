@@ -81,9 +81,11 @@ class ClozrActionMenu extends StatelessWidget {
         // Hands the action back to [showActionMenu], which runs it once this
         // route has actually closed.
         onTap: a.enabled ? () => Navigator.of(context).pop(a) : null,
+        // A minimum, not a fixed height: a disabled row's reason (the
+        // webapp's permission copy) can wrap to a second line.
         child: Container(
-          height: 52.h,
-          padding: EdgeInsets.symmetric(horizontal: 10.w),
+          constraints: BoxConstraints(minHeight: 52.h),
+          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
           child: Row(
             children: [
               Icon(a.icon, size: 20.sp, color: color),

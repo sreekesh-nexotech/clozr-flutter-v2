@@ -26,6 +26,21 @@ class AuthInterceptor extends Interceptor {
 
   void Function()? onSessionExpired;
 
+  /// Why the server ended the session, when it said so — one of
+  /// [terminalSessionCodes]. Set just before [onSessionExpired] fires, null
+  /// for an ordinary expiry, so the login screen can explain the sign-out.
+  String? lastSignOutReason;
+
+  /// The 401 `code`s the webapp treats as final: no refresh, sign out, and the
+  /// login screen says why (webapp `terminalSessionCode.ts`).
+  static const terminalSessionCodes = {
+    'session_force_signout',
+    'session_revoked',
+    'session_expired',
+    'user_inactive',
+    'session_outside_work_hours',
+  };
+
   /// In-flight refresh, shared so concurrent 401s trigger a single call.
   Future<bool>? _refreshing;
 
@@ -61,12 +76,15 @@ class AuthInterceptor extends Interceptor {
 
     // A revoked session must NOT refresh — its refresh token would still mint
     // access tokens. Log out immediately.
-    if (response?.statusCode == 401 && _isSessionRevoked(response?.data)) {
+    final terminal = response?.statusCode == 401 ? _terminalCode(response?.data) : null;
+    if (terminal != null && !_isAnonymous(options.path)) {
       await _tokens.clear();
+      lastSignOutReason = terminal;
       onSessionExpired?.call();
       handler.next(err);
       return;
     }
+    lastSignOutReason = null;
 
     final shouldAttemptRefresh = response?.statusCode == 401 &&
         !_isAnonymous(options.path) &&
@@ -96,8 +114,17 @@ class AuthInterceptor extends Interceptor {
     }
   }
 
-  static bool _isSessionRevoked(Object? body) =>
-      body is Map && body['code'] == 'session_revoked';
+  /// The terminal reason in a 401 body, or null. A deactivated account is
+  /// answered with a numeric code and the message "User is inactive"; it is
+  /// read as `user_inactive` because refreshing cannot revive it either.
+  static String? _terminalCode(Object? body) {
+    if (body is! Map) return null;
+    final code = body['code'];
+    if (code is String && terminalSessionCodes.contains(code)) return code;
+    final message = (body['message'] ?? body['detail'])?.toString().trim().toLowerCase();
+    if (message == 'user is inactive') return 'user_inactive';
+    return null;
+  }
 
   Future<bool> _refresh() async {
     try {

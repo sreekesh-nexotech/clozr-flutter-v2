@@ -8,6 +8,11 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../../core/widgets/action_menu.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
@@ -19,6 +24,7 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/payments_filter_spec.dart';
+import '../../application/payments_list_view.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/crm_party_providers.dart';
 import '../../application/providers/invoices_providers.dart';
@@ -31,10 +37,12 @@ import '../components/payment_card.dart';
 import '../components/record_payment_sheet.dart';
 import '../components/saved_chip_row.dart';
 
-/// Payments + Invoices — a mode toggle over two status-tab lists (payment rows
-/// or invoice rows) sharing one header and search field. The Payments mode is
-/// wired to the spec-driven filter engine (drawer → matcher → badge → saved
-/// views), mirroring the Leads reference.
+/// CRM › Payments — the webapp's two tabs, Payment plans (the landing tab)
+/// and Payments (the individual records), as a mode toggle over two
+/// status-chip lists sharing one header and search field. "Record payment"
+/// is the contextual `+` on both. The Payments mode is wired to the
+/// spec-driven filter engine (drawer → matcher → badge → saved views),
+/// mirroring the Leads reference.
 class PaymentsScreen extends ConsumerStatefulWidget {
   const PaymentsScreen({super.key});
 
@@ -48,7 +56,15 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.text = ref.read(paySearchProvider);
+    // A query left behind by a collapsed box would filter the list with
+    // nothing on screen saying so; only keep it while the box is open.
+    if (!ref.read(paySearchOpenProvider) && ref.read(paySearchProvider).isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(paySearchProvider.notifier).state = '';
+      });
+    } else {
+      _searchCtrl.text = ref.read(paySearchProvider);
+    }
   }
 
   @override
@@ -62,7 +78,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     // Contextual add: the bottom-nav `+` opens the Record payment sheet.
     registerAdd(
       ref,
-      AddAction(label: 'Record payment', run: (ctx) => showRecordPaymentSheet(ctx)),
+      AddAction(label: 'Record payment', module: 'payment', run: (ctx) => showRecordPaymentSheet(ctx)),
     );
 
     final mode = ref.watch(payModeProvider);
@@ -91,23 +107,31 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               title: 'Payments',
               hasSearchQuery: query.isNotEmpty,
               filterCount: isPayments ? filterCount : 0,
-              onSearch: () => ref.read(paySearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () {
+                // Collapsing the box drops the query, like clearing the webapp's
+                // search box — a hidden query would keep narrowing the list.
+                if (searchOpen) {
+                  _searchCtrl.clear();
+                  ref.read(paySearchProvider.notifier).state = '';
+                }
+                ref.read(paySearchOpenProvider.notifier).state = !searchOpen;
+              },
               onFilter: isPayments ? _openFilters : null,
             ),
             SizedBox(height: 14.h),
             ModeToggle(
               options: const [
+                ModeOption(PhosphorIconsRegular.fileText, 'Payment plans'),
                 ModeOption(PhosphorIconsRegular.wallet, 'Payments'),
-                ModeOption(PhosphorIconsRegular.receipt, 'Invoices'),
               ],
-              selectedIndex: isPayments ? 0 : 1,
-              onChanged: (i) => ref.read(payModeProvider.notifier).state = i == 0 ? 'payments' : 'invoices',
+              selectedIndex: isPayments ? 1 : 0,
+              onChanged: (i) => ref.read(payModeProvider.notifier).state = i == 0 ? 'invoices' : 'payments',
             ),
             SizedBox(height: 14.h),
             if (searchOpen) ...[
               SearchField(
                 controller: _searchCtrl,
-                hint: 'Search invoices, customer, quote…',
+                hint: isPayments ? 'Search payments..' : 'Search payment plans, customer, quote..',
                 onChanged: (v) => ref.read(paySearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
@@ -199,6 +223,15 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     ref.read(toastProvider.notifier).show('Filters applied');
   }
 
+  /// Deletes a saved view after the chip's confirm. Removing the applied view
+  /// also clears its filters.
+  void _removeView(String id) {
+    final wasActive = ref.read(paymentSavedViewsProvider).activeId == id;
+    ref.read(paymentSavedViewsProvider.notifier).remove(id);
+    if (wasActive) ref.read(paymentFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('View removed');
+  }
+
   Widget _savedViewRow(int filterCount) {
     final saved = ref.watch(paymentSavedViewsProvider);
     return SavedChipRow(
@@ -207,6 +240,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       showClearAlways: filterCount > 0,
       onToggle: _toggleView,
       onClear: _clearFilters,
+      onRemove: _removeView,
     );
   }
 
@@ -231,6 +265,21 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
+  /// Whether a search, status chip or drawer filter is narrowing the list —
+  /// the webapp then says "match your filters" instead of "yet".
+  bool _isNarrowed() =>
+      ref.read(paySearchProvider).trim().isNotEmpty ||
+      ref.read(paymentFiltersProvider).activeCount > 0 ||
+      ref.read(payTabProvider) != 'all';
+
+  /// The empty state's "Clear filters": search, chip and drawer back to all.
+  void _resetListView() {
+    _searchCtrl.clear();
+    ref.read(paySearchProvider.notifier).state = '';
+    ref.read(payTabProvider.notifier).state = 'all';
+    _clearFilters();
+  }
+
   void _clearFilters() {
     ref.read(paymentSavedViewsProvider.notifier).clearActive();
     ref.read(paymentFiltersProvider.notifier).state = FilterValues();
@@ -243,38 +292,137 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       value: async,
       onRetry: () => ref.invalidate(paymentsProvider),
       onRefresh: _refresh,
+      error: (e, retry) => _loadError("Couldn't load payments", e, retry),
       data: (_) {
         final visible = ref.watch(visiblePaymentsProvider);
         if (visible.isEmpty) {
           return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              EmptyState(
-                icon: PhosphorIconsRegular.wallet,
-                title: 'No payments found',
-                body: 'Try a different status, clear filters, or record a payment.',
-                ctaLabel: 'Record payment',
-                ctaIcon: PhosphorIconsBold.plus,
-                onCta: () => showRecordPaymentSheet(context),
-              ),
+              _isNarrowed()
+                  ? EmptyState(
+                      icon: PhosphorIconsRegular.funnel,
+                      title: 'No payments match your filters',
+                      body: 'Try widening your search or clearing a filter to see more.',
+                      ctaLabel: 'Clear filters',
+                      ctaIcon: PhosphorIconsBold.xCircle,
+                      onCta: _resetListView,
+                    )
+                  // Payments aren't created here — they come from an accepted
+                  // quote's schedule, so the way forward is the quotes list.
+                  : EmptyState(
+                      icon: PhosphorIconsRegular.wallet,
+                      title: 'No payments yet',
+                      body: 'Payments appear here once a quote is accepted and its payment schedule is created.',
+                      ctaLabel: 'Go to quotes',
+                      ctaIcon: PhosphorIconsBold.arrowRight,
+                      onCta: () => context.go(Routes.quotes),
+                    ),
             ],
           );
         }
         return ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(),
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-          itemCount: visible.length,
+          // The list scrolls rather than pages, so the webapp's range label
+          // reduces to a plain count.
+          itemCount: visible.length + 1,
           separatorBuilder: (_, __) => SizedBox(height: 10.h),
           itemBuilder: (context, i) {
-            final payment = visible[i];
+            if (i == 0) return _countLabel(paymentCountLabel(visible.length));
+            final payment = visible[i - 1];
             return PaymentCard(
               payment: payment,
-              onTap: () => context.push('${Routes.paymentDetail}?id=${payment.id}'),
+              onTap: () => _openPayment(payment),
+              // Long-press offers the webapp row's actions (View, Delete).
+              onLongPress: () => _paymentActions(payment),
             );
           },
         );
       },
     );
+  }
+
+  /// The webapp's list error: its own title, the reason, "Try again".
+  Widget _loadError(String title, AppError e, VoidCallback retry) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          ErrorState(
+            title: title,
+            body: e.message,
+            ctaLabel: 'Try again',
+            onRetry: retry,
+          ),
+        ],
+      );
+
+  void _openPayment(Payment p) => context.push('${Routes.paymentDetail}?id=${p.id}');
+
+  // ── Row actions: the webapp row's View / Delete ──
+
+  /// The plan a record belongs to, for its `payment_type`.
+  Invoice? _planOf(Payment p) {
+    final plans = ref.read(invoicesProvider).valueOrNull ?? const <Invoice>[];
+    for (final iv in plans) {
+      if (p.planUuid != null && iv.uuid == p.planUuid) return iv;
+    }
+    for (final iv in plans) {
+      if (p.invId != null && iv.id == p.invId) return iv;
+    }
+    return null;
+  }
+
+  Future<void> _paymentActions(Payment p) async {
+    // Delete only where the server will allow it: payment delete, a
+    // milestone-based plan, nothing paid and no tax document — the rule the
+    // webapp's confirm spells out.
+    final canDelete = canDeletePaymentRecord(
+      p,
+      planType: _planOf(p)?.paymentType,
+      hasDeletePermission: hasPermission(ref, 'payment', PermVerb.delete),
+    );
+    await showActionMenu(context, title: paymentWho(p).name, actions: [
+      MenuAction(icon: PhosphorIconsRegular.eye, label: 'View', onTap: () => _openPayment(p)),
+      if (canDelete)
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete',
+          destructive: true,
+          onTap: () => _confirmDelete(p),
+        ),
+    ]);
+  }
+
+  Future<void> _confirmDelete(Payment p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(deleteRecordTitle),
+        content: const Text(deleteRecordBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await ref.read(paymentsRepositoryProvider).deleteRecord(p.id);
+    } on AppError catch (e) {
+      // Shown here with the server's reason, so the shell must not toast it
+      // again in raw form.
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).show(deleteRecordToast);
+    // The server recalculates the plan's totals — refetch both lists.
+    ref.invalidate(paymentsProvider);
+    ref.invalidate(invoicesProvider);
   }
 
   Widget _invoicesList(BuildContext context, WidgetRef ref) {
@@ -283,26 +431,34 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       value: async,
       onRetry: () => ref.invalidate(invoicesProvider),
       onRefresh: _refresh,
+      error: (e, retry) => _loadError("Couldn't load payment plans", e, retry),
       data: (_) {
         final visible = ref.watch(visibleInvoicesProvider);
+        final leads = ref.watch(planLeadNamesProvider);
+        final counts = ref.watch(planRecordCountsProvider);
+        final schema = ref.watch(paymentListSchemaProvider);
         return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
           children: [
+            _countLabel(planCountLabel(visible.length)),
+            SizedBox(height: 10.h),
             _invoiceBanner(),
             SizedBox(height: 10.h),
             if (visible.isEmpty)
               const EmptyState(
-                icon: PhosphorIconsRegular.receipt,
-                title: 'No invoices found',
-                body: 'Try a different status or clear filters.',
+                icon: PhosphorIconsRegular.fileText,
+                title: 'No payment plans match your filters',
+                body: 'Try widening your search or picking another status.',
               )
             else
               for (int i = 0; i < visible.length; i++) ...[
                 if (i > 0) SizedBox(height: 10.h),
                 InvoiceCard(
                   invoice: visible[i],
-                  schema: ref.watch(paymentListSchemaProvider),
+                  schema: schema,
+                  leadName: leads[visible[i].uuid],
+                  recordCount: counts[visible[i].uuid],
                   onTap: () => context.push('${Routes.invoiceDetail}?id=${visible[i].id}'),
                 ),
               ],
@@ -324,7 +480,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           Expanded(
             child: Text.rich(
               TextSpan(
-                text: 'An invoice is generated when a quote is accepted. It groups that customer\'s installments and rolls up to ',
+                text: 'A payment plan is generated when a quote is accepted. It groups that customer\u2019s installments and rolls up to ',
                 style: AppText.custom(size: 12, weight: FontWeight.w500, color: _bannerText, height: 1.5),
                 children: [
                   TextSpan(text: 'Completed', style: AppText.custom(size: 12, weight: FontWeight.w700, color: _bannerText)),
@@ -338,6 +494,12 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     );
   }
 }
+
+/// "6 payment plans" / "19 payments" — the webapp's list counter.
+Widget _countLabel(String text) => Align(
+      alignment: Alignment.centerLeft,
+      child: Text(text, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+    );
 
 /// The prototype's `#35507C` info-banner text — no design token exists for it.
 const Color _bannerText = Color(0xFF35507C);

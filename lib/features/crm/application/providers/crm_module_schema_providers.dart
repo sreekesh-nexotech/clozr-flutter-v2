@@ -128,13 +128,26 @@ final paymentRowProvider =
 // describe the same field set, so borrowing the table layout would show slots
 // the rows do not carry.
 
+//
+// Products and Packages share `/crm/products/schema/` but each has its own
+// View Settings config, picked by `item_type` (as the webapp asks for it).
+
 final productListSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
   final ds = _source(ref, ApiEndpoints.productSchema);
-  return ds == null ? ViewSchema.empty : ds.fetchMobileSchema();
+  return ds == null ? ViewSchema.empty : ds.fetchMobileSchema(query: const {'item_type': 'product'});
 });
 
 final productListSchemaProvider = Provider<ViewSchema>((ref) =>
     ref.watch(productListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty);
+
+/// The Packages tab's card layout — View Settings › Product packages › Mobile.
+final packageListSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
+  final ds = _source(ref, ApiEndpoints.productSchema);
+  return ds == null ? ViewSchema.empty : ds.fetchMobileSchema(query: const {'item_type': 'package'});
+});
+
+final packageListSchemaProvider = Provider<ViewSchema>((ref) =>
+    ref.watch(packageListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty);
 
 /// The product **detail** layout — which fields the readout shows, in what
 /// order, under what labels — and the field list the Add-product form renders.

@@ -9,6 +9,7 @@ import '../../../app/router/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../auth/application/providers/auth_providers.dart';
 import '../../auth/domain/entities/module_access.dart';
+import '../../auth/presentation/components/permission_guard.dart';
 import '../application/providers/contextual_add_provider.dart';
 import '../domain/nav_catalog.dart';
 
@@ -101,11 +102,24 @@ class ClozrBottomNav extends ConsumerWidget {
     if (path.startsWith('/ops')) return Routes.createTask;
     if (path.startsWith('/help')) return Routes.createTicket;
     if (path.startsWith('/quotes')) return Routes.addQuote;
+    // Back on Tasks after a pushed screen closes, the list has not rebuilt to
+    // re-register its action — the route still says what `+` means here.
+    if (path == Routes.tasks) return Routes.addCrmTask;
     // Purchases and Money register their own sheets; everywhere else in
     // Accounting the `+` raises an invoice.
     if (path.startsWith('/acc')) return Routes.accNewInvoice;
     return Routes.addLead;
   }
+
+  /// The module [_fallbackAddPath] creates in, for the `can_create` check.
+  static String? _fallbackAddModule(String path) => switch (path) {
+        Routes.addLead => 'lead',
+        Routes.addQuote => 'quotation',
+        Routes.addCrmTask => 'task',
+        Routes.createProject => 'project',
+        Routes.createTask => 'project_task',
+        _ => null,
+      };
 
   bool _isActive(_NavItem it) {
     final path = location.split('?').first;
@@ -316,9 +330,14 @@ class ClozrBottomNav extends ConsumerWidget {
         // fall back to a location-aware route.
         final action = ref.read(contextualAddProvider);
         if (action != null) {
+          final module = action.module;
+          if (module != null && !ensurePermission(ref, module, PermVerb.create)) return;
           action.run(context);
         } else {
-          context.push(_fallbackAddPath);
+          final path = _fallbackAddPath;
+          final module = _fallbackAddModule(path);
+          if (module != null && !ensurePermission(ref, module, PermVerb.create)) return;
+          context.push(path);
         }
       },
       child: Container(

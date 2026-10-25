@@ -6,93 +6,140 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../../core/utils/money_format.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
-import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
-import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
-import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/providers/crm_party_providers.dart';
-import '../../../../core/config/api_config.dart';
-import '../../../../core/network/app_error.dart';
-import '../../application/providers/invoices_providers.dart';
-import '../../application/providers/payments_providers.dart';
-import '../../domain/entities/payment.dart';
-import '../../infrastructure/data_sources/local/crm_party_directory.dart';
-import '../components/crm_async.dart';
-import '../components/finance_widgets.dart';
-import '../components/record_payment_sheet.dart';
-import '../../../../core/utils/money_format.dart';
 import '../../../accounting/application/providers/accounting_providers.dart';
 import '../../../accounting/presentation/components/acc_widgets.dart';
-import '../../../accounting/presentation/config/accounting_copy.dart';
+import '../../../accounting/presentation/sheets/acc_sheet_scaffold.dart' show confirmAcc;
+import '../../../auth/application/providers/module_perm_providers.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
+import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/payment_plan/payment_plan_detail.dart';
+import '../../application/payment_plan/payment_plan_rules.dart';
+import '../../application/providers/invoices_providers.dart';
+import '../../application/providers/payment_plan_providers.dart';
+import '../../application/providers/payments_providers.dart';
+import '../components/finance_widgets.dart';
+import '../components/payment_plan/plan_widgets.dart';
 
-/// Payment detail — header (amount + status + optional "Mark as paid"), related
-/// links, payment detail rows, activity and notes.
-class PaymentDetailScreen extends ConsumerWidget {
+/// One payment record (webapp `PaymentDetailScreen`): the amount due incl.
+/// GST, status, method and dates; the plan it belongs to; the accounting card
+/// while accounting is active; a synthetic activity; local-only notes.
+///
+/// Read-only like the web — no edit or mark-unpaid. The one action is Delete
+/// (PY-011), offered only for an unpaid, uninvoiced record on a milestone-type
+/// plan to a user with payment delete.
+class PaymentDetailScreen extends ConsumerStatefulWidget {
   const PaymentDetailScreen({super.key});
 
-  /// Pull-to-refresh: the payment list this record is read out of, the invoices
-  /// its linked-invoice card reads, and the party directory.
-  Future<void> _refresh(WidgetRef ref) async {
-    ref.invalidate(paymentsProvider);
-    ref.invalidate(invoicesProvider);
-    ref.invalidate(crmPartyLookupProvider);
-    await settle([
-      ref.read(paymentsProvider.future),
-      ref.read(invoicesProvider.future),
-    ]);
+  @override
+  ConsumerState<PaymentDetailScreen> createState() => _PaymentDetailScreenState();
+}
+
+class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
+  /// Local-only notes — the web keeps them in page state too (no notes API
+  /// for a payment record).
+  final List<NoteEntry> _notes = [];
+  bool _deleting = false;
+
+  void _back() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(Routes.payments);
+    }
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
-    final async = ref.watch(paymentsProvider);
+  Widget _scaffold(Widget child) => Container(
+        color: AppColors.bgDetail,
+        child: Column(
+          children: [
+            DetailAppBar(section: 'Payment', onBack: () => context.pop()),
+            Expanded(child: child),
+          ],
+        ),
+      );
 
-    Widget scaffold(Widget child) => Container(
-          color: AppColors.bgDetail,
-          child: Column(
-            children: [
-              DetailAppBar(section: 'Payment', onBack: () => context.pop()),
-              Expanded(child: child),
-            ],
-          ),
-        );
-
-    return async.when(
-      loading: () => scaffold(const DetailSkeleton()),
-      error: (e, _) => scaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(paymentsProvider)),
-      ),
-      data: (_) => _buildPayment(context, ref, id, scaffold),
+  Widget _errorState(Object e) {
+    final notFound = e is AppError && e.type == AppErrorType.notFound;
+    return EmptyState(
+      icon: notFound ? PhosphorIconsRegular.wallet : PhosphorIconsRegular.warning,
+      iconColor: notFound ? AppColors.textPlaceholder : AppColors.error,
+      title: notFound ? 'Payment not found' : "Couldn't load this payment",
+      body: notFound
+          ? 'This payment may have been deleted.'
+          : (e is AppError ? e.message : 'Something went wrong. Please try again.'),
+      ctaLabel: 'Back to payments',
+      onCta: _back,
     );
   }
 
-  Widget _buildPayment(
-    BuildContext context,
-    WidgetRef ref,
-    String id,
-    Widget Function(Widget) scaffold,
-  ) {
-    final payment = ref.watch(paymentByIdProvider(id));
-    if (payment == null) {
-      return scaffold(const EmptyState(
-        icon: PhosphorIconsRegular.wallet,
-        title: 'Payment not found',
-        body: 'This payment may have been removed or you no longer have access to it.',
-      ));
+  @override
+  Widget build(BuildContext context) {
+    final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    if (id.isEmpty) {
+      return _scaffold(_errorState(const AppError(type: AppErrorType.notFound, message: '')));
     }
+    final async = ref.watch(paymentRecordDetailProvider(id));
+    final record = async.valueOrNull;
+    if (record == null) {
+      if (async.hasError) return _scaffold(_errorState(async.error!));
+      return _scaffold(const DetailSkeleton());
+    }
+    return _content(record);
+  }
 
-    final lookup = ref.watch(crmPartyLookupProvider);
-    final meta = StatusMeta$.payment[payment.status] ?? StatusMeta$.payment['due']!;
-    final owner = MockUsers.of(payment.owner);
-    final cust = lookup(custId: payment.custId);
-    final linkedInvoice = payment.invId == null ? null : ref.watch(invoiceByIdProvider(payment.invId!));
-    final canMarkPaid = payment.status != 'paid';
+  Future<void> _refresh(PlanRecord r) async {
+    ref.invalidate(paymentRecordDetailProvider(r.id));
+    if (r.planId.isNotEmpty) ref.invalidate(paymentPlanDetailProvider(r.planId));
+    try {
+      await ref.read(paymentRecordDetailProvider(r.id).future);
+    } catch (_) {
+      // Rendered by the page's own error state.
+    }
+  }
+
+  Future<void> _delete(PlanRecord r) async {
+    if (_deleting || !ensurePermission(ref, 'payment', PermVerb.delete)) return;
+    final ok = await confirmAcc(
+      context,
+      title: deleteRecordTitle,
+      body: deleteRecordBody,
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await ref.read(paymentPlanRemoteProvider).deleteRecord(r.id);
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(e.bareMessage);
+      if (mounted) setState(() => _deleting = false);
+      return;
+    }
+    ref.read(toastProvider.notifier).show('Payment record deleted');
+    // The server recalculates the plan's totals.
+    if (r.planId.isNotEmpty) ref.invalidate(paymentPlanDetailProvider(r.planId));
+    ref.invalidate(invoicesProvider);
+    ref.invalidate(paymentsProvider);
+    if (mounted) _back();
+  }
+
+  Widget _content(PlanRecord r) {
+    final plan = r.planId.isEmpty ? null : ref.watch(paymentPlanDetailProvider(r.planId)).valueOrNull;
+    final meta = recordStatusMeta(r);
+    final canDelete = plan != null &&
+        canDeleteRecord(planType: plan.ptype, record: r, canDelete: ref.watch(modulePermProvider('payment')).delete);
+    final accounting = ref.watch(accountingActiveProvider);
 
     return Container(
       color: AppColors.bgDetail,
@@ -100,40 +147,48 @@ class PaymentDetailScreen extends ConsumerWidget {
         children: [
           DetailAppBar(
             section: 'Payment',
-            name: paymentTitle(payment, lookup),
+            name: r.displayLabel,
             onBack: () => context.pop(),
-            trailing: DetailIconAction(
-              icon: PhosphorIconsBold.dotsThreeVertical,
-              onTap: () => ref.read(toastProvider.notifier).show('Payment actions'),
-            ),
+            trailing: canDelete
+                ? DetailIconAction(icon: PhosphorIconsRegular.trash, onTap: () => _delete(r))
+                : null,
           ),
           Expanded(
             child: AppRefresh(
-              onRefresh: () => _refresh(ref),
+              onRefresh: () => _refresh(r),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
-              children: [
-                _headerCard(context, ref, payment, meta, canMarkPaid),
-                SizedBox(height: 14.h),
-                _relatedCard(context, payment, cust, linkedInvoice?.quoteId),
-                SizedBox(height: 14.h),
-                _detailsCard(payment, meta, owner),
-                SizedBox(height: 14.h),
-                if (payment.recordSummary != null) ...[
-                  _accountingCard(context, payment),
+                padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
+                children: [
+                  _headerCard(r, meta),
                   SizedBox(height: 14.h),
-                ],
-                FinanceCard(
-                  title: 'Activity',
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 6.h),
-                    child: ActivityTimeline(entries: _activity(payment, owner.name)),
+                  _relatedCard(r, plan),
+                  SizedBox(height: 14.h),
+                  _infoCard(r, meta, plan),
+                  SizedBox(height: 14.h),
+                  if (accounting) ...[
+                    _accountingCard(r),
+                    SizedBox(height: 14.h),
+                  ],
+                  FinanceCard(
+                    title: 'Activity',
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 6.h),
+                      child: ActivityTimeline(entries: _activity(r)),
+                    ),
                   ),
-                ),
-                SizedBox(height: 14.h),
-                NotesCard(onSend: (_) => ref.read(toastProvider.notifier).show('Note added')),
-              ],
+                  SizedBox(height: 14.h),
+                  NotesCard(
+                    notes: List.of(_notes),
+                    countLabel: '${_notes.length}',
+                    onSend: (body) => setState(() => _notes.insert(
+                        0, NoteEntry(initials: 'Y', author: 'You', time: 'Just now', body: body))),
+                  ),
+                  if (_notes.isEmpty) ...[
+                    SizedBox(height: 8.h),
+                    const Center(child: PlanHint('No notes yet — add the first one above.')),
+                  ],
+                ],
               ),
             ),
           ),
@@ -142,48 +197,10 @@ class PaymentDetailScreen extends ConsumerWidget {
     );
   }
 
-  /// Settles this installment for real — `PATCH /quotations/payment-records/`,
-  /// the same call the Invoice screen's "Settle now" row and the Record payment
-  /// sheet make.
-  ///
-  /// This button used to be a bare toast: it said "Payment marked as paid" and
-  /// wrote nothing, so the pill still read unpaid after a reload. Two other
-  /// places in the app already did the real write, which made this the odd one
-  /// out rather than a deliberate stub.
-  Future<void> _markPaid(BuildContext context, WidgetRef ref, Payment payment) async {
-    // With accounting on, marking paid posts a receipt: it needs the date the
-    // money arrived, any TDS withheld and the bank it landed in — which is
-    // exactly what the sheet asks for. A one-tap "today, in full, no bank"
-    // write would book the wrong period and the wrong cash.
-    if (ref.read(accountingActiveProvider)) {
-      await showRecordPaymentSheet(context, invoiceId: payment.invId, recordId: payment.id);
-      return;
-    }
-    final prev = ref.read(paidOverrideProvider);
-    ref.read(paidOverrideProvider.notifier).state = {...prev, payment.id};
-
-    if (ApiConfig.apiEnabled) {
-      try {
-        await ref.read(paymentsRepositoryProvider).markRecordPaid(
-              payment.id,
-              amountPaid: payment.amountExact.isNotEmpty ? payment.amountExact : null,
-            );
-      } on AppError catch (e) {
-        // Put the optimistic flip back, so the pill cannot claim a payment the
-        // server refused.
-        ref.read(paidOverrideProvider.notifier).state = {...prev};
-        ref.read(toastProvider.notifier).showError(e.message);
-        return;
-      }
-      // The server recalculates the parent invoice, so both lists are stale.
-      ref.invalidate(paymentsProvider);
-      ref.invalidate(invoicesProvider);
-    }
-    ref.read(toastProvider.notifier).show('Payment marked as paid');
-  }
-
-  Widget _headerCard(BuildContext context, WidgetRef ref, Payment payment, StatusMeta meta, bool canMarkPaid) {
-    final lookup = ref.watch(crmPartyLookupProvider);
+  Widget _headerCard(PlanRecord r, StatusMeta meta) {
+    final who = r.customerName.isNotEmpty ? r.customerName : r.leadName;
+    final plan = r.quoteNumber.isNotEmpty ? r.quoteNumber : 'Payment plan';
+    final hint = amountDueHint(r);
     return FinanceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,73 +208,87 @@ class PaymentDetailScreen extends ConsumerWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconChip(icon: payMethodIcon(payment.method)),
+              IconChip(icon: planMethodIcon(r.method)),
               SizedBox(width: 12.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(payment.amount,
-                            style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                        SizedBox(width: 8.w),
-                        StatusPill.meta(meta),
-                      ],
-                    ),
+                    Text(r.displayLabel,
+                        style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    if (who.isNotEmpty || r.productName.isNotEmpty) ...[
+                      SizedBox(height: 3.h),
+                      Text([if (who.isNotEmpty) who, if (r.productName.isNotEmpty) r.productName].join(' · '),
+                          style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    ],
                     SizedBox(height: 3.h),
-                    Text(paymentTitle(payment, lookup),
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                    SizedBox(height: 3.h),
-                    Text('${payment.id} · ${payment.label}',
+                    Text('$plan · ${recordRowDate(r)}',
                         style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
             ],
           ),
-          if (canMarkPaid) ...[
-            const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
-            GestureDetector(
-              onTap: () => _markPaid(context, ref, payment),
-              child: Container(
-                height: 46.h,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+          const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(PhosphorIconsBold.check, size: 15.sp, color: AppColors.white),
-                    SizedBox(width: 8.w),
-                    Text('Mark as paid', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.white)),
+                    Text('AMOUNT DUE (INCL. GST)',
+                        style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                    SizedBox(height: 3.h),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(planMoney(r.amountDueInclGst),
+                          style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.navy, letterSpacing: -0.4)),
+                    ),
+                    if (hint.isNotEmpty)
+                      Text(hint, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    if (hasGstOnTop(r))
+                      Text('As quoted ${planMoney(r.amountExpected)}',
+                          style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
                   ],
                 ),
               ),
-            ),
-          ],
+              SizedBox(width: 10.w),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('STATUS',
+                      style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                  SizedBox(height: 6.h),
+                  StatusPill.meta(meta),
+                ],
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _relatedCard(BuildContext context, Payment payment, CrmParty? cust, String? invoiceQuoteId) {
+  Widget _relatedCard(PlanRecord r, PlanDetail? plan) {
     final chips = <Widget>[
-      if (cust != null)
+      if (r.planId.isNotEmpty)
         _relChip(
-          kind: 'Customer · #${cust.id}',
-          name: cust.company,
-          onTap: () => context.push('${Routes.customerDetail}?id=${cust.id}'),
+          kind: 'Payment plan',
+          name: r.quoteNumber.isNotEmpty ? r.quoteNumber : '—',
+          onTap: () => context.push('${Routes.invoiceDetail}?id=${r.planId}'),
         ),
-      if (payment.invId != null)
+      if (plan != null && plan.customerId.isNotEmpty)
         _relChip(
-          kind: 'Invoice · ${payment.invId}',
-          name: '#${invoiceQuoteId ?? '—'}',
-          onTap: () => context.push('${Routes.invoiceDetail}?id=${payment.invId}'),
+          kind: 'Customer',
+          name: plan.customerName.isNotEmpty ? plan.customerName : 'Customer',
+          onTap: () => context.push('${Routes.customerDetail}?id=${plan.customerId}'),
         ),
     ];
-
+    if (chips.isEmpty) return const SizedBox.shrink();
     return FinanceCard(
-      title: 'RELATED',
+      title: 'Related',
       child: Padding(
         padding: EdgeInsets.only(top: 4.h),
         child: Column(
@@ -290,7 +321,8 @@ class PaymentDetailScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(kind, style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                  Text(kind.toUpperCase(),
+                      style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
                   SizedBox(height: 1.h),
                   Text(name, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
                 ],
@@ -303,127 +335,110 @@ class PaymentDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _detailsCard(Payment payment, StatusMeta meta, AppUser owner) {
+  Widget _infoCard(PlanRecord r, StatusMeta meta, PlanDetail? plan) {
+    final method = paymentMethodLabel(r.method);
+    final rows = <(String, String)>[
+      ('Amount due (incl. GST)', '${planMoney(r.amountDueInclGst)}${amountDueHint(r).isEmpty ? '' : ' ${amountDueHint(r)}'}'),
+      if (hasGstOnTop(r)) ('Amount as quoted', planMoney(r.amountExpected)),
+      ('Balance due', planMoney(r.balanceDue)),
+      ('Status', meta.label),
+      ('Method', method.isEmpty ? '—' : method),
+      ('Installment', r.installmentNumber > 0 ? '#${r.installmentNumber}' : '—'),
+      ('Date', recordRowDate(r)),
+      ('Payment plan', r.quoteNumber.isNotEmpty ? r.quoteNumber : (r.planId.isNotEmpty ? r.planId : '—')),
+      if (plan != null && plan.ownerName.isNotEmpty)
+        ('Collection owner', plan.ownerEmail.isNotEmpty ? '${plan.ownerName} · ${plan.ownerEmail}' : plan.ownerName),
+    ];
     return FinanceCard(
-      title: 'Payment details',
+      title: 'Payment information',
       child: Column(
         children: [
-          MetaRow(label: 'Amount', value: payment.amountExact.isEmpty ? payment.amount : formatMoneyStr(payment.amountExact)),
-          MetaRow(label: 'Status', value: meta.label),
-          // Only once something was withheld: on an ordinary receipt cash and
-          // the contracted amount are the same figure.
-          if (payment.hasDeductions) ...[
-            MetaRow(label: 'Cash received', value: formatMoneyStr(payment.paidCashNum)),
-            if (payment.tdsNum > 0) MetaRow(label: 'TDS withheld', value: formatMoneyStr(payment.tdsNum)),
-            if (payment.gstTdsNum > 0) MetaRow(label: 'GST TDS', value: formatMoneyStr(payment.gstTdsNum)),
-            if (payment.gstTcsNum > 0) MetaRow(label: 'GST TCS', value: formatMoneyStr(payment.gstTcsNum)),
-            if (payment.bankChargeNum > 0) MetaRow(label: 'Bank charge', value: formatMoneyStr(payment.bankChargeNum)),
-            MetaRow(
-                label: 'Settled value',
-                value: formatMoneyStr(payment.paidCashNum + payment.deductionsNum)),
-          ],
-          if (payment.treatAs != null)
-            MetaRow(label: 'Booked as', value: label(const {'ADVANCE': 'Advance', 'CUSTOMER_CREDIT': 'Customer credit'}, payment.treatAs)),
-          MetaRow(label: 'Method', value: payment.method == '—' ? 'Not set' : payment.method),
-          MetaRow(label: 'Type', value: payment.label),
-          MetaRow(label: 'Date', value: payment.date),
-          MetaRow(label: 'Reference', value: '—'),
-          MetaRow(label: 'Recorded by', value: owner.name),
-          MetaRow(label: 'Invoice', value: payment.invId ?? '—', last: true),
-          SizedBox(height: 13.h),
-          Row(
-            children: [
-              Container(
-                width: 38.w,
-                height: 38.w,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: owner.color, shape: BoxShape.circle),
-                child: Text(owner.initials, style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.white)),
-              ),
-              SizedBox(width: 11.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(owner.name, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                  Text('Collection owner', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                ],
-              ),
-            ],
-          ),
+          for (int i = 0; i < rows.length; i++)
+            MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
         ],
       ),
     );
   }
 
-  /// What the ledger made of this instalment: its invoice and its receipt.
-  Widget _accountingCard(BuildContext context, Payment payment) {
-    final s = payment.recordSummary!;
+  /// How the record sits in the books (accounting active only).
+  Widget _accountingCard(PlanRecord r) {
+    final doc = r.document;
+    final receipt = r.receipt;
+    String money(double v) => v > 0 ? formatMoneyStr(v) : '—';
+    final servicePeriod = r.servicePeriodStart.isNotEmpty && r.servicePeriodEnd.isNotEmpty
+        ? '${planDate(r.servicePeriodStart)} → ${planDate(r.servicePeriodEnd)}'
+        : '';
+    final docStatus = const {'DRAFT': 'Draft', 'ISSUED': 'Issued', 'CANCELLED': 'Cancelled', 'VOID_DRAFT': 'Void'};
+    final rows = <(String, String)>[
+      if (doc != null && doc.status == 'ISSUED')
+        ('Invoice open balance', '${formatMoneyStr(doc.openBalance)} of ${formatMoneyStr(doc.grandTotal)}'),
+      (
+        'Receipt',
+        receipt == null
+            ? 'Not posted'
+            : '${formatMoneyStr(receipt.amount)}${receipt.kind.isNotEmpty ? ' · ${receipt.kind}' : ''}'
+                '${receipt.status.isNotEmpty ? ' · ${humanizeEnum(receipt.status)}' : ''}',
+      ),
+      if (r.amountCredited > 0) ('Credited', formatMoneyStr(r.amountCredited)),
+      if (r.amountRefunded > 0)
+        ('Refunded', '${formatMoneyStr(r.amountRefunded)}${r.amountRefundNotDue > 0 ? ' · deal closed, not due again' : ''}'),
+      if (r.cancelReason.isNotEmpty) ('Cancelled', r.cancelReason),
+      ('TDS deducted', money(r.tds)),
+      ('Bank charge', money(r.bankCharge)),
+      if (r.gstTds > 0 || r.gstTcs > 0) ('GST TDS / TCS', '${formatMoneyStr(r.gstTds)} / ${formatMoneyStr(r.gstTcs)}'),
+      ('Bank / gateway ref', r.gatewayRef.isNotEmpty ? r.gatewayRef : '—'),
+      if (r.treatAs.isNotEmpty) ('Treated as', treatAsLabels[r.treatAs] ?? humanizeEnum(r.treatAs)),
+      if (servicePeriod.isNotEmpty) ('Service period', servicePeriod),
+    ];
     return FinanceCard(
       title: 'Accounting',
-      child: Padding(
-        padding: EdgeInsets.only(top: 4.h),
-        child: Column(
-          children: [
-            if (s.hasDocument)
-              _relChip(
-                kind: 'Invoice · ${label(const {'DRAFT': 'Draft', 'ISSUED': 'Issued', 'CANCELLED': 'Cancelled', 'VOID_DRAFT': 'Void'}, s.documentStatus)}'
-                    '${s.documentPaymentState == null || s.documentPaymentState == 'NA' ? '' : ' · ${label(const {'UNPAID': 'Unpaid', 'PARTIAL': 'Part paid', 'PAID': 'Paid'}, s.documentPaymentState)}'}',
-                name: s.documentNumber ?? 'Draft',
-                onTap: () => context.push('${Routes.accDocumentDetail}?id=${s.documentId}'),
-              ),
-            if (s.hasDocument && s.hasReceipt) SizedBox(height: 8.h),
-            if (s.hasReceipt)
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: AppColors.borderCardSoft),
-                ),
-                child: Row(
-                  children: [
-                    Icon(PhosphorIconsRegular.receipt, size: 16.sp, color: AppColors.success),
-                    SizedBox(width: 11.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('RECEIPT · ${s.receiptStatus ?? ''}'.trim(),
-                              style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
-                          SizedBox(height: 1.h),
-                          Text('${formatMoneyStr(s.receiptAmount)} · ${formatApiDay(s.receiptDate)}',
-                              style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (payment.status == 'paid') ...[
-              SizedBox(height: 10.h),
-              const AccInfoBanner('Changing the amount, TDS or date of a paid instalment reverses its receipt and posts it again.'),
-            ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tax invoice: tappable when there is one.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: doc == null ? null : () => context.push('${Routes.accDocumentDetail}?id=${doc.id}'),
+            child: MetaRow(
+              label: 'Tax invoice',
+              value: doc == null
+                  ? 'Not invoiced yet'
+                  : '${doc.number.isNotEmpty ? doc.number : 'Draft'} · ${docStatus[doc.status] ?? humanizeEnum(doc.status)}'
+                      '${doc.status == 'ISSUED' && doc.paymentState.isNotEmpty && doc.paymentState != 'NA' ? ' · ${humanizeEnum(doc.paymentState)}' : ''}',
+            ),
+          ),
+          for (int i = 0; i < rows.length; i++)
+            MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+          if (r.status == 'paid') ...[
+            SizedBox(height: 10.h),
+            const AccInfoBanner(
+              'Changing the amount, TDS or date of this paid payment reverses its receipt and posts a new one. '
+              'Marking it unpaid reverses the receipt.',
+              icon: PhosphorIconsRegular.warning,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  List<ActivityEntry> _activity(Payment payment, String ownerName) {
-    final paid = payment.status == 'paid';
+  List<ActivityEntry> _activity(PlanRecord r) {
+    final items = recordActivity(r);
+    final paid = r.status == 'paid';
     return [
       ActivityEntry(
-        icon: PhosphorIconsRegular.checkCircle,
-        tone: AppColors.success,
-        bg: AppColors.tintGreen,
-        title: paid ? 'Payment received' : 'Awaiting payment',
-        sub: '$ownerName · ${payment.date}',
+        icon: paid ? PhosphorIconsRegular.checkCircle : PhosphorIconsRegular.clock,
+        tone: paid ? AppColors.success : AppColors.warning,
+        bg: paid ? AppColors.tintGreen : AppColors.tintAmber,
+        title: items[0].$1,
+        sub: items[0].$2,
       ),
       ActivityEntry(
-        icon: PhosphorIconsRegular.receipt,
+        icon: PhosphorIconsRegular.fileText,
         tone: AppColors.blueBright,
         bg: AppColors.tintBlue,
-        title: 'Invoice ${payment.invId ?? '—'} issued',
-        sub: 'System · on creation',
+        title: items[1].$1,
+        sub: items[1].$2,
       ),
     ];
   }

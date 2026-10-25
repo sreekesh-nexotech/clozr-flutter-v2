@@ -240,6 +240,24 @@ void main() {
       expect(adapter.calls.any((c) => c.contains('refresh')), isFalse);
     });
 
+    test('a deactivated account signs out as user_inactive, without refreshing', () async {
+      adapter.on('/crm/leads/', 401, {'code': 401, 'message': 'User is inactive'});
+      final interceptor = dio.interceptors.whereType<AuthInterceptor>().single;
+
+      await expectLater(dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
+      expect(expired, isTrue);
+      expect(interceptor.lastSignOutReason, 'user_inactive');
+      expect(adapter.calls.any((c) => c.contains('refresh')), isFalse);
+    });
+
+    test('the webapp terminal codes are all final', () async {
+      adapter.on('/crm/leads/', 401, {'detail': 'Outside hours', 'code': 'session_outside_work_hours'});
+      final interceptor = dio.interceptors.whereType<AuthInterceptor>().single;
+
+      await expectLater(dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
+      expect(interceptor.lastSignOutReason, 'session_outside_work_hours');
+    });
+
     test('anonymous auth paths never get a bearer header', () async {
       adapter.on('/auth/login/', 200, {'access_token': 'x'});
       RequestOptions? seen;

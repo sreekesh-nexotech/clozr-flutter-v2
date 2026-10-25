@@ -16,6 +16,8 @@ class CatalogOption extends Equatable {
     this.isConverted = false,
     this.isClosed = false,
     this.isCancelled = false,
+    this.depth = 0,
+    this.disabled = false,
   });
 
   /// Server UUID (`lead_status_id`, `lead_source_id`, …).
@@ -56,7 +58,15 @@ class CatalogOption extends Equatable {
   /// [id] — is the join key.
   String get key => name.toLowerCase().trim();
 
+  /// Territories only: nesting level in the tree (0 = top level), for the
+  /// picker's indent.
+  final int depth;
+
+  /// Shown but not pickable — a territory **group** only organises the ones
+  /// inside it (webapp `selectable = !is_group`).
+  final bool disabled;
+
   @override
   List<Object?> get props =>
-      [id, name, color, statusType, isConverted, isClosed, isCancelled];
+      [id, name, color, statusType, isConverted, isClosed, isCancelled, depth, disabled];
 }

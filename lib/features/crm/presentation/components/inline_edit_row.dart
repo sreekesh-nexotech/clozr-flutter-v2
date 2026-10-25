@@ -103,7 +103,17 @@ class _InlineEditRowState extends State<InlineEditRow> {
     setState(() => _editing = false);
     // Tapping away from a field nobody changed is not an edit.
     if (text == _seed.trim()) return;
-    final value = schemaWriteValue(column.type, text);
+    // Webapp `NOT_A_NUMBER`: commas and spaces are fine, anything else is
+    // refused before a round trip and the box stays open.
+    final numeric = const {'decimal', 'integer', 'number', 'float'}.contains(column.type);
+    if (numeric && text.isNotEmpty && num.tryParse(text.replaceAll(RegExp(r'[,\s]'), '')) == null) {
+      widget.onBlocked('Enter a number, e.g. 500000 or 12.5.');
+      setState(() => _editing = true);
+      _focus.requestFocus();
+      return;
+    }
+    final value = schemaWriteValue(
+        column.type, numeric ? text.replaceAll(RegExp(r'[,\s]'), '') : text);
     if (identical(value, absentValue)) return;
     final key = widget.writeKey?.call(column) ?? column.name;
     await widget.onSave(key, value);

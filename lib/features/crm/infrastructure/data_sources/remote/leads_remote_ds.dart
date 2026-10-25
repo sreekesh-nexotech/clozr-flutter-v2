@@ -1,5 +1,6 @@
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
+import '../../../../../core/network/app_error.dart';
 import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/inr_format.dart';
 import '../../../../../core/utils/relative_time.dart';
@@ -135,8 +136,19 @@ class LeadsRemoteDataSource {
   /// this row carries fields the list rows do not have at all — `lead_owner`,
   /// `email`, `mobile_no`, `whatsapp_no`, `territory`, `meta_qa`. That is the
   /// whole reason the detail screen cannot just reuse a row from the list.
+  ///
+  /// An archived lead 404s on the plain record URL and is only found with
+  /// `?is_archive=true` (and an active one the other way round), so a 404 is
+  /// retried with the flag — the webapp repository's fallback — before it is
+  /// treated as gone.
   Future<Map<String, dynamic>?> fetchLeadRow(String id) async {
-    final body = await _api.get(ApiEndpoints.lead(id));
+    Object? body;
+    try {
+      body = await _api.get(ApiEndpoints.lead(id), quiet: true);
+    } on AppError catch (e) {
+      if (e.type != AppErrorType.notFound) rethrow;
+      body = await _api.get(ApiEndpoints.lead(id), query: {'is_archive': true});
+    }
     return body is Map<String, dynamic> ? body : null;
   }
 
@@ -155,6 +167,10 @@ class LeadsRemoteDataSource {
       for (final e in withCreateNameParts(fields).entries)
         if (e.value != null && e.value.toString().trim().isNotEmpty)
           e.key: e.value,
+      // An explicit "Unassigned" owner is a null the server must see —
+      // dropping it lets the server make the creator the owner (webapp
+      // sends `lead_owner: null`).
+      if (fields.containsKey('lead_owner') && fields['lead_owner'] == null) 'lead_owner': null,
     });
     if (body is! Map<String, dynamic>) return null;
     try {
@@ -244,8 +260,8 @@ class LeadsRemoteDataSource {
   /// A field this org has not configured as visible is not on the serializer
   /// at all, so the API accepts it, echoes it back and never stores it. Send
   /// only names the schema actually exposes — see [leadWriteFields].
-  Future<Lead?> updateLead(String id, Map<String, dynamic> fields) async {
-    final body = await _api.patch(ApiEndpoints.lead(id), body: fields);
+  Future<Lead?> updateLead(String id, Map<String, dynamic> fields, {String? version}) async {
+    final body = await _api.patch(ApiEndpoints.lead(id), body: fields, headers: ifMatchHeaders(version));
     if (body is! Map<String, dynamic>) return null;
     try {
       return mapLead(body);

@@ -4,7 +4,13 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../app/theme/app_colors.dart';
 import '../../../../core/filters/filter_models.dart';
+import '../../../../core/network/api_endpoints.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../../core/widgets/action_menu.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
@@ -24,6 +30,7 @@ import '../../application/providers/quotes_providers.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/quote.dart';
 import '../components/quote_card.dart';
+import '../components/quote_discount_approval.dart';
 import '../components/saved_chip_row.dart';
 
 /// Quotes list — status-tab list of quote cards over the standard list header,
@@ -42,7 +49,15 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.text = ref.read(quoteSearchProvider);
+    // A query left behind by a collapsed box would filter the list with
+    // nothing on screen saying so; only keep it while the box is open.
+    if (!ref.read(quoteSearchOpenProvider) && ref.read(quoteSearchProvider).isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(quoteSearchProvider.notifier).state = '';
+      });
+    } else {
+      _searchCtrl.text = ref.read(quoteSearchProvider);
+    }
   }
 
   @override
@@ -57,10 +72,11 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
   /// picked a built-in key, swapping "Draft" for the org's own status. Matching
   /// the folded key as well keeps that chip highlighted through the swap
   /// instead of leaving the row with nothing selected.
-  bool _tabActive(String tab, String chipKey, List<CatalogOption> statuses) {
-    if (tab == chipKey) return true;
+  bool _tabActive(Set<String> chips, String chipKey, List<CatalogOption> statuses) {
+    if (chipKey == 'all') return chips.isEmpty;
+    if (chips.contains(chipKey)) return true;
     for (final s in statuses) {
-      if (s.name == chipKey && quoteStatusKey(name: s.name) == tab) return true;
+      if (s.name == chipKey && chips.contains(quoteStatusKey(name: s.name))) return true;
     }
     return false;
   }
@@ -70,7 +86,7 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     // Contextual add: the bottom-nav `+` opens the Add quote form on this screen.
     registerAdd(
       ref,
-      AddAction(label: 'Add quote', run: (ctx) => ctx.push(Routes.addQuote)),
+      AddAction(label: 'Add quote', module: 'quotation', run: (ctx) => ctx.push(Routes.addQuote)),
     );
 
     final async = ref.watch(quotesProvider);
@@ -116,8 +132,17 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
               title: 'Quotes',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(quoteSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () {
+                // Collapsing the box drops the query, like clearing the webapp's
+                // search box — a hidden query would keep narrowing the list.
+                if (searchOpen) {
+                  _searchCtrl.clear();
+                  ref.read(quoteSearchProvider.notifier).state = '';
+                }
+                ref.read(quoteSearchOpenProvider.notifier).state = !searchOpen;
+              },
               onFilter: _openFilters,
+              trailing: _toolbarActions(),
             ),
             if (searchOpen) ...[
               SizedBox(height: 12.h),
@@ -141,7 +166,10 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                     TabChip(
                       label: '$lbl (${quoteTabCount(all, k, tabKeys: tabKeys)})',
                       active: _tabActive(tab, k, statuses),
-                      onTap: () => ref.read(quoteTabProvider.notifier).state = k,
+                      // Multi-select like the webapp: chips add up, All clears.
+                      onTap: () => ref.read(quoteTabProvider.notifier).update(
+                            (cur) => toggleQuoteChip(cur, k),
+                          ),
                     ),
                 ],
               ),
@@ -162,14 +190,23 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    EmptyState(
-                      icon: PhosphorIconsRegular.fileText,
-                      title: 'No quotes found',
-                      body: 'Try a different status, clear filters, or create a new quote.',
-                      ctaLabel: 'Add quote',
-                      ctaIcon: PhosphorIconsBold.plus,
-                      onCta: () => context.push(Routes.addQuote),
-                    ),
+                    _isNarrowed()
+                        ? EmptyState(
+                            icon: PhosphorIconsRegular.funnel,
+                            title: 'No quotes match your filters',
+                            body: 'Try widening your search or clearing a filter to see more.',
+                            ctaLabel: 'Clear filters',
+                            ctaIcon: PhosphorIconsBold.xCircle,
+                            onCta: _resetListView,
+                          )
+                        : EmptyState(
+                            icon: PhosphorIconsRegular.fileText,
+                            title: 'No quotes yet',
+                            body: 'Quotes let you send priced proposals to your leads and customers. Create your first one to get started.',
+                            ctaLabel: 'Add quote',
+                            ctaIcon: PhosphorIconsBold.plus,
+                            onCta: () => context.push(Routes.addQuote),
+                          ),
                   ],
                 );
               }
@@ -180,10 +217,14 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                 separatorBuilder: (_, __) => SizedBox(height: 10.h),
                 itemBuilder: (context, i) {
                   final quote = visible[i];
-                  return QuoteCard(
-                    quote: quote,
-                    schema: cardSchema,
-                    onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
+                  // Long-press offers the webapp row's actions (View, Delete).
+                  return GestureDetector(
+                    onLongPress: () => _rowActions(quote),
+                    child: QuoteCard(
+                      quote: quote,
+                      schema: cardSchema,
+                      onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
+                    ),
                   );
                 },
               );
@@ -239,6 +280,15 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     ref.read(toastProvider.notifier).show('Filters applied');
   }
 
+  /// Deletes a saved view after the chip's confirm. Removing the applied view
+  /// also clears its filters.
+  void _removeView(String id) {
+    final wasActive = ref.read(quoteSavedViewsProvider).activeId == id;
+    ref.read(quoteSavedViewsProvider.notifier).remove(id);
+    if (wasActive) ref.read(quoteFiltersProvider.notifier).state = FilterValues();
+    ref.read(toastProvider.notifier).show('View removed');
+  }
+
   // ── Saved-view row: saved bookmark chips + Clear ──
   Widget _savedViewRow(int filterCount) {
     final saved = ref.watch(quoteSavedViewsProvider);
@@ -248,6 +298,7 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
       showClearAlways: filterCount > 0,
       onToggle: _toggleView,
       onClear: _clearFilters,
+      onRemove: _removeView,
     );
   }
 
@@ -272,9 +323,174 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
+  /// Whether a search, status chip or drawer filter is narrowing the list —
+  /// the webapp then says "match your filters" instead of "yet".
+  bool _isNarrowed() =>
+      ref.read(quoteSearchProvider).trim().isNotEmpty ||
+      ref.read(quoteFiltersProvider).activeCount > 0 ||
+      ref.read(quoteTabProvider).isNotEmpty;
+
+  /// The empty state's "Clear filters": search, chip and drawer back to all.
+  void _resetListView() {
+    _searchCtrl.clear();
+    ref.read(quoteSearchProvider.notifier).state = '';
+    ref.read(quoteTabProvider.notifier).state = const {};
+    _clearFilters();
+  }
+
   void _clearFilters() {
     ref.read(quoteSavedViewsProvider.notifier).clearActive();
     ref.read(quoteFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('Filters cleared');
   }
+
+  // ── Toolbar: discount approvals, win / loss report, Grand total sort ──
+  Widget _toolbarActions() {
+    final sort = ref.watch(quoteSortProvider);
+    final pending = ref.watch(quoteDiscountApprovalsBadgeProvider).valueOrNull ?? 0;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      _toolbarIcon(
+        icon: sort.isEmpty
+            ? PhosphorIconsRegular.arrowsDownUp
+            : sort.startsWith('-')
+                ? PhosphorIconsBold.sortDescending
+                : PhosphorIconsBold.sortAscending,
+        tip: 'Sort by Grand total',
+        active: sort.isNotEmpty,
+        onTap: () {
+          final next = nextQuoteSort(ref.read(quoteSortProvider));
+          ref.read(quoteSortProvider.notifier).state = next;
+          ref.read(toastProvider.notifier).show(switch (next) {
+            '-grand_total' => 'Sorted by Grand total (high → low)',
+            'grand_total' => 'Sorted by Grand total (low → high)',
+            _ => 'Sort cleared',
+          });
+        },
+      ),
+      _toolbarIcon(
+        icon: PhosphorIconsRegular.sealCheck,
+        tip: pending > 0
+            ? 'Discount approvals — $pending waiting for you'
+            : 'Discount approvals',
+        badge: pending > 0 ? '$pending' : null,
+        onTap: () async {
+          await context.push(Routes.quoteApprovals);
+          if (mounted) {
+            ref.invalidate(quoteDiscountApprovalsBadgeProvider);
+            ref.invalidate(quotesProvider);
+          }
+        },
+      ),
+      _toolbarIcon(
+        icon: PhosphorIconsRegular.chartBar,
+        tip: 'Win / loss report',
+        onTap: () => context.push(Routes.quoteWinLoss),
+      ),
+    ]);
+  }
+
+  Widget _toolbarIcon({
+    required IconData icon,
+    required String tip,
+    required VoidCallback onTap,
+    String? badge,
+    bool active = false,
+  }) {
+    return Tooltip(
+      message: tip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 36.w,
+          height: 38.w,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(icon,
+                  size: 20.sp,
+                  color: active ? AppColors.navy : AppColors.textSecondary),
+              if (badge != null)
+                Positioned(
+                  top: 3.h,
+                  right: 1.w,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+                    decoration: BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Text(badge,
+                        style: TextStyle(
+                            color: Colors.white, fontSize: 9.sp, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Row actions: the webapp row's View / Delete ──
+  Future<void> _rowActions(Quote quote) async {
+    final canDelete = hasPermission(ref, 'quotation', PermVerb.delete);
+    await showActionMenu(context, title: quote.id, actions: [
+      MenuAction(
+        icon: PhosphorIconsRegular.eye,
+        label: 'View',
+        onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
+      ),
+      if (canDelete)
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete',
+          destructive: true,
+          // An accepted / paid quote has a plan the server will not delete
+          // (409 QUOTE_HAS_PAYMENTS) — shown disabled with the reason, as on web.
+          enabled: !quote.isDeleteBlocked,
+          sublabel: quote.isDeleteBlocked
+              ? "Accepted or paid quotes can't be deleted — cancel or credit-note in accounting first"
+              : null,
+          onTap: () => _confirmDelete(quote),
+        ),
+    ]);
+  }
+
+  Future<void> _confirmDelete(Quote quote) async {
+    final ok = await confirmDeleteQuote(context, quote.id);
+    if (!ok || !mounted) return;
+    try {
+      await ref.read(apiServiceProvider).delete(ApiEndpoints.quotation(quote.uuid));
+    } on AppError catch (e) {
+      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).show('${quote.id} deleted');
+    ref.invalidate(quotesProvider);
+  }
+}
+
+/// The webapp's "Delete this quote?" confirm — shared by the list row and the
+/// detail screen.
+Future<bool> confirmDeleteQuote(BuildContext context, String number) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Delete this quote?'),
+      content: Text(
+          "${number.isEmpty ? 'This quote' : number} and its unpaid payment plan will be deleted. "
+          "A quote whose plan has a recorded payment, a receipt or an invoice can't be deleted."),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text('Delete quote', style: TextStyle(color: AppColors.error)),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
 }

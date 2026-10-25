@@ -61,8 +61,8 @@ class CustomersRemoteDataSource {
   ///
   /// Sent verbatim: unlike [createCustomer] this must be able to *clear* a
   /// field, so blanks and nulls are meaningful and are not stripped.
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields) =>
-      _api.patch(ApiEndpoints.customer(id), body: fields);
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version}) =>
+      _api.patch(ApiEndpoints.customer(id), body: fields, headers: ifMatchHeaders(version));
 
   /// `POST /crm/customers/{id}/upsell/` — spawns a new upsell lead against this
   /// customer and moves it into the `upsell_in_progress` status.

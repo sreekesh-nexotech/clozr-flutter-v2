@@ -114,7 +114,9 @@ void main() {
       expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 17), now: now), '1d overdue');
       expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 18), now: now), 'Today');
       expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 21), now: now), 'In 3d');
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 25), now: now), 'In 7d');
+      // Webapp: tomorrow and 4+ days out carry no caption.
+      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 19), now: now), '');
+      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 25), now: now), '');
       expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 26), now: now), '');
       expect(CrmTasksRemoteDataSource.dueNoteFor(null, now: now), '');
     });

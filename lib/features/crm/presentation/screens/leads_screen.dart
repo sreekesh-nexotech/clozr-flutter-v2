@@ -4,8 +4,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
-import '../../../../app/theme/app_colors.dart';
-import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
@@ -44,7 +42,27 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.text = ref.read(leadSearchProvider);
+    // Coming back to Leads: the rows, card layout and stages were loaded on an
+    // earlier visit and would otherwise be shown as they were then. Re-fetch
+    // them, keeping the current cards on screen until the fresh ones arrive.
+    // Skipped on the first visit, whose fetches are already in flight.
+    if (ref.read(leadsListProvider).hasValue) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(leadsScopedProvider);
+        ref.invalidate(leadListSchemaFutureProvider);
+        ref.invalidate(leadStatusCatalogProvider);
+      });
+    }
+    // A query left behind by a collapsed box would filter the list with
+    // nothing on screen saying so; only keep it while the box is open.
+    if (!ref.read(leadSearchOpenProvider) && ref.read(leadSearchProvider).isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(leadSearchProvider.notifier).state = '';
+      });
+    } else {
+      _searchCtrl.text = ref.read(leadSearchProvider);
+    }
   }
 
   @override
@@ -58,21 +76,24 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // Contextual add: the bottom-nav `+` opens the Add lead form on this screen.
     registerAdd(
       ref,
-      AddAction(label: 'Add lead', run: (ctx) => ctx.push(Routes.addLead)),
+      AddAction(label: 'Add lead', module: 'lead', run: (ctx) => ctx.push(Routes.addLead)),
     );
 
     final async = ref.watch(leadsListProvider);
     final tab = ref.watch(leadTabProvider);
     final searchOpen = ref.watch(leadSearchOpenProvider);
     final query = ref.watch(leadSearchProvider);
-    final teamAll = ref.watch(leadTeamAllProvider);
     final filterCount = ref.watch(leadFiltersProvider).activeCount;
 
-    final tabBase = ref.watch(leadBaseProvider);
+    final tabBase = ref.watch(leadSearchedProvider);
     // The org's own pipeline stages when `/crm/lead-statuses/` has loaded,
     // otherwise the built-in vocabulary. Name and dot colour both come from
     // the catalog, so the row looks unchanged but reads the org's stages.
     final tabDefs = ref.watch(leadTabsProvider);
+    final archived = ref.watch(leadArchivedProvider);
+    final lanes = {for (final t in tabDefs) if (t.id != 'all') t.id};
+    // Webapp: board total minus the lanes' sum — leads in no known stage.
+    final otherCount = leadTabCount(tabBase, leadOtherTab, lanes: lanes);
     final statuses = ref.watch(leadStatusesProvider);
     // Watched purely to start the drawer's option-list fetches now, at mount.
     // Nothing else on this screen references them, so without this they would
@@ -96,7 +117,15 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
               title: 'Leads',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(leadSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () {
+                // Collapsing the box drops the query, like clearing the webapp's
+                // search box — a hidden query would keep narrowing the list.
+                if (searchOpen) {
+                  _searchCtrl.clear();
+                  ref.read(leadSearchProvider.notifier).state = '';
+                }
+                ref.read(leadSearchOpenProvider.notifier).state = !searchOpen;
+              },
               onFilter: _openFilters,
             ),
             if (searchOpen) ...[
@@ -117,18 +146,33 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
               height: 40.h,
               child: TabChipRow(
                 children: [
+                  // Multi-select like the webapp: "All" is the empty set and
+                  // status chips OR-combine; counts follow search and filters,
+                  // never the chip selection.
                   for (final t in tabDefs)
                     TabChip(
                       label: '${t.label} (${leadTabCount(tabBase, t.id)})',
-                      active: tab == t.id,
+                      active: t.id == 'all' ? tab.isEmpty : tab.contains(t.id),
                       dotColor: t.color,
-                      onTap: () => ref.read(leadTabProvider.notifier).state = t.id,
+                      onTap: () => _toggleTab(t.id),
                     ),
+                  if (otherCount > 0 || tab.contains(leadOtherTab))
+                    TabChip(
+                      label: 'Other / no status ($otherCount)',
+                      active: tab.contains(leadOtherTab),
+                      onTap: () => _toggleTab(leadOtherTab),
+                    ),
+                  TabChip(
+                    label: 'Archived',
+                    icon: PhosphorIconsRegular.archive,
+                    active: archived,
+                    onTap: _toggleArchived,
+                  ),
                 ],
               ),
             ),
             SizedBox(height: 12.h),
-            _savedViewRow(teamAll, filterCount),
+            _savedViewRow(filterCount),
             SizedBox(height: 14.h),
           ],
         ),
@@ -144,14 +188,31 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
                   // So the gesture still works with nothing to scroll.
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    EmptyState(
-                      icon: PhosphorIconsRegular.magnifyingGlass,
-                      title: 'No leads found',
-                      body: 'Try a different status, clear filters, or add a new lead to get started.',
-                      ctaLabel: 'Add lead',
-                      ctaIcon: PhosphorIconsBold.plus,
-                      onCta: () => context.push(Routes.addLead),
-                    ),
+                    _isNarrowed() || !archived
+                        ? _isNarrowed() ? EmptyState(
+                            icon: PhosphorIconsRegular.funnel,
+                            title: 'No leads match your filters',
+                            body: 'Try widening your search or clearing a filter to see more.',
+                            ctaLabel: 'Clear filters',
+                            ctaIcon: PhosphorIconsBold.xCircle,
+                            onCta: _resetListView,
+                          )
+                        : EmptyState(
+                            icon: PhosphorIconsRegular.magnifyingGlass,
+                            title: 'No leads yet',
+                            body: 'Leads are the people and companies you\'re selling to. Add your first one to get started.',
+                            ctaLabel: 'Add lead',
+                            ctaIcon: PhosphorIconsBold.plus,
+                            onCta: () => context.push(Routes.addLead),
+                          )
+                        : EmptyState(
+                            icon: PhosphorIconsRegular.archive,
+                            title: 'No archived leads',
+                            body: 'Leads you archive show up here — and lost leads, if your organization auto-archives them.',
+                            ctaLabel: 'Back to active leads',
+                            ctaIcon: PhosphorIconsBold.arrowLeft,
+                            onCta: _toggleArchived,
+                          ),
                   ],
                 );
               }
@@ -267,14 +328,11 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   ///
   /// The query it is about to watch is dropped first, so re-applying a
   /// combination that was fetched earlier really re-queries instead of serving
-  /// the list as it looked then — the same reason [_setTeamAll] invalidates
-  /// before switching scope.
+  /// the list as it looked then.
   void _applyFilters(FilterValues values) {
     final params = leadFilterParamsFor(values, ref.read(leadFilterCodecProvider));
-    ref.invalidate(leadsScopedProvider(LeadListQuery(
-      mineOnly: !ref.read(leadTeamAllProvider),
-      filters: params,
-    )));
+    ref.invalidate(leadsScopedProvider(
+        leadListQueryFor(params, archived: ref.read(leadArchivedProvider))));
     ref.read(leadFiltersProvider.notifier).state = values;
   }
 
@@ -284,27 +342,48 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   /// text and are shown as-is.
   Future<void> _saveView(String name, FilterValues draft) async {
     final definition = ref.read(leadFilterCodecProvider).encode(draft);
+    // Saving under an existing name overwrites it — the webapp's "Update".
+    final updating = ref
+        .read(leadSavedFiltersProvider)
+        .filters
+        .any((f) => f.name.trim().toLowerCase() == name.trim().toLowerCase());
     final error = await ref.read(leadSavedFiltersProvider.notifier).save(name, definition);
     if (!mounted) return;
-    ref.read(toastProvider.notifier).show(error ?? 'View "$name" saved');
+    final toast = ref.read(toastProvider.notifier);
+    error != null ? toast.showError(error) : toast.show(updating ? 'Filter updated' : 'Filter saved');
   }
 
-  // ── Saved-view row: My/All toggle + saved bookmark chips + Clear ──
-  Widget _savedViewRow(bool teamAll, int filterCount) {
+  /// Deletes a saved view after the chip's confirm. Removing the applied view
+  /// also clears its filters, so the list does not stay narrowed by a view
+  /// that no longer exists.
+  Future<void> _removeView(String id) async {
+    final wasActive = ref.read(leadSavedFiltersProvider).activeId == id;
+    final error = await ref.read(leadSavedFiltersProvider.notifier).remove(id);
+    if (!mounted) return;
+    final toast = ref.read(toastProvider.notifier);
+    if (error != null) {
+      toast.showError(error);
+      return;
+    }
+    if (wasActive) _applyFilters(FilterValues());
+    // The webapp confirms the delete and adds no toast after it.
+  }
+
+  // ── Saved-view row: saved bookmark chips + Clear ──
+  Widget _savedViewRow(int filterCount) {
     final saved = ref.watch(leadSavedFiltersProvider);
     return SizedBox(
       height: 34.h,
       child: Row(
         children: [
-          _teamChip(teamAll),
-          SizedBox(width: 8.w),
           Expanded(
             child: chips.SavedChipRow(
-              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name)],
+              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name, invalid: !f.isValid)],
               active: {if (saved.activeId != null) saved.activeId!},
               showClearAlways: filterCount > 0,
               onToggle: _toggleView,
               onClear: _clearFilters,
+              onRemove: _removeView,
             ),
           ),
         ],
@@ -332,8 +411,9 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // A filter the server marked invalid (it references a purged custom field)
     // fails inert by contract — never run it, say why instead.
     if (!view.isValid) {
-      ref.read(toastProvider.notifier).show(
-            'View "${view.name}" refers to a field that no longer exists.',
+      // Webapp `applyPreset`: the server's reason, else its fallback.
+      ref.read(toastProvider.notifier).showError(
+            view.invalidReason ?? 'This saved filter is invalid and cannot be applied.',
           );
       return;
     }
@@ -351,50 +431,34 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
+  /// Whether a search, status chip or drawer filter is narrowing the list —
+  /// the webapp then says "match your filters" instead of "yet".
+  bool _isNarrowed() =>
+      ref.read(leadSearchProvider).trim().isNotEmpty ||
+      ref.read(leadFiltersProvider).activeCount > 0 ||
+      ref.read(leadTabProvider).isNotEmpty;
+
+  void _toggleTab(String id) =>
+      ref.read(leadTabProvider.notifier).update((s) => toggleLeadTab(s, id));
+
+  /// The webapp's Archived toggle: list, counts and search switch to archived
+  /// leads (`is_archive=true`); the chip selection resets like a page change.
+  void _toggleArchived() {
+    ref.read(leadTabProvider.notifier).state = const {};
+    ref.read(leadArchivedProvider.notifier).update((a) => !a);
+  }
+
+  /// The empty state's "Clear filters": search, chip and drawer back to all.
+  void _resetListView() {
+    _searchCtrl.clear();
+    ref.read(leadSearchProvider.notifier).state = '';
+    ref.read(leadTabProvider.notifier).state = const {};
+    _clearFilters();
+  }
+
   void _clearFilters() {
     ref.read(leadSavedFiltersProvider.notifier).deactivate();
     _applyFilters(FilterValues());
     ref.read(toastProvider.notifier).show('Filters cleared');
-  }
-
-  /// Switches the ownership scope. The list is refetched for the scope being
-  /// entered rather than re-filtered locally — the row shape is scope-dependent,
-  /// so a previously loaded list is never reused. The stale entry for the target
-  /// scope is dropped first so the switch always hits the network.
-  void _setTeamAll(bool teamAll) {
-    ref.invalidate(leadsScopedProvider(LeadListQuery(
-      mineOnly: !teamAll,
-      filters: ref.read(leadFilterParamsProvider),
-    )));
-    ref.read(leadTeamAllProvider.notifier).state = teamAll;
-  }
-
-  Widget _teamChip(bool teamAll) {
-    final active = !teamAll;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => _setTeamAll(!teamAll),
-      child: Container(
-        height: 34.h,
-        padding: EdgeInsets.symmetric(horizontal: 11.w),
-        decoration: BoxDecoration(
-          color: active ? AppColors.blueSubtle : AppColors.bgChipGrey,
-          borderRadius: BorderRadius.circular(10.r),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(PhosphorIconsFill.bookmarkSimple,
-                size: 13.sp, color: active ? AppColors.blueBright : AppColors.textLabelAlt),
-            SizedBox(width: 5.w),
-            Text(teamAll ? 'All leads' : 'My leads',
-                style: AppText.custom(
-                    size: 12.5,
-                    weight: FontWeight.w700,
-                    color: active ? AppColors.blueBright : AppColors.textLabelAlt)),
-          ],
-        ),
-      ),
-    );
   }
 }

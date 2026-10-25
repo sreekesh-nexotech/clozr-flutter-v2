@@ -121,8 +121,61 @@ class CrmCatalogRemoteDataSource {
   /// Territory's primary key is the plain `id` (the schema reports
   /// `Territory.id`, not a `territory_id` uuid like the other catalogs), so the
   /// id key differs here.
-  Future<List<CatalogOption>> fetchTerritories() =>
-      _fetch(ApiEndpoints.territories, 'id');
+  ///
+  /// Keyed by `territory_id` (the uuid a lead stores and the webapp sends),
+  /// not the numeric `id`, and returned as the webapp's tree: parents before
+  /// their children, groups disabled.
+  Future<List<CatalogOption>> fetchTerritories() async {
+    try {
+      final body = await _api.get(ApiEndpoints.territories, query: {'page_size': _pageSize}, quiet: true);
+      return territoryTree(Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// Webapp `buildTerritoryTree`: a pre-order walk (siblings in API order).
+  /// A missing or self parent makes a node top-level; nodes stuck in a
+  /// cycle are appended at the end. Each node appears once.
+  static List<CatalogOption> territoryTree(List<Map<String, dynamic>> rows) {
+    final nodes = <String, Map<String, dynamic>>{};
+    for (final r in rows) {
+      final id = '${r['territory_id'] ?? ''}';
+      if (id.isNotEmpty && '${r['name'] ?? ''}'.trim().isNotEmpty) nodes[id] = r;
+    }
+    String? parentOf(String id) {
+      final p = nodes[id]!['parent_territory']?.toString();
+      return p == null || p.isEmpty || p == id || !nodes.containsKey(p) ? null : p;
+    }
+
+    final children = <String?, List<String>>{};
+    for (final id in nodes.keys) {
+      children.putIfAbsent(parentOf(id), () => []).add(id);
+    }
+    final out = <CatalogOption>[];
+    final seen = <String>{};
+    void walk(String id, int depth) {
+      if (!seen.add(id)) return;
+      final r = nodes[id]!;
+      out.add(CatalogOption(
+        id: id,
+        name: '${r['name']}'.trim(),
+        depth: depth,
+        disabled: r['is_group'] == true,
+      ));
+      for (final c in children[id] ?? const <String>[]) {
+        walk(c, depth + 1);
+      }
+    }
+
+    for (final id in children[null] ?? const <String>[]) {
+      walk(id, 0);
+    }
+    for (final id in nodes.keys) {
+      if (!seen.contains(id)) walk(id, 0);
+    }
+    return out;
+  }
 
   /// The org's industries, for the schema-driven lead form's Industry picker.
   Future<List<CatalogOption>> fetchIndustries() =>

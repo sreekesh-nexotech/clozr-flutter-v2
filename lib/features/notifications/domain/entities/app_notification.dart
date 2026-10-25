@@ -25,6 +25,12 @@ class AppNotification {
   final String targetKind; // lead/payment/followup/opstask/ticket/quote/project/list/none
   final String? targetId;
 
+  /// `is_pinned` — the server lists pinned rows first.
+  final bool pinned;
+
+  /// `snooze_until` — set while the row is snoozed (hidden from All).
+  final DateTime? snoozeUntil;
+
   const AppNotification({
     required this.id,
     required this.category,
@@ -40,9 +46,11 @@ class AppNotification {
     required this.unread,
     required this.targetKind,
     this.targetId,
+    this.pinned = false,
+    this.snoozeUntil,
   });
 
-  AppNotification copyWith({bool? unread}) => AppNotification(
+  AppNotification copyWith({bool? unread, bool? pinned}) => AppNotification(
         id: id,
         category: category,
         urgent: urgent,
@@ -57,7 +65,11 @@ class AppNotification {
         unread: unread ?? this.unread,
         targetKind: targetKind,
         targetId: targetId,
+        pinned: pinned ?? this.pinned,
+        snoozeUntil: snoozeUntil,
       );
+
+  bool get snoozed => snoozeUntil != null;
 
   bool get hasTarget => targetKind != 'none';
 

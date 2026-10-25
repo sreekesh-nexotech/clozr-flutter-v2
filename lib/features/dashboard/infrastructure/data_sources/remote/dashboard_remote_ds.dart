@@ -85,13 +85,15 @@ class DashboardRemoteDataSource {
             ...?extra,
           };
       try {
-        return await _api.get(path, query: query('admin'));
+        // Quiet: a widget the role may not read (e.g. the Business endpoints
+        // without `admin_dashboard`) is noted below, not toasted.
+        return await _api.get(path, query: query('admin'), quiet: true);
       } on AppError catch (e) {
         if (e.type == AppErrorType.forbidden) {
           // Admin scope needs an org-admin role — retry once as 'own' so a
           // non-admin with dashboard permission still sees their slice.
           try {
-            return await _api.get(path, query: query('own'));
+            return await _api.get(path, query: query('own'), quiet: true);
           } on Object catch (e2) {
             note(e2);
             return null;

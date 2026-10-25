@@ -87,7 +87,7 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
                 for (final o in widget.options)
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () {
+                    onTap: o.disabled ? null : () {
                       if (widget.multi) {
                         setState(() => _picked.contains(o.id)
                             ? _picked.remove(o.id)
@@ -97,7 +97,7 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
                       Navigator.of(context).pop({o.id});
                     },
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                      padding: EdgeInsets.fromLTRB(6.w + o.depth * 16.w, 11.h, 6.w, 11.h),
                       child: Row(
                         children: [
                           if (o.color != null) ...[
@@ -109,7 +109,12 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
                             ),
                             SizedBox(width: 10.w),
                           ],
-                          Expanded(child: Text(o.name, style: AppText.bodyStrong())),
+                          Expanded(
+                            child: Text(o.name,
+                                style: o.disabled
+                                    ? AppText.body(color: AppColors.textPlaceholder)
+                                    : AppText.bodyStrong()),
+                          ),
                           if (_picked.contains(o.id))
                             Icon(PhosphorIconsBold.check,
                                 size: 19.sp, color: AppColors.success),

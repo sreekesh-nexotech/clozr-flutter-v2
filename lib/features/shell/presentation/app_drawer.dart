@@ -182,12 +182,19 @@ class AppDrawer extends ConsumerWidget {
       GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          if (isGroup && e.path == null) {
-            ref.read(drawerExpandedProvider.notifier).update((m) => {...m, e.key: !open});
-          } else if (isGroup && e.path != null) {
-            ref.read(drawerExpandedProvider.notifier).update((m) => {...m, e.key: true});
-            _navigate(context, ref, e.path!);
+          final groups = ref.read(drawerExpandedProvider.notifier);
+          if (isGroup && open) {
+            // Webapp Sidebar: the header is a toggle — tapping an open group
+            // collapses it in place.
+            groups.state = {...groups.state, e.key: false};
+          } else if (isGroup) {
+            // One group open at a time (webapp `openGroup`). A group that is
+            // also a workspace (CRM → its home) still goes there on open.
+            groups.state = {e.key: true};
+            if (e.path != null) _navigate(context, ref, e.path!);
           } else {
+            // Choosing a top-level page collapses any open group (webapp).
+            groups.state = const {};
             _navigate(context, ref, e.path!);
           }
         },
@@ -212,10 +219,17 @@ class AppDrawer extends ConsumerWidget {
               if (isGroup)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () =>
-                      ref.read(drawerExpandedProvider.notifier).update((m) => {...m, e.key: !open}),
-                  child: Icon(open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
-                      size: 12.sp, color: anyChildActive ? AppColors.navy : AppColors.textPlaceholder),
+                  // The arrow only opens / closes the group; a finger-sized
+                  // target so a tap near it doesn't land on the row instead.
+                  onTap: () => ref.read(drawerExpandedProvider.notifier).update((m) => open ? {...m, e.key: false} : {e.key: true}),
+                  child: SizedBox(
+                    width: 44.w,
+                    height: 44.h,
+                    child: Center(
+                      child: Icon(open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
+                          size: 12.sp, color: anyChildActive ? AppColors.navy : AppColors.textPlaceholder),
+                    ),
+                  ),
                 ),
             ],
           ),

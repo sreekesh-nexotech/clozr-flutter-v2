@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
-import '../filters/followup_filter_codec.dart';
-import '../../../../data/api/user_directory.dart';
+import '../filters/tasks_filter_spec.dart' show TaskFilterCodec;
+import 'crm_tasks_providers.dart' show toggleCrmTaskChip, crmTaskOtherChip;
 import 'package:flutter/foundation.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
@@ -62,34 +62,38 @@ final followupsScopedProvider =
 ///
 /// Empty in mock mode: the seed source cannot execute query params, so there
 /// [visibleFollowupsProvider] keeps matching locally instead.
-Map<String, dynamic> followupFilterParamsFor(
-    FilterValues values, FollowupFilterCodec codec) {
+Map<String, dynamic> followupFilterParamsFor(FilterValues values, TaskFilterCodec codec) {
   if (!ApiConfig.apiEnabled || values.isEmpty) return const {};
   return codec.encode(values);
 }
 
-final followupFilterCodecProvider = Provider<FollowupFilterCodec>(
-  (ref) => FollowupFilterCodec(
-    statuses: ref.watch(taskStatusOptionsProvider),
-    currentUserId: UserDirectory.currentUserId,
-  ),
-);
+/// The drawer filters and search as the list endpoint's params — the status
+/// chips are applied on top, so their counts follow search, filters and the
+/// saved view (webapp board counts).
+final followupServerQueryProvider = Provider<Map<String, dynamic>>((ref) {
+  if (!ApiConfig.apiEnabled) return const {};
+  final q = ref.watch(followupSearchProvider).trim();
+  return {
+    ...followupFilterParamsFor(ref.watch(followupFiltersProvider), ref.watch(followupFilterCodecProvider)),
+    if (q.isNotEmpty) 'search': q,
+  };
+});
 
-final followupFilterParamsProvider = Provider<Map<String, dynamic>>(
-  (ref) => followupFilterParamsFor(
-    ref.watch(followupFiltersProvider),
-    ref.watch(followupFilterCodecProvider),
-  ),
-);
-
-/// Async source of the follow-ups list, narrowed by the drawer server-side.
+/// Every follow-up the user can see, unfiltered — what the detail screen looks
+/// a record up in, so a search on the list cannot hide the one being opened.
 final followupsProvider = FutureProvider<List<Followup>>(
-  (ref) => ref.watch(
-    followupsScopedProvider(
-      FollowupQuery(filters: ref.watch(followupFilterParamsProvider)),
-    ).future,
-  ),
+  (ref) => ref.watch(followupsScopedProvider(const FollowupQuery()).future),
 );
+
+/// The list for [followupServerQueryProvider]; the unfiltered list when no
+/// filter or search is set.
+final followupsQueriedProvider = FutureProvider<List<Followup>>((ref) async {
+  final query = ref.watch(followupServerQueryProvider);
+  if (query.isEmpty) return ref.watch(followupsProvider.future);
+  // A write elsewhere refetches the base list; follow it.
+  ref.watch(followupsProvider);
+  return ref.watch(followupsScopedProvider(FollowupQuery(filters: query)).future);
+});
 
 /// Refetches the follow-ups list. **Use this after any write.**
 ///
@@ -102,6 +106,7 @@ final followupsProvider = FutureProvider<List<Followup>>(
 void refreshFollowups(WidgetRef ref) {
   ref.invalidate(followupsScopedProvider);
   ref.invalidate(followupsProvider);
+  ref.invalidate(followupsQueriedProvider);
 }
 
 /// The follow-ups linked to one lead — the Follow-ups tab on the lead detail
@@ -208,6 +213,7 @@ Followup followupWithStatusForTest(Followup f, FollowupStatusOverride o) =>
 /// status name (so its pill fell back to a built-in bucket and its tab misfiled
 /// it) and lost its priority from the card.
 Followup _followupWithStatus(Followup f, FollowupStatusOverride o) => Followup(
+      raw: f.raw,
       id: f.id,
       kind: f.kind,
       contact: f.contact,
@@ -222,94 +228,100 @@ Followup _followupWithStatus(Followup f, FollowupStatusOverride o) => Followup(
       owner: f.owner,
       title: f.title,
       description: f.description,
+      // Completing drops the caption (webapp `isTerminal`); reopening shows it
+      // again on the next fetch.
+      dueNote: o.key == 'done' ? '' : f.dueNote,
     );
 
-/// Active status tab on the Follow-ups list.
-final followupTabProvider = StateProvider<String>((ref) => 'all');
+/// [followupsQueriedProvider] with session drafts and status overrides laid
+/// on — the rows the list shows and counts.
+final followupsBaseProvider = Provider<List<Followup>>((ref) {
+  final query = ref.watch(followupServerQueryProvider);
+  if (query.isEmpty) return ref.watch(followupsAllProvider);
+  final repo = ref.watch(followupsQueriedProvider).valueOrNull ?? const [];
+  final overrides = ref.watch(followupStatusOverrideProvider);
+  return [
+    for (final f in repo)
+      _overrideApplies(overrides[f.id], f) ? _followupWithStatus(f, overrides[f.id]!) : f,
+  ];
+});
 
-/// Search query on the Follow-ups list.
-final followupSearchProvider = StateProvider<String>((ref) => '');
+/// A non-status view reached by deep link — `overdue` from the CRM home
+/// "Followups missed" card — or `all`. The status chips live in
+/// [followupChipsProvider].
+final followupTabProvider = StateProvider<String>((ref) {
+  ref.watch(apiServiceProvider); // reset per session
+  return 'all';
+});
+
+/// Selected status chips (lane names) — multi-select, OR; empty is "All".
+/// [crmTaskOtherChip] stands for "Other / no status" (webapp chip rules, via
+/// [toggleCrmTaskChip]).
+final followupChipsProvider = StateProvider<Set<String>>((ref) {
+  ref.watch(apiServiceProvider); // reset per session
+  return const {};
+});
+
+/// Search query on the Follow-ups list — sent as `?search=`, like the webapp.
+final followupSearchProvider = StateProvider<String>((ref) {
+  ref.watch(apiServiceProvider); // reset per session
+  return '';
+});
 
 /// Whether the search field is expanded.
 final followupSearchOpenProvider = StateProvider<bool>((ref) => false);
 
 const _fuOrder = {'overdue': 0, 'due': 1, 'done': 2};
 
-/// Follow-ups filtered by the active tab + search + drawer filters, sorted
-/// overdue→due→done.
+/// Whether a follow-up sits in the lane named [lane] — by the org's lane name,
+/// or by the folded bucket in mock mode (which has no lane names).
+bool followupInLane(Followup f, String lane) =>
+    f.statusName.trim().toLowerCase() == lane.trim().toLowerCase() || f.statusKey == lane;
+
+/// Whether [f] sits in none of the org's lanes ("Other / no status").
+bool followupInNoLane(Followup f, List<CatalogOption> lanes) =>
+    lanes.isNotEmpty && !lanes.any((l) => followupInLane(f, l.name));
+
+/// Follow-ups for the list: the server-filtered rows (drawer, search, saved
+/// view) narrowed by the status chips, sorted overdue→due→done.
 final visibleFollowupsProvider = Provider<List<Followup>>((ref) {
-  final all = ref.watch(followupsAllProvider);
+  final server = ApiConfig.apiEnabled;
+  final all = server ? ref.watch(followupsBaseProvider) : ref.watch(followupsAllProvider);
   final tab = ref.watch(followupTabProvider);
-  final q = ref.watch(followupSearchProvider).trim().toLowerCase();
-  final filters = ref.watch(followupFiltersProvider);
+  final chips = ref.watch(followupChipsProvider);
 
   Iterable<Followup> out = all;
-  if (tab != 'all' && ref.watch(followupTabsProvider).any((t) => t.id == tab)) {
-    out = out.where((f) => f.statusKey == tab);
+  if (tab == 'overdue') out = out.where((f) => f.status == 'overdue');
+  if (chips.contains(crmTaskOtherChip)) {
+    final lanes = ref.watch(taskStatusOptionsProvider);
+    out = out.where((f) => followupInNoLane(f, lanes));
+  } else if (chips.isNotEmpty) {
+    out = out.where((f) => chips.any((c) => followupInLane(f, c)));
   }
-  // The drawer already ran server-side in API mode, so `all` is the matching
-  // set. Mock mode has no query engine, so it is matched here instead. The
-  // "Related to" section stays local either way — a follow-up row carries no
-  // company, and there is no param for the linked record's name.
-  if (!ApiConfig.apiEnabled) {
+  if (!server) {
+    // Mock mode has no query engine: the drawer and search run here.
+    final filters = ref.watch(followupFiltersProvider);
+    final q = ref.watch(followupSearchProvider).trim().toLowerCase();
     if (!filters.isEmpty) out = out.where((f) => followupMatchesFilters(f, filters));
-  } else {
-    final related = filters.choice('companies');
-    if (related != null && related.isActive) {
-      out = out.where((f) => FilterMatch.matchAnyOf(related, [f.company]));
+    if (q.isNotEmpty) {
+      out = out.where((f) =>
+          f.title.toLowerCase().contains(q) ||
+          f.description.toLowerCase().contains(q) ||
+          f.company.toLowerCase().contains(q) ||
+          f.kind.toLowerCase().contains(q));
     }
-  }
-  if (q.isNotEmpty) {
-    out = out.where((f) =>
-        f.company.toLowerCase().contains(q) ||
-        f.contact.toLowerCase().contains(q) ||
-        f.kind.toLowerCase().contains(q) ||
-        f.title.toLowerCase().contains(q) ||
-        f.description.toLowerCase().contains(q));
   }
   final list = out.toList()
     ..sort((a, b) => (_fuOrder[a.status] ?? 0) - (_fuOrder[b.status] ?? 0));
   return list;
 });
 
-/// Count of follow-ups for a given tab key.
+/// Count of follow-ups for a chip: `all`, `overdue`, or a lane name.
 int followupTabCount(List<Followup> all, String key) {
   if (key == 'all') return all.length;
-  return all.where((f) => f.statusKey == key).length;
+  if (key == 'overdue') return all.where((f) => f.status == 'overdue').length;
+  return all.where((f) => followupInLane(f, key)).length;
 }
-
-/// One status tab on the Follow-ups list.
-class FollowupTab {
-  const FollowupTab(this.id, this.label);
-
-  /// The value the list filters by — matched against [Followup.statusKey].
-  final String id;
-  final String label;
-}
-
-/// The status tab row: the org's own task statuses.
-///
-/// Follow-ups are Tasks, so their statuses are the org's `CRMTaskStatus` set —
-/// Open / In Progress / Completed / Cancelled on a default org. The built-in
-/// Overdue / Upcoming / Done vocabulary could not express two of those, so a
-/// cancelled follow-up read as Upcoming. **Overdue is not a status** — it is a
-/// due-date condition, and lives on the drawer's Due date chips.
-///
-/// Falls back to the built-in buckets while the catalog is in flight, in mock
-/// mode, and if the fetch failed, so the row always renders.
-final followupTabsProvider = Provider<List<FollowupTab>>((ref) {
-  final statuses = ref.watch(taskStatusOptionsProvider);
-  return [
-    const FollowupTab('all', 'All'),
-    if (statuses.isNotEmpty)
-      for (final s in statuses) FollowupTab(s.key, s.name)
-    else ...[
-      const FollowupTab('overdue', 'Overdue'),
-      const FollowupTab('due', 'Upcoming'),
-      const FollowupTab('done', 'Done'),
-    ],
-  ];
-});
 
 /// Null in mock mode, which is what makes the schema resolve empty there.
 final followupSchemaRemoteDataSourceProvider =

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/api_endpoints.dart';
+import 'server_search_providers.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/config/api_config.dart';
@@ -12,6 +14,7 @@ import '../../infrastructure/data_sources/remote/payments_remote_ds.dart';
 import '../../infrastructure/repositories/payments_api_repository.dart';
 import '../../infrastructure/repositories/payments_repository_impl.dart';
 import '../filters/payments_filter_spec.dart';
+import '../payments_list_view.dart';
 import 'crm_party_providers.dart';
 
 /// DI seam: mock-backed without a base URL, API-backed otherwise.
@@ -49,7 +52,7 @@ final allPaymentsProvider = Provider<List<Payment>>((ref) {
         // `copyWith`, not a field-by-field rebuild: this used to enumerate
         // every field, so each one added to Payment had to be remembered here
         // or it silently reset to its default the moment a record was settled.
-        p.copyWith(status: 'paid')
+        p.copyWith(status: 'paid', settlementState: 'paid')
       else
         p,
   ];
@@ -107,6 +110,10 @@ IconData payMethodIcon(String method) {
       return PhosphorIconsRegular.deviceMobile;
     case 'Auto-debit':
       return PhosphorIconsRegular.arrowsClockwise;
+    case 'Card':
+      return PhosphorIconsRegular.creditCard;
+    case 'Cash':
+      return PhosphorIconsRegular.wallet;
     default:
       return PhosphorIconsRegular.clock;
   }
@@ -128,8 +135,9 @@ Color paymentDateColor(String status) {
 
 // ── Payments screen UI state ──
 
-/// Mode toggle on the Payments screen: 'payments' | 'invoices'.
-final payModeProvider = StateProvider<String>((ref) => 'payments');
+/// Mode toggle on the Payments screen: 'payments' | 'invoices'. Payment plans
+/// ('invoices') is the landing tab, as on web.
+final payModeProvider = StateProvider<String>((ref) => 'invoices');
 final payTabProvider = StateProvider<String>((ref) => 'all');
 final paySearchProvider = StateProvider<String>((ref) => '');
 final paySearchOpenProvider = StateProvider<bool>((ref) => false);
@@ -143,18 +151,25 @@ final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
   final lookup = ref.watch(crmPartyLookupProvider);
 
   Iterable<Payment> out = payments;
-  if (tab != 'all') out = out.where((x) => x.status == tab);
+  // Due and Scheduled both mean backend `pending`, as the webapp asks it.
+  if (tab != 'all') out = out.where((x) => paymentMatchesChip(x, tab));
   if (!filters.isEmpty) {
     out = out.where((x) => paymentMatchesFilters(x, filters, lookup));
   }
   if (q.isNotEmpty) {
-    out = out.where((x) =>
-        ('${x.id} ${paymentTitle(x, lookup)} ${x.invId ?? ''}').toLowerCase().contains(q));
+    final matches = serverSearchMatcher(
+      ref,
+      ServerSearchKey(endpoint: ApiEndpoints.paymentRecords, idFields: const ['record_id'], query: q),
+    );
+    // Local haystack covers what the card shows (customer or lead, quote
+    // number, label), so a match appears while the server answer is pending;
+    // the server's `?search=` result is matched on `record_id`.
+    out = out.where((x) => matches([x.id],
+        ('${x.id} ${paymentTitle(x, lookup)} ${x.leadName ?? ''} ${x.invId ?? ''} ${x.label}')
+            .toLowerCase()
+            .contains(q)));
   }
   return out.toList();
 });
 
-int payTabCount(List<Payment> payments, String key) {
-  if (key == 'all') return payments.length;
-  return payments.where((p) => p.status == key).length;
-}
+int payTabCount(List<Payment> payments, String key) => paymentChipCount(payments, key);

@@ -264,6 +264,12 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
       // Absent from the payload today; mapped so the total's tax label stops
       // being an unconditional claim the moment it appears.
       amountsAre: _str(row['amounts_are']),
+      grandTotalNum: row['grand_total'] == null
+          ? total.round()
+          : parseAmount(row['grand_total']).round(),
+      paymentPlanId: _str(row['payment_plan_id']),
+      isConverted: row['is_converted'] == true ||
+          (statusRaw is Map && statusRaw['is_converted'] == true),
       note: _str(row['notes']) ?? _str(row['note']),
     );
   } on Object {

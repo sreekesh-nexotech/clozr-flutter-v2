@@ -35,9 +35,13 @@ class Routes {
   static const taskDetail = '/tasks/detail';
   static const editCrmTask = '/tasks/edit';
   static const addCrmTask = '/tasks/add';
+  static const dueDateApprovals = '/tasks/due-date-approvals';
   static const quotes = '/quotes';
   static const quoteDetail = '/quotes/detail';
   static const addQuote = '/quotes/add';
+  static const editQuote = '/quotes/edit';
+  static const quoteApprovals = '/quotes/approvals';
+  static const quoteWinLoss = '/quotes/win-loss';
   static const payments = '/payments';
   static const paymentDetail = '/payments/detail';
   static const invoiceDetail = '/invoices/detail';
@@ -118,9 +122,13 @@ class Routes {
     taskDetail: RouteMeta(NavContext.crm, false),
     editCrmTask: RouteMeta(NavContext.crm, false),
     addCrmTask: RouteMeta(NavContext.crm, false),
+    dueDateApprovals: RouteMeta(NavContext.crm, false),
     quotes: RouteMeta(NavContext.crm, true),
     quoteDetail: RouteMeta(NavContext.crm, false),
     addQuote: RouteMeta(NavContext.crm, false),
+    editQuote: RouteMeta(NavContext.crm, false),
+    quoteApprovals: RouteMeta(NavContext.crm, false),
+    quoteWinLoss: RouteMeta(NavContext.crm, false),
     payments: RouteMeta(NavContext.crm, true),
     paymentDetail: RouteMeta(NavContext.crm, false),
     invoiceDetail: RouteMeta(NavContext.crm, false),

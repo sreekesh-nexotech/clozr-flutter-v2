@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../domain/entities/customer.dart';
 import '../../domain/repositories/customers_repository.dart';
@@ -10,6 +11,7 @@ import '../../infrastructure/repositories/customers_repository_impl.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../filters/customer_filter_codec.dart';
 import '../filters/customers_filter_spec.dart';
+import 'server_search_providers.dart';
 
 /// DI seam: mock-backed by default; API-backed when a base URL is configured.
 final customersRepositoryProvider = Provider<CustomersRepository>((ref) {
@@ -119,8 +121,33 @@ final customersAllProvider = Provider<List<Customer>>((ref) {
   return [...drafts, ...repo];
 });
 
-/// Active status tab on the Customers list.
-final customerTabProvider = StateProvider<String>((ref) => 'all');
+/// The selected status chips on the Customers list — multi-select like the
+/// webapp (`status__in`). Empty means All, and "All" is exclusive.
+final customerTabProvider = StateProvider<Set<String>>((ref) => const {});
+
+/// The "Other / no status" chip key: customers with no status, or one the org
+/// has since deactivated. Shown only when it has rows, as on web.
+const customerOtherTab = 'other';
+
+/// Whether a customer sits outside every live status lane.
+bool customerInOther(Customer c) {
+  final s = c.raw['status'];
+  if (s == null || (s is String && s.isEmpty)) return true;
+  return s is Map && s['is_active'] == false;
+}
+
+/// Whether a customer belongs under one chip.
+bool customerInTab(Customer c, String key) {
+  if (key == 'all') return true;
+  if (key == customerOtherTab) return customerInOther(c);
+  return !customerInOther(c) && c.status == key;
+}
+
+/// Toggles one chip; `all` clears the selection.
+Set<String> toggleCustomerTab(Set<String> current, String key) {
+  if (key == 'all') return const {};
+  return current.contains(key) ? ({...current}..remove(key)) : {...current, key};
+}
 
 /// Search query on the Customers list.
 final customerSearchProvider = StateProvider<String>((ref) => '');
@@ -128,14 +155,37 @@ final customerSearchProvider = StateProvider<String>((ref) => '');
 /// Whether the search field is expanded.
 final customerSearchOpenProvider = StateProvider<bool>((ref) => false);
 
+/// [customersAllProvider] narrowed by the search box — what the tabs count and
+/// the list shows.
+///
+/// Same `?search=` the webapp sends: the server also matches email, phone and
+/// organisation, which the card rows do not carry.
+final customersSearchedProvider = Provider<List<Customer>>((ref) {
+  final all = ref.watch(customersAllProvider);
+  final q = ref.watch(customerSearchProvider).trim().toLowerCase();
+  if (q.isEmpty) return all;
+  final matches = serverSearchMatcher(
+    ref,
+    ServerSearchKey(endpoint: ApiEndpoints.customers, idFields: const ['customer_id'], query: q),
+  );
+  return all
+      .where((c) => matches([c.id], customerMatchesQuery(c, q)))
+      .toList();
+});
+
+/// The local half of the customer search.
+bool customerMatchesQuery(Customer c, String q) =>
+    c.name.toLowerCase().contains(q) ||
+    (c.company ?? '').toLowerCase().contains(q) ||
+    c.id.toLowerCase().contains(q);
+
 /// Customers filtered by the active tab + search query + drawer filters.
 final visibleCustomersProvider = Provider<List<Customer>>((ref) {
-  final all = ref.watch(customersAllProvider);
-  final tab = ref.watch(customerTabProvider);
-  final q = ref.watch(customerSearchProvider).trim().toLowerCase();
+  final all = ref.watch(customersSearchedProvider);
+  final chips = ref.watch(customerTabProvider);
 
   Iterable<Customer> out = all;
-  if (tab != 'all') out = out.where((c) => c.status == tab);
+  if (chips.isNotEmpty) out = out.where((c) => chips.any((k) => customerInTab(c, k)));
   // Mock mode has no query engine behind it, so the drawer is matched here.
   // In API mode the server already ran it and re-filtering would be wrong: the
   // local matcher works off folded status keys and display names, not the ids
@@ -144,17 +194,11 @@ final visibleCustomersProvider = Provider<List<Customer>>((ref) {
     final filters = ref.watch(customerFiltersProvider);
     if (!filters.isEmpty) out = out.where((c) => customerMatchesFilters(c, filters));
   }
-  if (q.isNotEmpty) {
-    out = out.where((c) =>
-        c.name.toLowerCase().contains(q) ||
-        (c.company ?? '').toLowerCase().contains(q) ||
-        c.id.toLowerCase().contains(q));
-  }
   return out.toList();
 });
 
 /// Count of customers for a given tab key.
 int customerTabCount(List<Customer> all, String key) {
   if (key == 'all') return all.length;
-  return all.where((c) => c.status == key).length;
+  return all.where((c) => customerInTab(c, key)).length;
 }

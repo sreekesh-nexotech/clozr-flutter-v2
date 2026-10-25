@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -106,8 +107,18 @@ class NotificationRow extends StatelessWidget {
                       SizedBox(width: 6.w),
                       Text('·', style: AppText.custom(size: 11, weight: FontWeight.w500, color: const Color(0xFFC2C6CD))),
                       SizedBox(width: 6.w),
-                      Text(notif.time,
-                          style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      Flexible(
+                        child: Text(
+                            notif.snoozed
+                                ? 'Snoozed until ${DateFormat('d MMM, h:mm a').format(notif.snoozeUntil!.toLocal())}'
+                                : notif.time,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      ),
+                      if (notif.pinned) ...[
+                        SizedBox(width: 6.w),
+                        Icon(PhosphorIconsFill.pushPin, size: 11.sp, color: AppColors.textPlaceholder),
+                      ],
                       const Spacer(),
                       if (notif.hasTarget)
                         Text('$_targetLabel →',

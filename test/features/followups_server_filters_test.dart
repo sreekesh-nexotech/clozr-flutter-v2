@@ -1,5 +1,6 @@
-// Follow-ups: the drawer as a server query, the status tabs as the org's own
-// task statuses, and the card as the org's mobile layout.
+// Follow-ups: the drawer as the webapp's task drawer (a server query whose
+// params a saved view shares with Tasks), the card as the org's mobile layout,
+// and the row mapper.
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -9,13 +10,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:clozrapp/core/filters/filter_models.dart';
 import 'package:clozrapp/core/network/api_service.dart';
 import 'package:clozrapp/core/storage/token_storage.dart';
-import 'package:clozrapp/features/crm/application/filters/followup_filter_codec.dart';
+import 'package:clozrapp/features/crm/application/filters/followups_filter_spec.dart';
+import 'package:clozrapp/features/crm/application/filters/tasks_filter_spec.dart';
 import 'package:clozrapp/features/crm/domain/entities/crm_catalog.dart';
 import 'package:clozrapp/features/crm/domain/entities/view_schema.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/followup_schema_remote_ds.dart';
 import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/followups_remote_ds.dart';
-
-const _meUuid = '11111111-1111-4111-8111-111111111111';
 
 /// The Acme org's real task statuses.
 final _statuses = [
@@ -25,8 +25,17 @@ final _statuses = [
   const CatalogOption(id: 'st-canc', name: 'Cancelled', statusType: 'cancelled'),
 ];
 
-FollowupFilterCodec _codec() =>
-    FollowupFilterCodec(statuses: _statuses, currentUserId: _meUuid);
+const _priorities = [
+  CatalogOption(id: 'pr-high', name: 'high'),
+  CatalogOption(id: 'pr-low', name: 'low'),
+];
+
+TaskFilterCodec _codec() => TaskFilterCodec(statuses: _statuses, priorities: _priorities);
+
+const _types = [
+  CatalogOption(id: 'uuid-call', name: 'Call'),
+  CatalogOption(id: 'uuid-site', name: 'Site Visit'),
+];
 
 class _Adapter implements HttpClientAdapter {
   _Adapter(this.body);
@@ -58,68 +67,49 @@ ApiService _api(_Adapter a) {
 FilterValues _values(Map<String, FilterValue> m) => FilterValues(m);
 
 void main() {
-  group('drawer → /crm/tasks/ params', () {
-    test('type is / is not both send names', () {
+  group('drawer → /crm/tasks/ params (webapp task drawer)', () {
+    test('offers the webapp facets, with the org follow-up types by name', () {
+      final spec = buildFollowupsFilterSpec(typeCatalog: _types, statusCatalog: _statuses, priorityCatalog: _priorities);
+      final fields = {for (final f in spec.sections.expand((s) => s.fields)) f.id: f};
+      expect(fields.keys, containsAll(['assignees', 'statuses', 'types', 'priorities', 'due']));
+      expect(fields['types']!.options.map((o) => o.id), ['Call', 'Site Visit']);
+      expect(spec.title, 'Filter follow-ups by:');
+    });
+
+    test('falls back to the built-in follow-up types before the catalog loads', () {
+      final spec = buildFollowupsFilterSpec();
+      final types = spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'types');
+      expect(types.options.map((o) => o.id), kBuiltinFollowupTypes);
+    });
+
+    test('type sends names; status is sends NAMES, is-not sends ids', () {
+      expect(_codec().encode(_values({'types': ChoiceValue(ids: {'Call'})})), {'task_type__in': 'Call'});
+      expect(_codec().encode(_values({'statuses': ChoiceValue(ids: {'st-done'})})), {'status__in': 'Completed'});
+      expect(_codec().encode(_values({'statuses': ChoiceValue(ids: {'st-done'}, isNot: true)})), {'status__not': 'st-done'});
+    });
+
+    test('Overdue is is_overdue; a range is due_date_after/before', () {
+      expect(_codec().encode(_values({'due': const DateValue(chip: 'overdue')})), {'is_overdue': 'true'});
       expect(
-        _codec().encode(_values({'types': ChoiceValue(ids: {'Email', 'Call'})})),
-        {'task_type__in': 'Email,Call'},
-      );
-      expect(
-        _codec().encode(
-            _values({'types': ChoiceValue(ids: {'Email'}, isNot: true)})),
-        {'task_type__not': 'Email'},
+        _codec().encode(_values({'due': DateValue(from: DateTime(2026, 10, 1), to: DateTime(2026, 10, 31))})),
+        {'due_date_after': '2026-10-01', 'due_date_before': '2026-10-31'},
       );
     });
 
-    test('status is sends the NAME, is-not sends the ID', () {
-      // Verified against a live org: `status__in` matches on the name and a
-      // uuid finds nothing, while `status__not` wants the id and 500s on a
-      // name. The two halves of one toggle are genuinely asymmetric.
-      expect(
-        _codec().encode(_values({'statuses': ChoiceValue(ids: {'completed'})})),
-        {'status__in': 'completed'},
-      );
-      expect(
-        _codec().encode(
-            _values({'statuses': ChoiceValue(ids: {'completed'}, isNot: true)})),
-        {'status__not': 'st-done'},
-      );
-    });
-
-    test('a status the org no longer has is dropped from an is-not', () {
-      // Sending the raw name there would be a 500, so it must not slip through.
-      expect(
-        _codec().encode(
-            _values({'statuses': ChoiceValue(ids: {'gone'}, isNot: true)})),
-        isEmpty,
-      );
-    });
-
-    test("assignee resolves the 'me' sentinel to a real uuid", () {
-      expect(
-        _codec().encode(_values({'owners': ChoiceValue(ids: {'me'})})),
-        {'assigned_to__in': _meUuid},
-      );
-    });
-
-    test('a due-date chip becomes a concrete range', () {
-      filterNow = () => DateTime(2026, 8, 6);
-      addTearDown(() => filterNow = defaultFilterNow);
-      expect(
-        _codec().encode(_values({'due': const DateValue(chip: 'next7')})),
-        {'due_date_after': '2026-08-06', 'due_date_before': '2026-08-13'},
-      );
+    test('a saved view decodes back into the same drawer (shared with Tasks)', () {
+      final spec = buildFollowupsFilterSpec(typeCatalog: _types, statusCatalog: _statuses, priorityCatalog: _priorities);
+      final def = _codec().encode(_values({
+        'types': ChoiceValue(ids: {'Call'}),
+        'statuses': ChoiceValue(ids: {'st-open'}, isNot: true),
+      }));
+      final back = _codec().decode(def, spec);
+      expect(back.choice('types')!.ids, {'Call'});
+      expect(back.choice('statuses')!.ids, {'st-open'});
+      expect(back.choice('statuses')!.isNot, isTrue);
     });
 
     test('an untouched drawer encodes to nothing', () {
       expect(_codec().encode(FilterValues()), isEmpty);
-    });
-
-    test('the related-to section is not encoded — no param exists for it', () {
-      expect(
-        _codec().encode(_values({'companies': ChoiceValue(ids: {'Acme Ltd'})})),
-        isEmpty,
-      );
     });
   });
 
@@ -209,6 +199,22 @@ void main() {
       expect(fu.statusName, 'Cancelled');
       expect(fu.statusKey, 'cancelled');
       expect(fu.priority, 'High');
+    });
+
+    test('due caption: overdue / Today / In 2-3d, none once completed or cancelled', () {
+      final now = DateTime(2026, 10, 24);
+      String note(String due, {String status = 'Open', Map<String, String> types = const {}}) =>
+          FollowupsRemoteDataSource.followupFromJson(
+            {'task_id': 'x', 'title': 'X', 'status': status, 'due_date': due},
+            now: now,
+            statusTypes: types,
+          )!.dueNote;
+      expect(note('2026-10-22'), '2d overdue');
+      expect(note('2026-10-24'), 'Today');
+      expect(note('2026-10-26'), 'In 2d');
+      expect(note('2026-10-30'), '');
+      expect(note('2026-10-22', status: 'Completed', types: const {'completed': 'completed'}), '');
+      expect(note('2026-10-22', status: 'Cancelled', types: const {'cancelled': 'cancelled'}), '');
     });
 
     test('a row with no status falls back to the derived bucket', () {

@@ -12,12 +12,16 @@ class TabChip extends StatelessWidget {
     required this.active,
     required this.onTap,
     this.dotColor,
+    this.icon,
   });
 
   final String label;
   final bool active;
   final VoidCallback onTap;
   final Color? dotColor;
+
+  /// Optional leading icon (e.g. the Leads "Archived" toggle).
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +42,10 @@ class TabChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14.sp, color: active ? AppColors.navy : AppColors.textLabelAlt),
+              SizedBox(width: 6.w),
+            ],
             if (dotColor != null) ...[
               Container(
                 width: 9.w,

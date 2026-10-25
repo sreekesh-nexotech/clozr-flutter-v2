@@ -222,4 +222,24 @@ void main() {
       expect(notificationDayBucket(null, now: now), 'earlier');
     });
   });
+
+  group('pin and snooze', () {
+    test('reads is_pinned and snooze_until, and read state from `read`', () {
+      final n = notificationFromJson(<String, dynamic>{
+        'crm_notification_id': 'n1',
+        'type': 'LeadNoteAdded',
+        'category': 'crm',
+        'notification_text': 'New note',
+        'read': true,
+        'status': 'pinned',
+        'is_pinned': true,
+        'snooze_until': '2026-08-04T13:00:00Z',
+        'created_at': now.toIso8601String(),
+      }, now: now)!;
+      expect(n.pinned, isTrue);
+      expect(n.unread, isFalse);
+      expect(n.snoozed, isTrue);
+      expect(n.copyWith(unread: true).pinned, isTrue);
+    });
+  });
 }

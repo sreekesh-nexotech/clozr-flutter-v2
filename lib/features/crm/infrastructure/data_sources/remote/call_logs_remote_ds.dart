@@ -94,9 +94,12 @@ class CallLogsRemoteDataSource {
   }) {
     final start = (startTime ?? DateTime.now()).toUtc();
     final length = duration ?? Duration.zero;
+    // [fromNumber] is the agent's phone and [toNumber] the lead's. An
+    // incoming call ran the other way — the lead rang the agent — so the pair
+    // is swapped; otherwise the activity log read "Incoming call from <me>".
     return _api.post(ApiEndpoints.callLogs, body: {
-      'from_number': fromNumber,
-      'to_number': toNumber,
+      'from_number': incoming ? toNumber : fromNumber,
+      'to_number': incoming ? fromNumber : toNumber,
       'type': incoming ? 'Incoming' : 'Outgoing',
       'telephony_medium': 'Manual',
       'is_missed': isMissed,
@@ -171,6 +174,7 @@ class CallLogsRemoteDataSource {
       // play control, on exactly the rows that are still processing, that could
       // only fail. Empty here reads as "no recording yet", which is right.
       recordingUrl: _str(json['cdn_recording_url']) ?? '',
+      transcript: _str(json['transcript'])?.trim() ?? '',
     );
   }
 

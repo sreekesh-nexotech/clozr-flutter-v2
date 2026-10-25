@@ -21,6 +21,8 @@ class ViewColumn extends Equatable {
     this.inFields = false,
     this.relatedModel = '',
     this.choices = const [],
+    this.isRequired = false,
+    this.customType = '',
   });
 
   final String name;
@@ -66,6 +68,19 @@ class ViewColumn extends Equatable {
   /// `"23" is not a valid choice`.
   final List<(String value, String label)> choices;
 
+  /// Custom fields only: the definition's `is_required`.
+  final bool isRequired;
+
+  /// Custom fields only: the definition's own `field_type` (`text`,
+  /// `textarea`, `dropdown`, `multi_select`, `number`, `decimal`, `date`,
+  /// `datetime`, `boolean`, `email`, `phone`, `url`). [type] holds the form
+  /// control it renders as.
+  final String customType;
+
+  /// Webapp: a custom text field is capped at 255 characters with an `n/255`
+  /// counter.
+  static const customTextMax = 255;
+
   /// Whether the value comes from a fixed model choice set.
   bool get hasChoices => choices.isNotEmpty;
 
@@ -82,6 +97,7 @@ class ViewColumn extends Equatable {
     final isCustom = (info is Map && info['is_custom'] == true) ||
         name.startsWith('custom_fields.');
     final label = (row['label'] ?? '').toString().trim();
+    final rawType = info is Map ? (info['type'] ?? '').toString() : '';
 
     return ViewColumn(
       name: name,
@@ -89,8 +105,10 @@ class ViewColumn extends Equatable {
       // rather than dropping the field.
       label: label.isNotEmpty ? label : name,
       order: (row['order'] as num?)?.toInt() ?? 0,
-      type: info is Map ? (info['type'] ?? '').toString() : '',
+      type: isCustom ? _customControl(rawType) : rawType,
       isCustom: isCustom,
+      isRequired: isCustom && info is Map && info['is_required'] == true,
+      customType: isCustom ? rawType : '',
       // Detail views send no `is_fixed` at all — only `is_protected`.
       isFixed: row['is_fixed'] == true || row['is_protected'] == true,
       // `field_info` is only present for serializer fields, so its presence is
@@ -107,6 +125,19 @@ class ViewColumn extends Equatable {
           const [],
     );
   }
+
+  /// Webapp `customFieldKind`: the control a custom field renders as.
+  /// Dropdown and multi-select are both a single-value picker there.
+  static String _customControl(String fieldType) => switch (fieldType) {
+        'number' => 'number',
+        'decimal' => 'decimal',
+        'date' => 'date',
+        'datetime' => 'date',
+        'boolean' => 'boolean',
+        'textarea' => 'text',
+        '' => '',
+        _ => 'string',
+      };
 
   /// `[{value, label}]` → `(value, label)` pairs. The **value** is what the API
   /// stores and validates against, so it is never derived from the label.
@@ -129,9 +160,27 @@ class ViewColumn extends Equatable {
 
   /// Whether this column can be rendered as an input on a form.
   ///
-  /// Custom fields are excluded for now: they live under `custom_fields.<slug>`
-  /// and need their own write shape, which no screen builds yet.
+  /// Custom fields are excluded: they live under `custom_fields.<slug>` and
+  /// need their own write shape. Only the lead form builds it (see
+  /// [ViewSchema.formColumns]).
   bool get isEditable => inFields && !isCustom && type.isNotEmpty;
+
+  ViewColumn withLabel(String l) => l == label ? this : _copy(label: l);
+  ViewColumn withOrder(int o) => o == order ? this : _copy(order: o);
+
+  ViewColumn _copy({String? label, int? order}) => ViewColumn(
+        name: name,
+        label: label ?? this.label,
+        order: order ?? this.order,
+        type: type,
+        isCustom: isCustom,
+        isFixed: isFixed,
+        inFields: inFields,
+        relatedModel: relatedModel,
+        choices: choices,
+        isRequired: isRequired,
+        customType: customType,
+      );
 
   /// Whether the value is chosen from a catalog rather than typed.
   bool get isChoice => type == 'foreignkey' || type == 'manytomany';
@@ -145,7 +194,7 @@ class ViewColumn extends Equatable {
 
   @override
   List<Object?> get props =>
-      [name, label, order, type, isCustom, isFixed, inFields, relatedModel, choices];
+      [name, label, order, type, isCustom, isFixed, inFields, relatedModel, choices, isRequired, customType];
 }
 
 /// The org's Leads list layout: which columns to render, in which order, under
@@ -212,6 +261,13 @@ class ViewSchema extends Equatable {
   /// a display-only field produces a form that accepts input the API discards.
   List<ViewColumn> get editableColumns =>
       [for (final c in columns) if (c.isEditable) c];
+
+  /// [editableColumns] plus the org's custom fields, for a form that writes
+  /// them as `custom_fields: {<slug>: value}`.
+  List<ViewColumn> get formColumns => [
+        for (final c in columns)
+          if (c.isEditable || (c.isCustom && c.type.isNotEmpty)) c,
+      ];
 
   ViewColumn? column(String name) {
     for (final c in columns) {

@@ -21,7 +21,8 @@ const _months = {
 /// ("Overdue 24 Jun 2026", "Due 05 Jul 2026", "Scheduled 15 Jul 2026") or bare
 /// ("05 May 2026"). Returns null when no date is present ("Paid just now").
 DateTime? parsePaymentDate(String s) {
-  final m = RegExp(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})').firstMatch(s);
+  // Also the webapp's "05-Oct-2026" form the list now shows.
+  final m = RegExp(r'(\d{1,2})[\s-]+([A-Za-z]{3})[\s-]+(\d{4})').firstMatch(s);
   if (m == null) return null;
   final day = int.tryParse(m.group(1)!);
   final month = _months[m.group(2)!];
@@ -53,7 +54,7 @@ FilterSpec buildPaymentsFilterSpec(
   required CrmPartyLookup lookup,
 }) {
   // Canonical method vocabulary (audit §7).
-  const methodValues = ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque'];
+  const methodValues = ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque', 'Auto-debit'];
   final methods = [for (final m in methodValues) FilterOption(id: m, label: m)];
   const statusKeys = ['paid', 'due', 'overdue', 'scheduled'];
   final statuses = [
@@ -126,14 +127,21 @@ FilterSpec buildPaymentsFilterSpec(
 /// Evaluate a payment against applied filter values.
 bool paymentMatchesFilters(Payment p, FilterValues v, CrmPartyLookup lookup) {
   if (!FilterMatch.matchAnyOf(v.choice('method'), [p.method])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('status'), [p.status])) return false;
+  // A pending record answers to both Due and Scheduled (backend `pending`).
+  if (!FilterMatch.matchAnyOf(
+      v.choice('status'), p.status == 'due' ? const ['due', 'scheduled'] : [p.status])) {
+    return false;
+  }
   if (!FilterMatch.matchAnyOf(v.choice('recordedBy'), [p.owner])) return false;
   final company = paymentCompany(p, lookup);
   if (!FilterMatch.matchAnyOf(v.choice('company'), company == null ? const [] : [company])) {
     return false;
   }
   if (!FilterMatch.matchRange(v.range('amount'), p.amountNum, scale: 100000)) return false;
-  if (!FilterMatch.matchDate(v.date('paymentDate'), parsePaymentDate(p.date))) return false;
+  if (!FilterMatch.matchDate(
+      v.date('paymentDate'), p.paidOn ?? p.dueOn ?? parsePaymentDate(p.date))) {
+    return false;
+  }
   return true;
 }
 

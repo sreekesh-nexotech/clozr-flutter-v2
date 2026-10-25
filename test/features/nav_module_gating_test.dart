@@ -79,13 +79,36 @@ void main() {
 }
 
 void _dashboardTabs() {
-  test('Dashboard panel tabs follow the same module keys', () {
-    expect(visibleDashboardTabs(_crmUser()), ['business', 'crm']);
-    expect(visibleDashboardTabs(_admin()), ['business', 'crm']);
+  test('Dashboard panel tabs follow the webapp dashboard modules', () {
+    expect(visibleDashboardTabs(_crmUser()), isEmpty);
+    // Legacy payload: a bare `dashboard` key keeps Business only.
+    expect(visibleDashboardTabs(_admin()), ['business']);
     expect(visibleDashboardTabs(null), ['business', 'crm', 'ops', 'help']);
     final helpOnly = ModuleAccess.fromJson({
-      'modules': {'dashboard': _perm('Dashboard'), 'issue': _perm('Issues')},
+      'modules': {'issue_dashboard': _perm('Issue Dashboard'), 'issue': _perm('Issues')},
     });
-    expect(visibleDashboardTabs(helpOnly), ['business', 'help']);
+    expect(visibleDashboardTabs(helpOnly), ['help']);
+  });
+
+  test('the live dashboard grants unlock the Dashboard like the webapp', () {
+    // System Admin as dev.clozr.tech returns it: four *_dashboard keys, no plain `dashboard`.
+    final admin = ModuleAccess.fromJson({
+      'modules': {
+        for (final k in ['admin_dashboard', 'crm_dashboard', 'pmo_dashboard', 'issue_dashboard', 'lead'])
+          k: _perm(k),
+      },
+    });
+    expect(_visible(admin), contains('dashboard'));
+    expect(landingPathFor(admin), Routes.dashboard);
+    expect(visibleDashboardTabs(admin), ['business', 'crm', 'ops', 'help']);
+
+    // CRM User + Helpdesk + PMO: no admin_dashboard → no Business tab.
+    final mixed = ModuleAccess.fromJson({
+      'modules': {
+        for (final k in ['crm_dashboard', 'pmo_dashboard', 'issue_dashboard', 'lead']) k: _perm(k),
+      },
+    });
+    expect(_visible(mixed), contains('dashboard'));
+    expect(visibleDashboardTabs(mixed), ['crm', 'ops', 'help']);
   });
 }

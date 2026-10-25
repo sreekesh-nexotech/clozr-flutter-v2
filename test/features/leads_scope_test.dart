@@ -1,7 +1,7 @@
 // "My leads / All leads" is a server-side scope, not a client-side filter.
 // These lock in the two halves of that: the request the data source builds
 // (`?is_teams=true`, re-sent on every page), and the provider wiring that turns
-// a toggle into a fetch for the scope being entered.
+// the list into a fetch that never asks for the "mine" scope (the webapp has none).
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -142,7 +142,7 @@ class _RecordingRepo implements LeadsRepository {
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
 
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields) async =>
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async =>
       null;
 
   @override
@@ -288,13 +288,12 @@ void main() {
       expect(repo.filterCalls.last, {'status__not': 'st-lost'});
 
       // Returning to a combination already fetched is served from the family
-      // cache — which is why the screen drops the target query before applying,
-      // exactly as the My/All toggle does.
+      // cache — which is why the screen drops the target query before applying.
       container.read(leadFiltersProvider.notifier).state = FilterValues();
       await _settle();
       expect(repo.filterCalls.length, 2, reason: 'cached; no third request');
 
-      container.invalidate(leadsScopedProvider(const LeadListQuery(mineOnly: true)));
+      container.invalidate(leadsScopedProvider(const LeadListQuery()));
       await _settle();
       expect(repo.filterCalls.last, isEmpty);
       expect(repo.filterCalls.length, 3);
@@ -311,36 +310,24 @@ void main() {
   });
 
   group('scope providers', () {
-    test('the toggle fetches the entered scope; lookups stay org-wide', () async {
+    test('the list loads every visible lead, like the webapp', () async {
       final repo = _RecordingRepo();
       final container = ProviderContainer(
         overrides: [leadsRepositoryProvider.overrideWithValue(repo)],
       );
       addTearDown(container.dispose);
 
-      // Default view is "My leads".
+      // No "My leads" scope: the list never sends is_teams.
       container.listen(leadsListProvider, (_, __) {}, fireImmediately: true);
       await _settle();
-      expect(repo.calls, [true]);
-      expect(container.read(leadBaseProvider).single.id, 'MINE');
-
-      // Switching to "All leads" issues a request rather than re-filtering.
-      container.invalidate(leadsScopedProvider(const LeadListQuery()));
-      container.read(leadTeamAllProvider.notifier).state = true;
-      await _settle();
-      expect(repo.calls, [true, false]);
+      expect(repo.calls, [false]);
       expect(container.read(leadBaseProvider).single.id, 'ALL');
 
-      // Switching back re-queries too — no reuse of the earlier "mine" list.
-      container.invalidate(leadsScopedProvider(const LeadListQuery(mineOnly: true)));
-      container.read(leadTeamAllProvider.notifier).state = false;
-      await _settle();
-      expect(repo.calls, [true, false, true]);
-
-      // Cross-screen lookups ignore the toggle: still the org-wide list.
+      // Cross-screen lookups share the same org-wide list.
       container.listen(leadsProvider, (_, __) {}, fireImmediately: true);
       await _settle();
       expect(container.read(leadsProvider).valueOrNull?.single.id, 'ALL');
+      expect(repo.calls, [false]);
     });
   });
 }

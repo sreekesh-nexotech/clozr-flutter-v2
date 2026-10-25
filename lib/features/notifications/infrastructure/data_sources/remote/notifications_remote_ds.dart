@@ -128,6 +128,9 @@ bool notificationUrgentForType(String type) {
     return ('list', category == 'billing' ? 'billing' : 'payments');
   }
   if (t.startsWith('lead')) return ('list', 'leads');
+  // `NoteMention`: the mentioned note's record is looked up from its text;
+  // the Leads list is the fallback (mentions are written on leads mostly).
+  if (t.contains('mention')) return ('list', 'mention');
   if (t.startsWith('followup')) return ('list', 'followups');
   // PMO first: `PmoTask*` also starts with neither `task` nor `project`.
   if (t.startsWith('pmotask')) return ('list', 'opsTasks');
@@ -188,6 +191,8 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
     unread: unread,
     targetKind: target.$1,
     targetId: target.$2,
+    pinned: row['is_pinned'] == true,
+    snoozeUntil: parseApiDate(row['snooze_until']),
   );
 }
 
@@ -203,11 +208,21 @@ class NotificationsRemoteDataSource {
   static const int _pageSize = ApiConfig.defaultPageSize;
   static const int _maxPages = 50; // safety cap; loop still breaks when next == null
 
-  Future<List<Map<String, dynamic>>> fetchNotificationRows() async {
+  /// [status] narrows the feed the way the webapp's segment does
+  /// (`unread` / `pinned` / `snoozed`); null is "All", which the server already
+  /// returns pinned-first with snoozed rows left out.
+  Future<List<Map<String, dynamic>>> fetchNotificationRows({String? status}) async {
     final rows = <Map<String, dynamic>>[];
+    // The server caches this list per URL for a while: straight after a pin,
+    // snooze or read, the same query still answers with the old rows (seen on
+    // dev, 23-Oct-2026). A per-load stamp the API ignores keeps the inbox
+    // showing what was just done.
+    final stamp = DateTime.now().millisecondsSinceEpoch;
     for (var page = 1; page <= _maxPages; page++) {
       final body = await _api.get(ApiEndpoints.notifications, query: {
         'page_size': _pageSize,
+        if (status != null) 'status': status,
+        '_ts': stamp,
         if (page > 1) 'page': page,
       });
       final parsed = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
@@ -233,4 +248,24 @@ class NotificationsRemoteDataSource {
   Future<void> markAllRead() => _api.post(ApiEndpoints.notificationsMarkAllRead);
 
   Future<void> delete(String id) => _api.delete(ApiEndpoints.notification(id));
+
+  Future<void> pin(String id) => _api.post(ApiEndpoints.notificationPin(id));
+
+  Future<void> unpin(String id) => _api.post(ApiEndpoints.notificationUnpin(id));
+
+  Future<void> snooze(String id, DateTime until) => _api.post(
+        ApiEndpoints.notificationSnooze(id),
+        body: {'snooze_until': until.toUtc().toIso8601String()},
+      );
+
+  Future<void> unsnooze(String id) => _api.post(ApiEndpoints.notificationUnsnooze(id));
+
+  /// The bell's count, asked the way the webapp does: `status=unread`, one row,
+  /// read `count`.
+  Future<int> unreadCount() async {
+    final body = await _api.get(ApiEndpoints.notifications,
+        query: {'status': 'unread', 'page_size': 1, '_ts': DateTime.now().millisecondsSinceEpoch},
+        quiet: true);
+    return Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).count;
+  }
 }

@@ -1,4 +1,5 @@
 import '../../../../../core/network/api_endpoints.dart';
+import '../../../../../core/network/app_error.dart';
 import '../../../../../core/network/api_service.dart';
 import '../../../domain/entities/lead_schema.dart';
 
@@ -30,7 +31,13 @@ class LeadSchemaRemoteDataSource {
   /// action, not a query param. A column visible on the card but hidden on the
   /// list therefore arrives with no value — which renders as absent, since the
   /// card skips empty values.
-  Future<LeadListSchema> fetchListSchema() => _fetch('mobile');
+  ///
+  /// A timeout or lost connection is **rethrown** rather than answered with
+  /// [LeadListSchema.empty]: on a pull-to-refresh or a re-visit the provider
+  /// then keeps the layout it already has (`valueOrNull` holds the previous
+  /// value through an error), instead of a slow server silently swapping every
+  /// card back to the built-in layout.
+  Future<LeadListSchema> fetchListSchema() => _fetch('mobile', rethrowOutage: true);
 
   /// The layout for the lead detail page.
   ///
@@ -45,13 +52,16 @@ class LeadSchemaRemoteDataSource {
   /// the layout is what makes the trim start applying.
   Future<LeadListSchema> fetchDetailSchema() => _fetch('detail');
 
-  Future<LeadListSchema> _fetch(String viewType) async {
+  Future<LeadListSchema> _fetch(String viewType, {bool rethrowOutage = false}) async {
     try {
       final body = await _api.get(
         ApiEndpoints.leadSchema,
         query: {'view_type': viewType},
       );
       return mapSchema(body);
+    } on AppError catch (e) {
+      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      return LeadListSchema.empty;
     } on Object {
       return LeadListSchema.empty;
     }

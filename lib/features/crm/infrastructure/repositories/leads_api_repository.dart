@@ -123,8 +123,8 @@ class LeadsApiRepository implements LeadsRepository {
   }
 
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields) async {
-    final lead = await _remote.updateLead(leadId, fields);
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async {
+    final lead = await _remote.updateLead(leadId, fields, version: version);
     // The edited lead appears in both list scopes and in its own detail cache.
     await AppCache.remove(AppCache.crmCache, _cacheKey);
     await AppCache.remove(AppCache.crmCache, _mineCacheKey);

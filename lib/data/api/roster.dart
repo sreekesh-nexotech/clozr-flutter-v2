@@ -4,6 +4,7 @@ import '../../core/config/api_config.dart';
 import '../../core/models/note.dart';
 import '../mock/mock_users.dart';
 import 'user_directory.dart';
+import '../../features/auth/application/providers/auth_providers.dart';
 
 /// The list of workspace users offered in owner/assignee filters and pickers.
 ///
@@ -54,6 +55,9 @@ final rosterProvider = Provider<List<AppUser>>((ref) {
 /// succeeding, so it holds even for a user who cannot list org members.
 /// In mock mode it stays the prototype user, which is correct there.
 final noteAuthorProvider = Provider<NoteAuthor>((ref) {
+  // Rebuilt per signed-in user: read once, it kept the previous account's
+  // initials on the composer after switching users.
+  ref.watch(sessionControllerProvider.select((s) => s.user?.id));
   final me = MockUsers.of('me');
   return NoteAuthor(initials: me.initials, name: me.name, color: me.color);
 });
