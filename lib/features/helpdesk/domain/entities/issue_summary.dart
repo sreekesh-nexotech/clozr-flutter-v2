@@ -25,6 +25,9 @@ class SummaryCard extends Equatable {
     this.assigneeName = '',
     this.statusName = '',
     this.slaRemainingSeconds,
+    this.slaPaused = false,
+    this.hasLinkedTasks = false,
+    this.createdAt,
   });
 
   final String id;
@@ -35,6 +38,16 @@ class SummaryCard extends Equatable {
   final String assigneeName;
   final String statusName;
   final int? slaRemainingSeconds;
+
+  /// The SLA clock is stopped (`sla_hold_started_at` set) — the card's pill
+  /// reads "Paused".
+  final bool slaPaused;
+
+  /// The ticket has a linked Operations task (the card's link glyph).
+  final bool hasLinkedTasks;
+
+  /// When the ticket was raised — the Pipeline card's age ("3d").
+  final DateTime? createdAt;
 
   /// The effective deadline as an instant, so the existing SLA pills and
   /// buckets can read it the way they read any other due date.
@@ -52,10 +65,17 @@ class SummaryCard extends Equatable {
       reference: (raw['reference'] ?? '').toString(),
       subject: (raw['subject'] ?? '').toString(),
       priority: (raw['priority'] ?? 'Medium').toString(),
-      assigneeId: assignee is Map ? (assignee['user_id'] ?? '').toString() : '',
-      assigneeName: assignee is Map ? (assignee['name'] ?? '').toString() : '',
+      assigneeId: assignee is Map
+          ? (assignee['user_id'] ?? assignee['id'] ?? '').toString()
+          : (raw['assigned_to'] ?? '').toString(),
+      assigneeName: assignee is Map
+          ? (assignee['name'] ?? '').toString()
+          : (raw['assigned_to_name'] ?? '').toString(),
       statusName: (raw['status_name'] ?? '').toString(),
       slaRemainingSeconds: _int(raw['sla_remaining_seconds']),
+      slaPaused: (raw['sla_hold_started_at'] ?? '').toString().isNotEmpty,
+      hasLinkedTasks: raw['has_linked_tasks'] == true,
+      createdAt: DateTime.tryParse((raw['created_at'] ?? '').toString()),
     );
   }
 
@@ -84,6 +104,39 @@ class SlaBucket extends Equatable {
 
   @override
   List<Object?> get props => [total, items];
+}
+
+/// One Workload column: [agentId] / [agentName] empty for the Unassigned
+/// column, which always comes first.
+class WorkloadColumn extends Equatable {
+  const WorkloadColumn({this.agentId = '', this.agentName = '', this.total = 0, this.items = const []});
+
+  final String agentId;
+  final String agentName;
+  final int total;
+  final List<SummaryCard> items;
+
+  bool get isUnassigned => agentId.isEmpty && agentName.isEmpty;
+
+  @override
+  List<Object?> get props => [agentId, agentName, total, items];
+}
+
+/// One Pipeline lane — one per org status, ordered by `position`.
+class PipelineLane extends Equatable {
+  const PipelineLane({required this.id, required this.name, this.color, this.position = 0, this.total = 0, this.items = const []});
+
+  final String id;
+  final String name;
+
+  /// The status' own colour (`#3B82F6`), null when unset.
+  final String? color;
+  final int position;
+  final int total;
+  final List<SummaryCard> items;
+
+  @override
+  List<Object?> get props => [id, name, position, total, items];
 }
 
 /// A `(name, total)` pair — one agent's load, or one status column.
@@ -116,6 +169,9 @@ class IssueSummary extends Equatable {
     this.unassigned = const SlaBucket(),
     this.byAgent = const [],
     this.pipeline = const [],
+    this.noSla,
+    this.workload = const [],
+    this.lanes = const [],
   });
 
   // stats
@@ -151,6 +207,16 @@ class IssueSummary extends Equatable {
   /// rather than a fixed column set.
   final List<NamedTotal> pipeline;
 
+  /// Open tickets with no SLA deadline, when the server reports the bucket
+  /// (a bucket, a bare count, or `stats.no_sla`); null otherwise.
+  final SlaBucket? noSla;
+
+  /// Unassigned first, then each agent — with their cards when sent.
+  final List<WorkloadColumn> workload;
+
+  /// The Pipeline lanes in `position` order, with their cards when sent.
+  final List<PipelineLane> lanes;
+
   /// Not breached and not due within the hour: on track, due later today, and
   /// everything already resolved.
   int get withinSla => slaOnTrack + slaDueToday + resolvedTotal;
@@ -184,7 +250,44 @@ class IssueSummary extends Equatable {
       }
     }
 
+    final lanes = <PipelineLane>[
+      if (pipeline is List)
+        for (final row in pipeline)
+          if (row is Map && (row['name'] ?? '').toString().isNotEmpty)
+            PipelineLane(
+              id: (row['issue_status_id'] ?? '').toString(),
+              name: (row['name'] ?? '').toString(),
+              color: row['color'] is String ? row['color'] as String : null,
+              position: _int(row['position']) ?? 0,
+              total: _int(row['total']) ?? 0,
+              items: SlaBucket.fromJson(row).items,
+            ),
+    ]..sort((a, b) => a.position.compareTo(b.position));
+
+    final rawNoSla = watch is Map ? watch['no_sla'] : null;
+    final statNoSla = stats is Map ? _int(stats['no_sla']) : null;
+    final noSla = rawNoSla is Map
+        ? SlaBucket.fromJson(rawNoSla)
+        : (_int(rawNoSla) ?? statNoSla) != null
+            ? SlaBucket(total: (_int(rawNoSla) ?? statNoSla)!)
+            : null;
+
     final workload = body['workload'];
+    final columns = <WorkloadColumn>[
+      WorkloadColumn(
+        total: workload is Map && workload['unassigned'] is Map ? _int((workload['unassigned'] as Map)['total']) ?? 0 : 0,
+        items: SlaBucket.fromJson(workload is Map ? workload['unassigned'] : null).items,
+      ),
+      if (workload is Map && workload['by_agent'] is List)
+        for (final row in workload['by_agent'] as List)
+          if (row is Map)
+            WorkloadColumn(
+              agentId: row['user'] is Map ? ((row['user'] as Map)['user_id'] ?? (row['user'] as Map)['id'] ?? '').toString() : '',
+              agentName: row['user'] is Map ? ((row['user'] as Map)['name'] ?? '').toString() : '',
+              total: _int(row['total']) ?? 0,
+              items: SlaBucket.fromJson(row).items,
+            ),
+    ];
     final agents = <NamedTotal>[];
     if (workload is Map && workload['by_agent'] is List) {
       for (final row in workload['by_agent'] as List) {
@@ -215,6 +318,9 @@ class IssueSummary extends Equatable {
           workload is Map ? workload['unassigned'] : null),
       byAgent: agents,
       pipeline: pipelineRows,
+      noSla: noSla,
+      workload: columns,
+      lanes: lanes,
     );
   }
 
@@ -236,6 +342,9 @@ class IssueSummary extends Equatable {
         unassigned,
         byAgent,
         pipeline,
+        noSla,
+        workload,
+        lanes,
       ];
 }
 

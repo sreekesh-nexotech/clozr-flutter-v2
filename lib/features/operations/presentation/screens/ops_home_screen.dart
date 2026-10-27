@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_header_bar.dart';
@@ -110,7 +111,11 @@ class OpsHomeScreen extends ConsumerWidget {
 
     void goTasks({String tab = 'all'}) {
       ref.read(myTasksFProvider.notifier).state = true;
-      ref.read(otTabProvider.notifier).state = tab;
+      // Tabs are status ids in API mode: "completed" is the org's done status.
+      final done = ref.read(opsTaskDoneStatusProvider);
+      ref.read(otTabsProvider.notifier).state = tab == 'all'
+          ? const {}
+          : {ApiConfig.apiEnabled && done != null ? done.id : tab};
       context.go(Routes.opsTasks);
     }
 
@@ -349,7 +354,7 @@ class OpsHomeScreen extends ConsumerWidget {
               ),
             )
           else
-            for (final t in rows) _myTaskRow(context, t, projName),
+            for (final t in rows) _myTaskRow(context, ref, t, projName),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onViewMore,
@@ -370,11 +375,15 @@ class OpsHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _myTaskRow(BuildContext context, OpsTask t, String Function(String) projName) {
+  Widget _myTaskRow(BuildContext context, WidgetRef ref, OpsTask t, String Function(String) projName) {
     final delta = taskDueDelta(t);
     final overdue = delta < 0;
     final priColor = StatusMeta$.projectPriority[t.pri] ?? AppColors.textMuted;
-    final meta = StatusMeta$.opsTask[t.status] ?? StatusMeta$.opsTask['open']!;
+    final meta = opsTaskStatusMeta(
+      key: t.status,
+      statusName: t.statusName,
+      statuses: ref.watch(opsTaskStatusOptionsProvider),
+    );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => context.push('${Routes.opsTaskDetail}?id=${t.id}'),
@@ -389,7 +398,7 @@ class OpsHomeScreen extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
                 style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
             SizedBox(height: 2.h),
-            Text(projName(t.projId),
+            Text((t.projectName.isNotEmpty ? t.projectName : projName(t.projId)),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.caption(color: AppColors.textPlaceholder)),
@@ -398,7 +407,7 @@ class OpsHomeScreen extends ConsumerWidget {
               children: [
                 StatusPill(label: t.pri, color: priColor),
                 SizedBox(width: 9.w),
-                Text('Due ${t.end.replaceAll(' 2026', '')}',
+                Text(t.end.trim().isEmpty ? 'No end date' : 'Due ${opsWhenLabel(t.end, '')}',
                     style: AppText.custom(
                         size: 12,
                         weight: overdue ? FontWeight.w700 : FontWeight.w600,
@@ -455,7 +464,7 @@ class OpsHomeScreen extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
-                  Text(projName(t.projId),
+                  Text((t.projectName.isNotEmpty ? t.projectName : projName(t.projId)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.caption(color: AppColors.textPlaceholder)),

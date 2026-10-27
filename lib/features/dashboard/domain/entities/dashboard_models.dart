@@ -407,6 +407,8 @@ class DashboardData {
         kpi(icon: PhosphorIconsFill.flag, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Projects Overdue', sub: 'Past their end date', route: '${Routes.opsProjects}?end=overdue'),
         kpi(icon: PhosphorIconsFill.listChecks, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Tasks Overdue', sub: 'Across all projects', route: '${Routes.opsTasks}?due=overdue'),
         kpi(icon: PhosphorIconsFill.clock, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Avg Project Cycle', unit: 'days', sub: 'Start to handover', route: Routes.opsProjects),
+        // The webapp's fifth card (`avg_task_cycle`): start → done for tasks.
+        kpi(icon: PhosphorIconsFill.gauge, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Avg Task Cycle', unit: 'days', sub: 'Start to done', route: Routes.opsTasks),
       ],
       opsStatus: const [],
       opsOverdue: const [],

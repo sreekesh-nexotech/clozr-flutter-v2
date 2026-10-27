@@ -8,14 +8,28 @@ import '../../infrastructure/data_sources/local/dashboard_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/dashboard_remote_ds.dart';
 import '../../infrastructure/repositories/dashboard_api_repository.dart';
 import '../../infrastructure/repositories/dashboard_repository_impl.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import '../../../shell/domain/nav_catalog.dart';
 
 /// DI seam: mock-backed without a base URL, API-backed otherwise.
+///
+/// The Operations widgets are only fetched for a role that sees the Operations
+/// panel (`pmo_dashboard`) — a CRM-only role fires no project request at all,
+/// the same as the webapp. Unknown access (still loading, failed) is not gated.
 final dashboardRepositoryProvider = Provider<DashboardRepository>((ref) {
   if (!ApiConfig.apiEnabled) {
     return const DashboardRepositoryImpl(DashboardMockDataSource());
   }
+  // Only once *this* session's role has loaded: while it reloads the provider
+  // still carries the previous user's role, and before it loads at all the
+  // first dashboard load would ask for the Operations widgets on every sign-in.
+  final includePmo = ref.watch(moduleAccessProvider.select((a) =>
+      !a.isLoading && a.value != null && visibleDashboardTabs(a.value).contains('ops')));
   return DashboardApiRepository(
-    DashboardRemoteDataSource(ref.watch(apiServiceProvider)),
+    DashboardRemoteDataSource(
+      ref.watch(apiServiceProvider),
+      includePmo: includePmo,
+    ),
   );
 });
 

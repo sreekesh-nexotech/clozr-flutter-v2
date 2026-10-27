@@ -29,6 +29,8 @@ Map<String, dynamic> opsTaskWriteFields({
   String expectedHours = '',
   String weight = '',
   List<CatalogOption> statuses = const [],
+  String? typeId,
+  int? progress,
 }) {
   // 'me' is a UI sentinel, never a real id — realUserId turns it back into the
   // signed-in user's UUID and rejects prototype ids outright.
@@ -43,7 +45,9 @@ Map<String, dynamic> opsTaskWriteFields({
 
   return {
     'subject': subject.trim(),
-    'priority': priority,
+    // Blank is the create form's "Default (set by your admin)": omitted, so the
+    // server applies the PMO default priority (webapp `taskPriorityToSend`).
+    if (priority.trim().isNotEmpty) 'priority': priority,
     'description': description.trim(),
     if (projectId != null && projectId.isNotEmpty) 'project': projectId,
     // "No group" is simply omitted: the FK is nullable and defaults to null, so
@@ -52,6 +56,8 @@ Map<String, dynamic> opsTaskWriteFields({
     // — worth revisiting if the edit form grows a "move to No group".
     if (groupId != null && groupId.isNotEmpty) 'task_group': groupId,
     if (_idFor(statuses, statusLabel) case final id?) 'status': id,
+    if (typeId != null && typeId.isNotEmpty) 'type': typeId,
+    if (progress != null) 'progress': progress.clamp(0, 100),
     if (assigneesUsable) 'assignees': assignees,
     if (_stamp(start, startTime) case final v?) 'exp_start_date': v,
     if (_stamp(end, endTime) case final v?) 'exp_end_date': v,

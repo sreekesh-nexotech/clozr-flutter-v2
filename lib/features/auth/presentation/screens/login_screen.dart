@@ -189,18 +189,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Same lockup the app header uses. Only the height is
-                  // constrained — width follows the artwork's 1.89:1 ratio —
-                  // and `semanticLabel` keeps the brand name in the
+                  // The logo sits centred on a square transparent canvas, so
+                  // the inner Align + ClipRect trims it to the artwork
+                  // (88% × 47% of the canvas) — the visible logo is 34.h
+                  // tall. `semanticLabel` keeps the brand name in the
                   // accessibility tree now that it is no longer real text.
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: Image.asset(
-                      'assets/images/clozr_wordmark.png',
-                      height: 34.h,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.medium,
-                      semanticLabel: AppConstants.brandName,
+                    child: ClipRect(
+                      child: Align(
+                        widthFactor: 0.88,
+                        heightFactor: 0.47,
+                        child: Image.asset(
+                          'assets/Clozr-Regular-1080px.png',
+                          height: 34.h / 0.47,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.medium,
+                          semanticLabel: AppConstants.brandName,
+                        ),
+                      ),
                     ),
                   ),
                   SizedBox(height: 6.h),

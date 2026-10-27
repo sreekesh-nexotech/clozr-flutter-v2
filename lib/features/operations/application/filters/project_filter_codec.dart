@@ -41,12 +41,11 @@ class ProjectFilterCodec {
   ///
   /// `cost`, `start` and `end` used to sit here too; §1 documents params for
   /// all three and they work, so they are encoded now.
-  static const localOnlyFields = {
-    'assignees',
-    'teams',
-    'progress',
-    'health',
-  };
+  ///
+  /// Assignees (`assignees__in`), team (`assigned_team__in`) and every health
+  /// option (`is_overdue`, `due_within_days`) are server params now — verified
+  /// against dev (26 Oct 2026; `is_overdue` no longer 500s).
+  static const localOnlyFields = {'progress'};
 
   /// The drawer's params. An all-default [FilterValues] encodes to `{}`.
   Map<String, dynamic> encode(FilterValues v) {
@@ -59,7 +58,15 @@ class ProjectFilterCodec {
     _choice(out, v.choice('pri'), 'priority', const []);
     _customer(out, v.choice('customer'));
     _choice(out, v.choice('managers'), 'manager', const [], toUser: true);
+    // Any assignee (M2M), like the webapp's Assignee facet.
+    _choice(out, v.choice('assignees'), 'assignees', const [], toUser: true);
+    // Team options are keyed by `team_id`.
+    _choice(out, v.choice('teams'), 'assigned_team', const []);
     _health(out, v.radio('health'));
+    // Webapp "Include archived projects".
+    if (v.choice('incArchived')?.ids.contains('yes') ?? false) {
+      out['include_archived'] = 'true';
+    }
     _cost(out, v.range('cost'));
     _dates(out, v.date('end'), 'expected_end_date');
     _dates(out, v.date('start'), 'expected_start_date');
@@ -77,7 +84,14 @@ class ProjectFilterCodec {
   /// list down, so both sides stay with the local matcher until it is fixed.
   void _health(Map<String, dynamic> out, RadioValue? value) {
     if (value == null || !value.isActive) return;
-    if (value.id == 'risk') out['due_within_days'] = '14';
+    switch (value.id) {
+      case 'overdue':
+        out['is_overdue'] = 'true';
+      case 'risk':
+        out['due_within_days'] = '14';
+      case 'ontrack':
+        out['is_overdue'] = 'false';
+    }
   }
 
   /// The drawer's slider is in ₹ lakhs; `budget_min` / `budget_max` are rupees.
@@ -122,7 +136,16 @@ class ProjectFilterCodec {
     _decodeChoice(def, v, 'pri', 'priority', (id) => id);
     _decodeChoice(def, v, 'managers', 'manager',
         (id) => id == currentUserId ? 'me' : id);
+    _decodeChoice(def, v, 'assignees', 'assignees',
+        (id) => id == currentUserId ? 'me' : id);
+    _decodeChoice(def, v, 'teams', 'assigned_team', (id) => id);
     _decodeCustomer(def, v);
+    if ('${def['include_archived'] ?? ''}'.toLowerCase() == 'true') {
+      v['incArchived'] = ChoiceValue(ids: {'yes'});
+    }
+    final overdue = '${def['is_overdue'] ?? ''}'.toLowerCase();
+    if (overdue == 'true') _setRadio(v, spec, 'health', 'overdue');
+    if (overdue == 'false') _setRadio(v, spec, 'health', 'ontrack');
 
     // `due_within_days` is the only health option with a param, so it is the
     // only one that can come back.

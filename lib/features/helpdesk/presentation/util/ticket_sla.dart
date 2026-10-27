@@ -51,6 +51,8 @@ const kTicketPriorities = ['Critical', 'High', 'Medium', 'Low'];
 /// Priority → dot / donut colour (`hhPRI`) used by the dashboard + board dots.
 Color ticketPriDotColor(String pri) => const {
       'Urgent': AppColors.error,
+      // The org's own name for the same level (the ticket form's chips).
+      'Critical': AppColors.error,
       'High': AppColors.warning,
       'Medium': AppColors.blueBright,
       'Low': AppColors.textMuted,
@@ -82,7 +84,73 @@ class SlaChip {
   const SlaChip(this.text, this.tone, this.bg, this.icon);
 }
 
+/// The webapp's `formatSlaRemaining`: "1d 23h", "4h 12m", "37m".
+String fmtSlaSeconds(double seconds) {
+  final abs = seconds.abs().floor();
+  final d = abs ~/ 86400;
+  final h = (abs % 86400) ~/ 3600;
+  final m = (abs % 3600) ~/ 60;
+  if (d > 0) return '${d}d ${h}h';
+  if (h > 0) return '${h}h ${m}m';
+  return '${m}m';
+}
+
+const _noSlaChip = SlaChip('No SLA', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsRegular.timer);
+const _pausedChip = SlaChip('Paused', AppColors.textLabelAlt, AppColors.bgChipGrey, PhosphorIconsFill.pause);
+
+/// The SLA chip every ticket surface shows — the webapp's `issueSlaChip`, read
+/// from the server's own pause-aware clock (`sla_remaining_seconds`):
+/// no deadline → "No SLA"; on hold → "Paused"; resolved → "Met" / "Breached";
+/// first response still owed → "Respond <left>" (red when late); otherwise the
+/// resolution countdown "<left> left" — amber within 24h, red "Overdue …" once
+/// late. Mock rows (no server facts) keep the prototype's reading.
 SlaChip ticketListSlaChip(Ticket t) {
+  final f = t.facts;
+  if (f == null) return _mockSlaChip(t);
+  if (!f.hasSla) return _noSlaChip;
+  if (f.statusOnHold) return _pausedChip;
+  if (f.statusResolved) {
+    if (f.slaRemainingSeconds == null) return _noSlaChip;
+    return (f.slaBreachedFlag || f.firstResponseBreached)
+        ? const SlaChip('Breached', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warning)
+        : const SlaChip('Met', AppColors.success, AppColors.tintGreen, PhosphorIconsBold.check);
+  }
+  final fr = f.firstResponseRemainingSeconds;
+  if (f.firstResponseDue && !f.firstResponded && fr != null) {
+    if (f.firstResponseBreached || fr < 0) {
+      return SlaChip('Overdue ${fmtSlaSeconds(fr)}', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warning);
+    }
+    return SlaChip('Respond ${fmtSlaSeconds(fr)} left', AppColors.textPrimary, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+  }
+  final left = f.slaRemainingSeconds;
+  if (left == null) return _noSlaChip;
+  if (f.slaHoldStarted) return _pausedChip;
+  if (left < 0) {
+    return SlaChip('Overdue ${fmtSlaSeconds(left)}', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warning);
+  }
+  if (left <= 86400) {
+    return SlaChip('${fmtSlaSeconds(left)} left', AppColors.warningDeep, AppColors.tintAmber, PhosphorIconsRegular.clock);
+  }
+  return SlaChip('${fmtSlaSeconds(left)} left', AppColors.textPrimary, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+}
+
+/// Webapp `priorityColor`: Critical red, High amber, Medium navy, Low grey.
+Color ticketPriorityColor(String priority) => switch (priority) {
+      'Critical' || 'Urgent' => AppColors.error,
+      'High' => AppColors.warningDeep,
+      'Medium' => AppColors.navy,
+      _ => AppColors.textMuted,
+    };
+
+/// An org status colour (`#3B82F6`) as a [Color]; null when unset / malformed.
+Color? ticketStatusColor(String? hex) {
+  final h = (hex ?? '').replaceFirst('#', '');
+  if (h.length != 6) return null;
+  final v = int.tryParse(h, radix: 16);
+  return v == null ? null : Color(0xFF000000 | v);
+}
+
+SlaChip _mockSlaChip(Ticket t) {
   final now = kNowList.millisecondsSinceEpoch;
   if (t.status == 'pending') {
     return const SlaChip('Paused', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsFill.pause);
@@ -192,4 +260,16 @@ String homeOverLabel(Ticket t) {
   final h = ((now - _homeDue(t)) ~/ 3600000);
   final hh = h < 1 ? 1 : h;
   return hh < 24 ? 'Overdue ${hh}h' : 'Overdue ${(hh / 24).round()}d';
+}
+
+/// The webapp's `timeAgo` for a ticket's CREATED column: "Just now", "5m ago",
+/// "3h ago", "2d ago" ("—" when unknown).
+String ticketTimeAgo(String? iso) {
+  final then = DateTime.tryParse(iso ?? '');
+  if (then == null) return '—';
+  final secs = DateTime.now().difference(then).inSeconds;
+  if (secs < 60) return 'Just now';
+  if (secs < 3600) return '${secs ~/ 60}m ago';
+  if (secs < 86400) return '${secs ~/ 3600}h ago';
+  return '${secs ~/ 86400}d ago';
 }

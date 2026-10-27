@@ -53,6 +53,45 @@ class ErrorState extends StatelessWidget {
     );
   }
 
+  /// The webapp's `failureCopy(failure, subject)` — the notice a screen shows
+  /// when [subject] ("your tickets", "this ticket", "the support overview")
+  /// fails to load, worded by what went wrong rather than the raw message.
+  factory ErrorState.forSubject(AppError error, String subject, {VoidCallback? onRetry}) {
+    final (icon, title, body) = switch (error.type) {
+      AppErrorType.forbidden => (
+          PhosphorIconsFill.lock,
+          'You don’t have access to this',
+          'Your account isn’t permitted to view $subject. Ask a workspace admin if you think that’s wrong.',
+        ),
+      AppErrorType.network || AppErrorType.timeout => (
+          PhosphorIconsFill.wifiSlash,
+          'Can’t reach Clozr',
+          'We couldn’t load $subject because the connection dropped. Check your network and try again.',
+        ),
+      AppErrorType.notFound => (
+          PhosphorIconsFill.magnifyingGlass,
+          'Not found',
+          'We couldn’t find $subject. It may have been deleted or moved.',
+        ),
+      AppErrorType.conflict => (
+          PhosphorIconsFill.arrowsClockwise,
+          'Something changed underneath',
+          'We couldn’t apply that to $subject because it no longer matches the server. Refresh and try again.',
+        ),
+      AppErrorType.validation => (
+          PhosphorIconsFill.warning,
+          'We couldn’t read that',
+          'Something about $subject didn’t come back in the expected shape. Try again, and tell an admin if it keeps happening.',
+        ),
+      _ => (
+          PhosphorIconsFill.plugs,
+          'Oops — there seems to be a technical glitch',
+          'We couldn’t load $subject just now. This one’s on our side, not anything you did — try again in a moment.',
+        ),
+    };
+    return ErrorState(body: body, icon: icon, title: title, onRetry: onRetry);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(

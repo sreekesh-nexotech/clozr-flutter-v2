@@ -15,8 +15,8 @@ const _catalog = [
   CatalogOption(id: 's-open', name: 'Open'),
   CatalogOption(id: 's-prog', name: 'In Progress'),
   CatalogOption(id: 's-hold', name: 'On Hold'),
-  CatalogOption(id: 's-res', name: 'Resolved'),
-  CatalogOption(id: 's-closed', name: 'Closed'),
+  CatalogOption(id: 's-res', name: 'Resolved', isClosed: true),
+  CatalogOption(id: 's-closed', name: 'Closed', isClosed: true),
 ];
 
 void main() {
@@ -26,14 +26,19 @@ void main() {
       bool breach = false,
       String search = '',
       String tab = 'all',
+      Set<String>? chips,
       List<CatalogOption> catalog = _catalog,
+      String? savedFilterId,
+      bool forCounts = false,
     }) =>
         ticketFilterParamsFor(
           mine: mine,
           breach: breach,
           search: search,
-          statusTab: tab,
+          statusChips: chips ?? (tab == 'all' ? const <String>{} : {tab}),
           catalog: catalog,
+          savedFilterId: savedFilterId,
+          forCounts: forCounts,
         );
 
     test('nothing selected sends nothing', () {
@@ -63,6 +68,27 @@ void main() {
       // Once the catalog lands the strip is keyed by `issue_status_id`, so the
       // tab is already the value `status__in` wants.
       expect(params(tab: 's-prog')['status__in'], 's-prog');
+    });
+
+    test('status chips are multi-select and OR together', () {
+      final ids = (params(chips: {'s-open', 's-hold'})['status__in'] as String).split(',');
+      expect(ids, containsAll(['s-open', 's-hold']));
+    });
+
+    test('My Tickets with no chip hides every resolved status (list only)', () {
+      final p = params(mine: true);
+      expect(p['assigned_to_me'], 'true');
+      expect((p['status__not'] as String).split(','), containsAll(['s-res', 's-closed']));
+      // A picked chip shows that status even when resolved.
+      expect(params(mine: true, chips: {'s-res'}).containsKey('status__not'), isFalse);
+      // The chip counts are the pre-chip scope (webapp baseFilters).
+      expect(params(mine: true, forCounts: true).containsKey('status__not'), isFalse);
+      expect(params(chips: {'s-open'}, forCounts: true).containsKey('status__in'), isFalse);
+    });
+
+    test('an applied saved view is resolved by the server', () {
+      expect(params(mine: true, search: ' x ', chips: {'s-open'}, savedFilterId: 'v1'),
+          {'saved_filter_id': 'v1', 'search': 'x'});
     });
 
     test('an unloaded catalog omits the status rather than emptying it', () {
@@ -160,21 +186,18 @@ void main() {
       );
     });
 
-    test('name-keyed facets are left to the client matcher', () {
-      // Category / company / product options are display names; the API filters
-      // on uuids, so sending a name would match nothing at all.
-      expect(encode((v) => v['cats'] = ChoiceValue(ids: {'Complaint'})), isEmpty);
-      expect(encode((v) => v['companies'] = ChoiceValue(ids: {'Acme'})), isEmpty);
-      expect(encode((v) => v['products'] = ChoiceValue(ids: {'Router'})), isEmpty);
+    test('category, product, project and customer send their uuids', () {
+      expect(encode((v) => v['cats'] = ChoiceValue(ids: {'t1'})), {'issue_type__in': 't1'});
+      expect(encode((v) => v['products'] = ChoiceValue(ids: {'p1'})), {'product__in': 'p1'});
+      expect(encode((v) => v['projects'] = ChoiceValue(ids: {'j1'})), {'project__in': 'j1'});
+      expect(encode((v) => v['companies'] = ChoiceValue(ids: {'c1', 'c2'}))['customer__in'], 'c1,c2');
     });
 
-    test('an is-not selection is not translated', () {
-      // `__not` params exist, but the client matcher already expresses this and
-      // mixing the two risks a double negative.
-      final p = encode(
-          (v) => v['pri'] = ChoiceValue(ids: {'High'}, isNot: true));
-
-      expect(p, isEmpty);
+    test('an is-not selection uses the __not param the server honours', () {
+      // The webapp sends __not_in, which the backend ignores (DEF-HD-012).
+      expect(encode((v) => v['pri'] = ChoiceValue(ids: {'High'}, isNot: true)), {'priority__not': 'High'});
+      expect(encode((v) => v['statuses'] = ChoiceValue(ids: {'s-open'}, isNot: true)), {'status__not': 's-open'});
+      expect(encode((v) => v['companies'] = ChoiceValue(ids: {'c1'}, isNot: true)), {'customer__not': 'c1'});
     });
   });
 

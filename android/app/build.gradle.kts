@@ -96,6 +96,12 @@ android {
                 )
                 signingConfigs.getByName("debug")
             }
+            // Packs native debug symbols (libflutter.so, plugin .so files)
+            // into the AAB so Play Console can symbolicate native crashes and
+            // ANRs — without it Play warns on every upload.
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
         }
     }
 }

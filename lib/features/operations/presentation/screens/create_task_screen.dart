@@ -16,7 +16,9 @@ import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/ops_task_write_fields.dart';
 import '../../application/providers/ops_tasks_providers.dart';
+import '../../application/providers/project_form_providers.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../../../core/network/network_providers.dart';
 import '../components/ops_form_scaffold.dart';
 import '../components/ops_widgets.dart';
 
@@ -32,12 +34,20 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   final _subject = TextEditingController();
   final _hours = TextEditingController();
   final _desc = TextEditingController();
+  final _progress = TextEditingController(text: '0');
 
   String? _projId;
 
   /// True once the `?project=` query param has been read, so a rebuild does not
   /// re-seed a project the user has since changed.
   bool _seededProject = false;
+
+  /// "Create task from ticket" (webapp `AddProjectTaskModal` with `ticket`):
+  /// the ticket's `issue_id` the new task links to, and its reference for the
+  /// "Linked to ticket TKT-…" line and the toast. Empty for a plain task.
+  String _ticketId = '';
+  String _ticketRef = '';
+  bool get _fromTicket => _ticketId.isNotEmpty;
   /// The picked lane's `task_group_id` — empty string is the "No group" lane,
   /// which the API stores as a null FK.
   String _groupId = '';
@@ -45,8 +55,15 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   bool _saving = false;
   /// The org's own status **name** once the catalog loads (a built-in key
   /// before that, and in mock mode).
-  String _status = 'open';
-  String _pri = 'Medium';
+  ///
+  /// Empty until the user picks one: the webapp's Add task sends no status, so
+  /// the server applies the org's default.
+  String _status = '';
+  /// The user's own priority pick; null = untouched, which shows (and sends)
+  /// the PMO default — or "Default (set by your admin)" when that cannot be
+  /// read, which omits the field (webapp `taskPriorityDefault.ts`).
+  String? _priPick;
+  String _typeId = '';
   DateTime? _start;
   DateTime? _end;
   TimeOfDay? _startTime;
@@ -57,11 +74,21 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     _subject.dispose();
     _hours.dispose();
     _desc.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
-  bool get _valid => _subject.text.trim().isNotEmpty && _projId != null;
+  /// Webapp: Subject is the only required field — no project is a standalone task.
+  bool get _valid => _subject.text.trim().isNotEmpty;
+
+  String get _pri => _priPick ?? ref.read(pmoDefaultTaskPriorityProvider).valueOrNull ?? '';
+
+  /// Progress % — the webapp clamps to 0–100 and rounds.
+  int? get _progressValue {
+    final n = num.tryParse(_progress.text.trim());
+    return n?.round().clamp(0, 100);
+  }
 
   /// The status chips: the org's own statuses once
   /// `/projects/project-task-statuses/` has answered, the built-in vocabulary
@@ -80,9 +107,8 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   /// its first lane would otherwise show every chip unselected.
   String get _statusKey {
     final chips = _statusChips;
-    if (chips.isEmpty) return _status;
     if (chips.any((c) => c.$1 == _status)) return _status;
-    return chips.first.$1;
+    return '';
   }
 
   /// API mode: create remotely, refresh the list, toast + pop as before.
@@ -96,7 +122,7 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     // Without this a second tap during the round trip creates a second task.
     if (_saving) return;
     if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show('Task created');
+      ref.read(toastProvider.notifier).show(_createdToast);
       context.pop();
       return;
     }
@@ -117,7 +143,9 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
               endTime: _endTime,
               expectedHours: _hours.text,
               statuses: ref.read(opsTaskStatusOptionsProvider),
-            ),
+              typeId: _typeId,
+              progress: _progressValue,
+            )..addAll({if (_fromTicket) 'ticket': _ticketId}),
           );
       if (!mounted) return;
       // The whole family: the list renders from `opsTasksScopedProvider` under
@@ -126,16 +154,22 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
       ref.invalidate(opsTasksScopedProvider);
       // …and the unfiltered one too, which the ops dashboard reads.
       ref.invalidate(opsTasksProvider);
-      ref.read(toastProvider.notifier).show('Task created');
-      context.pop();
+      ref.read(toastProvider.notifier).show(_createdToast);
+      context.pop(true);
     } on AppError catch (e) {
       if (!mounted) return;
       // The form still holds everything typed, and a rejected date or subject
       // is meant to be corrected and resubmitted.
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).showError(e.message);
+      ref.read(apiServiceProvider).handled(e);
+      // A refused assignee comes back named by the server (webapp
+      // `assignmentErrorMessage`); shown as it is.
+      ref.read(toastProvider.notifier).showError(e.bareMessage);
     }
   }
+
+  String get _createdToast =>
+      _fromTicket && _ticketRef.isNotEmpty ? 'Task created and linked to $_ticketRef' : 'Task created';
 
   @override
   Widget build(BuildContext context) {
@@ -144,11 +178,22 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     // the user was already looking at.
     if (!_seededProject) {
       _seededProject = true;
-      final preset = GoRouterState.of(context).uri.queryParameters['project'];
+      final q = GoRouterState.of(context).uri.queryParameters;
+      final preset = q['project'];
       if (preset != null && preset.isNotEmpty) _projId = preset;
+      // Raised from a ticket: Subject starts as the ticket's subject.
+      _ticketId = q['ticket'] ?? '';
+      _ticketRef = q['ticketRef'] ?? '';
+      if (_fromTicket) _subject.text = q['subject'] ?? '';
     }
     final projects = ref.watch(allProjectsProvider);
-    final projName = _projId == null ? '' : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? '';
+    final projName = _projId == null
+        ? 'No project (standalone)'
+        : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? '';
+    final types = ref.watch(opsTaskTypeOptionsProvider);
+    final typeName = types.where((t) => t.id == _typeId).map((t) => t.name).firstOrNull ?? '';
+    final pmoPri = ref.watch(pmoDefaultTaskPriorityProvider).valueOrNull;
+    final pri = _priPick ?? pmoPri ?? '';
 
     // The picked project's real lanes. Groups are per project, so this re-asks
     // whenever the project changes. It used to collect group *names* off the
@@ -164,39 +209,60 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     final statusKey = _statusKey;
 
     return OpsFormScaffold(
-      title: 'New Task',
-      ctaLabel: 'Create Task',
+      title: _fromTicket ? 'Create task from ticket' : 'New Task',
+      ctaLabel: _fromTicket ? 'Create task' : 'Create Task',
       // The end-date field already flags "before start", but the CTA stayed
       // live, so the form would post a range the API rejects.
       ctaEnabled: _valid && !_saving && !_endErr,
       onClose: () => context.pop(),
       onSubmit: _submit,
       children: [
+        if (_fromTicket && _ticketRef.isNotEmpty) ...[
+          Row(children: [
+            Icon(PhosphorIconsRegular.link, size: 14.sp, color: AppColors.textMuted),
+            SizedBox(width: 7.w),
+            Text.rich(TextSpan(
+              text: 'Linked to ticket ',
+              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textLabelAlt),
+              children: [
+                TextSpan(
+                    text: _ticketRef,
+                    style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              ],
+            )),
+          ]),
+          SizedBox(height: 14.h),
+        ],
         AppTextField(label: 'Subject', required: true, controller: _subject, hint: 'What needs doing?', onChanged: (_) => setState(() {})),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Project',
-          required: true,
           value: projName,
-          placeholder: 'Select project…',
+          placeholder: 'No project (standalone)',
           caret: PhosphorIconsRegular.magnifyingGlass,
           onTap: () async {
             final v = await showOpsOptionPicker(
               context: context,
               title: 'Select project',
-              options: [for (final p in projects) (value: p.id, label: p.name)],
+              options: [
+                (value: '', label: 'No project (standalone)'),
+                for (final p in projects) (value: p.id, label: p.name),
+              ],
               currentValue: _projId ?? '',
             );
             // Lanes belong to a project, so a previously-picked group is no
             // longer valid once the project changes.
-            if (v != null) setState(() { _projId = v; _groupId = ''; });
+            if (v != null) setState(() { _projId = v.isEmpty ? null : v; _groupId = ''; });
           },
         ),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Task group',
-          value: groupName,
+          // Webapp: a group only belongs to a project.
+          value: _projId == null ? '' : groupName,
+          placeholder: 'Pick a project first',
           onTap: () async {
+            if (_projId == null) return;
             final v = await showOpsOptionPicker(
               context: context,
               title: 'Task group',
@@ -207,6 +273,21 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
               currentValue: _groupId,
             );
             if (v != null) setState(() => _groupId = v);
+          },
+        ),
+        SizedBox(height: 14.h),
+        OpsPickerField(
+          label: 'Type',
+          value: typeName,
+          placeholder: 'Select type',
+          onTap: () async {
+            final v = await showOpsOptionPicker(
+              context: context,
+              title: 'Type',
+              options: [for (final t in types) (value: t.id, label: t.name)],
+              currentValue: _typeId,
+            );
+            if (v != null) setState(() => _typeId = v);
           },
         ),
         SizedBox(height: 14.h),
@@ -221,7 +302,11 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
           runSpacing: 8.h,
           children: [
             for (final (key, label) in statusChips)
-              OpsFormChip(label: label, selected: statusKey == key, onTap: () => setState(() => _status = key)),
+              // Optional: tapping the picked one again goes back to the default.
+              OpsFormChip(
+                  label: label,
+                  selected: statusKey == key,
+                  onTap: () => setState(() => _status = statusKey == key ? '' : key)),
           ],
         ),
         SizedBox(height: 14.h),
@@ -230,8 +315,13 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
         Wrap(
           spacing: 8.w,
           children: [
-            for (final p in const ['High', 'Medium', 'Low'])
-              OpsFormChip(label: p, selected: _pri == p, onTap: () => setState(() => _pri = p)),
+            if (pmoPri == null)
+              OpsFormChip(
+                  label: 'Default (set by your admin)',
+                  selected: pri.isEmpty,
+                  onTap: () => setState(() => _priPick = '')),
+            for (final p in const ['Urgent', 'High', 'Medium', 'Low'])
+              OpsFormChip(label: p, selected: pri == p, onTap: () => setState(() => _priPick = p)),
           ],
         ),
         SizedBox(height: 14.h),
@@ -255,6 +345,8 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
           Text('End must be on or after start.', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
         ],
         SizedBox(height: 14.h),
+        AppTextField(label: 'Progress %', controller: _progress, hint: '0', keyboardType: TextInputType.number),
+        SizedBox(height: 14.h),
         AppTextField(label: 'Expected time (hrs)', controller: _hours, hint: '0', keyboardType: TextInputType.number),
         SizedBox(height: 14.h),
         AppTextField(label: 'Description', controller: _desc, hint: 'Add any detail…', multiline: true),
@@ -264,12 +356,21 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
 
   Widget _label(String t) => Text(t, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
 
+  /// Webapp "Assign to": only users who can read project tasks
+  /// (`/management/assignable-users/?module=project_task`) — anyone else is
+  /// refused by the server. The roster stands in while that loads or fails.
   Widget _assigneeWrap() {
+    final allowed = ref.watch(opsAssignableUsersProvider('project_task')).valueOrNull;
+    // A task raised from a ticket also accepts Helpdesk users (webapp merges
+    // both lists).
+    final fromIssue = _fromTicket ? ref.watch(opsAssignableUsersProvider('issue')).valueOrNull : null;
+    final ids = allowed?.map((u) => u.id).toSet()?..addAll(fromIssue?.map((u) => u.id) ?? const []);
     return Wrap(
       spacing: 8.w,
       runSpacing: 8.h,
       children: [
         for (final r in ref.watch(rosterProvider))
+          if (ids == null || ids.contains(r.id))
           OpsAssigneeChip(
             initials: r.initials,
             name: r.firstName,

@@ -16,19 +16,39 @@ import '../util/ticket_sla.dart';
 /// customer on the left; status + priority pills on the right; an assignee
 /// avatar stack and the SLA pill below a hairline.
 class TicketCard extends ConsumerWidget {
-  const TicketCard({super.key, required this.ticket, required this.onTap});
+  const TicketCard({
+    super.key,
+    required this.ticket,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   final Ticket ticket;
   final VoidCallback onTap;
 
+  /// Row actions (View / Edit) — the webapp's ACTIONS column.
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final meta = StatusMeta$.ticket[ticket.status] ?? StatusMeta$.ticket['new']!;
+    final facts = ticket.facts;
+    // The org's own status, in its own colour (webapp `StatusDotPill`); the
+    // folded built-in pill only for mock rows.
+    final statusLabel = facts != null && ticket.statusName.isNotEmpty ? ticket.statusName : meta.label;
+    final statusColor = ticketStatusColor(facts?.statusColor) ?? meta.color;
+    // The priority as the API stores it — "Critical", never the "Urgent" fold.
+    final priority = ticket.priorityName.isNotEmpty ? ticket.priorityName : ticket.pri;
     final cust = ref.watch(ticketDirectoryProvider).customer(ticket.custId);
+    // Webapp REQUESTER: customer over contact, "—" for either one missing.
+    final customer = facts != null ? (facts.customerName ?? '—') : (cust?.display ?? '—');
+    final contact = facts?.contactName ?? (ticket.contact.isNotEmpty ? ticket.contact : '—');
+    // An uncategorised ticket reads "—" (webapp), not an invented category.
+    final category = facts != null ? (facts.typeName ?? '—') : ticket.cat;
     final ids = ticket.assignees.take(2).toList();
     final more = ticket.assignees.length - ids.length;
 
-    return ClozrCard(
+    final card = ClozrCard(
       radius: 16,
       onTap: onTap,
       child: Column(
@@ -56,15 +76,19 @@ class TicketCard extends ConsumerWidget {
                       ],
                     ),
                     SizedBox(height: 3.h),
-                    Text('${ticket.displayRef} · ${ticket.cat}',
+                    Text('${ticket.displayRef} · $category',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
                     SizedBox(height: 2.h),
-                    Text(cust?.display ?? '—',
+                    Text(customer,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                        style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                    Text(contact,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -72,9 +96,9 @@ class TicketCard extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  StatusPill.meta(meta),
+                  StatusPill(label: statusLabel, color: statusColor),
                   SizedBox(height: 5.h),
-                  StatusPill(label: ticket.pri, color: ticketPriPillColor(ticket.pri)),
+                  StatusPill(label: priority, color: ticketPriorityColor(priority)),
                 ],
               ),
             ],
@@ -88,6 +112,11 @@ class TicketCard extends ConsumerWidget {
             child: Row(
               children: [
                 _avatars(ids, more),
+                if (ticket.createdISO != null) ...[
+                  if (ids.isNotEmpty) SizedBox(width: 8.w),
+                  Text(ticketTimeAgo(ticket.createdISO),
+                      style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                ],
                 const Spacer(),
                 TicketSlaPill(chip: ticketListSlaChip(ticket)),
               ],
@@ -95,6 +124,13 @@ class TicketCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+
+    // Resolved / closed rows are dimmed, as on the webapp list.
+    final body = Opacity(opacity: (facts?.statusResolved ?? false) ? 0.6 : 1, child: card);
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: body,
     );
   }
 

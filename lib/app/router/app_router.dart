@@ -168,6 +168,28 @@ final GoRouter appRouter = GoRouter(
       path: Routes.login,
       builder: (context, state) => const LoginScreen(),
     ),
+    // The webapp's Operations URLs, so a shared link (`clozr://app/operations/
+    // tasks/<id>`, or the same path from a notification) opens the matching
+    // screen — which then applies its own ModuleGuard like the webapp does.
+    GoRoute(path: '/operations/projects', redirect: (_, __) => Routes.opsProjects),
+    GoRoute(
+      path: '/operations/projects/:id',
+      redirect: (_, s) => '${Routes.projectDetail}?id=${s.pathParameters['id']}',
+    ),
+    GoRoute(path: '/operations/tasks', redirect: (_, __) => Routes.opsTasks),
+    GoRoute(
+      path: '/operations/tasks/:id',
+      redirect: (_, s) => '${Routes.opsTaskDetail}?id=${s.pathParameters['id']}',
+    ),
+    // The webapp's Helpdesk URLs, so a shared ticket link
+    // (`clozr://app/helpdesk/tickets/<id>`) opens the ticket on the phone.
+    GoRoute(path: '/helpdesk/tickets', redirect: (_, __) => Routes.tickets),
+    GoRoute(path: '/helpdesk/tickets/new', redirect: (_, __) => Routes.createTicket),
+    GoRoute(
+      path: '/helpdesk/tickets/:id',
+      redirect: (_, s) => '${Routes.ticketDetail}?id=${s.pathParameters['id']}',
+    ),
+    GoRoute(path: '/helpdesk/boards', redirect: (_, __) => Routes.helpBoards),
     ShellRoute(
       navigatorKey: shellNavigatorKey,
       builder: (context, state, child) => ClozrShell(child: child),
@@ -211,23 +233,30 @@ final GoRouter appRouter = GoRouter(
         _r(Routes.billing, const BillingScreen()),
         _r(Routes.reports, const ReportsScreen()),
         // Operations
-        _r(Routes.opsHome, const OpsHomeScreen()),
-        _r(Routes.opsProjects, const ProjectsScreen()),
-        _push(Routes.projectDetail, const ProjectDetailScreen()),
-        _push(Routes.createProject, const CreateProjectScreen()),
-        _push(Routes.editProject, const EditProjectScreen()),
-        _r(Routes.opsTasks, const OpsTasksScreen()),
-        _push(Routes.opsTaskDetail, const OpsTaskDetailScreen()),
-        _push(Routes.opsSubtask, const SubtaskDetailScreen()),
-        _push(Routes.createTask, const CreateTaskScreen()),
-        _push(Routes.editTask, const EditTaskScreen()),
-        // Helpdesk
-        _r(Routes.helpHome, const HelpHomeScreen()),
-        _r(Routes.tickets, const TicketsScreen()),
+        // Each screen sits behind the webapp's ModuleGuard for its own module
+        // (`project` for Projects, `project_task` for Tasks), so a role
+        // without it — or a link opened by such a role — gets the lock panel
+        // and fires no request.
+        _r(Routes.opsHome, const ModuleGuard(module: 'project', anyOf: ['project_task'], child: OpsHomeScreen())),
+        _r(Routes.opsProjects, const ModuleGuard(module: 'project', child: ProjectsScreen())),
+        _push(Routes.projectDetail, const ModuleGuard(module: 'project', child: ProjectDetailScreen())),
+        _push(Routes.createProject, const ModuleGuard(module: 'project', child: CreateProjectScreen())),
+        _push(Routes.editProject, const ModuleGuard(module: 'project', child: EditProjectScreen())),
+        _r(Routes.opsTasks, const ModuleGuard(module: 'project_task', child: OpsTasksScreen())),
+        _push(Routes.opsTaskDetail, const ModuleGuard(module: 'project_task', child: OpsTaskDetailScreen())),
+        _push(Routes.opsSubtask, const ModuleGuard(module: 'project_task', child: SubtaskDetailScreen())),
+        _push(Routes.createTask, const ModuleGuard(module: 'project_task', child: CreateTaskScreen())),
+        _push(Routes.editTask, const ModuleGuard(module: 'project_task', child: EditTaskScreen())),
+        // Helpdesk — the list, boards and forms sit behind the webapp's
+        // ModuleGuard('issue'). The ticket itself does not: a ticket's assignee
+        // may always read it, even without the Helpdesk module (the server
+        // allows it, and the webapp leaves /helpdesk/tickets/:id unguarded).
+        _r(Routes.helpHome, const ModuleGuard(module: 'issue', child: HelpHomeScreen())),
+        _r(Routes.tickets, const ModuleGuard(module: 'issue', child: TicketsScreen())),
         _push(Routes.ticketDetail, const TicketDetailScreen()),
-        _push(Routes.createTicket, const CreateTicketScreen()),
-        _push(Routes.editTicket, const EditTicketScreen()),
-        _r(Routes.helpBoards, const BoardsScreen()),
+        _push(Routes.createTicket, const ModuleGuard(module: 'issue', child: CreateTicketScreen())),
+        _push(Routes.editTicket, const ModuleGuard(module: 'issue', child: EditTicketScreen())),
+        _r(Routes.helpBoards, const ModuleGuard(module: 'issue', child: BoardsScreen())),
         // Training
         _r(Routes.lmsOverview, const LmsOverviewScreen()),
         _r(Routes.lmsCourses, const LmsCoursesScreen()),

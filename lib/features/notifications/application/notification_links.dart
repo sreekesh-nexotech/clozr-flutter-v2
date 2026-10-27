@@ -33,6 +33,13 @@ class NoteByContent extends NotificationLink {
   final String content;
 }
 
+/// A helpdesk ticket, by its reference ("TKT-0006").
+class TicketByReference extends NotificationLink {
+  const TicketByReference(this.reference);
+  final String reference;
+}
+
+final _ticketRef = RegExp(r'\bTKT-\d+\b');
 final _quoteNo = RegExp(r'\bQTN-\d+(?:-R\d+)?\b');
 final _leadQuoted = RegExp(r'\blead\s*"([^"]+)"', caseSensitive: false);
 final _leadAfterColon = RegExp(r'\blead:\s*(.+?)\s*\.?$', caseSensitive: false);
@@ -47,6 +54,11 @@ NotificationLink? notificationLinkFor(String type, String text) {
     final m = _mention.firstMatch(s);
     final body = m?.group(1)?.trim() ?? '';
     return body.isEmpty ? null : NoteByContent(body);
+  }
+  // `IssueSlaBreached` and friends: "SLA breached on TKT-0006: <subject>".
+  if (t.contains('ticket') || t.contains('issue') || t.contains('sla')) {
+    final m = _ticketRef.firstMatch(s);
+    return m == null ? null : TicketByReference(m.group(0)!);
   }
   if (t.startsWith('quot')) {
     final m = _quoteNo.firstMatch(s);

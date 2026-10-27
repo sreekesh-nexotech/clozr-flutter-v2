@@ -63,11 +63,33 @@ class Project extends Equatable {
   /// manager's seed team, and then to the literal "Team Kochi".
   final String team;
 
+  /// `assigned_team` id — kept so an edit re-saves the team even when the
+  /// teams list cannot be read (roles without Teams access).
+  final String teamId;
+
   /// `is_archived` — archived projects are hidden from the list unless
   /// `?include_archived=true`. Drives the menu's Archive/Restore label.
   final bool isArchived;
 
   final String desc;
+
+  /// `can_manage` — the caller may change this project's governed fields
+  /// (status, dates, visibility, people, archive). Null when the row did not
+  /// say, which gates nothing; the server still refuses per request.
+  final bool? canManage;
+
+  /// `quotation` — the linked quote's id (detail rows), empty when none.
+  final String quotationId;
+
+  /// `archived_at` (ISO) — when it was archived; empty when not reported.
+  final String archivedAt;
+
+  /// `task_count` / `done_count` — the Tasks tab's "done/total" (detail rows).
+  final int? taskCount;
+  final int? doneCount;
+
+  /// `expected_start_date` as ISO, for the info rows.
+  final String startISO;
 
   const Project({
     required this.id,
@@ -94,8 +116,15 @@ class Project extends Equatable {
     required this.visibility,
     required this.method,
     this.team = '',
+    this.teamId = '',
     this.isArchived = false,
     required this.desc,
+    this.canManage,
+    this.quotationId = '',
+    this.archivedAt = '',
+    this.taskCount,
+    this.doneCount,
+    this.startISO = '',
   });
 
   /// The prototype's `projInvolved` — manager, assignee or flagged "my task".
@@ -106,6 +135,10 @@ class Project extends Equatable {
 
   Project copyWith({String? status, int? progress}) => Project(
         id: id,
+        code: code,
+        isOverdue: isOverdue,
+        costNum: costNum,
+        isArchived: isArchived,
         name: name,
         type: type,
         company: company,
@@ -126,6 +159,14 @@ class Project extends Equatable {
         visibility: visibility,
         method: method,
         desc: desc,
+        canManage: canManage,
+        quotationId: quotationId,
+        archivedAt: archivedAt,
+        taskCount: taskCount,
+        doneCount: doneCount,
+        startISO: startISO,
+        team: team,
+        teamId: teamId,
       );
 
   @override

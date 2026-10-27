@@ -13,13 +13,14 @@ import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../../crm/application/providers/customers_providers.dart';
 import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../crm/domain/entities/customer.dart';
-import '../../../people/application/providers/people_providers.dart';
-import '../../../people/domain/entities/team.dart';
 import '../../application/project_write_fields.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../application/providers/project_form_providers.dart';
+import '../../../../app/router/routes.dart';
 import '../components/ops_form_scaffold.dart';
 import '../components/ops_widgets.dart';
 
@@ -48,13 +49,52 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
   final Set<String> _assignees = {};
   String _team = '';
   bool _saving = false;
-  String _status = 'planning';
-  String _visibility = 'Organization';
+  /// The org's own status name; empty = the catalog's first (default) status.
+  String _status = '';
+  /// Null until the user picks one: the form then starts on the org's PMO
+  /// default, or "Default (set by your admin)" when that cannot be read.
+  String? _visibility;
   String _method = 'Task Completion';
+  /// The linked quote's id (empty = none) — offered once a customer is picked.
+  String _quote = '';
   bool _advanced = false;
+  String? _nameErr;
+  String? _endErrMsg;
 
-  static const _vis = ['Organization', 'Team', 'Private'];
-  static const _methods = ['Task Completion', 'Manual'];
+  static const _vis = ['Private', 'Team', 'Organization'];
+  static const _visDefault = 'Default (set by your admin)';
+  // Webapp METHOD_OPTIONS — all four, Task Completion the default.
+  static const _methods = ['Task Completion', 'Task Progress', 'Task Weight', 'Manual'];
+
+  /// Wire value → label ("team" → "Team").
+  static String _visLabel(String v) => v.isEmpty ? '' : '${v[0].toUpperCase()}${v.substring(1)}';
+
+  /// What the visibility field shows / sends: the pick, else the PMO default,
+  /// else '' (= omitted, the server applies the default).
+  String get _visibilityValue =>
+      _visibility ?? _visLabel(ref.read(pmoDefaultVisibilityProvider).valueOrNull ?? '');
+
+  /// The status the form sends: the pick, else the first active org status.
+  String get _statusValue {
+    if (_status.isNotEmpty) return _status;
+    final catalog = ref.read(projectStatusOptionsProvider);
+    return catalog.isEmpty ? '' : catalog.first.name;
+  }
+
+  /// Manager / assignee choices: `/management/assignable-users/?module=project`
+  /// (webapp), the roster only while that has not answered.
+  List<({String id, String name, String initials})> _people(List<AppUser> roster) {
+    final assignable = ref.read(projectAssignableUsersProvider).valueOrNull;
+    if (assignable == null) {
+      return [for (final r in roster) (id: r.id, name: r.name, initials: r.initials)];
+    }
+    return [for (final u in assignable) (id: u.id, name: u.name, initials: MockUsers.of(u.id).initials)];
+  }
+
+  String? get _customerId => _customerOptions
+      .where((c) => c.name == _customer && _customer.isNotEmpty)
+      .map((c) => c.id)
+      .firstOrNull;
 
   @override
   void dispose() {
@@ -64,6 +104,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     super.dispose();
   }
 
+  // Equal dates are allowed (webapp: end must not be *before* start).
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
 
   /// The org's customers and teams as catalog options, so the picked label can
@@ -84,14 +125,11 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       [for (final t in ref.read(projectTypeOptionsProvider)) t.name];
 
   List<CatalogOption> get _teamOptions => [
-        for (final t in ref.read(teamsProvider).valueOrNull ?? const <Team>[])
-          CatalogOption(id: t.id, name: t.name),
+        ...?ref.read(projectTeamsProvider).valueOrNull,
       ];
 
   /// The status picker holds a folded key ("planning"); the API wants the org's
   /// own status row, matched by name.
-  String get _statusLabel =>
-      (StatusMeta$.project[_status] ?? StatusMeta$.project['planning']!).label;
 
   /// API mode: create remotely, refresh the list, toast + pop as before.
   /// Mock mode: exactly the previous local toast-and-pop behavior.
@@ -99,6 +137,15 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     // Without this a second tap during the round trip makes a second project —
     // the same duplicate-create already seen on tasks, customers and upsells.
     if (_saving) return;
+    // Webapp validation, shown on the fields: a blank name and an end date
+    // before the start are refused before anything is sent.
+    final nameErr = _name.text.trim().isEmpty ? 'Project name is required' : null;
+    final endErr = _endErr ? 'End date must be after the start date' : null;
+    setState(() {
+      _nameErr = nameErr;
+      _endErrMsg = endErr;
+    });
+    if (nameErr != null || endErr != null) return;
     // A cost the parser cannot read must not be saved as whatever digits were
     // left in it — "20K" used to land as ₹20 with no warning.
     if (!isValidCostAmount(_cost.text)) {
@@ -117,22 +164,25 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       // send four fields, so the manager, customer, type, team, assignees,
       // cost, start date, visibility and progress method were all gathered
       // from the user and dropped on the floor.
-      await ref.read(projectsRepositoryProvider).createProject(
+      final created = await ref.read(projectsRepositoryProvider).createProject(
             projectWriteFields(
               name: _name.text,
               priority: _pri,
               description: _desc.text,
               customerLabel: _customer,
               typeLabel: _type,
-              statusLabel: _statusLabel,
+              statusLabel: _statusValue,
               teamLabel: _team,
               managerId: _manager,
               assigneeIds: _assignees,
               cost: _cost.text,
               start: _start,
               end: _end,
-              visibility: _visibility,
+              // '' = "Default (set by your admin)": omitted, so the server
+              // applies the org's PMO default instead of a hard-coded one.
+              visibility: _visibilityValue,
               progressMethod: _method,
+              quotationId: _quote.isEmpty ? null : _quote,
               customers: _customerOptions,
               types: ref.read(projectTypeOptionsProvider),
               statuses: ref.read(projectStatusOptionsProvider),
@@ -147,14 +197,31 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       // The ops dashboard and the detail screen's fallback read the unfiltered
       // provider, so it has to drop too or they keep serving the stale list.
       ref.invalidate(projectsProvider);
-      ref.read(toastProvider.notifier).show('Project created');
-      context.pop();
+      // Webapp: "Project PRJ-1007 created", then straight to the new project.
+      final label = (created?.code.isNotEmpty ?? false) ? created!.code : _name.text.trim();
+      ref.read(toastProvider.notifier).show('Project $label created');
+      if (created != null && created.id.isNotEmpty) {
+        context.pushReplacement('${Routes.projectDetail}?id=${created.id}');
+      } else {
+        context.pop();
+      }
     } on AppError catch (e) {
       if (!mounted) return;
       // Back to enabled: the form still holds everything the user typed, and a
       // rejected name or date is meant to be fixed and resubmitted.
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).showError(e.message);
+      // Webapp `surfaceError`: a name problem (e.g. a duplicate) on the name
+      // field, a date problem on the end date, anything else as a toast — and
+      // in the server's own words, without the `field:` prefix.
+      final msg = e.bareMessage;
+      ref.read(apiServiceProvider).handled(e);
+      if (RegExp('name', caseSensitive: false).hasMatch(msg)) {
+        setState(() => _nameErr = msg);
+      } else if (RegExp('end date|start date', caseSensitive: false).hasMatch(msg)) {
+        setState(() => _endErrMsg = msg);
+      } else {
+        ref.read(toastProvider.notifier).showError(msg);
+      }
     }
   }
 
@@ -168,8 +235,17 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     ref.watch(projectTypeCatalogProvider);
     ref.watch(projectStatusCatalogProvider);
     ref.watch(customersProvider);
-    ref.watch(teamsProvider);
+    ref.watch(projectTeamsProvider);
+    ref.watch(projectAssignableUsersProvider);
+    ref.watch(pmoDefaultVisibilityProvider);
     final roster = ref.watch(rosterProvider);
+    final people = _people(roster);
+    final statusNames = [for (final st in ref.watch(projectStatusOptionsProvider)) st.name];
+    final pmoDefaultKnown = ref.watch(pmoDefaultVisibilityProvider).valueOrNull != null;
+    final custId = _customerId;
+    final quotes = custId == null
+        ? const <CatalogOption>[]
+        : ref.watch(customerQuotesProvider(custId)).valueOrNull ?? const <CatalogOption>[];
     // The org's real customers, so the picked label resolves to the
     // `customer_id` the API wants. This listed the company names already on
     // loaded projects, so a customer never used on one could not be picked —
@@ -180,6 +256,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     final teams = [for (final t in _teamOptions) t.name];
     final mgrName = _manager == null ? '' : MockUsers.of(_manager!).name;
 
+
     return OpsFormScaffold(
       title: 'New Project',
       ctaLabel: 'Create Project',
@@ -187,11 +264,13 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       // existing disabled styling — no spinner, no layout change.
       // `!_endErr` too: the end-date field already flags "before start", but the
       // CTA stayed live, so the form happily posted a range the API rejects.
-      ctaEnabled: _name.text.trim().isNotEmpty && !_saving && !_endErr,
+      // Enabled like the webapp's button: a blank name or a bad date range is
+      // explained on its field when tapped, instead of a silent grey button.
+      ctaEnabled: !_saving,
       onClose: () => context.pop(),
       onSubmit: _submit,
       children: [
-        AppTextField(label: 'Project name', required: true, controller: _name, hint: 'e.g. Showroom fit-out', onChanged: (_) => setState(() {})),
+        AppTextField(label: 'Project name', required: true, controller: _name, hint: 'e.g. Showroom fit-out', errorText: _nameErr, onChanged: (_) => setState(() => _nameErr = null)),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Customer',
@@ -205,13 +284,38 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
               options: [(value: '', label: 'Internal project'), for (final c in customers) (value: c, label: c)],
               currentValue: _customer,
             );
-            if (v != null) setState(() => _customer = v);
+            // A quote belongs to one customer: changing it clears the link.
+            if (v != null) setState(() { if (v != _customer) _quote = ''; _customer = v; });
           },
         ),
         Padding(
           padding: EdgeInsets.only(top: 5.h),
           child: Text('Leave empty for internal projects.', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
         ),
+        // Linked quote — only once a customer is picked (the server requires
+        // the same customer).
+        if (custId != null) ...[
+          SizedBox(height: 14.h),
+          OpsPickerField(
+            label: 'Linked quote',
+            value: quotes.where((q) => q.id == _quote).map((q) => q.name).firstOrNull ?? '',
+            placeholder: 'No linked quote',
+            onTap: () async {
+              final v = await showOpsOptionPicker(
+                context: context,
+                title: 'Linked quote',
+                options: [(value: '', label: 'No linked quote'), for (final q in quotes) (value: q.id, label: q.name)],
+                currentValue: _quote,
+              );
+              if (v != null) setState(() => _quote = v);
+            },
+          ),
+          Padding(
+            padding: EdgeInsets.only(top: 5.h),
+            child: Text('Optional — the quote this project was won from. Accounting derives project financials from it.',
+                style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          ),
+        ],
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Project type',
@@ -233,12 +337,12 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           children: [
             Expanded(child: _dateField('Expected start', _start, (d) => setState(() => _start = d))),
             SizedBox(width: 9.w),
-            Expanded(child: _dateField('Expected end', _end, (d) => setState(() => _end = d))),
+            Expanded(child: _dateField('Expected end', _end, (d) => setState(() { _end = d; _endErrMsg = null; }))),
           ],
         ),
-        if (_endErr) ...[
+        if (_endErrMsg != null || _endErr) ...[
           SizedBox(height: 8.h),
-          Text('End must be on or after start.', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
+          Text(_endErrMsg ?? 'End date must be after the start date', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
         ],
         SizedBox(height: 14.h),
         OpsPickerField(
@@ -247,7 +351,7 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           placeholder: 'Select manager…',
           caret: PhosphorIconsBold.caretRight,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in roster) (value: r.id, label: r.name)], currentValue: _manager ?? '');
+            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in people) (value: r.id, label: r.name)], currentValue: _manager ?? '');
             if (v != null) setState(() => _manager = v);
           },
         ),
@@ -255,10 +359,10 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
         _label('Assignees'),
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final r in roster)
+          for (final r in people)
             OpsAssigneeChip(
               initials: r.initials,
-              name: r.firstName,
+              name: r.name.split(' ').first,
               color: MockUsers.memberColors[r.id] ?? AppColors.navy,
               selected: _assignees.contains(r.id),
               onTap: () => setState(() => _assignees.contains(r.id) ? _assignees.remove(r.id) : _assignees.add(r.id)),
@@ -295,16 +399,25 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           SizedBox(height: 6.h),
           _label('Status'),
           SizedBox(height: 7.h),
+          // The org's own statuses (`/projects/project-statuses/`), the first
+          // active one preselected — not the built-in vocabulary.
           Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-            for (final e in StatusMeta$.project.entries)
-              OpsFormChip(label: e.value.label, selected: _status == e.key, onTap: () => setState(() => _status = e.key)),
+            if (statusNames.isEmpty)
+              for (final e in StatusMeta$.project.entries)
+                OpsFormChip(label: e.value.label, selected: _statusValue.toLowerCase() == e.value.label.toLowerCase(), onTap: () => setState(() => _status = e.value.label))
+            else
+              for (final n in statusNames)
+                OpsFormChip(label: n, selected: _statusValue == n, onTap: () => setState(() => _status = n)),
           ]),
           SizedBox(height: 14.h),
           OpsPickerField(
             label: 'Visibility',
-            value: _visibility,
+            value: _visibilityValue.isEmpty ? _visDefault : _visibilityValue,
             onTap: () async {
-              final v = await showOpsOptionPicker(context: context, title: 'Visibility', options: [for (final o in _vis) (value: o, label: o)], currentValue: _visibility);
+              final v = await showOpsOptionPicker(context: context, title: 'Visibility', options: [
+                if (!pmoDefaultKnown) (value: '', label: _visDefault),
+                for (final o in _vis) (value: o, label: o),
+              ], currentValue: _visibilityValue);
               if (v != null) setState(() => _visibility = v);
             },
           ),

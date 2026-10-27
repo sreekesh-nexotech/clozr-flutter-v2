@@ -4,7 +4,13 @@ import '../../../../core/filters/filter_models.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../core/network/api_endpoints.dart';
+import '../board_rules.dart';
+import '../../../../core/auth/session_gate.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import '../../../auth/application/providers/module_perm_providers.dart';
 import '../../../crm/application/providers/customers_providers.dart';
+import '../../../crm/application/providers/saved_filters_providers.dart';
 import '../../../crm/domain/entities/customer.dart';
 import '../../../operations/application/providers/projects_providers.dart';
 import '../../../operations/domain/entities/project.dart';
@@ -60,9 +66,12 @@ class TicketListQuery {
 
 /// Tickets for one query — the server does the filtering.
 final ticketsScopedProvider =
-    FutureProvider.family<List<Ticket>, TicketListQuery>(
-  (ref, q) => ref.watch(ticketsRepositoryProvider).getTickets(filters: q.filters),
-);
+    FutureProvider.family<List<Ticket>, TicketListQuery>((ref, q) async {
+  // No list for a role without Helpdesk (an assignee opening their own
+  // ticket): the server refuses it, and that 403 is not the user's doing.
+  if (!ref.watch(helpdeskReadableProvider)) return const [];
+  return ref.watch(ticketsRepositoryProvider).getTickets(filters: q.filters);
+});
 
 /// Drops every fetched ticket list so the next read goes to the server.
 ///
@@ -75,14 +84,31 @@ final ticketsScopedProvider =
 void refreshTickets(WidgetRef ref) => ref.invalidate(ticketsScopedProvider);
 
 /// The org's own issue statuses (`/crm/issue-statuses/`).
-final ticketStatusCatalogProvider = FutureProvider<List<CatalogOption>>(
-  (ref) => ref.watch(ticketsRepositoryProvider).getIssueStatuses(),
-);
+///
+/// Empty — no request — for a role without the Helpdesk module: a ticket's
+/// assignee may still open their ticket (and its audit log, which reads this),
+/// but the catalog answers them 403, and that refusal must not toast.
+final ticketStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  if (!ref.watch(helpdeskReadableProvider)) return const [];
+  return ref.watch(ticketsRepositoryProvider).getIssueStatuses();
+});
 
 /// The org's own issue types (`/crm/issue-types/`) — the Category chips.
-final ticketTypeCatalogProvider = FutureProvider<List<CatalogOption>>(
-  (ref) => ref.watch(ticketsRepositoryProvider).getIssueTypes(),
-);
+final ticketTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  if (!ref.watch(helpdeskReadableProvider)) return const [];
+  return ref.watch(ticketsRepositoryProvider).getIssueTypes();
+});
+
+/// Whether the signed-in role holds the Helpdesk (`issue`) module — the
+/// webapp's `hasModule('issue')`. True while access is unknown (mock mode, a
+/// failed `/auth/me/modules/`), when nothing is gated.
+final helpdeskReadableProvider =
+    Provider<bool>((ref) => ref.watch(modulePermProvider('issue')).read);
+
+/// Whether the role may change tickets (`issue` update) — the webapp's
+/// `can('update')` behind every write control on the ticket.
+final helpdeskEditableProvider =
+    Provider<bool>((ref) => ref.watch(modulePermProvider('issue')).update);
 
 /// Synchronous view of the type catalog; empty means "use the built-in
 /// Complaint / Request / Query vocabulary".
@@ -96,16 +122,47 @@ final ticketStatusOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(ticketStatusCatalogProvider).valueOrNull ?? const [],
 );
 
+/// The list's server params — the webapp's `effectiveFilters` (see
+/// [ticketFilterParamsFor]).
 final ticketFilterParamsProvider = Provider<Map<String, dynamic>>(
   (ref) => ticketFilterParamsFor(
     mine: ref.watch(ticketMineProvider),
     breach: ref.watch(ticketBreachingProvider),
     search: ref.watch(ticketSearchProvider),
-    statusTab: ref.watch(ticketTabProvider),
+    statusChips: ref.watch(ticketStatusChipsProvider),
     catalog: ref.watch(ticketStatusOptionsProvider),
     drawer: ref.watch(ticketFiltersProvider),
+    savedFilterId: ref.watch(ticketSavedFiltersProvider.select((s) => s.activeId)),
   ),
 );
+
+/// The chip counts' params — the webapp's `baseFilters`: everything but the
+/// status chips themselves (and the resolved-work rule that rides on them).
+final ticketCountParamsProvider = Provider<Map<String, dynamic>>(
+  (ref) => ticketFilterParamsFor(
+    mine: ref.watch(ticketMineProvider),
+    breach: ref.watch(ticketBreachingProvider),
+    search: ref.watch(ticketSearchProvider),
+    statusChips: ref.watch(ticketStatusChipsProvider),
+    catalog: ref.watch(ticketStatusOptionsProvider),
+    drawer: ref.watch(ticketFiltersProvider),
+    savedFilterId: ref.watch(ticketSavedFiltersProvider.select((s) => s.activeId)),
+    forCounts: true,
+  ),
+);
+
+/// Saved views for the Tickets list — `/crm/saved-filters/` with module
+/// `issue`, the same views the webapp lists (save, apply, update, delete).
+/// Reloaded per signed-in user; kept in memory only for a role that cannot
+/// read Helpdesk.
+final ticketSavedFiltersProvider =
+    StateNotifierProvider<SavedFiltersController, SavedFiltersState>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return SavedFiltersController(
+    module: 'issue',
+    remote: ref.watch(helpdeskReadableProvider) ? ref.watch(savedFiltersRemoteProvider) : null,
+  );
+});
 
 /// The tickets list itself, with the header's own controls resolved by the
 /// server where the API supports it.
@@ -123,9 +180,11 @@ final ticketsFilteredProvider = FutureProvider<List<Ticket>>(
 /// Empty (mock mode, a failed call) means the strip falls back to counting the
 /// rows it has — which is only right when every page happens to be downloaded.
 final ticketStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+  // Same gate as the list: a role without Helpdesk would only be refused.
+  if (!ref.watch(helpdeskReadableProvider)) return const {};
   final raw = await ref
       .watch(ticketsRepositoryProvider)
-      .getStatusCounts(ref.watch(ticketFilterParamsProvider));
+      .getStatusCounts(ref.watch(ticketCountParamsProvider));
   return foldTicketCounts(raw, ref.watch(ticketStatusOptionsProvider));
 });
 
@@ -172,6 +231,29 @@ final ticketLinkedTasksProvider =
   return ref.watch(ticketsRepositoryProvider).getLinkedTasks(issueId);
 });
 
+/// One parent's direct children (`issues/{id}/children/`) — the Child
+/// tickets tab. Empty on failure, which reads as "No child tickets".
+final ticketChildrenProvider =
+    FutureProvider.autoDispose.family<List<Ticket>, String>((ref, issueId) async {
+  ref.watch(apiWriteTickProvider);
+  try {
+    return await ref.watch(ticketsRepositoryProvider).getChildren(issueId);
+  } on Object {
+    return const [];
+  }
+});
+
+/// "Attach a child ticket" candidates for the typed search: tickets without
+/// a parent (webapp `isChild: false`), first 20.
+final ticketAttachCandidatesProvider =
+    FutureProvider.autoDispose.family<List<Ticket>, String>((ref, search) async {
+  try {
+    return await ref.watch(ticketsRepositoryProvider).searchRootTickets(search);
+  } on Object {
+    return const [];
+  }
+});
+
 /// The Support Overview figures for **my** tickets (`helpdesk.md` §7).
 ///
 /// Scoped by the server with `assigned_to_me=true` rather than by filtering
@@ -195,7 +277,12 @@ final myTicketSummaryProvider = FutureProvider<IssueSummary?>((ref) async {
 /// reads as "fall back to bucketing the loaded list".
 final boardSummaryProvider = FutureProvider<IssueSummary?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
-  return ref.watch(ticketsRepositoryProvider).getSummary(const {});
+  // The Support Overview is the whole page (webapp), so a failure surfaces as
+  // the page's error notice instead of a silent fallback. Quiet: the page
+  // explains the refusal itself.
+  final body = await ref.watch(apiServiceProvider).get(ApiEndpoints.issueSummary,
+      query: const {'due_soon_minutes': boardDueSoonMinutes}, quiet: true);
+  return IssueSummary.fromJson(body) ?? const IssueSummary();
 });
 
 /// Synchronous view of the folded counts; empty means "count locally".
@@ -261,20 +348,40 @@ final ticketDirectoryProvider = Provider<TicketLookups>((ref) {
 
 // ── Tickets list UI state ──
 
+/// Who is signed in — every list-state provider below watches it, so a new
+/// sign-in starts on the webapp's defaults (empty search, no status chip, no
+/// quick chips, no facets) instead of inheriting the previous user's.
+final helpdeskSessionUserProvider = Provider<String>((ref) => ref.watch(
+    sessionControllerProvider.select((s) => s.status == SessionStatus.authenticated ? s.user?.id ?? '' : '')));
+
 /// Applied drawer filters for the Tickets list (the source of the badge count).
 ///
 /// Declared here rather than beside the drawer spec so the query params can
 /// read it without the providers importing the spec back.
-final ticketFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final ticketFiltersProvider = StateProvider<FilterValues>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return FilterValues();
+});
 
-/// Active status tab.
-final ticketTabProvider = StateProvider<String>((ref) => 'all');
+/// The status chips picked — multi-select, OR-ed (webapp `statusIds`). Empty
+/// is the "All" chip. Holds org `issue_status_id`s; another screen may put a
+/// folded built-in key here ("resolved"), which resolves through the catalog.
+final ticketStatusChipsProvider = StateProvider<Set<String>>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return const <String>{};
+});
 
 /// Search query.
-final ticketSearchProvider = StateProvider<String>((ref) => '');
+final ticketSearchProvider = StateProvider<String>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return '';
+});
 
 /// Whether the search field is expanded.
-final ticketSearchOpenProvider = StateProvider<bool>((ref) => false);
+final ticketSearchOpenProvider = StateProvider<bool>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return false;
+});
 
 /// "My Tickets" quick view — assignees include me.
 ///
@@ -285,10 +392,21 @@ final ticketSearchOpenProvider = StateProvider<bool>((ref) => false);
 /// user had just raised disappeared the moment it saved, because a new ticket
 /// is unassigned. Opening on the full list and letting the user narrow is the
 /// safer default: an empty list then means the workspace is empty.
-final ticketMineProvider = StateProvider<bool>((ref) => false);
+///
+/// On by default again, as on the webapp (`preset = 'mine'`): the list opens
+/// on the signed-in user's open work. A user with nothing assigned gets the
+/// "No tickets assigned to you" state, which offers New Ticket and points at
+/// the "All" preset.
+final ticketMineProvider = StateProvider<bool>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return true;
+});
 
 /// "Breaching soon" chip — filter to tickets due within the next hour.
-final ticketBreachingProvider = StateProvider<bool>((ref) => false);
+final ticketBreachingProvider = StateProvider<bool>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return false;
+});
 
 /// The base list before the status tab (respects My Tickets / Breaching soon).
 final ticketBaseProvider = Provider<List<Ticket>>((ref) {
@@ -309,24 +427,26 @@ final ticketBaseProvider = Provider<List<Ticket>>((ref) {
 /// Tickets filtered by the active tab + search query.
 final visibleTicketsProvider = Provider<List<Ticket>>((ref) {
   final base = ref.watch(ticketBaseProvider);
-  final tab = ref.watch(ticketTabProvider);
+  // In API mode the server already applied the chips, the My Tickets scope
+  // (resolved work hidden) and the search — re-filtering here dropped rows
+  // the server matched, e.g. a search for "TKT-0006" (DEF-HD-009).
+  if (ApiConfig.apiEnabled) return base;
+  final chips = ref.watch(ticketStatusChipsProvider);
   final mine = ref.watch(ticketMineProvider);
   final breach = ref.watch(ticketBreachingProvider);
   final q = ref.watch(ticketSearchProvider).trim().toLowerCase();
 
   Iterable<Ticket> out = base;
-  // The tab and the search are server-side in API mode too; only the "All tab
-  // hides closed work" rule below is the app's own.
-  if (tab != 'all' && !ApiConfig.apiEnabled) {
-    out = out.where((t) => t.status == tab);
-  } else if (tab == 'all' && mine && !breach) {
+  if (chips.isNotEmpty) {
+    out = out.where((t) => chips.contains(t.status) || chips.contains(t.statusId));
+  } else if (mine && !breach) {
     out = out.where((t) => t.status != 'resolved' && t.status != 'closed');
   }
   if (q.isNotEmpty) {
     final dir = ref.watch(ticketDirectoryProvider);
     out = out.where((t) {
       final cust = dir.customer(t.custId);
-      return '${t.subject} ${t.id} ${t.cat} ${cust?.display ?? ''}'.toLowerCase().contains(q);
+      return '${t.subject} ${t.displayRef} ${t.cat} ${cust?.display ?? ''}'.toLowerCase().contains(q);
     });
   }
   return out.toList();
@@ -364,4 +484,7 @@ final helpSlaValProvider = StateProvider<bool>((ref) => true);
 // ── Support Overview (boards) state ──
 
 /// Which SLA-watch sections are expanded (Breached open by default).
-final boardExpandedProvider = StateProvider<Map<String, bool>>((ref) => {'breached': true});
+final boardExpandedProvider = StateProvider<Map<String, bool>>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return {'breached': true};
+});

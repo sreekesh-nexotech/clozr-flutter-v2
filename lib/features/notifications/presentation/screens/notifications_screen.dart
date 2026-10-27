@@ -450,6 +450,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     String? route;
     try {
       switch (link) {
+        case TicketByReference(:final reference):
+          // Only a Helpdesk user can search the list; anyone else falls back
+          // to the Tickets entry, which then explains the missing module.
+          final body = await api.get(ApiEndpoints.issues,
+              query: {'reference': reference, 'page_size': 5}, quiet: true);
+          final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
+          for (final r in rows) {
+            if (r is Map && '${r['reference'] ?? ''}'.toUpperCase() == reference.toUpperCase()) {
+              route = '${Routes.ticketDetail}?id=${r['issue_id'] ?? r['id']}';
+              break;
+            }
+          }
         case QuoteByNumber(:final number):
           route = '${Routes.quoteDetail}?id=${Uri.encodeQueryComponent(number)}';
         case LeadByName(:final name):
@@ -472,6 +484,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               'customer' => '${Routes.customerDetail}?id=${src!.$2}',
               'quotation' || 'quote' => '${Routes.quoteDetail}?id=${src!.$2}',
               'task' => '${Routes.taskDetail}?id=${src!.$2}',
+              'issue' => '${Routes.ticketDetail}?id=${src!.$2}',
               _ => null,
             };
             if (route != null) break;

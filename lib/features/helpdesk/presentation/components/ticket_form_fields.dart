@@ -5,7 +5,6 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
-import '../../../../data/api/roster.dart';
 import '../../../crm/application/providers/products_providers.dart';
 import '../../../operations/application/providers/projects_providers.dart';
 
@@ -127,57 +126,6 @@ class TicketChipWrap extends StatelessWidget {
                           color: selected == o
                               ? (dotColor != null ? dotColor!(o) : AppColors.navy)
                               : AppColors.textLabelAlt)),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// A wrapping row of multi-select assignee chips (avatar + first name). Reads
-/// the workspace roster so API mode offers real members, mock mode the reps.
-class TicketAssigneeWrap extends ConsumerWidget {
-  const TicketAssigneeWrap({super.key, required this.selected, required this.onToggle});
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Wrap(
-      spacing: 8.w,
-      runSpacing: 8.h,
-      children: [
-        for (final r in ref.watch(rosterProvider))
-          GestureDetector(
-            onTap: () => onToggle(r.id),
-            child: Container(
-              padding: EdgeInsets.fromLTRB(5.w, 5.h, 12.w, 5.h),
-              decoration: BoxDecoration(
-                color: selected.contains(r.id) ? AppColors.blueSubtle : AppColors.white,
-                borderRadius: BorderRadius.circular(999.r),
-                border: Border.all(
-                  color: selected.contains(r.id) ? const Color(0xFFA6D1FF) : AppColors.borderCardSoft,
-                  width: 1.5,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 24.w,
-                    height: 24.w,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: r.color, shape: BoxShape.circle),
-                    child: Text(r.initials, style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.white)),
-                  ),
-                  SizedBox(width: 7.w),
-                  Text(r.firstName,
-                      style: AppText.custom(
-                          size: 12.5,
-                          weight: FontWeight.w600,
-                          color: selected.contains(r.id) ? AppColors.navy : AppColors.textLabelAlt)),
                 ],
               ),
             ),

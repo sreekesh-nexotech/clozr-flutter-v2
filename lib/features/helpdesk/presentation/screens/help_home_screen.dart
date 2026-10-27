@@ -147,7 +147,8 @@ class HelpHomeScreen extends ConsumerWidget {
     void goTickets({bool breach = false, String tab = 'all'}) {
       ref.read(ticketMineProvider.notifier).state = true;
       ref.read(ticketBreachingProvider.notifier).state = breach;
-      ref.read(ticketTabProvider.notifier).state = tab;
+      ref.read(ticketStatusChipsProvider.notifier).state = tab == 'all' ? const <String>{} : {tab};
+      ref.read(ticketSavedFiltersProvider.notifier).deactivate();
       context.go(Routes.tickets);
     }
 
@@ -461,7 +462,8 @@ class HelpHomeScreen extends ConsumerWidget {
     void goResolved() {
       ref.read(ticketMineProvider.notifier).state = true;
       ref.read(ticketBreachingProvider.notifier).state = false;
-      ref.read(ticketTabProvider.notifier).state = 'resolved';
+      ref.read(ticketStatusChipsProvider.notifier).state = const {'resolved'};
+      ref.read(ticketSavedFiltersProvider.notifier).deactivate();
       context.go(Routes.tickets);
     }
 

@@ -14,6 +14,8 @@ import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
 import '../../../../../data/api/user_directory.dart';
 import '../../../domain/entities/ops_task.dart';
+import '../../../application/project_task_error.dart';
+import '../../../../../core/network/app_error.dart';
 
 /// Remote source for Operations (PMO) tasks: HTTP + JSON→entity mapping only.
 ///
@@ -33,6 +35,20 @@ class OpsTasksRemoteDataSource {
   /// mock seed uses, with an empty name and the grey token.
   static const OpsColorTag neutralTag = OpsColorTag('', AppColors.textMuted);
 
+  /// Runs a project-task request and, when the server answers with its
+  /// generic 403, swaps in the webapp's role guidance for [action]
+  /// (`projectTaskError.ts`) — and withdraws the raw refusal from the shell's
+  /// toast so the user hears the explained version only.
+  Future<T> _guard<T>(ProjectTaskAction action, Future<T> Function() call) async {
+    try {
+      return await call();
+    } on AppError catch (e) {
+      if (!isGenericForbidden(e)) rethrow;
+      _api.handled(e);
+      throw projectTaskError(e, action);
+    }
+  }
+
   /// All PMO tasks visible to the caller — slim rows, up to 3 pages of 100.
   /// The org's project-task statuses (`operations.md` §13.4) — the tab strip and
   /// the drawer's Status facet.
@@ -46,7 +62,7 @@ class OpsTasksRemoteDataSource {
   Future<List<CatalogOption>> fetchOpsTaskStatuses() async {
     try {
       final body = await _api
-          .get(ApiEndpoints.projectTaskStatuses, query: {'page_size': 100});
+          .get(ApiEndpoints.projectTaskStatuses, query: {'page_size': 100}, quiet: true);
       final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
@@ -59,6 +75,9 @@ class OpsTasksRemoteDataSource {
         out.add(CatalogOption(
           id: id,
           name: name,
+          // The org's own pill colour (Settings › PMO), so a task status reads
+          // in the colour the webapp shows it in.
+          color: hexColor('${row['color'] ?? ''}'),
           // Carried through so the subtask tick can resolve its target status
           // without folding the org's own names.
           isClosed: row['is_closed'] == true,
@@ -82,8 +101,10 @@ class OpsTasksRemoteDataSource {
   Future<List<CatalogOption>> fetchTaskGroups(String projectId) async {
     if (projectId.isEmpty) return const [];
     try {
+      // Best-effort side lists: they fall back on their own, so a refusal is
+      // kept off the shell's toast (`quiet`) — the screen explains itself.
       final body = await _api.get(ApiEndpoints.taskGroups,
-          query: {'project': projectId, 'page_size': 100});
+          query: {'project': projectId, 'page_size': 100}, quiet: true);
       final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
@@ -105,8 +126,13 @@ class OpsTasksRemoteDataSource {
   /// Note the name key: this response labels each status `status`, where the
   /// projects aggregate uses `name`.
   ///
-  /// Returns `('all' → total, '<status name>' → count)`. Best-effort: a failure
-  /// yields an empty map, which the caller reads as "count locally".
+  /// Returns `'all'` → total, each status id → count, plus the webapp's two
+  /// extra tabs (`taskStatusTabs.ts`): [overdueTab] → the date-rule `overdue`
+  /// and [otherTab] → `other` (else total − Σ statuses). Best-effort: a
+  /// failure yields an empty map, which the caller reads as "count locally".
+  static const overdueTab = '__overdue__';
+  static const otherTab = '__other__';
+
   Future<Map<String, int>> fetchStatusCounts(Map<String, dynamic> filters) async {
     try {
       final body = await _api.get(ApiEndpoints.projectTaskStatusCounts, query: {
@@ -118,15 +144,21 @@ class OpsTasksRemoteDataSource {
             k == 'status' ||
             k.startsWith('status__') ||
             k.startsWith('status_name')),
-      });
+      }, quiet: true);
       if (body is! Map) return const {};
-      final out = <String, int>{'all': _int(body['total'])};
+      final total = _int(body['total']);
+      final out = <String, int>{'all': total};
+      var inTabs = 0;
       for (final row in (body['statuses'] as List? ?? const [])) {
         if (row is! Map) continue;
-        final name = (row['status'] ?? '').toString();
-        if (name.isEmpty) continue;
-        out[name] = _int(row['count']);
+        final id = (row['project_task_status_id'] ?? '').toString();
+        if (id.isEmpty) continue;
+        out[id] = _int(row['count']);
+        inTabs += _int(row['count']);
       }
+      if (body['overdue'] != null) out[overdueTab] = _int(body['overdue']);
+      final other = body['other'] != null ? _int(body['other']) : total - inTabs;
+      out[otherTab] = other < 0 ? 0 : other;
       return out;
     } on Object {
       return const {};
@@ -135,7 +167,10 @@ class OpsTasksRemoteDataSource {
 
   /// [filters] are `/projects/tasks/` query params from the drawer, the status
   /// tabs and the My-tasks toggle — applied **server-side**.
-  Future<List<OpsTask>> fetchOpsTasks({Map<String, dynamic> filters = const {}}) async {
+  Future<List<OpsTask>> fetchOpsTasks({Map<String, dynamic> filters = const {}}) =>
+      _guard(ProjectTaskAction.view, () => _fetchOpsTasks(filters));
+
+  Future<List<OpsTask>> _fetchOpsTasks(Map<String, dynamic> filters) async {
     final out = <OpsTask>[];
     for (var page = 1; page <= _maxPages; page++) {
       final body = await _api.get(ApiEndpoints.projectTasks, query: {
@@ -160,7 +195,8 @@ class OpsTasksRemoteDataSource {
   /// regardless of what was stored.
   Future<OpsTask?> fetchOpsTask(String id) async {
     if (id.isEmpty) return null;
-    final body = await _api.get(ApiEndpoints.projectTask(id));
+    final body = await _guard(
+        ProjectTaskAction.view, () => _api.get(ApiEndpoints.projectTask(id)));
     return body is Map<String, dynamic> ? mapOpsTask(body) : null;
   }
 
@@ -168,18 +204,21 @@ class OpsTasksRemoteDataSource {
   /// the created task mapped through [mapOpsTask] (null when the response row
   /// is unusable — callers treat that as "refetch the list").
   Future<OpsTask?> createOpsTask(Map<String, dynamic> fields) async {
-    final body = await _api.post(ApiEndpoints.projectTasks, body: _clean(fields));
+    final body = await _guard(ProjectTaskAction.create,
+        () => _api.post(ApiEndpoints.projectTasks, body: _clean(fields)));
     return body is Map<String, dynamic> ? mapOpsTask(body) : null;
   }
 
   /// `PATCH /projects/tasks/{id}/` with the non-empty subset of [fields].
   Future<void> updateOpsTask(String id, Map<String, dynamic> fields) =>
-      _api.patch(ApiEndpoints.projectTask(id), body: _clean(fields));
+      _guard(ProjectTaskAction.update,
+          () => _api.patch(ApiEndpoints.projectTask(id), body: _clean(fields)));
 
   /// `DELETE /projects/tasks/{id}/` → `204`, or `409` when another task depends
   /// on this one. Errors are not swallowed: only the blocker side is protected,
   /// so the refusal is actionable.
-  Future<void> deleteOpsTask(String id) => _api.delete(ApiEndpoints.projectTask(id));
+  Future<void> deleteOpsTask(String id) =>
+      _guard(ProjectTaskAction.delete, () => _api.delete(ApiEndpoints.projectTask(id)));
 
   /// Adds a "waiting on" edge (§3D).
   ///
@@ -187,12 +226,14 @@ class OpsTasksRemoteDataSource {
   /// a cross-project blocker and cycle detection all come back as field-keyed
   /// `400`s, and each one is the only explanation the user would get.
   Future<void> addDependency({required String taskId, required String dependsOn}) =>
-      _api.post(ApiEndpoints.taskDependencies,
-          body: {'task': taskId, 'depends_on': dependsOn});
+      _guard(
+          ProjectTaskAction.update,
+          () => _api.post(ApiEndpoints.taskDependencies,
+              body: {'task': taskId, 'depends_on': dependsOn}));
 
   /// Removes an edge by its own id — not the blocker's task id.
-  Future<void> removeDependency(String edgeId) =>
-      _api.delete(ApiEndpoints.taskDependency(edgeId));
+  Future<void> removeDependency(String edgeId) => _guard(
+      ProjectTaskAction.update, () => _api.delete(ApiEndpoints.taskDependency(edgeId)));
 
   // ── subtasks (§3C) ──
 
@@ -245,11 +286,13 @@ class OpsTasksRemoteDataSource {
     required String subject,
     String projectId = '',
   }) =>
-      _api.post(ApiEndpoints.projectTasks, body: _clean({
-        'parent_task': parentId,
-        'subject': subject,
-        if (projectId.isNotEmpty) 'project': projectId,
-      }));
+      _guard(
+          ProjectTaskAction.create,
+          () => _api.post(ApiEndpoints.projectTasks, body: _clean({
+                'parent_task': parentId,
+                'subject': subject,
+                if (projectId.isNotEmpty) 'project': projectId,
+              })));
 
   // ── activity (§3B) ──
 
@@ -451,12 +494,28 @@ class OpsTasksRemoteDataSource {
       waitingOn: waitingOn, // detail only; see the note above
       notes: const [],
       desc: row['description'] as String? ?? '',
+      // The helpdesk ticket a "Create task from ticket" linked (`Issue.issue_id`).
+      fromTicket: (row['ticket'] as String? ?? '').trim().isEmpty ? null : (row['ticket'] as String).trim(),
       actualStart: actualStartDate == null ? null : absoluteDate(actualStartDate),
       actualEnd: actualEndDate == null ? null : absoluteDate(actualEndDate),
       actualEndFull: actualEndDate == null
           ? null
           : '${absoluteDate(actualEndDate)}, ${_timeOf(actualEndRaw, actualEndDate)}',
       actualEndISO: actualEndRaw.isEmpty ? null : actualEndRaw,
+      canUpdate: row['can_update'] is bool ? row['can_update'] as bool : null,
+      canDelete: row['can_delete'] is bool ? row['can_delete'] as bool : null,
+      priorityRaw: (row['priority'] as String? ?? '').trim(),
+      committedEndISO: (row['committed_end_date'] as String? ?? '').trim(),
+      rescheduleCount: _int(row['reschedule_count']),
+      slipDays: _int(row['slip_days']),
+      pendingDueChange: row['pending_due_date_change'] is Map
+          ? Map<String, dynamic>.from(row['pending_due_date_change'] as Map)
+          : null,
+      canChangeCommitted: row['can_change_committed_date'] is bool
+          ? row['can_change_committed_date'] as bool
+          : null,
+      projectAccessible:
+          row['project_accessible'] is bool ? row['project_accessible'] as bool : null,
     );
   }
 

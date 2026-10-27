@@ -16,10 +16,14 @@ import '../../application/providers/auth_providers.dart';
 /// shows "Loading…"); unknown access (mock mode, a failed fetch) lets the
 /// screen through, and the server still refuses per request.
 class ModuleGuard extends ConsumerWidget {
-  const ModuleGuard({super.key, required this.module, required this.child});
+  const ModuleGuard({super.key, required this.module, required this.child, this.anyOf = const []});
 
   final String module;
   final Widget child;
+
+  /// Extra module keys that also open the screen — a section landing page
+  /// (Operations home) serves a role holding either of its modules.
+  final List<String> anyOf;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,7 +32,7 @@ class ModuleGuard extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
     final access = async.valueOrNull;
-    if (access == null || access.can(module)) return child;
+    if (access == null || access.can(module) || anyOf.any(access.can)) return child;
     return ColoredBox(
       color: AppColors.bgScreen,
       child: SafeArea(

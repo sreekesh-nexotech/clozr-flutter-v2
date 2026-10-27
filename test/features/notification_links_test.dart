@@ -34,4 +34,10 @@ void main() {
     expect(noteMatchesMention('<p>@Neeraja Pradeep  please check</p>', '@Neeraja Pradeep please check'), isTrue);
     expect(noteMatchesMention('another note', '@Neeraja Pradeep please check'), isFalse);
   });
+
+  test('a ticket event names the ticket by its reference', () {
+    final t = notificationLinkFor('IssueSlaBreached', 'SLA breached on TKT-0006: UAT HD Elsa 1h');
+    expect(t, isA<TicketByReference>().having((x) => x.reference, 'reference', 'TKT-0006'));
+    expect(notificationLinkFor('IssueAssigned', 'A ticket was assigned to you'), isNull);
+  });
 }

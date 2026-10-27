@@ -54,6 +54,9 @@ class Ticket extends Equatable {
   final String? projName;
   final String? taskId;
   final String created;
+
+  /// When the ticket was raised, as the API sent it — the list's "5m ago".
+  final String? createdISO;
   final String? responded;
   final String? resolved;
   final String? respByISO;
@@ -103,6 +106,11 @@ class Ticket extends Equatable {
   /// Null until then, and never editable from the app.
   final String? billedDocumentLineId;
 
+  /// What the API itself says about the row — the org status' colour and
+  /// flags, the pause-aware SLA clock, the raw category. Null for mock rows,
+  /// which fall back to the folded fields above.
+  final TicketServerFacts? facts;
+
   const Ticket({
     required this.id,
     this.reference = '',
@@ -133,10 +141,12 @@ class Ticket extends Equatable {
     required this.desc,
     this.resolvedISO,
     this.respondedISO,
+    this.createdISO,
     this.billable = false,
     this.billableAmount,
     this.billableProductId,
     this.billedDocumentLineId,
+    this.facts,
   });
 
   /// Whether accounting has posted the charge for this ticket.
@@ -152,7 +162,10 @@ class Ticket extends Equatable {
   }
 
   bool get isMine => assignees.contains('me');
-  bool get isLocked => status == 'closed';
+  /// Webapp `isIssueLocked`: a ticket in a resolved status (Resolved, Closed,
+  /// Duplicate…) is read-only until it is reopened. The org's own
+  /// `is_resolved` flag decides; mock rows fall back to the built-in key.
+  bool get isLocked => facts != null ? facts!.statusResolved : status == 'closed';
   bool get isPaused => status == 'pending';
 
   /// A shallow copy used by the detail screen's local status/assignee edits so
@@ -187,6 +200,7 @@ class Ticket extends Equatable {
         desc: desc,
         resolvedISO: resolvedISO,
         respondedISO: respondedISO,
+        createdISO: createdISO,
         // This method enumerates every field by hand, so anything added above
         // and forgotten here silently resets to its default on a status or
         // assignee change.
@@ -194,10 +208,136 @@ class Ticket extends Equatable {
         billableAmount: billableAmount,
         billableProductId: billableProductId,
         billedDocumentLineId: billedDocumentLineId,
+        facts: facts,
       );
 
   @override
   List<Object?> get props => [id, status, assignees];
+}
+
+/// The server's own facts about a ticket row (`/crm/issues/`), kept verbatim
+/// so the list renders exactly what the webapp derives from the same fields.
+class TicketServerFacts {
+  const TicketServerFacts({
+    this.statusColor,
+    this.statusResolved = false,
+    this.statusOnHold = false,
+    this.typeName,
+    this.customerName,
+    this.contactName,
+    this.contactId,
+    this.reportedFor = 'client',
+    this.assignedToId,
+    this.assignedToName,
+    this.hasSla = false,
+    this.slaRemainingSeconds,
+    this.slaHoldStarted = false,
+    this.slaBreachedFlag = false,
+    this.firstResponseDue = false,
+    this.firstResponded = false,
+    this.firstResponseRemainingSeconds,
+    this.firstResponseBreached = false,
+    this.channelCode,
+    this.slaValue,
+    this.slaUnit = '',
+    this.parentIssueId,
+    this.parentReference = '',
+    this.parentSubject = '',
+    this.childCount = 0,
+    this.isChild = false,
+    this.attachments = const [],
+    this.replies = const [],
+    this.customFields = const {},
+  });
+
+  /// The org status' own colour (`#3B82F6`), null when unset.
+  final String? statusColor;
+  final bool statusResolved;
+  final bool statusOnHold;
+
+  /// `type_name` — null for an uncategorised ticket (the webapp's "—").
+  final String? typeName;
+  final String? customerName;
+  final String? contactName;
+
+  /// The ticket form's own write values, read back for Edit Ticket: the
+  /// picked contact (`contact` uuid), `reported_for` (`client` | `self`) and
+  /// the single `assigned_to` user.
+  final String? contactId;
+  final String reportedFor;
+  final String? assignedToId;
+  final String? assignedToName;
+
+  /// A deadline or a clock exists (webapp `hasSla`).
+  final bool hasSla;
+
+  /// Signed, pause-aware seconds to the resolution deadline (negative = late).
+  final double? slaRemainingSeconds;
+  final bool slaHoldStarted;
+  final bool slaBreachedFlag;
+  final bool firstResponseDue;
+  final bool firstResponded;
+  final double? firstResponseRemainingSeconds;
+  final bool firstResponseBreached;
+
+  /// The raw `channel` key (`email` / `whatsapp` / `phone` / `api`), null when
+  /// unset — what decides whether a customer reply can be sent.
+  final String? channelCode;
+
+  /// The customer SLA snapshotted onto the ticket (`sla_value` / `sla_unit`);
+  /// null value = the ticket has no SLA ("No SLA").
+  final num? slaValue;
+  final String slaUnit;
+
+  /// Ticket hierarchy (two levels): the parent's uuid, reference and subject
+  /// on a child; the number of direct children on a root.
+  final String? parentIssueId;
+  final String parentReference;
+  final String parentSubject;
+  final int childCount;
+  final bool isChild;
+
+  /// Files on the ticket (`attachments[]`, inline on the detail read).
+  final List<TicketAttachment> attachments;
+
+  /// The customer-facing replies sent through the channel — `notes[]` whose
+  /// `kind` is not `internal` (internal notes live in the shared notes panel).
+  final List<TicketReply> replies;
+
+  /// Extra data a webhook-intake key stashed on the ticket (`custom_fields`).
+  final Map<String, String> customFields;
+}
+
+/// One file on a ticket. [url] is the signed `file_url` (bare `file` 403s).
+class TicketAttachment {
+  const TicketAttachment({
+    required this.id,
+    required this.name,
+    required this.url,
+    this.uploadedAt,
+    this.uploadedBy = '',
+    this.uploadedById,
+  });
+
+  final String id;
+  final String name;
+  final String url;
+  final DateTime? uploadedAt;
+  final String uploadedBy;
+
+  /// The uploader's `user_id` — all the detail read carries; the screen
+  /// resolves the name from it.
+  final String? uploadedById;
+}
+
+/// One reply sent to the customer from the ticket.
+class TicketReply {
+  const TicketReply({required this.id, required this.body, this.author = '', this.at});
+
+  final String id;
+  final String body;
+  final String author;
+  final DateTime? at;
 }
 
 /// A linked customer reference (company + contact name). The prototype resolves

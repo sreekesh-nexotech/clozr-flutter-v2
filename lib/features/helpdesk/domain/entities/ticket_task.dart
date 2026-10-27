@@ -12,6 +12,8 @@ class TicketTask {
     this.priority = '',
     this.projectId,
     this.assigneeName = '',
+    this.projectName = '',
+    this.isOverdue = false,
   });
 
   final String id;
@@ -22,6 +24,12 @@ class TicketTask {
   final String priority;
   final String? projectId;
   final String assigneeName;
+
+  /// The task's project name; empty for a standalone task ("No project").
+  final String projectName;
+
+  /// Past its end date and still open — the row's red "Overdue".
+  final bool isOverdue;
 
   /// What the card prints. A task always has a subject (the API requires it),
   /// but a truncated payload should still show something addressable.

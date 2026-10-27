@@ -29,7 +29,9 @@ class ToastOverlay extends ConsumerWidget {
     // action having gone through.
     final (icon, tint) = toast.isError
         ? (PhosphorIconsFill.warningCircle, AppColors.warning)
-        : (PhosphorIconsFill.checkCircle, AppColors.toastCheck);
+        : toast.isInfo
+            ? (PhosphorIconsFill.info, AppColors.blueBright)
+            : (PhosphorIconsFill.checkCircle, AppColors.toastCheck);
 
     // Sit above the keyboard whenever it is up.
     //

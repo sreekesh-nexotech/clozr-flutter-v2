@@ -100,4 +100,34 @@ class TicketsApiRepository implements TicketsRepository {
     await AppCache.remove(_box, _listKey);
     return task;
   }
+
+  @override
+  Future<List<Ticket>> getChildren(String issueId) => _remote.fetchChildren(issueId);
+
+  @override
+  Future<List<Ticket>> searchRootTickets(String search) => _remote.searchRootTickets(search);
+
+  @override
+  Future<void> setParent(String issueId, String? parentId) async {
+    await _remote.setParent(issueId, parentId);
+    // Both parents' `child_count` on the list rows change with this write.
+    await AppCache.remove(_box, _listKey);
+  }
+
+  @override
+  Future<void> logFirstResponse(String issueId) async {
+    await _remote.logFirstResponse(issueId);
+    await AppCache.remove(_box, _listKey);
+  }
+
+  @override
+  Future<void> sendReply(String issueId, String body) async {
+    await _remote.sendReply(issueId, body);
+    // A reply stamps the first response, which the list's SLA chip reads.
+    await AppCache.remove(_box, _listKey);
+  }
+
+  @override
+  Future<void> uploadAttachment(String issueId, {required String path, required String name}) =>
+      _remote.uploadAttachment(issueId, path: path, name: name);
 }

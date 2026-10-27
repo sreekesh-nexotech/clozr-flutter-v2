@@ -319,6 +319,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   Future<void> _noteActions(NoteEntry n) async {
     final mine = widget.currentUserId != null && n.authorId == widget.currentUserId;
     if (!mine || widget.readOnly && widget.onEditNote == null) return;
+    // Drop the composer's focus first, or the keyboard comes back when the
+    // sheet / dialog closes and covers the result toast.
+    FocusManager.instance.primaryFocus?.unfocus();
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(

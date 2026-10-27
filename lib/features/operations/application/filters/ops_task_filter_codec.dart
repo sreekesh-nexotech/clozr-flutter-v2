@@ -20,13 +20,9 @@ class OpsTaskFilterCodec {
 
   /// Drawer fields with no documented param — matched locally, never encoded.
   ///
-  /// * `groups` — `task_group=<uuid>` exists but takes a single id, not a set,
-  ///   and the drawer's options are group **names** off the loaded rows.
   /// * `depts` — departments are derived from the roster, not a task field.
-  /// * `due` — `is_overdue` / `due_within_days` exist but do not map onto the
-  ///   drawer's control without changing what it means.
   /// * `hours` — no estimate/effort param is documented.
-  static const localOnlyFields = {'groups', 'depts', 'due', 'hours'};
+  static const localOnlyFields = {'depts', 'hours'};
 
   Map<String, dynamic> encode(FilterValues v) {
     final out = <String, dynamic>{};
@@ -49,8 +45,39 @@ class OpsTaskFilterCodec {
       out['is_milestone'] = 'true';
     }
 
+    // "Overdue" is the server's date rule (`is_overdue=true`, the webapp's
+    // Overdue tab): past the end date and still open. Matched on the phone it
+    // also caught finished tasks whose date had passed.
+    final due = v.date('due');
+    if (isOverdueChip(due)) {
+      out['is_overdue'] = 'true';
+    } else if (due != null && due.isActive) {
+      // Any other range is the expected-end window, both ends inclusive.
+      final (from, to) = due.chip != null ? FilterMatch.chipRange(due.chip!) : (due.from, due.to);
+      if (from != null) out['end_date_after'] = _day(from);
+      if (to != null) out['end_date_before'] = _day(to);
+    }
+
+    // Task group: the lanes are keyed by `task_group_id`.
+    final groups = v.choice('groups');
+    if (groups != null && groups.ids.isNotEmpty) {
+      out['task_group__in'] = groups.ids.join(',');
+    }
+
+    // Webapp "Include archived" (archived tasks and tasks of archived projects).
+    if (v.choice('archived')?.ids.contains('archived') ?? false) {
+      out['include_archived'] = 'true';
+    }
+
     return out;
   }
+
+  static String _day(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// The due-date facet set to exactly the "Overdue" quick chip.
+  static bool isOverdueChip(DateValue? d) =>
+      d != null && d.chip == 'overdue' && d.from == null && d.to == null;
 
   // ── decode: filter_definition → FilterValues ──
 
@@ -76,6 +103,18 @@ class OpsTaskFilterCodec {
     // no documented param, so "Exclude milestones" cannot come back.
     if ('${def['is_milestone'] ?? ''}'.toLowerCase() == 'true') {
       _setRadio(v, spec, 'milestone', 'yes');
+    }
+    if ('${def['is_overdue'] ?? ''}'.toLowerCase() == 'true') {
+      v['due'] = const DateValue(chip: 'overdue');
+    } else if (def['end_date_after'] != null || def['end_date_before'] != null) {
+      v['due'] = DateValue(
+        from: DateTime.tryParse('${def['end_date_after'] ?? ''}'),
+        to: DateTime.tryParse('${def['end_date_before'] ?? ''}'),
+      );
+    }
+    _decodeChoice(def, v, 'groups', 'task_group', (id) => id);
+    if ('${def['include_archived'] ?? ''}'.toLowerCase() == 'true') {
+      v['archived'] = ChoiceValue(ids: {'archived'});
     }
 
     return v;

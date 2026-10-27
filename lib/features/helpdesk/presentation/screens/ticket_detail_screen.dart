@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -6,40 +7,51 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/utils/inr_format.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/models/note.dart';
 import '../../../../core/network/app_error.dart';
-import '../../../../core/widgets/action_menu.dart';
+import '../../../../core/utils/attachment_link.dart';
+import '../../../../core/utils/inr_format.dart';
 import '../../../../core/utils/money_format.dart';
-import '../../../accounting/application/providers/accounting_invalidation.dart';
-import '../../../accounting/application/providers/accounting_providers.dart';
-import '../../../accounting/presentation/sheets/acc_sheet_scaffold.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../../data/mock/mock_users.dart';
+import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
-import '../../../../core/widgets/app_text_field.dart';
-import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../../../core/utils/relative_time.dart';
+import '../../../accounting/application/providers/accounting_invalidation.dart';
+import '../../../accounting/application/providers/accounting_providers.dart';
+import '../../../accounting/presentation/sheets/acc_sheet_scaffold.dart';
+import '../../../auth/application/providers/module_perm_providers.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
+import '../../../crm/application/providers/crm_notes_providers.dart';
 import '../../../crm/domain/entities/audit_entry.dart';
-import '../../../../data/api/status_keys.dart';
-import '../../../../data/mock/mock_users.dart';
-import '../../../../data/mock/status_meta.dart';
+import '../../../crm/presentation/components/sla_clocks_section.dart';
 import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/providers/ticket_notes_providers.dart';
+import '../../application/providers/ticket_form_providers.dart';
 import '../../application/providers/tickets_providers.dart';
+import '../../application/ticket_detail_rules.dart';
 import '../../domain/entities/ticket.dart';
 import '../../domain/entities/ticket_task.dart';
+import '../util/ticket_errors.dart';
 import '../util/ticket_sla.dart';
 
-/// Ticket detail — summary + status/assignee, SLA banner (paused when Pending),
-/// details, linked tasks, an Internal-note / Reply composer and the audit log.
+/// Ticket detail — the webapp's `TicketDetailScreen`, top to bottom: header
+/// (reference, subject, "<Category> · <Customer>", "via <channel> · <ago>",
+/// Priority and the Status picker), the Related strip with Edit, the
+/// child-of banner, the resolved lock banner, the SLA clocks, Ticket
+/// information (inline Category / Customer, SLA rows, Assignee), Additional
+/// info, the Description / Child tickets / Linked tasks / Files tabs, the
+/// shared notes panel, Customer reply and the Audit log.
 class TicketDetailScreen extends ConsumerStatefulWidget {
   const TicketDetailScreen({super.key});
 
@@ -47,34 +59,81 @@ class TicketDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<TicketDetailScreen> createState() => _TicketDetailScreenState();
 }
 
+enum _Tab { desc, children, tasks, files }
+
 class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
-  String? _status; // local status override
-  List<String>? _assignees; // local assignee override
+  _Tab _tab = _Tab.desc;
+
+  /// A ticket write is in flight — the header / info controls wait for it
+  /// (webapp `updateIssue.isPending`).
+  bool _saving = false;
+  bool _uploading = false;
+  bool _logging = false;
+  bool _sending = false;
+  bool _billing = false;
+  final _reply = TextEditingController();
+
+  /// The ticket this state last showed. A link to another ticket can reuse
+  /// this screen, and the reply draft and open tab belong to the old one.
+  String? _shownId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Notes load fresh on open — the shared thread provider outlives a
+    // sign-out. After the first frame: a provider cannot change mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.invalidate(crmNotesProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _reply.dispose();
+    super.dispose();
+  }
+
+  bool get _canUpdate => ref.read(helpdeskEditableProvider);
 
   @override
   Widget build(BuildContext context) {
     final uri = GoRouterState.of(context).uri;
     final id = uri.queryParameters['id'] ?? '';
     final fromBoard = uri.queryParameters['from'] == 'board';
-    final ticketsAsync = ref.watch(ticketsProvider);
-    // The ticket's own row wins over the list's copy: it is one call, so an edit
-    // shows here as soon as the write returns instead of after the whole list
-    // has been walked again. Null in mock mode and on failure — then the list
-    // row stands, exactly as before.
-    final base =
-        ref.watch(ticketDetailProvider(id)).valueOrNull ?? ref.watch(ticketByIdProvider(id));
-    final headerTicket = base?.copyWith(status: _status, assignees: _assignees);
+    if (_shownId != id) {
+      if (_shownId != null) {
+        _reply.clear();
+        _tab = _Tab.desc;
+      }
+      _shownId = id;
+    }
+    // The ticket's own read wins over the list's copy; a failed read is shown
+    // as such (webapp: the error notice for "this ticket"), never the cached
+    // record as if it were still current.
+    final detailAsync = ref.watch(ticketDetailProvider(id));
+    final base = detailAsync.valueOrNull ?? ref.watch(ticketByIdProvider(id));
+    final AsyncValue<Object?> pageAsync = !ApiConfig.apiEnabled
+        ? ref.watch(ticketsProvider)
+        : (detailAsync.hasError || base == null ? detailAsync : AsyncData<Object?>(base));
+    ref.watch(helpdeskEditableProvider);
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          _header(subject: headerTicket?.subject ?? '', fromBoard: fromBoard, ticket: headerTicket),
+          _topBar(subject: base?.subject ?? '', fromBoard: fromBoard, ticket: base),
           Expanded(
-            child: AsyncStateView<List<Ticket>>(
-              value: ticketsAsync,
-              onRetry: () => refreshTickets(ref),
+            child: AsyncStateView<Object?>(
+              value: pageAsync,
+              onRetry: () => _refresh(id),
               onRefresh: () => _refresh(id),
+              error: (e, retry) => AppRefresh(
+                onRefresh: () => _refresh(id),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [ErrorState.forSubject(e, 'this ticket', onRetry: retry)],
+                ),
+              ),
               loading: () => const DetailSkeleton(),
               data: (_) {
                 if (base == null) {
@@ -84,20 +143,27 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                     body: 'This ticket may have been removed, or you may not have access to it.',
                   );
                 }
-                final t = base.copyWith(status: _status, assignees: _assignees);
-                final meta = StatusMeta$.ticket[t.status] ?? StatusMeta$.ticket['new']!;
+                final t = base;
+                final locked = t.isLocked;
+                final gap = SizedBox(height: 14.h);
                 return ListView(
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
-                    _summaryCard(t, meta),
-                    _slaBanner(t),
-                    if (t.isLocked) _lockCard(),
-                    SizedBox(height: 14.h),
-                    _detailsCard(t),
-                    SizedBox(height: 14.h),
-                    _linkedTasksCard(t),
-                    _notesCard(t),
-                    SizedBox(height: 14.h),
+                    _headerCard(t),
+                    if (_relatedTiles(t).isNotEmpty || !locked) ...[gap, _relatedCard(t, locked)],
+                    if (t.facts?.isChild ?? false) ...[gap, _parentBanner(t, locked)],
+                    if (locked) ...[gap, _lockBanner()],
+                    gap,
+                    LeadSlaClocks(leadId: t.id, module: 'helpdesk'),
+                    _infoCard(t, locked),
+                    if (t.facts?.customFields.isNotEmpty ?? false) ...[gap, _additionalInfoCard(t)],
+                    gap,
+                    _tabsCard(t, locked),
+                    gap,
+                    _notes(t, locked),
+                    gap,
+                    _replyCard(t, locked),
+                    gap,
                     _auditCard(t),
                   ],
                 );
@@ -109,8 +175,25 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  // ── Header ──
-  Widget _header({required String subject, required bool fromBoard, required Ticket? ticket}) {
+  /// Pull-to-refresh: the ticket and every panel that fetches on its own.
+  Future<void> _refresh(String id) async {
+    refreshTickets(ref);
+    ref.invalidate(ticketDetailProvider(id));
+    ref.invalidate(ticketActivityProvider(id));
+    ref.invalidate(ticketLinkedTasksProvider(id));
+    ref.invalidate(ticketChildrenProvider(id));
+    ref.invalidate(leadSlaClocksProvider(('helpdesk', id)));
+    ref.invalidate(crmNotesProvider(_notesSeed(id)));
+    await settle([
+      ref.read(ticketDetailProvider(id).future),
+      ref.read(ticketActivityProvider(id).future),
+      ref.read(ticketLinkedTasksProvider(id).future),
+      ref.read(ticketChildrenProvider(id).future),
+    ]);
+  }
+
+  // ── Top bar ──
+  Widget _topBar({required String subject, required bool fromBoard, required Ticket? ticket}) {
     return Container(
       color: AppColors.white,
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
@@ -160,8 +243,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  // ── Summary ──
-  Widget _summaryCard(Ticket t, StatusMeta meta) {
+  // ── Header ──
+  Widget _headerCard(Ticket t) {
+    final channel = t.facts?.channelCode;
+    final statusColor = _statusColor(t);
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -170,470 +255,219 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Container(
+                width: 46.w,
+                height: 46.w,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(color: AppColors.tintNavy, shape: BoxShape.circle),
+                child: Icon(PhosphorIconsRegular.lifebuoy, size: 22.sp, color: AppColors.navy),
+              ),
+              SizedBox(width: 12.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(t.reference.isNotEmpty ? t.reference : '—',
+                        style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+                    SizedBox(height: 2.h),
                     Text(t.subject,
-                        style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3, height: 1.3)),
+                        style: AppText.custom(
+                            size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3, height: 1.3)),
                     SizedBox(height: 5.h),
-                    Row(
-                      children: [
-                        // The org's ticket number ("TKT-0025"), not the
-                        // `issue_id` uuid the row is keyed by.
-                        Text(t.displayRef,
-                            style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
-                        if (t.status == 'resolved') ...[
-                          SizedBox(width: 8.w),
-                          Flexible(
-                            child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                              decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(7.r)),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(PhosphorIconsRegular.hourglassMedium, size: 11.sp, color: AppColors.pending),
-                                  SizedBox(width: 4.w),
-                                  Flexible(
-                                    child: Text('Auto-closes after confirmation period',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.pending)),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                    Text(ticketHeaderSubline(t),
+                        style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textLabelAlt)),
+                    SizedBox(height: 4.h),
+                    Row(children: [
+                      Icon(_channelIcon(channel), size: 13.sp, color: AppColors.textMuted),
+                      SizedBox(width: 6.w),
+                      Flexible(
+                        child: Text(ticketViaLine(t),
+                            style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
+                      ),
+                    ]),
                   ],
                 ),
-              ),
-              SizedBox(width: 10.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  GestureDetector(
-                    onTap: () => _openStatusSheet(t),
-                    child: StatusPill.meta(meta),
-                  ),
-                  SizedBox(height: 5.h),
-                  StatusPill(label: t.pri, color: ticketPriPillColor(t.pri)),
-                ],
               ),
             ],
           ),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => t.isLocked ? ref.read(toastProvider.notifier).show('This ticket is closed — reopen to edit') : _openAssigneeSheet(t),
-            child: Row(
-              children: [
-                _avatarStack(t.assignees, 28),
-                SizedBox(width: 10.w),
-                Expanded(
-                  child: Text('Assignees',
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                ),
-                if (!t.isLocked)
-                  Row(
-                    children: [
-                      Icon(PhosphorIconsRegular.pencilSimple, size: 13.sp, color: AppColors.blueBright),
-                      SizedBox(width: 4.w),
-                      Text('Edit', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.blueBright)),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Overlapping assignee avatars.
-  ///
-  /// Laid out with a [Stack] rather than a negative margin: `Container`
-  /// asserts on one (`margin.isNonNegative`), so the old version threw the
-  /// moment a ticket had a **second** assignee — the first sat at margin 0 and
-  /// never tripped it, which is why it only showed up on reassignment.
-  /// Pull-to-refresh: the ticket itself and the two panels that fetch on their
-  /// own — the audit trail and the notes thread.
-  Future<void> _refresh(String id) async {
-    refreshTickets(ref);
-    ref.invalidate(ticketDetailProvider(id));
-    ref.invalidate(ticketActivityProvider(id));
-    ref.invalidate(ticketLinkedTasksProvider(id));
-    await settle([
-      ref.read(ticketsProvider.future),
-      ref.read(ticketDetailProvider(id).future),
-      ref.read(ticketActivityProvider(id).future),
-      ref.read(ticketLinkedTasksProvider(id).future),
-      // The notes thread is a StateNotifier, not a provider that invalidation
-      // reaches — without this a pull-to-refresh left the notes (and their
-      // attachments) exactly as they were.
-      ref.read(ticketNotesProvider(id).notifier).reload(),
-    ]);
-  }
-
-  Widget _avatarStack(List<String> ids, double size) {
-    final shown = ids.take(2).toList();
-    final more = ids.length - shown.length;
-    // Each avatar after the first sits 7px into the one before it.
-    final step = size.w - 7.w;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (shown.isNotEmpty)
-          SizedBox(
-            width: step * (shown.length - 1) + size.w,
-            height: size.w,
-            child: Stack(
-              children: [
-                for (int i = 0; i < shown.length; i++)
-                  Positioned(
-                    left: step * i,
-                    child: Container(
-                      width: size.w,
-                      height: size.w,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: MockUsers.of(shown[i]).color,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.white, width: 2),
-                      ),
-                      child: Text(MockUsers.of(shown[i]).initials,
-                          style: AppText.custom(
-                              size: size * 0.36,
-                              weight: FontWeight.w700,
-                              color: AppColors.white)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        if (more > 0) ...[
-          SizedBox(width: 5.w),
-          Text('+$more', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textMuted2)),
-        ],
-      ],
-    );
-  }
-
-  // ── SLA banner ──
-  Widget _slaBanner(Ticket t) {
-    final now = kNowList.millisecondsSinceEpoch;
-    final paused = t.isPaused;
-    final respMs = t.respByISO != null ? DateTime.parse(t.respByISO!).millisecondsSinceEpoch - now : null;
-    final resMs = t.resolveByISO != null ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch - now : null;
-    final resBreached = t.resolved == null && resMs != null && resMs < 0;
-
-    // "met" only when it actually beat the deadline. This used to say "met",
-    // in green with a tick, for **any** answered ticket — including one
-    // responded to or resolved days after its deadline had already passed,
-    // which reported an SLA breach as compliance. `null` means one of the two
-    // timestamps is missing, i.e. we cannot tell; that keeps the neutral
-    // wording rather than claiming either way.
-    final respLate = t.respondedLate;
-    final respWhen = t.responded == null
-        ? ''
-        : (t.responded!.contains(', ')
-            ? t.responded!.split(', ')[1]
-            : t.responded!);
-    final respLabel = t.responded != null
-        ? (respLate == true ? 'late $respWhen' : (respLate == false ? 'met $respWhen' : respWhen))
-        : (paused ? 'paused' : (respMs != null && respMs < 0 ? 'breached' : 'due ${t.respByLabel ?? ''}'));
-    final respTone = t.responded != null
-        ? (respLate == true ? AppColors.error : AppColors.success)
-        : (respMs != null && respMs < 0 && !paused ? AppColors.error : AppColors.textMuted2);
-    final respIcon = t.responded != null
-        ? (respLate == true
-            ? PhosphorIconsFill.warningCircle
-            : PhosphorIconsFill.checkCircle)
-        : (paused ? PhosphorIconsFill.pause : PhosphorIconsRegular.clock);
-
-    final resLate = t.resolvedLate;
-    final resLabel = t.resolved != null
-        ? (resLate == true
-            ? 'late ${t.resolved}'
-            : (resLate == false ? 'met ${t.resolved}' : '${t.resolved}'))
-        : (paused
-            ? 'frozen — waiting on customer'
-            : '${t.resolveByLabel ?? '—'}${resMs != null ? (resMs < 0 ? ' — breached ${fmtLeft(resMs)} ago' : ' — ${fmtLeft(resMs)} left') : ''}');
-    final resTone = t.resolved != null
-        ? (resLate == true ? AppColors.error : AppColors.success)
-        : (resBreached && !paused ? AppColors.error : AppColors.textMuted2);
-    final resIcon = t.resolved != null
-        ? (resLate == true
-            ? PhosphorIconsFill.warningCircle
-            : PhosphorIconsFill.checkCircle)
-        : (paused ? PhosphorIconsFill.pause : (resBreached ? PhosphorIconsFill.warningCircle : PhosphorIconsRegular.clock));
-
-    final bg = paused
-        ? AppColors.bgChipGrey
-        : ((resBreached || resLate == true) ? AppColors.tintRed : AppColors.bgScreen);
-
-    return Container(
-      margin: EdgeInsets.only(top: 14.h),
-      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 13.h),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14.r)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (paused) ...[
-            Row(
-              children: [
-                Icon(PhosphorIconsFill.pauseCircle, size: 17.sp, color: AppColors.textMuted2),
-                SizedBox(width: 8.w),
-                Text('SLA paused — waiting on customer',
-                    style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textLabelAlt)),
-              ],
-            ),
-            SizedBox(height: 8.h),
-          ],
-          _slaLine('First response', respLabel, respIcon, respTone),
-          SizedBox(height: 8.h),
-          _slaLine('Resolution due', resLabel, resIcon, resTone),
-        ],
-      ),
-    );
-  }
-
-  Widget _slaLine(String title, String value, IconData icon, Color tone) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 15.sp, color: tone),
-        SizedBox(width: 9.w),
-        Expanded(
-          child: Text.rich(
-            TextSpan(
-              text: title,
-              style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textPrimary),
-              children: [
-                TextSpan(
-                  text: ' · $value',
-                  style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: tone),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _lockCard() {
-    return Container(
-      margin: EdgeInsets.only(top: 14.h),
-      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(14.r)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(PhosphorIconsFill.lockSimple, size: 18.sp, color: AppColors.textMuted2),
-          SizedBox(width: 10.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('This ticket is closed — fields are locked. Reopen to edit.',
-                    style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textLabelAlt)),
-                SizedBox(height: 2.h),
-                Text('Status and notes stay editable.',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Details ──
-  Widget _detailsCard(Ticket t) {
-    final dir = ref.watch(ticketDirectoryProvider);
-    final cust = dir.customer(t.custId);
-    final proj = dir.project(t.projId);
-    final rows = <(String, String)>[
-      ('Requester', cust?.display ?? '—'),
-      ('Contact person', t.contact),
-      ('Channel', t.channel),
-      ('Category', t.cat),
-      ('Product / service', t.product ?? '—'),
-      // `project_name` as the row carries it wins: resolving the uuid against
-      // the projects list only works once that list has loaded, and printing a
-      // raw uuid is worse than printing nothing.
-      ('Related project', t.projName ?? proj?.name ?? '—'),
-      ('Created', t.created),
-      ('First responded', t.responded ?? 'Awaiting'),
-      ('Resolved', t.resolved ?? '—'),
-      // Set from the ticket forms while accounting is active. Hidden entirely
-      // on the ordinary case rather than printing "Billable: No" on every
-      // ticket.
-      if (t.billable) ...[
-        ('Billable', t.billableAmount == null ? 'Yes' : formatInr(parseAmount(t.billableAmount))),
-        ('Billing status', t.isBilled ? 'Billed' : 'Not yet billed'),
-      ],
-    ];
-    final vColor = t.isLocked ? AppColors.textPlaceholder : AppColors.textPrimary;
-    return ClozrCard(
-      radius: 18,
-      padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 16.h),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Details', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-          SizedBox(height: 4.h),
-          for (final r in rows)
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 10.h),
-              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
-              child: Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(r.$1, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
-                  SizedBox(width: 14.w),
-                  Expanded(
-                    child: Text(r.$2,
-                        textAlign: TextAlign.right,
-                        style: AppText.custom(size: 14, weight: FontWeight.w700, color: vColor)),
-                  ),
+                  _eyebrow('Priority'),
+                  SizedBox(height: 5.h),
+                  _priorityPill(t),
                 ],
               ),
-            ),
-          Padding(
-            padding: EdgeInsets.only(top: 10.h),
-            child: Text(t.desc,
-                style: AppText.body(color: t.isLocked ? AppColors.textPlaceholder : AppColors.textLabelAlt).copyWith(height: 1.6)),
-          ),
-          if (!t.isLocked) ...[
-            SizedBox(height: 14.h),
-            GestureDetector(
-              onTap: () => context.push('${Routes.editTicket}?id=${t.id}'),
-              child: Container(
-                height: 44.h,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: AppColors.borderCard, width: 1.5),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+              SizedBox(width: 24.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(PhosphorIconsRegular.pencilSimple, size: 15.sp, color: AppColors.textSecondary),
-                    SizedBox(width: 7.w),
-                    Text('Edit ticket', style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                    _eyebrow('Status'),
+                    SizedBox(height: 5.h),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      // Kept usable on a resolved ticket: it is the way to reopen it.
+                      onTap: _saving
+                          ? null
+                          : () {
+                              if (ensurePermission(ref, 'issue', PermVerb.update)) _openStatusSheet(t);
+                            },
+                      child: Container(
+                        height: 38.h,
+                        padding: EdgeInsets.symmetric(horizontal: 12.w),
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(10.r),
+                          border: Border.all(color: AppColors.borderInput),
+                        ),
+                        child: Row(children: [
+                          Container(
+                              width: 9.w, height: 9.w, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: Text(t.statusName.isNotEmpty ? t.statusName : 'Status',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.custom(
+                                    size: 14,
+                                    weight: FontWeight.w700,
+                                    color: _canUpdate ? AppColors.textPrimary : AppColors.textPlaceholder)),
+                          ),
+                          Icon(PhosphorIconsBold.caretDown, size: 13.sp, color: AppColors.textMuted),
+                        ]),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ],
       ),
     );
   }
 
-  // ── Linked tasks ──
-  Widget _linkedTasksCard(Ticket t) {
-    // The ticket's own linked-task feed (`helpdesk.md` §10). Empty in mock mode
-    // and on failure, where the card falls back to the row's `taskId` — which
-    // is all the list payload carries.
-    final live = ref.watch(ticketLinkedTasksProvider(t.id)).valueOrNull ?? const [];
-    final tasks = live.isNotEmpty
-        ? live
-        : [if (t.taskId != null) TicketTask(id: t.taskId!, subject: '')];
-    final dir = ref.watch(ticketDirectoryProvider);
+  Color _statusColor(Ticket t) => ticketStatusColor(t.facts?.statusColor) ?? AppColors.textMuted;
+
+  Widget _priorityPill(Ticket t) {
+    final name = t.priorityName.isNotEmpty ? t.priorityName : t.pri;
+    return StatusPill(label: name, color: ticketPriorityColor(name));
+  }
+
+  Widget _eyebrow(String text) => Text(text.toUpperCase(),
+      style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6));
+
+  IconData _channelIcon(String? code) => switch (code) {
+        'email' => PhosphorIconsRegular.envelopeSimple,
+        'whatsapp' => PhosphorIconsRegular.whatsappLogo,
+        'phone' => PhosphorIconsRegular.phone,
+        'api' => PhosphorIconsRegular.plugsConnected,
+        _ => PhosphorIconsRegular.question,
+      };
+
+  // ── Related strip ──
+  List<({IconData icon, String label, String kind, String route})> _relatedTiles(Ticket t) => [
+        if (t.custId.isNotEmpty)
+          (
+            icon: PhosphorIconsRegular.buildings,
+            label: t.facts?.customerName ?? 'Customer',
+            kind: 'Customer',
+            route: '${Routes.customerDetail}?id=${t.custId}',
+          ),
+        if ((t.projId ?? '').isNotEmpty)
+          (
+            icon: PhosphorIconsRegular.kanban,
+            label: t.projName ?? 'Project',
+            kind: 'Project',
+            route: '${Routes.projectDetail}?id=${t.projId}',
+          ),
+        if ((t.productId ?? '').isNotEmpty)
+          (
+            icon: PhosphorIconsRegular.package,
+            label: t.product ?? 'Product',
+            kind: 'Product / Service',
+            route: '${Routes.productDetail}?id=${t.productId}',
+          ),
+      ];
+
+  Widget _relatedCard(Ticket t, bool locked) {
+    final tiles = _relatedTiles(t);
+    final canEdit = _canUpdate;
     return ClozrCard(
       radius: 18,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(PhosphorIconsRegular.linkSimple, size: 16.sp, color: AppColors.textLabelAlt),
-              SizedBox(width: 7.w),
-              Text('Linked tasks', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-            ],
-          ),
-          if (tasks.isNotEmpty) ...[
-            SizedBox(height: 12.h),
-            for (final task in tasks)
+          if (tiles.isNotEmpty) ...[
+            _eyebrow('Related'),
+            SizedBox(height: 10.h),
+            for (final r in tiles)
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                // A linked task *is* a projects task, so the caret opens the
-                // Operations detail screen.
-                onTap: task.id.isEmpty
-                    ? null
-                    : () => context.push('${Routes.opsTaskDetail}?id=${task.id}'),
+                onTap: () => context.push(r.route),
                 child: Container(
                   margin: EdgeInsets.only(bottom: 8.h),
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
+                  padding: EdgeInsets.fromLTRB(7.w, 7.h, 12.w, 7.h),
                   decoration: BoxDecoration(
+                    color: AppColors.bgScreen,
                     borderRadius: BorderRadius.circular(12.r),
                     border: Border.all(color: AppColors.borderCardSoft),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(PhosphorIconsRegular.listChecks, size: 17.sp, color: AppColors.navy),
-                      SizedBox(width: 10.w),
-                      Expanded(
-                        child: Text(task.display,
+                  child: Row(children: [
+                    Container(
+                      width: 34.w,
+                      height: 34.w,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(8.r),
+                        border: Border.all(color: AppColors.borderCardSoft),
+                      ),
+                      child: Icon(r.icon, size: 17.sp, color: AppColors.navy),
+                    ),
+                    SizedBox(width: 11.w),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(r.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
-                      ),
-                      if (_taskChip(dir, task, t) case final chip?) ...[
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                          decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(7.r)),
-                          child: Text(chip, style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.navy)),
-                        ),
-                        SizedBox(width: 8.w),
-                      ],
-                      Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
-                    ],
-                  ),
+                            style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        Text(r.kind, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      ]),
+                    ),
+                    Icon(PhosphorIconsRegular.arrowUpRight, size: 16.sp, color: AppColors.textMuted),
+                  ]),
                 ),
               ),
           ],
-          if (!t.isLocked)
+          if (!locked)
             GestureDetector(
-              onTap: () => _openCreateTaskSheet(t),
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (ensurePermission(ref, 'issue', PermVerb.update)) context.push('${Routes.editTicket}?id=${t.id}');
+              },
               child: Container(
-                margin: EdgeInsets.only(top: 12.h),
-                height: 44.h,
+                margin: EdgeInsets.only(top: tiles.isEmpty ? 0 : 4.h),
+                height: 42.h,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
+                  color: AppColors.white,
                   borderRadius: BorderRadius.circular(11.r),
                   border: Border.all(color: AppColors.borderInput),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(PhosphorIconsRegular.plus, size: 15.sp, color: AppColors.navy),
-                    SizedBox(width: 8.w),
-                    Text('Create task from ticket', style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
-                  ],
-                ),
-              ),
-            )
-          else
-            Container(
-              margin: EdgeInsets.only(top: 12.h),
-              height: 44.h,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(PhosphorIconsFill.lockSimple, size: 14.sp, color: AppColors.textPlaceholder),
-                  SizedBox(width: 8.w),
-                  Text('Locked — reopen the ticket to create tasks',
-                      style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                ],
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(PhosphorIconsRegular.pencilSimple,
+                      size: 15.sp, color: canEdit ? AppColors.textSecondary : AppColors.textPlaceholder),
+                  SizedBox(width: 7.w),
+                  Text('Edit',
+                      style: AppText.custom(
+                          size: 13.5, weight: FontWeight.w700, color: canEdit ? AppColors.textSecondary : AppColors.textPlaceholder)),
+                ]),
               ),
             ),
         ],
@@ -641,156 +475,814 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  /// The project badge on a linked-task row: the task's own project when it has
-  /// one, else the ticket's. Null when it would only print a uuid, which says
-  /// nothing to a user.
-  String? _taskChip(TicketLookups dir, TicketTask task, Ticket t) {
-    final pid = task.projectId ?? t.projId;
-    if (pid == null || pid.isEmpty) return null;
-    final name = task.projectId == null ? t.projName : null;
-    if (name != null && name.isNotEmpty) return name;
-    final resolved = dir.project(pid)?.name;
-    if (resolved != null && resolved.isNotEmpty) return resolved;
-    return UserDirectory.isUuid(pid) ? null : pid;
+  // ── Child-of banner ──
+  Widget _parentBanner(Ticket t, bool locked) {
+    final f = t.facts!;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(14.r)),
+      child: Row(children: [
+        Icon(PhosphorIconsRegular.gitBranch, size: 15.sp, color: AppColors.textMuted),
+        SizedBox(width: 9.w),
+        Expanded(
+          child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+            Text('Child of ', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody)),
+            GestureDetector(
+              onTap: f.parentIssueId == null ? null : () => context.push('${Routes.ticketDetail}?id=${f.parentIssueId}'),
+              child: Text(f.parentReference.isNotEmpty ? f.parentReference : 'parent ticket',
+                  style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.navy)),
+            ),
+            if (f.parentSubject.isNotEmpty)
+              Text(' · ${f.parentSubject}',
+                  style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+          ]),
+        ),
+        if (!locked && _canUpdate) ...[
+          SizedBox(width: 8.w),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _saving ? null : () => _detach(t.id, t.displayRef, ownId: t.id),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(8.r),
+                border: Border.all(color: AppColors.borderInput),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(PhosphorIconsRegular.linkBreak, size: 14.sp, color: AppColors.textBody),
+                SizedBox(width: 5.w),
+                Text('Detach', style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+              ]),
+            ),
+          ),
+        ],
+      ]),
+    );
   }
 
-  /// Raises an Operations task against this ticket
-  /// (`POST /issues/{id}/tasks/`). `subject` is the only field the backend
-  /// requires, so the sheet asks for exactly that.
-  void _openCreateTaskSheet(Ticket t) {
-    final ctrl = TextEditingController();
-    var saving = false;
-    showClozrSheet<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 24.h),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SheetHeader(title: 'Create task from ticket'),
-              AppTextField(
-                label: 'Task',
-                required: true,
-                controller: ctrl,
-                hint: 'What needs doing?',
-              ),
-              SizedBox(height: 16.h),
-              PrimaryButton(
-                label: saving ? 'Creating…' : 'Create task',
-                onTap: saving
-                    ? null
-                    : () async {
-                        final subject = ctrl.text.trim();
-                        if (subject.isEmpty) return;
-                        setSheet(() => saving = true);
-                        final ok = await _createTask(t, subject);
-                        if (!ok) {
-                          setSheet(() => saving = false);
-                          return;
-                        }
-                        if (ctx.mounted) Navigator.of(ctx).pop();
-                      },
-              ),
-            ],
-          ),
+  Widget _lockBanner() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(14.r)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(PhosphorIconsFill.lockSimple, size: 15.sp, color: AppColors.textMuted),
+        SizedBox(width: 9.w),
+        Expanded(
+          child: Text(
+              'This ticket is resolved. The UI treats it as locked for editing — the backend does not yet enforce this itself.',
+              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textBody, height: 1.4)),
         ),
+      ]),
+    );
+  }
+
+  // ── Ticket information ──
+  Widget _infoCard(Ticket t, bool locked) {
+    final f = t.facts;
+    final editable = !locked && _canUpdate;
+    final customerName = f?.customerName;
+    final contactName = f?.contactName;
+    final resp = firstResponseSeg(t);
+    final billing = billingRowValue(t, (v) => formatInr(v));
+    final assigneeName = f?.assignedToName ?? (t.assignees.isEmpty ? null : MockUsers.of(t.assignees.first).name);
+    return ClozrCard(
+      radius: 18,
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 12.h),
+            child: Text('Ticket information',
+                style: AppText.custom(size: 15.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          ),
+          const Divider(height: 1, color: AppColors.bgLight),
+          Padding(
+            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 4.h),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _eyebrow('Requester'),
+              SizedBox(height: 9.h),
+              Row(children: [
+                Container(
+                  width: 38.w,
+                  height: 38.w,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(10.r)),
+                  child: Text(_initials(customerName ?? '?'),
+                      style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+                ),
+                SizedBox(width: 11.w),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(customerName ?? 'No customer linked',
+                        style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(
+                        (contactName ?? '').isNotEmpty
+                            ? contactName!
+                            : (customerName != null ? '—' : 'Link one in Customer below'),
+                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  ]),
+                ),
+              ]),
+            ]),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 4.h),
+            child: Column(children: [
+              _infoRow('Channel',
+                  value: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(_channelIcon(f?.channelCode), size: 14.sp, color: AppColors.textMuted),
+                    SizedBox(width: 6.w),
+                    Text(ticketChannelLabel(f?.channelCode), style: _rowValueStyle()),
+                  ])),
+              _infoRow('Category',
+                  text: f != null ? (f.typeName ?? '—') : t.cat,
+                  onEdit: editable && ref.watch(ticketTypeOptionsProvider).isNotEmpty ? () => _pickCategory(t) : null),
+              _infoRow('Customer', text: customerName ?? '—', onEdit: editable ? () => _pickCustomer(t) : null),
+              _infoRow('Status', value: StatusPill(label: t.statusName.isNotEmpty ? t.statusName : '—', color: _statusColor(t))),
+              _infoRow('Priority', value: _priorityPill(t)),
+              _infoRow('Created', text: ticketDateTime(t.createdISO)),
+              if (resp != null) _infoRow('First response', value: _segValue(resp)),
+              _infoRow('Resolution', value: _segValue(resolutionSeg(t))),
+              _infoRow('SLA', text: formatSlaTarget(f?.slaValue, f?.slaUnit)),
+              if (billing != null) _infoRow('Billing', text: billing),
+              _infoRow('Ticket ID', text: t.displayRef, last: true),
+            ]),
+          ),
+          const Divider(height: 1, color: AppColors.bgLight),
+          Padding(
+            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 16.h),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _eyebrow('Assignee'),
+              SizedBox(height: 9.h),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _saving
+                    ? null
+                    : () {
+                        if (locked) return;
+                        if (ensurePermission(ref, 'issue', PermVerb.update)) _pickAssignee(t);
+                      },
+                child: Container(
+                  height: 44.h,
+                  padding: EdgeInsets.symmetric(horizontal: 12.w),
+                  decoration: BoxDecoration(
+                    color: editable ? AppColors.white : AppColors.bgScreen,
+                    borderRadius: BorderRadius.circular(10.r),
+                    border: Border.all(color: AppColors.borderInput),
+                  ),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text(assigneeName ?? 'Unassigned',
+                          style: AppText.custom(
+                              size: 14,
+                              weight: FontWeight.w600,
+                              color: assigneeName == null || !editable ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                    ),
+                    Icon(PhosphorIconsBold.caretDown, size: 13.sp, color: AppColors.textMuted),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+        ],
       ),
     );
   }
 
-  Future<bool> _createTask(Ticket t, String subject) async {
-    try {
-      await ref
-          .read(ticketsRepositoryProvider)
-          .createLinkedTask(t.id, subject: subject, priority: t.pri);
-      if (!mounted) return true;
-      ref.read(toastProvider.notifier).show('Task created');
-      ref.invalidate(ticketLinkedTasksProvider(t.id));
-      await _refresh(t.id);
-      return true;
-    } on AppError catch (e) {
-      if (!mounted) return false;
-      ref.read(toastProvider.notifier).showError(e.message);
-      return false;
-    }
+  TextStyle _rowValueStyle([Color? color]) =>
+      AppText.custom(size: 13.5, weight: FontWeight.w600, color: color ?? AppColors.textPrimary);
+
+  Widget _infoRow(String label, {String? text, Widget? value, VoidCallback? onEdit, bool last = false}) {
+    final content = value ?? Text(text ?? '—', textAlign: TextAlign.right, style: _rowValueStyle());
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onEdit,
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 10.h),
+        decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Text(label, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          SizedBox(width: 14.w),
+          Expanded(child: Align(alignment: Alignment.centerRight, child: content)),
+          if (onEdit != null) ...[
+            SizedBox(width: 6.w),
+            Icon(PhosphorIconsRegular.pencilSimple, size: 13.sp, color: AppColors.blueBright),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _segValue(SlaSeg seg) {
+    final color = switch (seg.tone) {
+      SlaTone.met => AppColors.success,
+      SlaTone.muted => AppColors.textMuted,
+      SlaTone.atRisk => AppColors.warningDeep,
+      SlaTone.breached => AppColors.error,
+      SlaTone.normal => AppColors.textPrimary,
+    };
+    final icon = switch (seg.icon) {
+      SlaIcon.check => PhosphorIconsRegular.checkCircle,
+      SlaIcon.pause => PhosphorIconsRegular.pause,
+      SlaIcon.clock => PhosphorIconsRegular.clock,
+      SlaIcon.alert => PhosphorIconsRegular.warning,
+      SlaIcon.off => PhosphorIconsRegular.timer,
+    };
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13.sp, color: color),
+      SizedBox(width: 5.w),
+      Flexible(child: Text(seg.label, textAlign: TextAlign.right, style: _rowValueStyle(color))),
+    ]);
+  }
+
+  /// A server `user_id` → the person's name, empty when not known.
+  String _userName(String? userId) {
+    if (userId == null || userId.isEmpty) return '';
+    final mapped = UserDirectory.mapUserId(userId);
+    final name = mapped.isEmpty ? '' : MockUsers.of(mapped).name;
+    return name == mapped || name == 'Unknown' ? '' : name;
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+  }
+
+  Widget _additionalInfoCard(Ticket t) {
+    final entries = t.facts!.customFields.entries.toList();
+    return ClozrCard(
+      radius: 18,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Additional info', style: AppText.custom(size: 15.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+        SizedBox(height: 4.h),
+        for (int i = 0; i < entries.length; i++)
+          _infoRow(customFieldLabel(entries[i].key),
+              text: entries[i].value.isEmpty ? '—' : entries[i].value, last: i == entries.length - 1),
+      ]),
+    );
+  }
+
+  // ── Tabs ──
+  Widget _tabsCard(Ticket t, bool locked) {
+    final isChild = t.facts?.isChild ?? false;
+    final children = ref.watch(ticketChildrenProvider(t.id));
+    final childCount = children.valueOrNull?.length ?? t.facts?.childCount ?? 0;
+    final linked = ref.watch(ticketLinkedTasksProvider(t.id));
+    final files = t.facts?.attachments ?? const <TicketAttachment>[];
+    // A child can never itself be a parent (two-level cap), so the tab is only
+    // offered on roots.
+    final tab = isChild && _tab == _Tab.children ? _Tab.desc : _tab;
+    return ClozrCard(
+      radius: 18,
+      padding: EdgeInsets.zero,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          margin: EdgeInsets.all(12.w),
+          padding: EdgeInsets.all(4.w),
+          decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+          // Wraps rather than scrolls, so every tab stays in view on a phone.
+          child: Wrap(spacing: 2.w, runSpacing: 2.h, children: [
+            _tabBtn(_Tab.desc, tab, PhosphorIconsRegular.textAlignLeft, 'Description'),
+            if (!isChild) _tabBtn(_Tab.children, tab, PhosphorIconsRegular.gitBranch, 'Child tickets', childCount),
+            _tabBtn(_Tab.tasks, tab, PhosphorIconsRegular.listChecks, 'Linked tasks', linked.valueOrNull?.length ?? 0),
+            _tabBtn(_Tab.files, tab, PhosphorIconsRegular.paperclip, 'Files', files.length),
+          ]),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 16.h),
+          child: switch (tab) {
+            _Tab.desc => _descTab(t),
+            _Tab.children => _childrenTab(t, locked, children, childCount),
+            _Tab.tasks => _tasksTab(t, locked, linked),
+            _Tab.files => _filesTab(t, locked, files),
+          },
+        ),
+      ]),
+    );
+  }
+
+  Widget _tabBtn(_Tab value, _Tab current, IconData icon, String label, [int count = 0]) {
+    final active = value == current;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _tab = value),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 8.h),
+        decoration: BoxDecoration(
+          color: active ? AppColors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8.r),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 14.sp, color: active ? AppColors.textPrimary : AppColors.textMuted),
+          SizedBox(width: 6.w),
+          Text(label,
+              style: AppText.custom(
+                  size: 12.5, weight: FontWeight.w600, color: active ? AppColors.textPrimary : AppColors.textMuted)),
+          if (count > 0) ...[
+            SizedBox(width: 6.w),
+            Container(
+              constraints: BoxConstraints(minWidth: 18.w),
+              height: 18.w,
+              padding: EdgeInsets.symmetric(horizontal: 5.w),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(99)),
+              child: Text('$count', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _descTab(Ticket t) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _eyebrow('Description'),
+      SizedBox(height: 8.h),
+      Text(
+        t.desc.isNotEmpty ? t.desc : 'No description was captured for this ticket — use Edit to add context.',
+        style: AppText.body(color: t.desc.isNotEmpty ? AppColors.textLabelAlt : AppColors.textPlaceholder)
+            .copyWith(height: 1.6),
+      ),
+    ]);
+  }
+
+  Widget _tabHead(String title, {String? action, IconData? icon, VoidCallback? onAction, bool enabled = true}) {
+    return Row(children: [
+      Expanded(child: Text(title, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary))),
+      if (action != null)
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onAction,
+          child: Opacity(
+            opacity: enabled ? 1 : 0.5,
+            child: Container(
+              height: 34.h,
+              padding: EdgeInsets.symmetric(horizontal: 12.w),
+              decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(9.r)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon ?? PhosphorIconsBold.plus, size: 14.sp, color: AppColors.white),
+                SizedBox(width: 6.w),
+                Text(action, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.white)),
+              ]),
+            ),
+          ),
+        ),
+    ]);
+  }
+
+  Widget _emptyTab(IconData icon, String title, [String? body]) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 22.h),
+      child: Center(
+        child: Column(children: [
+          Icon(icon, size: 28.sp, color: AppColors.textPlaceholder),
+          SizedBox(height: 8.h),
+          Text(title, style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+          if (body != null) ...[
+            SizedBox(height: 4.h),
+            Text(body,
+                textAlign: TextAlign.center,
+                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _rowIcon(IconData icon) => Container(
+        width: 36.w,
+        height: 36.w,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(8.r)),
+        child: Icon(icon, size: 17.sp, color: AppColors.navy),
+      );
+
+  Widget _childrenTab(Ticket t, bool locked, AsyncValue<List<Ticket>> async, int childCount) {
+    final kids = async.valueOrNull ?? const <Ticket>[];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _tabHead('Child tickets',
+          action: locked ? null : 'Attach ticket',
+          enabled: _canUpdate,
+          onAction: () {
+            if (ensurePermission(ref, 'issue', PermVerb.update)) _openAttachSheet(t);
+          }),
+      if (childCount > 0) ...[
+        SizedBox(height: 10.h),
+        Text("This ticket can't be resolved or deleted while a child is still attached.",
+            style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+      ],
+      if (async.isLoading && kids.isEmpty)
+        Padding(padding: EdgeInsets.symmetric(vertical: 16.h), child: const Center(child: CircularProgressIndicator()))
+      else if (kids.isEmpty)
+        _emptyTab(PhosphorIconsRegular.gitBranch, 'No child tickets',
+            'Attach an existing ticket to group related reports under this one.')
+      else
+        for (int i = 0; i < kids.length; i++)
+          Container(
+            padding: EdgeInsets.symmetric(vertical: 12.h),
+            decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
+            child: Row(children: [
+              _rowIcon(PhosphorIconsRegular.gitBranch),
+              SizedBox(width: 11.w),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => context.push('${Routes.ticketDetail}?id=${kids[i].id}'),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(kids[i].subject.isNotEmpty ? kids[i].subject : 'Untitled ticket',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textBody)),
+                    Text('${kids[i].displayRef} · ${kids[i].statusName}',
+                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  ]),
+                ),
+              ),
+              if (!locked && _canUpdate)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _saving ? null : () => _detach(kids[i].id, kids[i].displayRef, ownId: t.id),
+                  child: Container(
+                    width: 34.w,
+                    height: 34.w,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9.r),
+                      border: Border.all(color: AppColors.borderInput),
+                    ),
+                    child: Icon(PhosphorIconsRegular.linkBreak, size: 15.sp, color: AppColors.textSecondary),
+                  ),
+                ),
+            ]),
+          ),
+    ]);
+  }
+
+  Widget _tasksTab(Ticket t, bool locked, AsyncValue<List<TicketTask>> async) {
+    final tasks = async.valueOrNull ?? const <TicketTask>[];
+    final canTask = hasPermission(ref, 'project_task', PermVerb.create);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _tabHead('Linked Operations tasks',
+          action: locked ? null : 'Create task from ticket',
+          enabled: canTask,
+          onAction: () {
+            if (ensurePermission(ref, 'project_task', PermVerb.create)) _createTask(t);
+          }),
+      if (async.isLoading && tasks.isEmpty)
+        Padding(padding: EdgeInsets.symmetric(vertical: 16.h), child: const Center(child: CircularProgressIndicator()))
+      else if (tasks.isEmpty)
+        _emptyTab(PhosphorIconsRegular.listChecks, 'No linked tasks yet')
+      else
+        for (int i = 0; i < tasks.length; i++)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: tasks[i].id.isEmpty ? null : () => context.push('${Routes.opsTaskDetail}?id=${tasks[i].id}'),
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: 12.h),
+              decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
+              child: Row(children: [
+                _rowIcon(PhosphorIconsRegular.listChecks),
+                SizedBox(width: 11.w),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tasks[i].subject.isNotEmpty ? tasks[i].subject : 'Untitled task',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textBody)),
+                    Text(
+                        '${tasks[i].projectName.isNotEmpty ? tasks[i].projectName : 'No project'}'
+                        '${tasks[i].priority.isNotEmpty ? ' · ${tasks[i].priority}' : ''}',
+                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  ]),
+                ),
+                if (tasks[i].isOverdue) ...[
+                  Text('Overdue', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.error)),
+                  SizedBox(width: 8.w),
+                ],
+                Text(tasks[i].status.isNotEmpty ? tasks[i].status : '—',
+                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                SizedBox(width: 4.w),
+                Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
+              ]),
+            ),
+          ),
+    ]);
+  }
+
+  Widget _filesTab(Ticket t, bool locked, List<TicketAttachment> files) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _tabHead('Attachments',
+          action: locked ? null : (_uploading ? 'Uploading…' : 'Upload file'),
+          icon: PhosphorIconsRegular.uploadSimple,
+          enabled: _canUpdate,
+          onAction: _uploading
+              ? null
+              : () {
+                  if (ensurePermission(ref, 'issue', PermVerb.update)) _upload(t);
+                }),
+      if (files.isEmpty)
+        _emptyTab(PhosphorIconsRegular.paperclip, 'No files yet')
+      else
+        for (int i = 0; i < files.length; i++)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              final failure = await openAttachment(files[i].url);
+              if (failure != null && mounted) ref.read(toastProvider.notifier).showError(failure);
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: 12.h),
+              decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
+              child: Row(children: [
+                _rowIcon(PhosphorIconsRegular.fileText),
+                SizedBox(width: 11.w),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(files[i].name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textBody)),
+                    Text(attachmentAddedLine(files[i], uploader: _userName(files[i].uploadedById)),
+                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  ]),
+                ),
+                Icon(PhosphorIconsRegular.downloadSimple, size: 16.sp, color: AppColors.textMuted),
+              ]),
+            ),
+          ),
+    ]);
   }
 
   // ── Notes ──
-  //
-  // Migrated to the shared [NotesThread] (#13). The thread's main composer posts
-  // an internal note (prepends a NoteEntry); each note's inline reply affordance
-  // posts a reply (appends a NoteReply). Both stay usable on Closed tickets.
-  Widget _notesCard(Ticket t) {
-    final notes = ref.watch(ticketNotesProvider(t.id));
-    final ctrl = ref.read(ticketNotesProvider(t.id).notifier);
+  CrmNotesSeed _notesSeed(String id) => CrmNotesSeed(id, () => const <NoteEntry>[], apiModel: 'issue');
+
+  /// The shared notes panel (`related_to=issue`): Tag · Insert, reply,
+  /// author-only pin / edit / delete. Read-only once the ticket is resolved.
+  /// No @mention list — the webapp has no mention source for tickets.
+  Widget _notes(Ticket t, bool locked) {
+    final seed = _notesSeed(t.id);
+    final notes = ref.read(crmNotesProvider(seed).notifier);
     return NotesThread(
       author: ref.watch(noteAuthorProvider),
-      notes: notes,
-      onAddNote: (body, atts) {
-        ctrl.addNote(body, atts);
-        ref.read(toastProvider.notifier).show('Internal note added');
-      },
-      onAddReply: (noteId, body) {
-        ctrl.addReply(noteId, body);
-        ref.read(toastProvider.notifier).show('Reply sent');
-      },
+      notes: ref.watch(crmNotesProvider(seed)),
+      readOnly: locked,
+      onAddNote: (body, atts) => notes.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) => notes.addReply(noteId, body, ref.read(noteAuthorProvider)),
+      webappToolbar: true,
+      noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
+      currentUserId: UserDirectory.currentUserId,
+      onAddTypedNote: (body, atts, typeId, typeName, mentions) => notes.addNote(body, atts, ref.read(noteAuthorProvider),
+          noteTypeId: typeId, noteTypeName: typeName, mentionedUserIds: mentions, authorId: UserDirectory.currentUserId),
+      onTogglePin: (id) => notes.togglePin(id),
+      onEditNote: (id, body) => notes.editNote(id, body),
+      onDeleteNote: (id) => notes.deleteNote(id),
+    );
+  }
+
+  // ── Customer reply ──
+  Widget _replyCard(Ticket t, bool locked) {
+    final code = t.facts?.channelCode;
+    final canReply = isReplyDispatchable(code);
+    final canUpdate = _canUpdate;
+    final replies = t.facts?.replies ?? const <TicketReply>[];
+    final who = (t.facts?.contactName ?? '').isNotEmpty
+        ? t.facts!.contactName!
+        : (t.facts?.customerName ?? 'the customer');
+    final enabled = canReply && canUpdate;
+    final hasText = _reply.text.trim().isNotEmpty;
+    return ClozrCard(
+      radius: 18,
+      padding: EdgeInsets.zero,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 12.h),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Customer reply', style: AppText.custom(size: 15.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            SizedBox(height: 4.h),
+            Row(children: [
+              Icon(_channelIcon(code), size: 13.sp, color: AppColors.textMuted),
+              SizedBox(width: 5.w),
+              Expanded(
+                child: Text(canReply ? 'Sends via ${ticketChannelLabel(code)}' : 'This channel cannot receive a reply',
+                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+              ),
+            ]),
+          ]),
+        ),
+        const Divider(height: 1, color: AppColors.bgLight),
+        Padding(
+          padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 14.h),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12.r),
+              border: Border.all(color: AppColors.borderInput),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: [
+              Container(
+                color: AppColors.bgScreen,
+                child: TextField(
+                  controller: _reply,
+                  enabled: enabled,
+                  minLines: 2,
+                  maxLines: 6,
+                  onChanged: (_) => setState(() {}),
+                  style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+                    hintText: canReply
+                        ? 'Reply to $who via $code…'
+                        : 'This ticket was raised by phone — add an internal note above instead.',
+                    hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                  ),
+                ),
+              ),
+              Container(
+                color: AppColors.white,
+                padding: EdgeInsets.all(8.w),
+                child: Row(
+                  children: [
+                    if (canLogFirstResponse(t))
+                      _outlineBtn(
+                        icon: PhosphorIconsRegular.phoneOutgoing,
+                        label: _logging ? 'Logging…' : 'Log first response',
+                        enabled: canUpdate,
+                        onTap: _logging
+                            ? null
+                            : () {
+                                if (ensurePermission(ref, 'issue', PermVerb.update)) _logFirstResponse(t);
+                              },
+                      ),
+                    if ((t.respondedISO ?? '').isNotEmpty)
+                      Flexible(
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(PhosphorIconsRegular.checkCircle, size: 13.sp, color: AppColors.success),
+                          SizedBox(width: 5.w),
+                          Flexible(
+                            child: Text(firstResponseAgo(t),
+                                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                          ),
+                        ]),
+                      ),
+                    const Spacer(),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _sending || !canReply || !hasText
+                          ? null
+                          : () {
+                              if (ensurePermission(ref, 'issue', PermVerb.update)) _sendReply(t);
+                            },
+                      child: Opacity(
+                        opacity: _sending || !canReply || !hasText || !canUpdate ? 0.5 : 1,
+                        child: Container(
+                          height: 34.h,
+                          padding: EdgeInsets.symmetric(horizontal: 14.w),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(9.r)),
+                          child: Text(_sending ? 'Sending…' : 'Send reply',
+                              style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        ),
+        if (replies.isNotEmpty) ...[
+          const Divider(height: 1, color: AppColors.bgLight),
+          Padding(
+            padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 12.h),
+            child: Column(children: [
+              for (int i = 0; i < replies.length; i++)
+                Container(
+                  padding: EdgeInsets.symmetric(vertical: 12.h),
+                  decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      width: 28.w,
+                      height: 28.w,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                      child: Text(_initials(replies[i].author.isEmpty ? '?' : replies[i].author),
+                          style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                    ),
+                    SizedBox(width: 10.w),
+                    Expanded(
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+                        decoration: BoxDecoration(color: AppColors.bgScreen, borderRadius: BorderRadius.circular(10.r)),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Wrap(spacing: 6.w, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                            Text(replies[i].author.isEmpty ? 'You' : replies[i].author,
+                                style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textBody)),
+                            Icon(PhosphorIconsRegular.arrowBendUpLeft, size: 12.sp, color: AppColors.navy),
+                            Text('REPLY TO CUSTOMER',
+                                style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.navy, letterSpacing: 0.4)),
+                            Text(relativeTime(replies[i].at),
+                                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                          ]),
+                          SizedBox(height: 4.h),
+                          Text(replies[i].body,
+                              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.5)),
+                        ]),
+                      ),
+                    ),
+                  ]),
+                ),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Widget _outlineBtn({required IconData icon, required String label, required bool enabled, VoidCallback? onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.5,
+        child: Container(
+          height: 34.h,
+          padding: EdgeInsets.symmetric(horizontal: 12.w),
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(9.r),
+            border: Border.all(color: AppColors.borderInput),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 14.sp, color: AppColors.textBody),
+            SizedBox(width: 6.w),
+            Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+          ]),
+        ),
+      ),
     );
   }
 
   // ── Audit log ──
   Widget _auditCard(Ticket t) {
-    // The server's own trail in API mode — SLA breaches, status moves, edits,
-    // with the real actor. The derived list below it is the prototype's and
-    // names a user who did nothing, so it is mock-mode only.
-    final logged = ref.watch(ticketActivityProvider(t.id)).valueOrNull ?? const [];
-    final entries = ApiConfig.apiEnabled ? _fromLog(logged) : _buildAudit(t);
-    if (ApiConfig.apiEnabled && entries.isEmpty) return const SizedBox.shrink();
+    final async = ref.watch(ticketActivityProvider(t.id));
+    final entries = async.valueOrNull ?? const <AuditEntry>[];
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 6.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16.sp, color: AppColors.textLabelAlt),
-              SizedBox(width: 7.w),
-              Text('Audit log', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-            ],
-          ),
+          Row(children: [
+            Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16.sp, color: AppColors.navy),
+            SizedBox(width: 7.w),
+            Text('Audit log', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          ]),
           SizedBox(height: 12.h),
+          if (entries.isEmpty)
+            Padding(
+              padding: EdgeInsets.only(bottom: 12.h),
+              child: Text(async.isLoading ? 'Loading…' : 'No events yet.',
+                  style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            ),
           for (int i = 0; i < entries.length; i++)
             IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    children: [
-                      Container(
-                        width: 34.w,
-                        height: 34.w,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(color: entries[i].bg, shape: BoxShape.circle),
-                        child: Icon(entries[i].icon, size: 16.sp, color: entries[i].tone),
-                      ),
-                      if (i < entries.length - 1)
-                        Expanded(child: Container(width: 1.5.w, color: AppColors.borderCardSoft, constraints: BoxConstraints(minHeight: 12.h))),
-                    ],
-                  ),
+                  Column(children: [
+                    Container(
+                      width: 32.w,
+                      height: 32.w,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(color: AppColors.bgChipGrey, shape: BoxShape.circle),
+                      child: Icon(PhosphorIconsRegular.pulse, size: 15.sp, color: AppColors.textSecondary),
+                    ),
+                    if (i < entries.length - 1)
+                      Expanded(
+                          child: Container(
+                              width: 1.5.w, color: AppColors.borderCardSoft, constraints: BoxConstraints(minHeight: 12.h))),
+                  ]),
                   SizedBox(width: 12.w),
                   Expanded(
                     child: Padding(
-                      padding: EdgeInsets.only(top: 6.h, bottom: 16.h),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(entries[i].title, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                          SizedBox(height: 2.h),
-                          Text(entries[i].sub, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
-                        ],
-                      ),
+                      padding: EdgeInsets.only(top: 5.h, bottom: 16.h),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(entries[i].title,
+                            style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                        SizedBox(height: 2.h),
+                        Text(
+                          [
+                            if (entries[i].subtitle.isNotEmpty) entries[i].subtitle,
+                            if (entries[i].at != null) absoluteDateTime(entries[i].at),
+                          ].join(' · '),
+                          style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted),
+                        ),
+                      ]),
                     ),
                   ),
                 ],
@@ -801,149 +1293,294 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  /// The shared audit entries → this card's rows. Icon and tone come from the
-  /// event kind, so a breach still reads red and a create still reads navy.
-  List<_Audit> _fromLog(List<AuditEntry> entries) => [
-        for (final e in entries)
-          _Audit(
-            _logIcon(e),
-            _logTone(e).$1,
-            _logTone(e).$2,
-            e.title,
-            [
-              if (e.subtitle.isNotEmpty) e.subtitle,
-              if (e.at != null) relativeTime(e.at),
-            ].where((s) => s.isNotEmpty).join(' · '),
-          ),
-      ];
-
-  IconData _logIcon(AuditEntry e) {
-    switch (e.kind) {
-      case AuditEventKind.created:
-        return PhosphorIconsRegular.plusCircle;
-      case AuditEventKind.statusChanged:
-        return PhosphorIconsRegular.arrowsClockwise;
-      case AuditEventKind.noteAdded:
-        return PhosphorIconsRegular.chatCircleText;
-      case AuditEventKind.childAdded:
-        return PhosphorIconsRegular.paperclip;
-      case AuditEventKind.deleted:
-        return PhosphorIconsRegular.trash;
-      case AuditEventKind.fieldChanged:
-        return PhosphorIconsRegular.pencilSimple;
-      case AuditEventKind.other:
-        return PhosphorIconsRegular.warningCircle;
-    }
-  }
-
-  (Color, Color) _logTone(AuditEntry e) {
-    switch (e.kind) {
-      case AuditEventKind.created:
-        return (AppColors.navy, AppColors.tintNavy);
-      case AuditEventKind.statusChanged:
-        return (AppColors.blueBright, AppColors.tintBlue);
-      case AuditEventKind.noteAdded:
-        return (AppColors.success, AppColors.tintGreen);
-      case AuditEventKind.deleted:
-      case AuditEventKind.other:
-        return (AppColors.error, AppColors.tintRed);
-      case AuditEventKind.childAdded:
-      case AuditEventKind.fieldChanged:
-        return (AppColors.pending, AppColors.tintPurple);
-    }
-  }
-
-  /// The prototype's derived trail — **mock mode only**. Every entry is
-  /// inferred from the ticket's own fields, and two of them name a fixed user.
-  List<_Audit> _buildAudit(Ticket t) {
-    final now = kNowList.millisecondsSinceEpoch;
-    final resMs = t.resolveByISO != null ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch - now : null;
-    final resBreached = t.resolved == null && resMs != null && resMs < 0;
-    final firstName = t.assignees.isNotEmpty ? MockUsers.of(t.assignees.first).name : '—';
-    final out = <_Audit>[];
-    if (t.status == 'closed') {
-      out.add(_Audit(PhosphorIconsRegular.lockSimple, AppColors.textMuted2, AppColors.bgChipGrey, 'Ticket closed', 'Manoj Varma · ${t.resolved ?? '—'}'));
-    }
-    if (t.status == 'resolved' || t.status == 'closed') {
-      out.add(_Audit(PhosphorIconsRegular.checkCircle, AppColors.success, AppColors.tintGreen, 'Marked resolved', '$firstName · ${t.resolved ?? '—'}'));
-    }
-    if (resBreached) {
-      out.add(_Audit(PhosphorIconsRegular.warningCircle, AppColors.error, AppColors.tintRed, 'SLA resolution breached', 'System · due ${t.resolveByLabel ?? '—'}'));
-    }
-    if (t.status == 'pending') {
-      out.add(_Audit(PhosphorIconsRegular.pauseCircle, AppColors.warning, AppColors.tintAmber, 'Status changed — Open → Pending', '$firstName · waiting on customer'));
-    }
-    if (t.responded != null) {
-      out.add(_Audit(PhosphorIconsRegular.check, AppColors.success, AppColors.tintGreen, 'SLA response target met', 'First reply ${t.responded}'));
-    }
-    out.add(_Audit(PhosphorIconsRegular.userPlus, AppColors.pending, AppColors.tintPurple, 'Assignee changed', '$firstName assigned · Manoj Varma'));
-    out.add(_Audit(PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.tintBlue, 'Status changed — New → Open', 'Manoj Varma · ${t.created}'));
-    out.add(_Audit(PhosphorIconsRegular.plusCircle, AppColors.navy, AppColors.tintNavy, 'Ticket created', '${t.channel} · ${t.created}'));
-    return out;
-  }
-
-  // ── 3-dot overflow menu (#7) ──
+  // ── ⋮ menu ──
   void _openTicketMenu(Ticket t) {
     final locked = t.isLocked;
+    final canEdit = _canUpdate;
+    final canTask = hasPermission(ref, 'project_task', PermVerb.create);
     showActionMenu(
       context,
       title: 'Ticket actions',
       actions: [
-        MenuAction(
-          icon: PhosphorIconsRegular.pencilSimple,
-          label: 'Edit ticket',
-          enabled: !locked,
-          sublabel: locked ? 'Closed — reopen to edit' : null,
-          onTap: () => context.push('${Routes.editTicket}?id=${t.id}'),
-        ),
-        MenuAction(
-          icon: PhosphorIconsRegular.arrowsClockwise,
-          label: 'Change status',
-          onTap: () => _openStatusSheet(t),
-        ),
-        // "Bill this ticket" (plan §5.5). The backend does not itself check
-        // billable / already-billed on `from-ticket/` (handover §12.24), so the
-        // app only offers it for a billable, unbilled ticket.
-        if (ref.read(accountingActiveProvider) &&
-            ref.read(accPermProvider('acc_document')).create &&
-            t.billable &&
-            !t.isBilled)
+        if (!locked)
+          MenuAction(
+            icon: PhosphorIconsRegular.pencilSimple,
+            label: 'Edit ticket',
+            enabled: canEdit,
+            sublabel: canEdit ? null : PermissionCopy.update,
+            onTap: () => context.push('${Routes.editTicket}?id=${t.id}'),
+          ),
+        if (!locked)
+          MenuAction(
+            icon: PhosphorIconsRegular.listChecks,
+            label: 'Create task from ticket',
+            enabled: canTask,
+            sublabel: canTask ? null : PermissionCopy.create,
+            onTap: () => _createTask(t),
+          ),
+        // "Bill this ticket" — offered only for a billable, unbilled ticket
+        // while accounting is active (the server does not check either).
+        if (ref.read(accountingActiveProvider) && ref.read(accPermProvider('acc_document')).create && t.billable && !t.isBilled)
           MenuAction(
             icon: PhosphorIconsRegular.receipt,
             label: 'Bill this ticket',
             sublabel: 'Create a draft invoice for this work',
             onTap: () => _billTicket(t),
           ),
-        MenuAction(
-          icon: PhosphorIconsRegular.listChecks,
-          label: 'Create task from ticket',
-          enabled: !locked,
-          sublabel: locked ? 'Closed — reopen to create tasks' : null,
-          onTap: () => _openCreateTaskSheet(t),
-        ),
-        if (locked)
-          MenuAction(
-            icon: PhosphorIconsRegular.archive,
-            label: 'Archive ticket',
-            destructive: true,
-            onTap: () => ref.read(toastProvider.notifier).show('Archive — coming soon'),
-          )
-        else
-          MenuAction(
-            icon: PhosphorIconsRegular.xCircle,
-            label: 'Close ticket',
-            destructive: true,
-            onTap: () => _changeStatus(t, 'closed', 'Ticket → Closed'),
-          ),
       ],
     );
   }
 
-  bool _billing = false;
+  // ── Writes ──
+
+  /// One ticket PATCH with the webapp's toast; refreshes on success and
+  /// reports a refusal in plain words.
+  Future<void> _patch(Ticket t, Map<String, dynamic> fields, String successMsg) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(ticketsRepositoryProvider).updateTicket(t.id, fields);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show(successMsg);
+      await _refresh(t.id);
+    } on AppError catch (e) {
+      if (mounted) showTicketError(ref, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _openStatusSheet(Ticket t) async {
+    await ref.read(ticketStatusCatalogProvider.future);
+    if (!mounted) return;
+    final catalog = ref.read(ticketStatusOptionsProvider);
+    final picked = await showClozrSheet<String>(
+      context: context,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: 24.h),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SheetHeader(title: 'Update status'),
+            Flexible(
+              child: ListView(shrinkWrap: true, children: [
+                for (final s in catalog)
+                  _optionRow(ctx, value: s.id, label: s.name, dot: s.color ?? AppColors.textMuted, active: s.id == t.statusId),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Picking the current status sends nothing.
+    if (picked == null || picked == t.statusId || !mounted) return;
+    await _patch(t, {'status_id': picked}, 'Status updated');
+  }
+
+  Widget _optionRow(BuildContext ctx, {required String value, required String label, Color? dot, required bool active}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(ctx).pop(value),
+      child: Container(
+        margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),
+        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 13.h),
+        decoration: BoxDecoration(
+          color: active ? AppColors.blueSubtle : AppColors.white,
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(color: active ? const Color(0xFFA6D1FF) : AppColors.borderCardSoft, width: active ? 1.5 : 1),
+        ),
+        child: Row(
+          children: [
+            if (dot != null) ...[
+              Container(width: 10.w, height: 10.w, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+              SizedBox(width: 11.w),
+            ],
+            Expanded(child: Text(label, style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary))),
+            if (active) Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.blueBright),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Inline Category (triage): "Uncategorised" clears it.
+  Future<void> _pickCategory(Ticket t) async {
+    final types = ref.read(ticketTypeOptionsProvider);
+    final current = t.typeId;
+    final picked = await showClozrSheet<String>(
+      context: context,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: 24.h),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SheetHeader(title: 'Category'),
+          Flexible(
+            child: ListView(shrinkWrap: true, children: [
+              _optionRow(ctx, value: '', label: 'Uncategorised', active: current.isEmpty),
+              for (final ty in types) _optionRow(ctx, value: ty.id, label: ty.name, active: ty.id == current),
+            ]),
+          ),
+        ]),
+      ),
+    );
+    if (picked == null || picked == current || !mounted) return;
+    await _patch(t, {'issue_type': picked.isEmpty ? null : picked},
+        picked.isEmpty ? 'Category cleared' : 'Category updated');
+  }
+
+  /// Inline Customer (triage): a server-side search, "No customer" unlinks.
+  Future<void> _pickCustomer(Ticket t) async {
+    final current = t.custId;
+    final picked = await showClozrSheet<String>(
+      context: context,
+      builder: (ctx) => _CustomerPickerSheet(current: current, onPick: (v) => Navigator.of(ctx).pop(v)),
+    );
+    if (picked == null || picked == current || !mounted) return;
+    await _patch(t, {'customer_id': picked.isEmpty ? null : picked},
+        picked.isEmpty ? 'Customer unlinked' : 'Customer linked');
+  }
+
+  /// The single Assignee select: "Unassigned" sends null; the options are
+  /// the users who can be assigned Helpdesk tickets (current one kept).
+  Future<void> _pickAssignee(Ticket t) async {
+    final eligible = await ref.read(ticketAssignableUsersProvider.future).catchError((_) => <({String id, String name})>[]);
+    if (!mounted) return;
+    final currentId = t.facts?.assignedToId ?? UserDirectory.realUserId(t.assignees.firstOrNull ?? '');
+    final options = assigneeChoices(
+      [for (final u in eligible) (id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name)],
+      currentId: currentId,
+      currentName: t.facts?.assignedToName,
+    );
+    final picked = await showClozrSheet<String>(
+      context: context,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: 24.h),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SheetHeader(title: 'Assignee'),
+          Flexible(
+            child: ListView(shrinkWrap: true, children: [
+              _optionRow(ctx, value: '', label: 'Unassigned', active: (currentId ?? '').isEmpty),
+              for (final u in options) _optionRow(ctx, value: u.id, label: u.name, active: u.id == currentId),
+            ]),
+          ),
+        ]),
+      ),
+    );
+    if (picked == null || picked == (currentId ?? '') || !mounted) return;
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(ticketsRepositoryProvider).setAssignee(t.id, picked.isEmpty ? null : picked);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('Assignee updated');
+      await _refresh(t.id);
+    } on AppError catch (e) {
+      if (mounted) showTicketError(ref, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Detaches [childId] from its parent — the only way to unblock a parent's
+  /// delete. [ownId] is the ticket on screen, refreshed afterwards.
+  Future<void> _detach(String childId, String reference, {required String ownId}) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(ticketsRepositoryProvider).setParent(childId, null);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('$reference detached');
+      await _refresh(ownId);
+    } on AppError catch (e) {
+      if (mounted) showTicketError(ref, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _openAttachSheet(Ticket t) async {
+    final attached = await showClozrSheet<bool>(
+      context: context,
+      builder: (ctx) => _AttachChildSheet(parent: t),
+    );
+    if (attached == true && mounted) {
+      ref.read(toastProvider.notifier).show('Child ticket attached');
+      await _refresh(t.id);
+    }
+  }
+
+  /// Opens the Operations New Task form linked to this ticket, Subject
+  /// prefilled from the ticket (webapp `AddProjectTaskModal`).
+  Future<void> _createTask(Ticket t) async {
+    final q = Uri(queryParameters: {'ticket': t.id, 'ticketRef': t.displayRef, 'subject': t.subject}).query;
+    await context.push('${Routes.createTask}?$q');
+    if (!mounted) return;
+    ref.invalidate(ticketLinkedTasksProvider(t.id));
+    ref.invalidate(ticketDetailProvider(t.id));
+  }
+
+  Future<void> _upload(Ticket t) async {
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(withData: false);
+    } on Object catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError('Could not open the file picker: $e');
+      return;
+    }
+    final file = picked?.files.singleOrNull;
+    final path = file?.path;
+    if (file == null || path == null || !mounted) return;
+    setState(() => _uploading = true);
+    try {
+      await ref.read(ticketsRepositoryProvider).uploadAttachment(t.id, path: path, name: file.name);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('File uploaded');
+      await _refresh(t.id);
+    } on AppError catch (e) {
+      if (mounted) showTicketError(ref, e);
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _logFirstResponse(Ticket t) async {
+    setState(() => _logging = true);
+    try {
+      await ref.read(ticketsRepositoryProvider).logFirstResponse(t.id);
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).show('First response logged');
+      await _refresh(t.id);
+    } on AppError catch (e) {
+      if (mounted) showTicketError(ref, e);
+    } finally {
+      if (mounted) setState(() => _logging = false);
+    }
+  }
+
+  /// Sends the reply through the ticket's channel. A dispatch failure (window
+  /// closed, no sender, no recipient) shows the server's message and keeps
+  /// the draft.
+  Future<void> _sendReply(Ticket t) async {
+    final text = _reply.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      await ref.read(ticketsRepositoryProvider).sendReply(t.id, text);
+      if (!mounted) return;
+      _reply.clear();
+      ref.read(toastProvider.notifier).show('Reply sent');
+      await _refresh(t.id);
+    } on AppError catch (e) {
+      if (mounted) {
+        ref.read(apiServiceProvider).handled(e);
+        ref.read(toastProvider.notifier).showError(e.bareMessage);
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
 
   /// Creates the one-line draft invoice for a billable ticket and opens it.
-  /// Disabled after the first tap: the create takes no idempotency key and
-  /// makes a new draft on every call (handover §12.1).
   Future<void> _billTicket(Ticket t) async {
     if (_billing) return;
     final ok = await confirmAcc(
@@ -967,242 +1604,249 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       if (mounted) setState(() => _billing = false);
     }
   }
+}
 
-  /// Applies a status change with optimistic UI. In mock mode the local override
-  /// updates and a success toast shows immediately (unchanged). In API mode the
-  /// write is awaited: success toast only on success; on an [AppError] the local
-  /// override rolls back and the error message is shown (audit — no more
-  /// fire-and-forget "success" that never reached the backend).
-  Future<void> _changeStatus(Ticket t, String key, String successMsg,
-      {String? statusId}) async {
-    final prevOverride = _status;
-    setState(() => _status = key);
-    if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show(successMsg);
-      return;
-    }
-    try {
-      final repo = ref.read(ticketsRepositoryProvider);
-      // By id when the sheet knows it — folding to a built-in key first would
-      // lose any status the vocabulary has no name for.
-      if (statusId != null && statusId.isNotEmpty) {
-        await repo.updateTicket(t.id, {'status_id': statusId});
-      } else {
-        await repo.setTicketStatusByKey(t.id, key);
-      }
-      if (!mounted) return;
-      ref.read(toastProvider.notifier).show(successMsg);
-      // Re-read rather than trust the optimistic value. A ticket already in a
-      // read-only status (Closed, Resolved) takes the PATCH with a `200` and
-      // silently keeps its old status — without this the screen would go on
-      // showing a change the server never made.
-      refreshTickets(ref);
-      ref.invalidate(ticketDetailProvider(t.id));
-      await ref.read(ticketDetailProvider(t.id).future);
-      if (!mounted) return;
-      setState(() => _status = null);
-    } on AppError catch (e) {
-      if (!mounted) return;
-      setState(() => _status = prevOverride);
-      ref.read(toastProvider.notifier).showError(e.message);
-    }
-  }
+/// The triage Customer picker: "No customer" plus a server-side search.
+class _CustomerPickerSheet extends ConsumerStatefulWidget {
+  const _CustomerPickerSheet({required this.current, required this.onPick});
 
-  // ── Status sheet ──
-  /// The org's own statuses from `/crm/issue-statuses/`.
-  ///
-  /// This listed a hardcoded new/open/pending/resolved/closed. Two of those
-  /// ("new", "pending") are not statuses this backend has, and four that it
-  /// does — In Progress, On Hold, Duplicate, Overdue — could not be picked at
-  /// all. The built-ins remain the fallback for mock mode.
-  Future<void> _openStatusSheet(Ticket t) async {
-    await ref.read(ticketStatusCatalogProvider.future);
-    if (!mounted) return;
-    final catalog = ref.read(ticketStatusOptionsProvider);
+  final String current;
+  final ValueChanged<String> onPick;
 
-    await showClozrSheet<void>(
-      context: context,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: 24.h),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SheetHeader(title: 'Update status'),
-            if (catalog.isEmpty)
-              for (final key in const ['new', 'open', 'pending', 'resolved', 'closed'])
-                _statusOption(ctx, t, key: key, label: StatusMeta$.ticket[key]!.label)
-            else
-              for (final s in catalog)
-                _statusOption(ctx, t, key: ticketStatusKey(s.name), label: s.name, id: s.id),
-          ],
+  @override
+  ConsumerState<_CustomerPickerSheet> createState() => _CustomerPickerSheetState();
+}
+
+class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(ticketCustomerSearchProvider(_search.trim()));
+    final rows = async.valueOrNull?.$1 ?? const <({String id, String name})>[];
+    return Padding(
+      padding: EdgeInsets.only(bottom: 16.h + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        SheetHeader(title: 'Customer'),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 10.h),
+          child: _SearchField(hint: 'Search customers…', onChanged: (v) => setState(() => _search = v)),
         ),
-      ),
+        Flexible(
+          child: ListView(shrinkWrap: true, children: [
+            _pickRow('', 'No customer', widget.current.isEmpty),
+            if (async.isLoading && rows.isEmpty)
+              Padding(padding: EdgeInsets.all(16.w), child: const Center(child: CircularProgressIndicator())),
+            if (!async.isLoading && rows.isEmpty && _search.trim().isNotEmpty)
+              Padding(
+                padding: EdgeInsets.all(16.w),
+                child: Text('No customers match “${_search.trim()}”',
+                    style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+              ),
+            for (final c in rows) _pickRow(c.id, c.name, c.id == widget.current),
+          ]),
+        ),
+      ]),
     );
   }
 
-  /// [id] is the org's `issue_status_id` — sent as-is when present, so a status
-  /// with no built-in equivalent still writes correctly. [key] only picks the
-  /// pill colour and marks the current row.
-  Widget _statusOption(BuildContext ctx, Ticket t,
-      {required String key, required String label, String? id}) {
-    final meta = StatusMeta$.ticket[key] ?? StatusMeta$.ticket['open']!;
-    // Matched on the org's own name where we have it: two statuses can fold to
-    // the same built-in key, and then both rows would read as active.
-    final active = id != null && t.statusName.isNotEmpty
-        ? t.statusName.trim().toLowerCase() == label.trim().toLowerCase()
-        : t.status == key;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Navigator.of(ctx).pop();
-        _changeStatus(t, key, 'Status → $label', statusId: id);
-      },
-      child: Container(
-        margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),
-        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 13.h),
-        decoration: BoxDecoration(
-          color: active ? AppColors.blueSubtle : AppColors.white,
-          borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: active ? const Color(0xFFA6D1FF) : AppColors.borderCardSoft, width: active ? 1.5 : 1),
-        ),
-        child: Row(
-          children: [
-            Container(width: 10.w, height: 10.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
-            SizedBox(width: 11.w),
+  Widget _pickRow(String value, String label, bool active) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onPick(value),
+        child: Container(
+          margin: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),
+          padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 13.h),
+          decoration: BoxDecoration(
+            color: active ? AppColors.blueSubtle : AppColors.white,
+            borderRadius: BorderRadius.circular(12.r),
+            border: Border.all(color: active ? const Color(0xFFA6D1FF) : AppColors.borderCardSoft),
+          ),
+          child: Row(children: [
             Expanded(child: Text(label, style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary))),
             if (active) Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.blueBright),
-          ],
+          ]),
         ),
-      ),
-    );
-  }
+      );
+}
 
-  /// Assigns the ticket, with the same optimistic-then-verify contract as
-  /// [_changeStatus]: the avatar updates immediately, and in API mode a
-  /// rejected write rolls it back rather than leaving the UI claiming an
-  /// assignment the server never took.
-  ///
-  /// The backend stores **one** `assigned_to` per ticket, so [mappedId] null
-  /// means unassign.
-  Future<void> _changeAssignee(Ticket t, String? mappedId) async {
-    final prevOverride = _assignees;
-    final next = mappedId == null ? <String>[] : <String>[mappedId];
-    setState(() => _assignees = next);
-    final name = mappedId == null ? 'Unassigned' : MockUsers.of(mappedId).name;
-    if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show('Assignee → $name');
-      return;
-    }
-    // Pickers deal in the mapped id ('me'); the server needs its own uuid.
-    final userId = mappedId == null ? null : UserDirectory.realUserId(mappedId);
-    if (mappedId != null && userId == null) {
-      setState(() => _assignees = prevOverride);
-      ref.read(toastProvider.notifier).showError('That user is not on the server');
-      return;
-    }
+/// "Attach a child ticket": search tickets that have no parent (never the
+/// ticket itself), pick one, Attach. A refusal is shown inline in the picker
+/// — the user is mid-choice and needs to pick a different ticket.
+class _AttachChildSheet extends ConsumerStatefulWidget {
+  const _AttachChildSheet({required this.parent});
+
+  final Ticket parent;
+
+  @override
+  ConsumerState<_AttachChildSheet> createState() => _AttachChildSheetState();
+}
+
+class _AttachChildSheetState extends ConsumerState<_AttachChildSheet> {
+  String _search = '';
+  String _picked = '';
+  String? _error;
+  bool _submitting = false;
+
+  Future<void> _attach() async {
+    if (_picked.isEmpty || _submitting) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
     try {
-      await ref.read(ticketsRepositoryProvider).setAssignee(t.id, userId);
-      if (!mounted) return;
-      ref.read(toastProvider.notifier).show('Assignee → $name');
-      await _refresh(t.id);
+      await ref.read(ticketsRepositoryProvider).setParent(_picked, widget.parent.id);
+      if (mounted) Navigator.of(context).pop(true);
     } on AppError catch (e) {
-      if (!mounted) return;
-      setState(() => _assignees = prevOverride);
-      ref.read(toastProvider.notifier).showError(e.message);
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _error = hierarchyErrorCopy(e);
+        });
+      }
     }
   }
 
-  // ── Assignee sheet ──
-  //
-  // Single-choice: an issue carries one `assigned_to` (`helpdesk.md` §8), so
-  // tapping a person assigns them and tapping the current assignee clears the
-  // ticket. The rows keep their checkbox — only one is ever ticked.
-  void _openAssigneeSheet(Ticket t) {
-    final selected = List<String>.from(t.assignees);
-    final roster = ref.read(rosterProvider);
-    showClozrSheet<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.only(bottom: 24.h),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SheetHeader(title: 'Assignee'),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.symmetric(horizontal: 18.w),
-                  children: [
-                    for (final r in roster)
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          // Closing first keeps one source of truth: the write
-                          // is optimistic on the screen and rolls back there if
-                          // the server refuses it, so a sheet left open would
-                          // be the only thing still showing the failed choice.
-                          final clearing = selected.contains(r.id);
-                          Navigator.of(ctx).pop();
-                          _changeAssignee(t, clearing ? null : r.id);
-                        },
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8.h),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36.w,
-                                height: 36.w,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(color: r.color, shape: BoxShape.circle),
-                                child: Text(r.initials, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.white)),
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(ticketAttachCandidatesProvider(_search.trim()));
+    final candidates = [
+      for (final c in async.valueOrNull ?? const <Ticket>[])
+        if (c.id != widget.parent.id) c,
+    ];
+    return Padding(
+      padding: EdgeInsets.only(bottom: 16.h + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SheetHeader(title: 'Attach a child ticket'),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 10.h),
+          child: _SearchField(
+              hint: 'Search tickets by subject or reference…', onChanged: (v) => setState(() => _search = v)),
+        ),
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: 320.h),
+            child: async.isLoading && candidates.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : candidates.isEmpty
+                    ? Padding(
+                        padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 12.h),
+                        child: Text("No eligible tickets. Tickets that already have a parent can't be attached.",
+                            style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      )
+                    : ListView(shrinkWrap: true, padding: EdgeInsets.symmetric(horizontal: 18.w), children: [
+                        for (final c in candidates)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => setState(() {
+                              _picked = c.id;
+                              _error = null;
+                            }),
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 11.h),
+                              decoration: BoxDecoration(
+                                color: _picked == c.id ? AppColors.bgChipGrey : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8.r),
                               ),
-                              SizedBox(width: 12.w),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(r.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                                    SizedBox(height: 1.h),
-                                    Text(r.role, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                                  ],
+                              child: Row(children: [
+                                Icon(_picked == c.id ? PhosphorIconsBold.check : PhosphorIconsRegular.circle,
+                                    size: 15.sp, color: _picked == c.id ? AppColors.navy : AppColors.textPlaceholder),
+                                SizedBox(width: 10.w),
+                                Expanded(
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text(c.subject.isNotEmpty ? c.subject : 'Untitled ticket',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textBody)),
+                                    Text('${c.displayRef} · ${c.statusName}',
+                                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                                  ]),
                                 ),
-                              ),
-                              _checkbox(selected.contains(r.id)),
-                            ],
+                              ]),
+                            ),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+                      ]),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _checkbox(bool on) {
-    return Container(
-      width: 22.w,
-      height: 22.w,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: on ? AppColors.navy : AppColors.white,
-        borderRadius: BorderRadius.circular(6.r),
-        border: Border.all(color: on ? AppColors.navy : AppColors.borderInput, width: 1.5),
-      ),
-      child: on ? Icon(PhosphorIconsBold.check, size: 13.sp, color: AppColors.white) : null,
+        if (_error != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 0),
+            child: Text(_error!, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.error)),
+          ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 0),
+          child: Row(children: [
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(false),
+                child: Container(
+                  height: 44.h,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(11.r),
+                    border: Border.all(color: AppColors.borderInput),
+                  ),
+                  child: Text('Cancel', style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textBody)),
+                ),
+              ),
+            ),
+            SizedBox(width: 10.w),
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _picked.isEmpty || _submitting ? null : _attach,
+                child: Opacity(
+                  opacity: _picked.isEmpty || _submitting ? 0.5 : 1,
+                  child: Container(
+                    height: 44.h,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                    child: Text(_submitting ? 'Attaching…' : 'Attach',
+                        style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.white)),
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ]),
     );
   }
 }
 
-class _Audit {
-  final IconData icon;
-  final Color tone;
-  final Color bg;
-  final String title;
-  final String sub;
-  const _Audit(this.icon, this.tone, this.bg, this.title, this.sub);
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.hint, required this.onChanged});
+
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44.h,
+      padding: EdgeInsets.symmetric(horizontal: 12.w),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(11.r),
+        border: Border.all(color: AppColors.borderInput),
+      ),
+      child: Row(children: [
+        Icon(PhosphorIconsRegular.magnifyingGlass, size: 16.sp, color: AppColors.textMuted),
+        SizedBox(width: 8.w),
+        Expanded(
+          child: TextField(
+            onChanged: onChanged,
+            style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
+            decoration: InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              hintText: hint,
+              hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 }

@@ -83,6 +83,7 @@ Future<DueDateWrite> writeWithDueDateFlow(
   required bool hadDate,
   String dateKey = 'due_date',
   String fieldLabel = 'Due date',
+  String? dateLabel,
 }) async {
   var body = {...fields};
   final moving = body.containsKey(dateKey) && hadDate;
@@ -91,7 +92,7 @@ Future<DueDateWrite> writeWithDueDateFlow(
     if (rules != null && rules.reasonRequired) {
       if (!context.mounted) return DueDateWrite.cancelled;
       final reason = await showDueDateReasonSheet(context,
-          fieldLabel: fieldLabel, newDate: body[dateKey]?.toString(), reasons: rules.reasons);
+          fieldLabel: fieldLabel, newDate: body[dateKey]?.toString(), reasons: rules.reasons, dateLabel: dateLabel);
       if (reason == null) return DueDateWrite.cancelled;
       body = {...body, ...reason};
     }
@@ -111,7 +112,7 @@ Future<DueDateWrite> writeWithDueDateFlow(
     final serverReasons = [for (final r in (e.extra?['reasons'] is List ? e.extra!['reasons'] as List : const [])) '$r'];
     if (!context.mounted) return DueDateWrite.cancelled;
     final reason = await showDueDateReasonSheet(context,
-        fieldLabel: fieldLabel, newDate: body[dateKey]?.toString(), reasons: serverReasons);
+        fieldLabel: fieldLabel, newDate: body[dateKey]?.toString(), reasons: serverReasons, dateLabel: dateLabel);
     if (reason == null) return DueDateWrite.cancelled;
     final (status, _) = await api.patchWithStatus(path, body: {...body, ...reason});
     if (status == 202) {
@@ -128,18 +129,24 @@ Future<Map<String, dynamic>?> showDueDateReasonSheet(
   required String fieldLabel,
   required String? newDate,
   required List<String> reasons,
+  String? dateLabel,
 }) =>
     showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _ReasonDialog(fieldLabel: fieldLabel, newDate: newDate, reasons: dueDateReasonOptions(reasons)),
+      builder: (_) => _ReasonDialog(
+          fieldLabel: fieldLabel, newDate: newDate, reasons: dueDateReasonOptions(reasons), dateLabel: dateLabel),
     );
 
 class _ReasonDialog extends StatefulWidget {
-  const _ReasonDialog({required this.fieldLabel, required this.newDate, required this.reasons});
+  const _ReasonDialog({required this.fieldLabel, required this.newDate, required this.reasons, this.dateLabel});
 
   final String fieldLabel;
   final String? newDate;
   final List<String> reasons;
+
+  /// The new date already formatted — a timestamp's UTC date part can be the
+  /// day before the one picked, so callers sending one say it themselves.
+  final String? dateLabel;
 
   @override
   State<_ReasonDialog> createState() => _ReasonDialogState();
@@ -174,9 +181,9 @@ class _ReasonDialogState extends State<_ReasonDialog> {
   @override
   Widget build(BuildContext context) {
     final field = widget.fieldLabel.toLowerCase();
-    final date = (widget.newDate ?? '').isEmpty
+    final date = widget.dateLabel ?? ((widget.newDate ?? '').isEmpty
         ? (field.contains('committed') ? 'no committed date' : 'no due date')
-        : dueDateLabel(widget.newDate);
+        : dueDateLabel(widget.newDate));
     return AlertDialog(
       title: Text('Why is the $field moving?'),
       content: SingleChildScrollView(
@@ -231,9 +238,12 @@ class _ReasonDialogState extends State<_ReasonDialog> {
 
 /// Webapp `PendingDueDateBanner`, from the record's `pending_due_date_change`.
 class PendingDueDateBanner extends StatelessWidget {
-  const PendingDueDateBanner({super.key, required this.pending});
+  const PendingDueDateBanner({super.key, required this.pending, this.fieldLabel = 'Due date'});
 
   final Map<String, dynamic>? pending;
+
+  /// "Due date" / "Expected end" — names the field that is waiting.
+  final String fieldLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +253,7 @@ class PendingDueDateBanner extends StatelessWidget {
     final reason = '${p['reason_code'] ?? ''}'.trim();
     final note = '${p['reason_text'] ?? ''}'.trim();
     final who = '${p['requested_by_name'] ?? ''}'.trim();
-    final rest = StringBuffer('Due date → ${dueDateLabel('${p['new_value'] ?? ''}')}');
+    final rest = StringBuffer('$fieldLabel → ${dueDateLabel('${p['new_value'] ?? ''}')}');
     if (slip != null && slip != 0) rest.write(' (${slipLabel(slip)})');
     if (reason.isNotEmpty) rest.write(' — $reason');
     if (note.isNotEmpty) rest.write(': “$note”');

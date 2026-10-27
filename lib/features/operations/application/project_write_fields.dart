@@ -32,10 +32,14 @@ Map<String, dynamic> projectWriteFields({
   String? visibility,
   String? progressMethod,
   String? percentComplete,
+  String? quotationId,
   List<CatalogOption> customers = const [],
   List<CatalogOption> types = const [],
   List<CatalogOption> statuses = const [],
   List<CatalogOption> teams = const [],
+  /// The record's current team id: used when [teamLabel] is not in [teams]
+  /// (the list could not be read), so an unchanged team is re-sent, not cleared.
+  String teamFallbackId = '',
 }) {
   final manager = UserDirectory.realUserId(managerId);
   final manualPercent =
@@ -64,10 +68,15 @@ Map<String, dynamic> projectWriteFields({
     // distinct from omitting the key, which would leave an existing link alone.
     if (customerLabel != null)
       'customer': customerLabel.isEmpty ? null : _idFor(customers, customerLabel),
+    // The linked quote (accounting §B8): null when the form has none — sent
+    // explicitly on edit so a removed link is cleared, omitted when unknown.
+    if (quotationId != null) 'quotation': quotationId.isEmpty ? null : quotationId,
     if (_idFor(types, typeLabel) case final id?) 'project_type': id,
     if (_idFor(statuses, statusLabel) case final id?) 'status': id,
     if (teamLabel != null)
-      'assigned_team': teamLabel.isEmpty ? null : _idFor(teams, teamLabel),
+      'assigned_team': teamLabel.isEmpty
+          ? null
+          : _idFor(teams, teamLabel) ?? teamFallbackId.ifEmptyNull,
     if (manager != null) 'manager': manager,
     if (assigneesUsable) 'assignees': assignees,
     if (cost != null && cost.trim().isNotEmpty)
@@ -148,3 +157,7 @@ bool isValidCostAmount(String raw) =>
     raw.trim().isEmpty || parseCostAmount(raw) != null;
 
 String _amount(String raw) => parseCostAmount(raw) ?? '0';
+
+extension on String {
+  String? get ifEmptyNull => isEmpty ? null : this;
+}

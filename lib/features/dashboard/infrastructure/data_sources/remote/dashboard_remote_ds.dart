@@ -23,9 +23,14 @@ import '../../../domain/entities/dashboard_models.dart';
 /// with `scope=own` before giving up. Mapping is static so tests feed fixture
 /// maps without an HTTP stack.
 class DashboardRemoteDataSource {
-  const DashboardRemoteDataSource(this._api);
+  const DashboardRemoteDataSource(this._api, {this.includePmo = true});
 
   final ApiService _api;
+
+  /// Whether the Operations (`/dashboard-pmo/`) widgets are fetched at all.
+  /// False for a role without `pmo_dashboard`: the webapp never renders the
+  /// Operations panel for it, so it never asks for those figures either.
+  final bool includePmo;
 
   // ── section keys of the raw bundle (shared with the repository + tests) ──
   static const kCustomerKpis = 'customer_kpis';
@@ -136,11 +141,13 @@ class DashboardRemoteDataSource {
       kCrmStuckPayments: call('$crm/stuck-items/', {'kind': 'payments'}),
       kCrmStuckWonNc: call('$crm/stuck-items/', {'kind': 'won_nc'}),
       kCrmEmployees: call('$crm/employee-performance/'),
-      kPmoKpis: call('$pmo/kpis/'),
-      kPmoStatus: call('$pmo/project-status/'),
-      kPmoOverdue: call('$pmo/overdue-tasks/'),
-      kPmoProjects: call('$pmo/active-projects/'),
-      kPmoEmployees: call('$pmo/employee-performance/'),
+      if (includePmo) ...{
+        kPmoKpis: call('$pmo/kpis/'),
+        kPmoStatus: call('$pmo/project-status/'),
+        kPmoOverdue: call('$pmo/overdue-tasks/'),
+        kPmoProjects: call('$pmo/active-projects/'),
+        kPmoEmployees: call('$pmo/employee-performance/'),
+      },
       kIssueKpis: call('$issue/kpis/'),
       // The category axis (IssueType), which is what the chart is titled after.
       // Was `tickets-by-status/` — the workflow-lane axis, a different breakdown
@@ -356,12 +363,31 @@ class DashboardRemoteDataSource {
           trendPct: _numOf(overdueTasks['trend_pct']),
           goodWhenUp: false);
     }
-    final cycle = json['avg_project_cycle'];
-    if (cycle is Map && cycle['days'] != null) {
-      out[3] = _kpiWith(base[3],
-          value: _trimNum(_numOf(cycle['days']) ?? 0),
-          trendPct: _numOf(cycle['trend_pct']),
+    // The two cycle-time cards, read the webapp's way (`cycleDays` /
+    // `cycleSub`): an average of 0 is "< 1 day" (stamps are whole days), no
+    // finished item is "—", and the sub-line says how many were measured.
+    DashKpi cycleCard(DashKpi b, Object? raw, String what, String noun) {
+      if (raw is! Map) return b;
+      final days = _numOf(raw['days']);
+      final measured = _intOf(raw['measured']) ?? 0;
+      final (value, unit) = days == null
+          ? ('—', '')
+          : days == 0
+              ? ('< 1', 'day')
+              : (_trimNum(days), days == 1 ? 'day' : 'days');
+      return _kpiWith(b,
+          value: value,
+          unit: unit,
+          sub: measured > 0
+              ? '$what · $measured $noun${measured == 1 ? '' : 's'} measured'
+              : '$what · none finished this period',
+          trendPct: _numOf(raw['trend_pct']),
           goodWhenUp: false);
+    }
+
+    out[3] = cycleCard(base[3], json['avg_project_cycle'], 'Start → handover', 'project');
+    if (out.length > 4) {
+      out[4] = cycleCard(base[4], json['avg_task_cycle'], 'Start → done', 'task');
     }
     return out;
   }

@@ -85,42 +85,69 @@ Future<String?> showOpsOptionPicker({
   required String title,
   required List<({String value, String label})> options,
   required String currentValue,
+  /// When set, a search box (with this hint) filters the options by label.
+  String? searchHint,
 }) {
+  var query = '';
   return showClozrSheet<String>(
     context: context,
-    builder: (ctx) => Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SheetHeader(title: title),
-        Flexible(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(14.w, 0, 14.w, 26.h),
-            child: Column(
-              children: [
-                for (final o in options)
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(ctx).pop(o.value),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),
-                      decoration: BoxDecoration(
-                        color: o.value == currentValue ? const Color(0xFFF6F8FB) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12.r),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text(o.label, style: AppText.custom(size: 15, weight: FontWeight.w600, color: AppColors.textBody))),
-                          Icon(PhosphorIconsBold.check, size: 18.sp, color: o.value == currentValue ? AppColors.success : Colors.transparent),
-                        ],
-                      ),
-                    ),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheet) {
+        final q = query.trim().toLowerCase();
+        final shown = q.isEmpty ? options : [for (final o in options) if (o.label.toLowerCase().contains(q)) o];
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetHeader(title: title),
+            if (searchHint != null)
+              Padding(
+                padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 10.h),
+                child: TextField(
+                  onChanged: (v) => setSheet(() => query = v),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: searchHint,
+                    prefixIcon: Icon(PhosphorIconsRegular.magnifyingGlass, size: 16.sp),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r)),
                   ),
-              ],
+                ),
+              ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(14.w, 0, 14.w, 26.h),
+                child: Column(
+                  children: [
+                    if (shown.isEmpty)
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16.h),
+                        child: Text('No matching tasks', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      ),
+                    for (final o in shown)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => Navigator.of(ctx).pop(o.value),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),
+                          decoration: BoxDecoration(
+                            color: o.value == currentValue ? const Color(0xFFF6F8FB) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12.r),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(child: Text(o.label, style: AppText.custom(size: 15, weight: FontWeight.w600, color: AppColors.textBody))),
+                              Icon(PhosphorIconsBold.check, size: 18.sp, color: o.value == currentValue ? AppColors.success : Colors.transparent),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     ),
   );
 }

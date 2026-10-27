@@ -40,6 +40,24 @@ class _OkAdapter implements HttpClientAdapter {
 
 /// Counts how often the ticket's activity feed was actually fetched.
 class _CountingRepo implements TicketsRepository {
+  @override
+  Future<List<Ticket>> getChildren(String issueId) async => const [];
+
+  @override
+  Future<List<Ticket>> searchRootTickets(String search) async => const [];
+
+  @override
+  Future<void> setParent(String issueId, String? parentId) async {}
+
+  @override
+  Future<void> logFirstResponse(String issueId) async {}
+
+  @override
+  Future<void> sendReply(String issueId, String body) async {}
+
+  @override
+  Future<void> uploadAttachment(String issueId, {required String path, required String name}) async {}
+
   int activityCalls = 0;
 
   @override

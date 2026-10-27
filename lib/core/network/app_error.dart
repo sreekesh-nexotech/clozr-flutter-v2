@@ -90,6 +90,15 @@ class AppError implements Exception {
 
   bool get isAuthError => type == AppErrorType.unauthorized;
 
+  /// The machine codes the server attached to [field] (`error_codes`), e.g.
+  /// `status_id` → `['note_required_before_hold']` — the webapp's
+  /// `Failure.fieldErrorCodes`.
+  List<String> fieldErrorCodes(String field) {
+    final all = extra?['error_codes'];
+    final codes = all is Map ? all[field] : null;
+    return codes is List ? [for (final c in codes) '$c'] : const [];
+  }
+
   /// An accounting posting hook refused this write and the CRM side was rolled
   /// back. Only possible once the accounting module is live.
   bool get isAccountingRejection =>
@@ -233,7 +242,7 @@ class AppError implements Exception {
   static Map<String, dynamic>? _extractExtra(Object? body) {
     if (body is! Map) return null;
     final out = <String, dynamic>{};
-    for (final key in const ['rule', 'next', 'next_action', 'cause', 'current_updated_at', 'modified_by', 'reasons']) {
+    for (final key in const ['rule', 'next', 'next_action', 'cause', 'current_updated_at', 'modified_by', 'reasons', 'open_task_count', 'error_codes']) {
       final v = body[key];
       if (v != null) out[key] = v;
     }

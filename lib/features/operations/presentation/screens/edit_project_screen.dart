@@ -16,10 +16,11 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../../crm/application/providers/customers_providers.dart';
 import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../crm/domain/entities/customer.dart';
-import '../../../people/application/providers/people_providers.dart';
-import '../../../people/domain/entities/team.dart';
 import '../../application/project_write_fields.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../application/providers/project_form_providers.dart';
+import '../components/project_close.dart';
+import '../../../../core/network/network_providers.dart';
 import '../components/ops_form_scaffold.dart';
 import '../components/ops_widgets.dart';
 
@@ -54,12 +55,65 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
   String? _manager;
   final Set<String> _assignees = {};
   String _team = '';
-  String _status = 'planning';
+  // The loaded team's name and id, to re-send it unchanged by id.
+  String _origTeam = '';
+  String _origTeamId = '';
+  /// The org's own status name.
+  String _status = '';
   String _visibility = 'Team';
   String _method = 'Task Completion';
+  /// The linked quote's id (empty = none).
+  String _quote = '';
+  bool _saving = false;
+  /// The record's `can_manage`: false locks the governed fields.
+  bool _govLocked = false;
+  String? _nameErr;
+  String? _endErrMsg;
+  // Manual progress outside 0–100 (webapp `ProgressMetric`).
+  String? _progressErr;
 
-  static const _vis = ['Organization', 'Team', 'Private'];
-  static const _methods = ['Task Completion', 'Manual'];
+  static const _vis = ['Private', 'Team', 'Organization'];
+  // Webapp METHOD_OPTIONS — all four.
+  static const _methods = ['Task Completion', 'Task Progress', 'Task Weight', 'Manual'];
+
+  /// Webapp `projectGovernance.ts`.
+  static const _govNote =
+      "You can edit this project's details. Its status, dates, visibility, manager, assignees and team are changed by its owner, manager or an admin.";
+  static const _govReason = 'Only the project owner, manager or an admin can change this.';
+
+  /// Runs [open] unless the field is governed and locked, in which case it
+  /// says why (the webapp shows the same text as a tooltip on the disabled field).
+  void _governed(VoidCallback open) {
+    if (_govLocked) {
+      ref.read(toastProvider.notifier).show(_govReason);
+      return;
+    }
+    open();
+  }
+
+  /// A governed field, dimmed while locked.
+  Widget _gov(Widget child) => _govLocked ? Opacity(opacity: 0.55, child: child) : child;
+
+  /// Manager / assignee choices: assignable users (webapp), plus anyone already
+  /// on the record who has since lost access — re-saving them is allowed.
+  List<({String id, String name, String initials})> _people(List<AppUser> roster) {
+    final assignable = ref.read(projectAssignableUsersProvider).valueOrNull;
+    final base = assignable == null
+        ? [for (final r in roster) (id: r.id, name: r.name, initials: r.initials)]
+        : [for (final u in assignable) (id: u.id, name: u.name, initials: MockUsers.of(u.id).initials)];
+    final ids = {for (final b in base) b.id};
+    return [
+      ...base,
+      for (final id in {if (_manager != null && _manager!.isNotEmpty) _manager!, ..._assignees})
+        if (!ids.contains(id))
+          (id: id, name: MockUsers.of(id).name, initials: MockUsers.of(id).initials),
+    ];
+  }
+
+  String? get _customerId => _customerOptions
+      .where((c) => c.name == _customer && _customer.isNotEmpty)
+      .map((c) => c.id)
+      .firstOrNull;
 
   @override
   void dispose() {
@@ -79,7 +133,22 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
 
   /// API mode: PATCH the edited fields, refresh the list, toast + pop as
   /// before. Mock mode: exactly the previous local toast-and-pop behavior.
-  Future<void> _save() async {
+  Future<void> _save({bool cancelOpenTasks = false, int? openCount}) async {
+    if (_saving) return;
+    final nameErr = _name.text.trim().isEmpty ? 'Project name is required' : null;
+    final endErr = _endErr ? 'End date must be after the start date' : null;
+    final pct = num.tryParse(_progress.text.trim());
+    final progressErr = _isManual &&
+            _progress.text.trim().isNotEmpty &&
+            (pct == null || pct < 0 || pct > 100)
+        ? 'Enter a number between 0 and 100.'
+        : null;
+    setState(() {
+      _nameErr = nameErr;
+      _endErrMsg = endErr;
+      _progressErr = progressErr;
+    });
+    if (nameErr != null || endErr != null || progressErr != null) return;
     // A cost the parser cannot read must not be saved as whatever digits were
     // left in it — "20K" used to land as ₹20 with no warning.
     if (!isValidCostAmount(_cost.text)) {
@@ -92,6 +161,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       context.pop();
       return;
     }
+    setState(() => _saving = true);
     try {
       // Everything the form collects. This sent four keys, so a changed
       // customer, project type, status, team, manager, assignee set, cost,
@@ -105,7 +175,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
               description: _desc.text,
               customerLabel: _customer,
               typeLabel: _type,
-              statusLabel: _statusLabel,
+              statusLabel: _status,
               teamLabel: _team,
               managerId: _manager,
               assigneeIds: _assignees,
@@ -117,22 +187,49 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
               // Editable only when the method is Manual, which is also the only
               // case the API stores it in.
               percentComplete: _isManual ? _progress.text : null,
+              // Always sent on edit: '' clears the link (webapp sends null).
+              quotationId: _quote,
               customers: _customerOptions,
               types: ref.read(projectTypeOptionsProvider),
               statuses: ref.read(projectStatusOptionsProvider),
               teams: _teamOptions,
-            ),
+              teamFallbackId: _team == _origTeam ? _origTeamId : '',
+            )..addAll(cancelOpenTasks ? openTasksActionCancel : const {}),
           );
       if (!mounted) return;
       // The list *and* the record behind the detail page — without the second
       // one the screen re-renders the pre-edit values it already had.
       ref.invalidate(projectsProvider);
       ref.invalidate(projectDetailProvider(_id));
-      ref.read(toastProvider.notifier).show('Changes saved');
+      ref.read(toastProvider.notifier).show(
+          cancelOpenTasks ? closedWithOpenTasksMessage(openCount) : 'Changes saved');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).showError(e.message);
+      setState(() => _saving = false);
+      ref.read(apiServiceProvider).handled(e);
+      // A close refused for open tasks is a question (webapp D24): confirm and
+      // resend the same edit with `open_tasks_action: cancel`.
+      final conflict = cancelOpenTasks ? null : openTasksConflict(e);
+      if (conflict != null) {
+        if (await confirmCloseWithOpenTasks(context, conflict.count) && mounted) {
+          await _save(cancelOpenTasks: true, openCount: conflict.count);
+        }
+        return;
+      }
+      // Webapp `surfaceError`: a governance refusal names the fields — a toast;
+      // a name problem on the name field, a date problem on the end date,
+      // anything else a toast, in the server's words without `field:`.
+      final msg = e.bareMessage;
+      if (e.code == 'PROJECT_GOVERNANCE_FIELD') {
+        ref.read(toastProvider.notifier).showError(msg);
+      } else if (RegExp('name', caseSensitive: false).hasMatch(msg)) {
+        setState(() => _nameErr = msg);
+      } else if (RegExp('end date|start date', caseSensitive: false).hasMatch(msg)) {
+        setState(() => _endErrMsg = msg);
+      } else {
+        ref.read(toastProvider.notifier).showError(msg);
+      }
     }
   }
 
@@ -155,14 +252,9 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       [for (final t in ref.read(projectTypeOptionsProvider)) t.name];
 
   List<CatalogOption> get _teamOptions => [
-        for (final t in ref.read(teamsProvider).valueOrNull ?? const <Team>[])
-          CatalogOption(id: t.id, name: t.name),
+        ...?ref.read(projectTeamsProvider).valueOrNull,
       ];
 
-  /// The picker holds a folded key ("planning"); the API wants the org's own
-  /// status row, matched by name.
-  String get _statusLabel =>
-      (StatusMeta$.project[_status] ?? StatusMeta$.project['planning']!).label;
 
   @override
   Widget build(BuildContext context) {
@@ -201,13 +293,21 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       _end = opsParseDisplayDate(project.end);
       _manager = project.manager;
       _assignees.addAll(project.assignees);
-      _status = project.status;
+      _status = project.statusName.isNotEmpty
+          ? project.statusName
+          : (StatusMeta$.project[project.status]?.label ?? '');
       _team = project.team;
+      _origTeam = project.team;
+      _origTeamId = project.teamId;
+      _quote = project.quotationId;
       // Empty until the detail record lands; keep the form's defaults rather
       // than showing a value the project does not have.
       if (project.visibility.isNotEmpty) _visibility = project.visibility;
       if (project.method.isNotEmpty) _method = project.method;
     }
+    // Follows the record: the detail fetch may land after the first build.
+    _govLocked = project.canManage == false;
+    if (_quote.isEmpty && project.quotationId.isNotEmpty && !_dirty) _quote = project.quotationId;
 
     // Watched here, not read inside the pickers' onTap: the type and status
     // catalogs are what a picked label resolves to an id against, and until
@@ -217,14 +317,22 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
     ref.watch(projectTypeCatalogProvider);
     ref.watch(projectStatusCatalogProvider);
     ref.watch(customersProvider);
-    ref.watch(teamsProvider);
+    ref.watch(projectTeamsProvider);
+    ref.watch(projectAssignableUsersProvider);
     final roster = ref.watch(rosterProvider);
+    final people = _people(roster);
+    final statusNames = [for (final st in ref.watch(projectStatusOptionsProvider)) st.name];
+    final custId = _customerId;
+    final quotes = custId == null
+        ? const <CatalogOption>[]
+        : ref.watch(customerQuotesProvider(custId)).valueOrNull ?? const <CatalogOption>[];
     // The org's real customers — see the create screen for why.
     final customers = [for (final c in _customerOptions) c.name];
     // The org's real teams, so the picked label resolves to a `team_id`.
     // This listed the team names sitting on roster users.
     final teams = [for (final t in _teamOptions) t.name];
-    final mgr = _manager == null ? null : MockUsers.of(_manager!);
+    // No manager → the placeholder, not "Unknown".
+    final mgr = (_manager ?? '').isEmpty ? null : MockUsers.of(_manager!);
 
     return OpsEditScaffold(
       title: 'Edit project',
@@ -236,8 +344,23 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
       onClose: () => handleEditClose(context, dirty: _dirty),
       onSave: _save,
       children: [
+        if (_govLocked) ...[
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 11.h),
+            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(12.r)),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(PhosphorIconsFill.info, size: 16.sp, color: AppColors.textMuted2),
+                SizedBox(width: 9.w),
+                Expanded(child: Text(_govNote, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.45))),
+              ],
+            ),
+          ),
+          SizedBox(height: 10.h),
+        ],
         const OpsSectionLabel('Basics', first: true),
-        AppTextField(label: 'Project name', required: true, controller: _name, hint: 'e.g. Showroom fit-out', onChanged: (_) => setState(_dirtied)),
+        AppTextField(label: 'Project name', required: true, controller: _name, hint: 'e.g. Showroom fit-out', errorText: _nameErr, onChanged: (_) => setState(() { _nameErr = null; _dirtied(); })),
         SizedBox(height: 14.h),
         AppTextField(label: 'Description', controller: _desc, hint: 'What is this project delivering?', multiline: true, onChanged: (_) => _dirtied()),
         SizedBox(height: 14.h),
@@ -248,9 +371,32 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
           caret: PhosphorIconsBold.caretRight,
           onTap: () async {
             final v = await showOpsOptionPicker(context: context, title: 'Select customer', options: [(value: '', label: 'Internal project'), for (final c in customers) (value: c, label: c)], currentValue: _customer);
-            if (v != null) setState(() { _customer = v; _dirtied(); });
+            // A quote belongs to one customer: changing it clears the link.
+            if (v != null) setState(() { if (v != _customer) _quote = ''; _customer = v; _dirtied(); });
           },
         ),
+        if (custId != null) ...[
+          SizedBox(height: 14.h),
+          OpsPickerField(
+            label: 'Linked quote',
+            value: quotes.where((q) => q.id == _quote).map((q) => q.name).firstOrNull ?? '',
+            placeholder: 'No linked quote',
+            onTap: () async {
+              final v = await showOpsOptionPicker(
+                context: context,
+                title: 'Linked quote',
+                options: [(value: '', label: 'No linked quote'), for (final q in quotes) (value: q.id, label: q.name)],
+                currentValue: _quote,
+              );
+              if (v != null) setState(() { _quote = v; _dirtied(); });
+            },
+          ),
+          Padding(
+            padding: EdgeInsets.only(top: 5.h),
+            child: Text('Optional — the quote this project was won from. Accounting derives project financials from it.',
+                style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          ),
+        ],
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Project type',
@@ -270,17 +416,17 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
         const OpsSectionLabel('Schedule'),
         Row(
           children: [
-            Expanded(child: _dateField('Expected start', _start, (d) => setState(() { _start = d; _dirtied(); }))),
+            Expanded(child: _gov(_dateField('Expected start', _start, (d) => setState(() { _start = d; _dirtied(); })))),
             SizedBox(width: 10.w),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _dateField('Expected end', _end, (d) => setState(() { _end = d; _dirtied(); })),
-                  if (_endErr)
+                  _gov(_dateField('Expected end', _end, (d) => setState(() { _end = d; _endErrMsg = null; _dirtied(); }))),
+                  if (_endErrMsg != null || _endErr)
                     Padding(
                       padding: EdgeInsets.only(top: 6.h),
-                      child: Text('Ends before it starts', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.error)),
+                      child: Text(_endErrMsg ?? 'End date must be after the start date', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.error)),
                     ),
                 ],
               ),
@@ -288,56 +434,61 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
           ],
         ),
         const OpsSectionLabel('People'),
-        OpsPickerField(
+        _gov(OpsPickerField(
           label: 'Project manager',
           value: mgr?.name ?? '',
           placeholder: 'Select manager…',
           caret: PhosphorIconsBold.caretRight,
-          onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in roster) (value: r.id, label: r.name)], currentValue: _manager ?? '');
+          onTap: () => _governed(() async {
+            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in people) (value: r.id, label: r.name)], currentValue: _manager ?? '');
             if (v != null) setState(() { _manager = v; _dirtied(); });
-          },
-        ),
+          }),
+        )),
         SizedBox(height: 14.h),
         _label('Assignees'),
         SizedBox(height: 7.h),
-        Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final r in roster)
+        _gov(Wrap(spacing: 8.w, runSpacing: 8.h, children: [
+          for (final r in people)
             OpsAssigneeChip(
               initials: r.initials,
-              name: r.firstName,
+              name: r.name.split(' ').first,
               color: MockUsers.memberColors[r.id] ?? AppColors.navy,
               selected: _assignees.contains(r.id),
               filled: false,
-              onTap: () => setState(() { _assignees.contains(r.id) ? _assignees.remove(r.id) : _assignees.add(r.id); _dirtied(); }),
+              onTap: () => _governed(() => setState(() { _assignees.contains(r.id) ? _assignees.remove(r.id) : _assignees.add(r.id); _dirtied(); })),
             ),
-        ]),
+        ])),
         SizedBox(height: 14.h),
-        OpsPickerField(
+        _gov(OpsPickerField(
           label: 'Assigned team',
           value: _team,
           placeholder: 'No team',
-          onTap: () async {
+          onTap: () => _governed(() async {
             final v = await showOpsOptionPicker(context: context, title: 'Assigned team', options: [(value: '', label: 'No team'), for (final t in teams) (value: t, label: t)], currentValue: _team);
             if (v != null) setState(() { _team = v; _dirtied(); });
-          },
-        ),
+          }),
+        )),
         const OpsSectionLabel('Tracking'),
         _label('Status'),
         SizedBox(height: 7.h),
-        Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final e in StatusMeta$.project.entries)
-            OpsFormChip(label: e.value.label, selected: _status == e.key, tone: e.value.color, onTap: () => setState(() { _status = e.key; _dirtied(); })),
-        ]),
+        // The org's own statuses, with their own colours.
+        _gov(Wrap(spacing: 8.w, runSpacing: 8.h, children: [
+          if (statusNames.isEmpty)
+            for (final e in StatusMeta$.project.entries)
+              OpsFormChip(label: e.value.label, selected: _status.toLowerCase() == e.value.label.toLowerCase(), tone: e.value.color, onTap: () => _governed(() => setState(() { _status = e.value.label; _dirtied(); })))
+          else
+            for (final st in ref.watch(projectStatusOptionsProvider))
+              OpsFormChip(label: st.name, selected: _status.toLowerCase() == st.name.toLowerCase(), tone: st.color, onTap: () => _governed(() => setState(() { _status = st.name; _dirtied(); }))),
+        ])),
         SizedBox(height: 14.h),
-        OpsPickerField(
+        _gov(OpsPickerField(
           label: 'Visibility',
           value: _visibility,
-          onTap: () async {
+          onTap: () => _governed(() async {
             final v = await showOpsOptionPicker(context: context, title: 'Visibility', options: [for (final o in _vis) (value: o, label: o)], currentValue: _visibility);
             if (v != null) setState(() { _visibility = v; _dirtied(); });
-          },
-        ),
+          }),
+        )),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Progress method',
@@ -349,7 +500,7 @@ class _EditProjectScreenState extends ConsumerState<EditProjectScreen> {
         ),
         SizedBox(height: 14.h),
         if (_isManual)
-          AppTextField(label: 'Progress (%)', controller: _progress, keyboardType: TextInputType.number, onChanged: (_) => _dirtied())
+          AppTextField(label: 'Progress (%)', controller: _progress, keyboardType: TextInputType.number, errorText: _progressErr, onChanged: (_) => setState(() { _progressErr = null; _dirtied(); }))
         else
           _calculatedProgress(),
         SizedBox(height: 14.h),

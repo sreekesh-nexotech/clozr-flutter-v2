@@ -77,16 +77,23 @@ class AppHeaderBar extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Only the height is constrained — the width follows the
-                  // artwork's 1.89:1 ratio, so it can never distort.
-                  Image.asset(
-                    'assets/images/clozr_wordmark.png',
-                    height: 30.h,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.medium,
-                    // The wordmark replaced real text; without this the brand
-                    // name would disappear from the accessibility tree.
-                    semanticLabel: AppConstants.brandName,
+                  // The logo sits centred on a square transparent canvas, so
+                  // Align + ClipRect trims it to the artwork (88% × 47% of
+                  // the canvas) — the visible logo is 30.h tall.
+                  ClipRect(
+                    child: Align(
+                      widthFactor: 0.88,
+                      heightFactor: 0.47,
+                      child: Image.asset(
+                        'assets/Clozr-Regular-1080px.png',
+                        height: 30.h / 0.47,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                        // The logo replaced real text; without this the brand
+                        // name would disappear from the accessibility tree.
+                        semanticLabel: AppConstants.brandName,
+                      ),
+                    ),
                   ),
                   SizedBox(height: 2.h),
                   Text(workspace, style: AppText.caption()),

@@ -17,15 +17,35 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   static const String _box = AppCache.operationsCache;
   static const String _key = 'ops_tasks';
 
+  /// One cache entry per query, keyed by its sorted params.
+  ///
+  /// Hive refuses keys over 255 characters, and a few id lists (the "Other /
+  /// no status" tab's every-active-status list, several projects or people)
+  /// pass that — the throw failed the whole fetch. Long keys are folded to a
+  /// stable FNV-1a digest instead.
+  static String _keyFor(Map<String, dynamic> filters) {
+    final keys = filters.keys.toList()..sort();
+    final key = '$_key|${[for (final k in keys) '$k=${filters[k]}'].join('&')}';
+    if (key.length <= 255) return key;
+    var h = 0xcbf29ce484222325;
+    for (final c in key.codeUnits) {
+      h = (h ^ c) * 0x100000001b3;
+    }
+    return '$_key|#${h.toUnsigned(64).toRadixString(16)}';
+  }
+
   @override
   Future<List<OpsTask>> getOpsTasks({Map<String, dynamic> filters = const {}}) async {
     try {
       final tasks = await _remote.fetchOpsTasks(filters: filters);
-      await AppCache.put(_box, _key, [for (final t in tasks) _toJson(t)]);
+      await AppCache.put(_box, _keyFor(filters), [for (final t in tasks) _toJson(t)]);
       return tasks;
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
-        final cached = AppCache.get(_box, _key)?.data;
+        // Offline: the last copy of *this* query only. One shared key served
+        // whatever list was fetched last — offline, a project's Tasks tab
+        // showed the whole org's tasks as its own.
+        final cached = AppCache.get(_box, _keyFor(filters))?.data;
         if (cached is List) {
           return [
             for (final row in cached)
@@ -40,14 +60,14 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   @override
   Future<OpsTask?> createOpsTask(Map<String, dynamic> fields) async {
     final created = await _remote.createOpsTask(fields);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
     return created;
   }
 
   @override
   Future<void> updateOpsTask(String id, Map<String, dynamic> fields) async {
     await _remote.updateOpsTask(id, fields);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   // ── cache round-trip ──
@@ -146,7 +166,7 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   @override
   Future<void> deleteOpsTask(String id) async {
     await _remote.deleteOpsTask(id);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   /// Edges change what the list's `pending_dependency_count` says, so the
@@ -154,13 +174,13 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   @override
   Future<void> addDependency({required String taskId, required String dependsOn}) async {
     await _remote.addDependency(taskId: taskId, dependsOn: dependsOn);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   @override
   Future<void> removeDependency(String edgeId) async {
     await _remote.removeDependency(edgeId);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   /// Detail reads are not cached: the full shape exists precisely because the
@@ -187,7 +207,7 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   }) async {
     await _remote.createSubtask(
         parentId: parentId, subject: subject, projectId: projectId);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   @override

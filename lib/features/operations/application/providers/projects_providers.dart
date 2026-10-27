@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import '../../../../core/auth/session_gate.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import 'ops_tasks_providers.dart' show opsPerSession;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../crm/application/providers/customers_providers.dart';
+import 'project_form_providers.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../filters/project_filter_codec.dart';
@@ -33,6 +37,23 @@ bool isProjectOverdue(Project p) {
   return end != null && end.isBefore(kOpsToday);
 }
 
+/// Whether [module]'s Operations data may be fetched right now: a signed-in
+/// session whose role includes the module (webapp `ModuleGuard` / `hasModule`).
+///
+/// Waits for the role to load rather than guessing, so the fetches that
+/// refresh on every sign-in never reach the server for a role without the
+/// module — they used to fire (and 403) for a CRM-only user just because an
+/// Operations screen had been open in the previous session. A role that could
+/// not be loaded (null) is not gated; the server still decides per request.
+Future<bool> opsModuleReadable(Ref ref, String module) async {
+  if (!ApiConfig.apiEnabled) return true;
+  if (ref.watch(sessionControllerProvider).status != SessionStatus.authenticated) {
+    return false;
+  }
+  final access = await ref.watch(moduleAccessProvider.future);
+  return access == null || access.can(module);
+}
+
 /// DI seam: mock-backed with no API base URL, remote-backed otherwise.
 final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
   if (!ApiConfig.apiEnabled) {
@@ -45,9 +66,10 @@ final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
 
 /// The org's project statuses (`operations.md` §3) — the tab strip and the
 /// drawer's Status facet.
-final projectStatusCatalogProvider = FutureProvider<List<CatalogOption>>(
-  (ref) => ref.watch(projectsRepositoryProvider).getProjectStatuses(),
-);
+final projectStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  if (!await opsModuleReadable(ref, 'project')) return const [];
+  return ref.watch(projectsRepositoryProvider).getProjectStatuses();
+});
 
 /// Synchronous view — empty while in flight, in mock mode and on failure, which
 /// callers read as "use the built-in vocabulary".
@@ -81,9 +103,10 @@ StatusMeta projectStatusMeta({
 }
 
 /// The org's project types (§4) — the drawer's Type facet.
-final projectTypeCatalogProvider = FutureProvider<List<CatalogOption>>(
-  (ref) => ref.watch(projectsRepositoryProvider).getProjectTypes(),
-);
+final projectTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+  if (!await opsModuleReadable(ref, 'project')) return const [];
+  return ref.watch(projectsRepositoryProvider).getProjectTypes();
+});
 
 final projectTypeOptionsProvider = Provider<List<CatalogOption>>(
   (ref) => ref.watch(projectTypeCatalogProvider).valueOrNull ?? const [],
@@ -98,6 +121,9 @@ final projectFilterCatalogsProvider = FutureProvider<void>((ref) async {
     // The Customer facet's options come from here now, so the drawer must wait
     // for it too — the sheet snapshots its spec once and keeps it.
     ref.watch(customersProvider.future),
+    // The Team facet's options are the org's teams (by id).
+    // Quiet and never fails: a role that cannot list teams still gets the drawer.
+    ref.watch(projectTeamsProvider.future),
   ]);
 });
 
@@ -122,9 +148,14 @@ class ProjectListQuery {
 
 /// Projects for one query — the server does the filtering.
 final projectsScopedProvider =
-    FutureProvider.family<List<Project>, ProjectListQuery>(
-  (ref, q) => ref.watch(projectsRepositoryProvider).getProjects(filters: q.filters),
-);
+    FutureProvider.family<List<Project>, ProjectListQuery>((ref, q) async {
+  if (!await opsModuleReadable(ref, 'project')) return const <Project>[];
+  // Re-read after any successful write — a project created, edited, archived
+  // or restored on another screen, or a task change that moves its progress —
+  // so the list never shows the pre-change row (webapp refetches likewise).
+  ref.watch(apiWriteTickProvider);
+  return ref.watch(projectsRepositoryProvider).getProjects(filters: q.filters);
+});
 
 /// The server params the current drawer + My-projects state produces.
 ///
@@ -151,7 +182,9 @@ Map<String, dynamic> projectFilterParamsFor({
     if (mine) 'ownership': 'me',
     if (archived) 'is_archived': 'true',
     if (search.trim().isNotEmpty) 'search': search.trim(),
-    if (statusTab != 'all' && statusTab.isNotEmpty) 'status_name__in': statusTab,
+    // The chips are multi-select (webapp: OR of the picked statuses).
+    if (statusTab != 'all' && statusTab.isNotEmpty)
+      'status_name__in': projTabKeys(statusTab).join(','),
     ...codec.encode(values),
   };
 }
@@ -200,11 +233,15 @@ class _DebouncedSearch extends StateNotifier<String> {
 /// Keyed by status name, plus `'all'`. Empty (mock mode, a failed call) means
 /// the strip falls back to counting the rows it has — which is only right when
 /// every page happens to be downloaded.
-final projectStatusCountsProvider = FutureProvider<Map<String, int>>((ref) {
+final projectStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+  if (!await opsModuleReadable(ref, 'project')) return const <String, int>{};
   // The tab itself is stripped server-side, but excluding it here keeps one
   // cached aggregate across tab switches instead of one per tab.
   final params = {...ref.watch(projectFilterParamsProvider)}
     ..remove('status_name__in');
+  // The tab counts move with every write too, or a create reads "All (4)"
+  // over five rows until a manual refresh.
+  ref.watch(apiWriteTickProvider);
   return ref.watch(projectsRepositoryProvider).getStatusCounts(params);
 });
 
@@ -339,9 +376,26 @@ final projectDetailOrListProvider = Provider.autoDispose.family<Project?, String
 
 // ── List UI state ──
 
-final projTabProvider = StateProvider<String>((ref) => 'all');
-final projSearchProvider = StateProvider<String>((ref) => '');
-final projSearchOpenProvider = StateProvider<bool>((ref) => false);
+/// The status chips' selection: `'all'`, or the picked status names joined
+/// with [projTabSeparator] — the chips are multi-select like the webapp's.
+final projTabProvider = StateProvider<String>((ref) => opsPerSession(ref, 'all'));
+
+const projTabSeparator = '\u001f';
+
+/// The picked status names (empty for "All").
+List<String> projTabKeys(String tab) => tab == 'all' || tab.isEmpty
+    ? const []
+    : [for (final k in tab.split(projTabSeparator)) if (k.isNotEmpty) k];
+
+/// [tab] with [key] toggled; "All" when nothing is left.
+String projTabToggle(String tab, String key) {
+  if (key == 'all') return 'all';
+  final keys = projTabKeys(tab).toList();
+  keys.contains(key) ? keys.remove(key) : keys.add(key);
+  return keys.isEmpty ? 'all' : keys.join(projTabSeparator);
+}
+final projSearchProvider = StateProvider<String>((ref) => opsPerSession(ref, ''));
+final projSearchOpenProvider = StateProvider<bool>((ref) => opsPerSession(ref, false));
 
 /// "My Projects" saved-view chip — projects I own or am assigned to.
 ///
@@ -350,7 +404,7 @@ final projSearchOpenProvider = StateProvider<bool>((ref) => false);
 /// org that opened the list at "All (3)" over a workspace of 19, and a project
 /// the user had just created but not assigned themselves to vanished from the
 /// list the moment it saved.
-final myProjectsProvider = StateProvider<bool>((ref) => false);
+final myProjectsProvider = StateProvider<bool>((ref) => opsPerSession(ref, false));
 
 /// "Archived" saved-view chip — show archived projects instead of live ones.
 ///
@@ -359,7 +413,7 @@ final myProjectsProvider = StateProvider<bool>((ref) => false);
 /// "Restore project" could never be reached. The server takes
 /// `is_archived=true` (verified against the dev backend; the list otherwise
 /// returns live projects only).
-final archivedProjectsProvider = StateProvider<bool>((ref) => false);
+final archivedProjectsProvider = StateProvider<bool>((ref) => opsPerSession(ref, false));
 
 /// The base list before the status tab (respects the My/All view).
 final projBaseProvider = Provider<List<Project>>((ref) {
@@ -374,10 +428,9 @@ final projBaseProvider = Provider<List<Project>>((ref) {
 
 /// Count for a status tab within the base list.
 int projTabCount(List<Project> base, String key, {required bool mine}) {
-  if (key == 'all') {
-    if (!mine) return base.length;
-    return base.where((p) => p.status != 'completed' && p.status != 'cancelled').length;
-  }
+  // "All" is everything the scope returned — My Projects included: the
+  // webapp lists a user's closed projects too.
+  if (key == 'all') return base.length;
   return base.where((p) => projectInTab(p, key)).length;
 }
 
@@ -396,14 +449,12 @@ bool projectInTab(Project p, String tabKey) =>
 final visibleProjectsProvider = Provider<List<Project>>((ref) {
   final base = ref.watch(projBaseProvider);
   final tab = ref.watch(projTabProvider);
-  final mine = ref.watch(myProjectsProvider);
   final q = ref.watch(projSearchProvider).trim().toLowerCase();
 
   Iterable<Project> out = base;
-  if (tab != 'all') {
-    out = out.where((p) => projectInTab(p, tab));
-  } else if (mine) {
-    out = out.where((p) => p.status != 'completed' && p.status != 'cancelled');
+  final keys = projTabKeys(tab);
+  if (keys.isNotEmpty) {
+    out = out.where((p) => keys.any((k) => projectInTab(p, k)));
   }
   if (q.isNotEmpty) {
     out = out.where((p) =>

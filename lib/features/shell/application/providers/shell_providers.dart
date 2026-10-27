@@ -16,10 +16,14 @@ final drawerExpandedProvider =
 /// success check, so a refusal the backend sent back — "Task updates are not
 /// allowed on weekends." — appeared under a tick, which reads as *done*.
 class ToastMessage {
-  const ToastMessage(this.text, {this.isError = false});
+  const ToastMessage(this.text, {this.isError = false, this.isInfo = false});
 
   final String text;
   final bool isError;
+
+  /// A hint, not a confirmation (webapp `toast(msg, 'info')`) — info glyph,
+  /// no green tick.
+  final bool isInfo;
 }
 
 /// Transient toast message. Auto-clears after [AppConstants.toastDuration]
@@ -30,6 +34,9 @@ class ToastController extends StateNotifier<ToastMessage?> {
   Timer? _timer;
 
   void show(String message) => _show(ToastMessage(message), AppConstants.toastDuration);
+
+  /// A neutral pointer ("Tickets list — 3 breached tickets").
+  void showInfo(String message) => _show(ToastMessage(message, isInfo: true), AppConstants.toastDuration);
 
   /// A failure the user has to read: server refusals, validation, write errors.
   void showError(String message) =>

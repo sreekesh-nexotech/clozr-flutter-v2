@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/ops_tasks_providers.dart' show opsPerSession;
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/saved_view.dart';
 import '../../../../data/api/roster.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../crm/application/providers/customers_providers.dart';
+import '../providers/project_form_providers.dart';
 import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/project.dart';
 import '../../presentation/components/ops_widgets.dart';
@@ -51,6 +53,8 @@ FilterSpec buildProjectsFilterSpec(
   List<CatalogOption> statusCatalog = const [],
   List<CatalogOption> typeCatalog = const [],
   List<CatalogOption> customerCatalog = const [],
+  List<CatalogOption> teamCatalog = const [],
+  bool offerIncludeArchived = true,
 }) {
   final r = roster ?? MockUsers.reps;
   // Types and statuses from their own facet endpoints (`operations.md` §3, §4).
@@ -92,7 +96,11 @@ FilterSpec buildProjectsFilterSpec(
     const FilterOption(id: '__internal', label: 'Internal project'),
     ...companies,
   ];
-  final teams = _allTeams(r).map((t) => FilterOption(id: t, label: t)).toList();
+  // The org's teams keyed by `team_id`, so the facet is sent as
+  // `assigned_team__in` — names off the roster only while that is loading.
+  final teams = teamCatalog.isNotEmpty
+      ? [for (final t in teamCatalog) FilterOption(id: t.id, label: t.name)]
+      : _allTeams(r).map((t) => FilterOption(id: t, label: t)).toList();
   final users = [
     for (final u in r) FilterOption(id: u.id, label: u.name),
   ];
@@ -184,6 +192,14 @@ FilterSpec buildProjectsFilterSpec(
             control: FilterControl.numberRange,
             unit: '₹ lakhs',
             unitScale: 100000),
+        // Webapp "Include archived projects" (`include_archived=true`) — not
+        // offered inside the Archived view itself.
+        if (offerIncludeArchived)
+          const FilterField(
+              id: 'incArchived',
+              label: 'Archived',
+              control: FilterControl.checkboxGroup,
+              options: [FilterOption(id: 'yes', label: 'Include archived projects')]),
       ]),
     ],
   );
@@ -221,8 +237,14 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
     }
   }
 
-  // Always local — `operations.md` §1 documents no param for these; see
-  // [ProjectFilterCodec.localOnlyFields].
+  // Server-side in API mode (`assignees__in`, `assigned_team__in`,
+  // `is_overdue` / `due_within_days`) — matched here only in mock mode, where
+  // nothing ran them.
+  if (serverApplied) {
+    if (!FilterMatch.matchDate(v.date('end'), projectEndDate(p))) return false;
+    if (!FilterMatch.matchDate(v.date('start'), opsParseDisplayDate(p.start))) return false;
+    return true;
+  }
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), p.assignees)) return false;
   if (!FilterMatch.matchAnyOf(v.choice('teams'), teamNamesOfProject(p))) return false;
 
@@ -271,11 +293,16 @@ final projectsFilterSpecProvider = Provider<FilterSpec>((ref) {
           name: (c.company?.trim().isNotEmpty ?? false) ? c.company! : c.name,
         ),
     ],
+    teamCatalog: [
+      ...?ref.watch(projectTeamsProvider).valueOrNull,
+    ],
+    offerIncludeArchived: !ref.watch(archivedProjectsProvider),
   );
 });
 
 /// Applied drawer filters for the Projects list (the source of the badge count).
-final projectFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final projectFiltersProvider =
+    StateProvider<FilterValues>((ref) => opsPerSession(ref, FilterValues()));
 
 /// Saved views for the Projects list (bookmark chips).
 final projectSavedViewsProvider =

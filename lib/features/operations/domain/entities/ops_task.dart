@@ -171,6 +171,31 @@ class OpsTask extends Equatable {
   final String? actualEndISO;
   final String? fromTicket; // ticket id, if raised from a ticket
 
+  /// The record's own `can_update` / `can_delete` (detail rows). Null when the
+  /// row did not say — slim list rows — which gates nothing; the module grant
+  /// and the server still decide.
+  final bool? canUpdate;
+  final bool? canDelete;
+
+  /// The raw `priority` as sent — empty when the task has none ([pri] folds
+  /// that to Medium for the pills, but the webapp header hides priority then).
+  final String priorityRaw;
+
+  /// SLA engine, detail-only: `committed_end_date` (ISO, empty when not yet
+  /// committed), how often and how far the end date moved
+  /// (`reschedule_count`, `slip_days`), the change waiting on a manager
+  /// (`pending_due_date_change`), and whether this user may move the
+  /// committed date (`can_change_committed_date`).
+  final String committedEndISO;
+  final int rescheduleCount;
+  final int slipDays;
+  final Map<String, dynamic>? pendingDueChange;
+  final bool? canChangeCommitted;
+
+  /// `project_accessible` — false when the task's project is outside this
+  /// user's reach, so the project chip is plain text, not a link.
+  final bool? projectAccessible;
+
   const OpsTask({
     required this.id,
     required this.subject,
@@ -211,6 +236,15 @@ class OpsTask extends Equatable {
     this.actualEndFull,
     this.actualEndISO,
     this.fromTicket,
+    this.canUpdate,
+    this.canDelete,
+    this.priorityRaw = '',
+    this.committedEndISO = '',
+    this.rescheduleCount = 0,
+    this.slipDays = 0,
+    this.pendingDueChange,
+    this.canChangeCommitted,
+    this.projectAccessible,
   });
 
   /// Whether this task was completed after its due date. Null when either date

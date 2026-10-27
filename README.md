@@ -48,8 +48,8 @@ every knob is a `--dart-define`:
 
 | Define | Default | Purpose |
 | --- | --- | --- |
-| `SENTRY_DSN` | the `clozr` project DSN | **Empty value turns reporting off** — the SDK still initializes and starts the app, it just drops every event |
-| `SENTRY_ENVIRONMENT` | `production` / `profile` / `development` by build mode | Segregates the issue stream |
+| `SENTRY_DSN` | the `clozr` project DSN (shared by UAT and production) | **Empty value turns reporting off** — the SDK still initializes and starts the app, it just drops every event |
+| `SENTRY_ENVIRONMENT` | `production` / `profile` / `development` by build mode | Segregates the issue stream. **UAT release builds must pass `development`**, or they report as `production` |
 | `SENTRY_RELEASE` | derived from package metadata | Groups issues by build, e.g. `clozr@1.0.0+1`. CI should pass whatever it uploads debug symbols under |
 | `SENTRY_TRACES_SAMPLE_PCT` | `20` in release, `100` otherwise | Share of performance transactions kept |
 

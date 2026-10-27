@@ -1,4 +1,9 @@
+import 'dart:ui' show Color;
+
+import 'package:dio/dio.dart' show FormData, MultipartFile;
+
 import '../../../../../core/config/api_config.dart';
+import '../../../../../core/network/app_error.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
 import '../../../../../core/network/paginated.dart';
@@ -78,7 +83,8 @@ class TicketsRemoteDataSource {
         final id = (row['issue_type_id'] ?? '').toString();
         final name = (row['name'] ?? '').toString();
         if (id.isEmpty || name.isEmpty) continue;
-        out.add(CatalogOption(id: id, name: name));
+        final pri = (row['default_priority'] ?? '').toString().trim();
+        out.add(CatalogOption(id: id, name: name, defaultPriority: pri.isEmpty ? null : pri));
       }
       return out;
     } on Object {
@@ -100,10 +106,15 @@ class TicketsRemoteDataSource {
         final id = (row['issue_status_id'] ?? '').toString();
         final name = (row['name'] ?? '').toString();
         if (id.isEmpty || name.isEmpty) continue;
+        final hex = (row['color'] ?? '').toString().replaceFirst('#', '');
+        final rgb = hex.length == 6 ? int.tryParse(hex, radix: 16) : null;
         out.add(CatalogOption(
           id: id,
           name: name,
+          // The org's own dot colour — the status chips and card pills.
+          color: rgb == null ? null : Color(0xFF000000 | rgb),
           isClosed: row['is_resolved'] == true,
+          isDefault: row['is_default'] == true,
         ));
       }
       return out;
@@ -205,10 +216,14 @@ class TicketsRemoteDataSource {
   Future<Ticket?> fetchTicket(String id) async {
     if (id.isEmpty) return null;
     try {
-      final body = await _api.get(ApiEndpoints.issue(id));
+      // Quiet: the detail screen reports a refusal itself, as its own notice.
+      final body = await _api.get(ApiEndpoints.issue(id), quiet: true);
       return body is Map<String, dynamic> ? mapTicket(body) : null;
-    } on Object {
-      return null;
+    } on AppError catch (e) {
+      // Gone → "Ticket not found". Anything else (no access, a server fault,
+      // no network) is an error the screen explains, not a missing ticket.
+      if (e.type == AppErrorType.notFound) return null;
+      rethrow;
     }
   }
 
@@ -236,12 +251,18 @@ class TicketsRemoteDataSource {
   static TicketTask linkedTaskFromJson(Map<String, dynamic> json) {
     final assignee = json['assigned_to'];
     final project = json['project'];
+    final status = json['status'];
     return TicketTask(
-      id: _str(json['task_id']) ?? '',
+      id: _str(json['task_id']) ?? _str(json['id']) ?? '',
       subject: _str(json['subject']) ?? '',
-      status: _statusName(json['status']) ?? '',
+      // `status` is the status uuid on this serializer; the name rides beside it.
+      status: _str(json['status_name']) ??
+          (status is Map ? _str(status['name']) : null) ??
+          '',
       priority: _str(json['priority']) ?? '',
-      projectId: project is Map ? _str(project['project_id']) : _str(project),
+      projectName: _str(json['project_name']) ?? (project is Map ? _str(project['name']) ?? '' : ''),
+      isOverdue: json['is_overdue'] == true,
+      projectId: _str(json['project_id']) ?? (project is Map ? _str(project['project_id']) : _str(project)),
       assigneeName: assignee is Map
           ? (_str(assignee['full_name']) ?? _str(assignee['username']) ?? '')
           : '',
@@ -301,6 +322,54 @@ class TicketsRemoteDataSource {
     return body is Map<String, dynamic> ? linkedTaskFromJson(body) : null;
   }
 
+  /// `GET issues/{id}/children/` — one parent's direct children. Quiet: the
+  /// tab says "No child tickets" rather than toasting a refusal.
+  Future<List<Ticket>> fetchChildren(String issueId) async {
+    if (issueId.isEmpty) return const [];
+    final body = await _api.get(ApiEndpoints.issueChildren(issueId), quiet: true, query: {'page_size': 100});
+    return mapTickets(Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
+  }
+
+  /// The "Attach a child ticket" candidates: tickets without a parent
+  /// (`is_child=false`) matching [search], first 20.
+  Future<List<Ticket>> searchRootTickets(String search) async {
+    final q = search.trim();
+    final body = await _api.get(ApiEndpoints.issues, quiet: true, query: {
+      'is_child': 'false',
+      'page': 1,
+      'page_size': 20,
+      if (q.isNotEmpty) 'search': q,
+    });
+    return mapTickets(Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
+  }
+
+  /// Attaches [issueId] under [parentId], or detaches it with null. The write
+  /// key is `parent_issue_id` (the read key `parent_issue` is ignored).
+  Future<void> setParent(String issueId, String? parentId) =>
+      _api.patch(ApiEndpoints.issue(issueId), body: {'parent_issue_id': parentId});
+
+  /// `POST issues/{id}/log-first-response/` — stamps `first_responded_at`
+  /// for a response given outside Clozr.
+  Future<void> logFirstResponse(String issueId) =>
+      _api.post(ApiEndpoints.issueLogFirstResponse(issueId), body: const <String, dynamic>{});
+
+  /// `POST issues/{id}/replies/ {body}` — dispatched by the server through the
+  /// ticket's own channel (email / WhatsApp).
+  Future<void> sendReply(String issueId, String body) =>
+      _api.post(ApiEndpoints.issueReplies(issueId), body: {'body': body});
+
+  /// Multipart `POST /crm/attachments/` against the ticket
+  /// (`related_to=issue`), as the webapp's Files tab sends it.
+  Future<void> uploadAttachment(String issueId, {required String path, required String name}) async {
+    final form = FormData.fromMap({
+      'related_to': 'issue',
+      'related_to_id': issueId,
+      'name': name,
+      'file_upload': await MultipartFile.fromFile(path, filename: name),
+    });
+    await _api.postForm(ApiEndpoints.attachments, form);
+  }
+
   Future<List<Map<String, dynamic>>> _fetchStatusRows() async {
     final cached = _statusRows;
     if (cached != null && cached.isNotEmpty) return cached;
@@ -336,7 +405,8 @@ class TicketsRemoteDataSource {
       id: id,
       kind: _activityKind(event),
       title: summary,
-      subtitle: isSystem ? 'System' : (actorName.isEmpty ? '' : 'by $actorName'),
+      // Webapp audit row: "<actor> · <date-time>".
+      subtitle: isSystem ? 'System' : actorName,
       at: parseApiDate(row['timestamp']),
       actor: actorName,
     );
@@ -416,9 +486,12 @@ class TicketsRemoteDataSource {
         projId: _str(json['project']) ?? _relatedId(json, 'project'),
         projName: _str(json['project_name']),
         taskId: _relatedId(json, 'task'),
-        created: absoluteDate(parseApiDate(json['created_at'])),
-        responded: respondedAt == null ? null : absoluteDate(respondedAt),
-        resolved: resolvedAt == null ? null : absoluteDate(resolvedAt),
+        // Date and time, as the webapp's detail rows print them
+        // (`formatDateTime`); the list's "5m ago" reads [createdISO].
+        created: absoluteDateTime(parseApiDate(json['created_at'])),
+        createdISO: _str(json['created_at']),
+        responded: respondedAt == null ? null : absoluteDateTime(respondedAt),
+        resolved: resolvedAt == null ? null : absoluteDateTime(resolvedAt),
         // Kept beside the display form: the resolved-grid's within/after-SLA
         // split needs the real instant, not the day.
         resolvedISO: resolvedAt?.toIso8601String(),
@@ -435,10 +508,110 @@ class TicketsRemoteDataSource {
         billableAmount: _str(json['billable_amount']),
         billableProductId: _str(json['billable_product']),
         billedDocumentLineId: _str(json['billed_document_line_id']),
+        facts: _facts(json),
       );
     } on Object {
       return null;
     }
+  }
+
+  /// The row's own status / SLA facts (webapp `issue.response.ts`).
+  static TicketServerFacts _facts(Map<String, dynamic> json) {
+    final st = json['status'];
+    final status = st is Map ? st : const {};
+    double? num_(Object? v) => v is num ? v.toDouble() : null;
+    final deadline = _str(json['sla_deadline']);
+    final remaining = num_(json['sla_remaining_seconds']);
+    return TicketServerFacts(
+      statusColor: _str(status['color']),
+      statusResolved: status['is_resolved'] == true,
+      statusOnHold: status['is_on_hold'] == true,
+      typeName: _str(json['type_name']),
+      customerName: _str(json['customer_name']),
+      contactName: _str(json['contact_name']),
+      contactId: _str(json['contact']) ?? _str(json['contact_id']),
+      reportedFor: _str(json['reported_for']) == 'self' ? 'self' : 'client',
+      assignedToId: _str(json['assigned_to']),
+      assignedToName: _str(json['assigned_to_name']),
+      hasSla: deadline != null || remaining != null,
+      slaRemainingSeconds: remaining,
+      slaHoldStarted: _str(json['sla_hold_started_at']) != null,
+      slaBreachedFlag: json['sla_breached'] == true,
+      firstResponseDue: _str(json['first_response_due_at']) != null,
+      firstResponded: _str(json['first_responded_at']) != null,
+      firstResponseRemainingSeconds: num_(json['first_response_remaining_seconds']),
+      firstResponseBreached: json['is_first_response_breached'] == true,
+      channelCode: _str(json['channel'])?.toLowerCase(),
+      slaValue: json['sla_value'] is num ? json['sla_value'] as num : num.tryParse('${json['sla_value'] ?? ''}'),
+      slaUnit: _str(json['sla_unit']) ?? '',
+      parentIssueId: _parentId(json['parent_issue']),
+      parentReference: _str(json['parent_reference']) ?? '',
+      parentSubject: _str(json['parent_subject']) ?? '',
+      childCount: (json['child_count'] as num?)?.toInt() ?? 0,
+      // Falls back to the parent link so a trimmed serializer cannot make a
+      // child render as a root (webapp `isChild`).
+      isChild: json['is_child'] == true || _parentId(json['parent_issue']) != null,
+      attachments: _attachments(json['attachments']),
+      replies: _replies(json['notes']),
+      customFields: _customFields(json['custom_fields']),
+    );
+  }
+
+  static String? _parentId(Object? v) => v is Map ? _str(v['issue_id']) : _str(v);
+
+  /// `attachments[]` → [TicketAttachment], skipping rows without an id.
+  static List<TicketAttachment> _attachments(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <TicketAttachment>[];
+    for (final r in raw) {
+      if (r is! Map) continue;
+      final id = _str(r['attachment_id']);
+      if (id == null) continue;
+      final by = r['uploaded_by'];
+      out.add(TicketAttachment(
+        id: id,
+        name: _str(r['name']) ?? 'File',
+        url: _str(r['file_url']) ?? _str(r['file']) ?? '',
+        uploadedAt: parseApiDate(r['uploaded_at']),
+        uploadedBy: (by is Map ? (_str(by['name']) ?? _str(by['full_name'])) : null) ??
+            _str(r['uploaded_by_name']) ??
+            '',
+        uploadedById: (by is Map ? _str(by['user_id']) : _str(by)) ?? _str(r['uploaded_by_id']),
+      ));
+    }
+    return out;
+  }
+
+  /// The customer replies among `notes[]` — every note whose `kind` is set and
+  /// is not `internal` (webapp: a missing kind is an internal note).
+  static List<TicketReply> _replies(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <TicketReply>[];
+    for (final r in raw) {
+      if (r is! Map) continue;
+      final kind = _str(r['kind']) ?? 'internal';
+      final id = _str(r['note_id']);
+      if (kind == 'internal' || id == null) continue;
+      final by = r['created_by'];
+      out.add(TicketReply(
+        id: id,
+        body: _str(r['content']) ?? '',
+        author: (by is Map ? (_str(by['name']) ?? _str(by['full_name'])) : null) ??
+            _str(r['created_by_name']) ??
+            '',
+        at: parseApiDate(r['created_at']),
+      ));
+    }
+    return out;
+  }
+
+  /// `custom_fields` as display strings; empty for every non-webhook ticket.
+  static Map<String, String> _customFields(Object? raw) {
+    if (raw is! Map) return const {};
+    return {
+      for (final e in raw.entries)
+        '${e.key}': e.value == null ? '' : (e.value is String ? e.value as String : '${e.value}'),
+    };
   }
 
   /// Non-empty string or null — every field read goes through this so shape
@@ -574,13 +747,24 @@ class TicketsRemoteDataSource {
     if (pri != null) out['priority'] = _apiPriority(pri);
     final channel = _channelCodes[(_str(fields['channel']) ?? '').toLowerCase()];
     if (channel != null) out['channel'] = channel;
-    final custId = _str(fields['customer_id']);
-    if (custId != null && _uuidRe.hasMatch(custId)) out['customer_id'] = custId;
-    // Both links accept an explicit null, which unlinks them (verified against
-    // the dev backend) — so "absent" and "cleared" must stay distinguishable.
+    // `client` (a customer's ticket) or `self` (internal — no customer, no SLA).
+    final reportedFor = _str(fields['reported_for']);
+    if (reportedFor == 'client' || reportedFor == 'self') out['reported_for'] = reportedFor;
     // The org's issue type, which the category chips now offer verbatim.
-    final type = _str(fields['issue_type']);
-    if (type != null && _uuidRe.hasMatch(type)) out['issue_type'] = type;
+    //
+    // These links accept an explicit null, which clears them (verified against
+    // the dev backend) — so "absent" and "cleared" must stay distinguishable:
+    // a key sent as null is "Uncategorised" / no customer / "No contact" /
+    // "Unassigned", a missing key leaves the ticket's value alone.
+    for (final key in const ['customer_id', 'issue_type', 'contact_id', 'assigned_to']) {
+      if (!fields.containsKey(key)) continue;
+      final id = _str(fields[key]);
+      if (id == null) {
+        out[key] = null;
+      } else if (_uuidRe.hasMatch(id)) {
+        out[key] = id;
+      }
+    }
     // The status, under the serializer's **write** name.
     //
     // Nested `status` is read-only, and this builder used to have no case for
@@ -595,8 +779,7 @@ class TicketsRemoteDataSource {
     if (statusId != null && _uuidRe.hasMatch(statusId)) {
       out['status_id'] = statusId;
     }
-    // Billing (handover §9.5). Only when the form sent it — the forms add these
-    // keys solely while accounting is active.
+    // Billing (handover §9.5). Only when the form sent it.
     if (fields['billable'] is bool) out['billable'] = fields['billable'];
     if (fields.containsKey('billable_amount')) {
       final amount = _str(fields['billable_amount']);

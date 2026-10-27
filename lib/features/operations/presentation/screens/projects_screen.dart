@@ -22,6 +22,7 @@ import '../../../../core/config/api_config.dart';
 import '../../application/filters/projects_filter_spec.dart';
 import '../../application/providers/projects_providers.dart';
 import '../../domain/entities/project.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import '../components/ops_widgets.dart';
 import '../components/project_card.dart';
 
@@ -66,7 +67,11 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     // Contextual add: the bottom-nav `+` opens the create-project form here (#14).
     registerAdd(
       ref,
-      AddAction(label: 'New project', run: (ctx) => ctx.push(Routes.createProject)),
+      AddAction(
+        label: 'New project',
+        module: 'project',
+        run: (ctx) => ctx.push(Routes.createProject),
+      ),
     );
 
     // The **filtered** fetch: this is what the list renders, so its loading and
@@ -139,8 +144,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                       // The server's aggregate when it answered, else the rows
                       // on hand — which only counts what has been downloaded.
                       label: '$label (${counts[k] ?? projTabCount(base, k, mine: mine)})',
-                      active: tab == k,
-                      onTap: () => ref.read(projTabProvider.notifier).state = k,
+                      // Multi-select like the webapp: chips OR together and
+                      // "All" clears the selection.
+                      active: k == 'all' ? tab == 'all' : projTabKeys(tab).contains(k),
+                      onTap: () => _toggleTab(k),
                     ),
                 ],
               ),
@@ -166,13 +173,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               return visible.isEmpty
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        EmptyState(
-                          icon: PhosphorIconsRegular.briefcase,
-                          title: 'No projects found',
-                          body: 'Try a different status, clear filters, or turn off "My Projects" to see the whole portfolio.',
-                        ),
-                      ],
+                      children: [_emptyState()],
                     )
                   : ListView.separated(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -192,6 +193,76 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
         ),
       ],
     );
+  }
+
+  /// A status chip toggled (multi-select), "All" clearing the rest. The list
+  /// re-queries with the new `status_name__in`.
+  void _toggleTab(String key) {
+    final next = projTabToggle(ref.read(projTabProvider), key);
+    ref.read(projTabProvider.notifier).state = next;
+  }
+
+  /// Whether anything narrows the list — the webapp then says "match your
+  /// filters" and offers "Clear filters".
+  bool _isNarrowed() =>
+      ref.read(projectFiltersProvider).activeCount > 0 ||
+      ref.read(projSearchProvider).trim().isNotEmpty ||
+      ref.read(projTabProvider) != 'all' ||
+      ref.read(projectSavedFiltersProvider).activeId != null;
+
+  /// The webapp's three empty states: Archived, filtered, and My Projects.
+  Widget _emptyState() {
+    if (ref.read(archivedProjectsProvider) && !_isNarrowed()) {
+      return EmptyState(
+        icon: PhosphorIconsRegular.archive,
+        title: 'No archived projects',
+        body: 'Projects you archive show up here — and closed projects, if your organization archives them automatically.',
+        ctaLabel: 'Back to active projects',
+        onCta: () {
+          ref.read(archivedProjectsProvider.notifier).state = false;
+          _applyFilters(ref.read(projectFiltersProvider));
+        },
+      );
+    }
+    if (_isNarrowed()) {
+      return EmptyState(
+        icon: PhosphorIconsRegular.briefcase,
+        title: 'No projects match your filters',
+        body: 'Try widening your search or clearing a filter to see more.',
+        ctaLabel: 'Clear filters',
+        onCta: _clearAll,
+      );
+    }
+    if (ref.read(myProjectsProvider)) {
+      return EmptyState(
+        icon: PhosphorIconsRegular.briefcase,
+        title: 'No projects assigned to you',
+        body: 'Nothing is assigned to you yet. Create a project, or clear the "My Projects" filter to see the whole team\'s work.',
+        ctaLabel: 'New Project',
+        onCta: () {
+          if (ensurePermission(ref, 'project', PermVerb.create)) context.push(Routes.createProject);
+        },
+      );
+    }
+    return EmptyState(
+      icon: PhosphorIconsRegular.briefcase,
+      title: 'No projects yet',
+      body: 'Create your first project to start tracking delivery.',
+      ctaLabel: 'New Project',
+      onCta: () {
+        if (ensurePermission(ref, 'project', PermVerb.create)) context.push(Routes.createProject);
+      },
+    );
+  }
+
+  /// Webapp "Clear filters": drawer facets, saved view, My Projects, status
+  /// chips and search — everything that narrows the list.
+  void _clearAll() {
+    _searchCtrl.clear();
+    ref.read(projSearchProvider.notifier).state = '';
+    ref.read(projTabProvider.notifier).state = 'all';
+    ref.read(myProjectsProvider.notifier).state = false;
+    _clearFilters();
   }
 
   /// Pull-to-refresh. Reloads the currently filtered rows together with the
@@ -323,7 +394,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               active: {if (saved.activeId != null) saved.activeId!},
               showClearAlways: filterCount > 0,
               onToggle: _toggleView,
-              onClear: _clearFilters,
+              onClear: _clearAll,
+              // Webapp `SavedViewChips`: × deletes the view after a confirm.
+              onRemove: _removeView,
+              webappStyle: true,
             ),
           ),
         ],
@@ -366,8 +440,24 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
         .read(projectFilterCodecProvider)
         .decode(view.definition, ref.read(projectsFilterSpecProvider));
     ref.read(projectSavedFiltersProvider.notifier).apply(id);
+    // Webapp: applying a view clears the status chips.
+    ref.read(projTabProvider.notifier).state = 'all';
     _applyFilters(values);
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
+  }
+
+  /// `DELETE /crm/saved-filters/{id}/` after the chip's confirm ("Delete
+  /// “<name>”?"). Deleting the applied view drops its chip; its filters stay.
+  Future<void> _removeView(String id) async {
+    final wasActive = ref.read(projectSavedFiltersProvider).activeId == id;
+    final error = await ref.read(projectSavedFiltersProvider.notifier).remove(id);
+    if (!mounted) return;
+    if (error != null) {
+      ref.read(toastProvider.notifier).showError(error);
+      return;
+    }
+    if (wasActive) ref.read(projectSavedFiltersProvider.notifier).deactivate();
+    ref.read(toastProvider.notifier).show('View deleted');
   }
 
   void _clearFilters() {

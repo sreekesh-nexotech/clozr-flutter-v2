@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/api/roster.dart';
@@ -23,12 +24,21 @@ import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/error_state.dart';
+import '../../../../core/utils/attachment_link.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../crm/domain/entities/lead_file.dart';
+import '../../../crm/infrastructure/data_sources/remote/attachments_remote_ds.dart';
+import '../../../crm/presentation/components/due_date_change.dart';
+import '../../application/project_task_error.dart';
+import '../../application/project_write_fields.dart' show apiDate;
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import '../../application/providers/ops_subtasks_providers.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
@@ -55,6 +65,19 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   final _subCtrl = TextEditingController();
   final _notesKey = GlobalKey<NotesThreadState>();
 
+  bool _uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Notes load fresh on open — the shared thread provider outlives a
+    // sign-out, and would otherwise show the previous session's copy.
+    // After the first frame: a provider cannot change while the tree builds.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.invalidate(crmNotesProvider);
+    });
+  }
+
   @override
   void dispose() {
     _subCtrl.dispose();
@@ -76,9 +99,19 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     // multi-page walk, so waiting on it meant one task's page could not paint
     // until every task in the org had downloaded. The list is still watched —
     // it just no longer blocks.
-    final gate = task != null
-        ? const AsyncValue<List<OpsTask>>.data(<OpsTask>[])
-        : tasksAsync;
+    //
+    // A failed fetch of the record itself (offline, 403, 404) shows the error
+    // with Retry, as the webapp does — not the list row standing in for it,
+    // which kept a removed or unreachable task on screen with Edit enabled.
+    final detailAsync = ref.watch(opsTaskDetailProvider(id));
+    final detailFailed =
+        ApiConfig.apiEnabled && detailAsync.hasError && !detailAsync.isLoading;
+    final gate = detailFailed
+        ? AsyncValue<List<OpsTask>>.error(
+            detailAsync.error!, detailAsync.stackTrace ?? StackTrace.current)
+        : task != null
+            ? const AsyncValue<List<OpsTask>>.data(<OpsTask>[])
+            : tasksAsync;
 
     return Container(
       color: AppColors.bgScreen,
@@ -88,9 +121,23 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
           Expanded(
             child: AsyncStateView<List<OpsTask>>(
               value: gate,
-              onRetry: () => ref.invalidate(opsTasksProvider),
+              onRetry: () {
+                ref.invalidate(opsTaskDetailProvider(id));
+                ref.invalidate(opsTasksProvider);
+              },
               onRefresh: () => _refresh(id),
               loading: () => const DetailSkeleton(),
+              // Webapp: "Task not found." for a removed task, the role copy
+              // for a refused one — never the stale record.
+              error: (e, retry) => e.type == AppErrorType.notFound || e.type == AppErrorType.forbidden
+                  ? EmptyState(
+                      icon: PhosphorIconsRegular.listChecks,
+                      title: e.type == AppErrorType.notFound ? 'Task not found.' : 'You don’t have access to this',
+                      body: e.type == AppErrorType.notFound
+                          ? 'This task may have been removed.'
+                          : projectTaskErrorMessage(e, ProjectTaskAction.view),
+                    )
+                  : ErrorState.forError(e, onRetry: retry),
               data: (_) {
                 if (task == null) {
                   return const EmptyState(
@@ -109,34 +156,58 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 // the blockers stayed empty until the screen was rebuilt from
                 // scratch (which is why they showed up after a trip through
                 // Edit and back).
+                //
+                // Only once the refetch has *landed*: while it is in flight
+                // the provider still carries the previous record, and seeding
+                // from that put the pre-change chips straight back after an
+                // add or remove.
                 if (_waitingOn == null &&
-                    ref.watch(opsTaskDetailProvider(id)).valueOrNull != null) {
+                    detailAsync.valueOrNull != null &&
+                    !detailAsync.isLoading) {
                   _waitingOn = List.of(task.waitingOn);
                 }
-                final waitingOn = _waitingOn ?? task.waitingOn;
+                // API mode: the record's own edges, refetched after every write —
+                // a local copy went stale after an add or remove.
+                final waitingOn = ApiConfig.apiEnabled ? task.waitingOn : (_waitingOn ?? task.waitingOn);
                 final status = _status ?? task.status;
 
-                final meta = StatusMeta$.opsTask[status] ?? StatusMeta$.opsTask['open']!;
+                // The org's own name and colour; a status just picked here has
+                // its name in [_statusName] until the record comes back.
+                final meta = opsTaskStatusMeta(
+                  key: status,
+                  statusName: _statusName ?? (_status == null ? task.statusName : ''),
+                  statuses: ref.watch(opsTaskStatusOptionsProvider),
+                );
                 final priColor = StatusMeta$.projectPriority[task.pri] ?? AppColors.textMuted;
                 final locked = status == 'completed' || status == 'cancelled';
                 final project = projects.where((p) => p.id == task.projId).firstOrNull;
                 final overdue = isTaskOverdue(task);
                 final progress = task.computedProgress(subtasks);
 
+                // Webapp: the role holds Operations › Tasks (edit) but this
+                // record says `can_update: false` — readable, not changeable.
+                final viewOnly = hasPermission(ref, 'project_task', PermVerb.update) &&
+                    task.canUpdate == false;
+
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
-                    _summaryCard(task, meta, priColor, project?.name ?? '—', overdue),
+                    _summaryCard(task, meta, priColor, project?.name ?? task.projectName.ifEmpty('—'), overdue),
+                    if (viewOnly) ...[SizedBox(height: 14.h), _viewOnlyBanner()],
+                    // SLA engine: an expected-end change waiting on the manager.
+                    PendingDueDateBanner(pending: task.pendingDueChange, fieldLabel: 'Expected end'),
                     if (locked) ...[SizedBox(height: 14.h), _lockBanner(status)],
                     SizedBox(height: 14.h),
                     _detailsCard(task, meta, progress, locked),
                     SizedBox(height: 14.h),
                     _subtasksCard(task, subtasks, locked),
-                    if (!locked || _hasDeps(task, waitingOn, allTasks)) ...[
+                    if ((!locked && task.projId.isNotEmpty) || _hasDeps(task, waitingOn, allTasks)) ...[
                       SizedBox(height: 14.h),
                       _depsCard(task, waitingOn, allTasks, locked),
                     ],
+                    SizedBox(height: 14.h),
+                    _filesCard(task, locked),
                     _notes(task.id),
                     _auditLog(task, waitingOn),
                   ],
@@ -192,6 +263,15 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     final ids = t.assignees.take(2).toList();
     final more = t.assignees.length - ids.length;
     final names = t.assignees.map((id) => MockUsers.of(id).firstName).join(', ').ifEmpty('—');
+    // Webapp header sub-line: "{Type} task · {Project}", or "Standalone task".
+    final subLine = [
+      if (t.typeName.isNotEmpty) '${t.typeName} task',
+      if (t.projId.isNotEmpty) projName,
+    ].join(' · ').ifEmpty('Standalone task');
+    // Priority is hidden when the task has none (API rows say so explicitly).
+    final showPri = !ApiConfig.apiEnabled || t.priorityRaw.isNotEmpty;
+    final dueColor = overdue ? AppColors.error : AppColors.textLabelAlt;
+    final canOpenProject = t.projId.isNotEmpty && t.projectAccessible != false;
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(18.r),
@@ -205,33 +285,59 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 7.w,
+                      runSpacing: 4.h,
                       children: [
-                        if (t.milestone)
-                          Padding(
-                            padding: EdgeInsets.only(top: 2.h, right: 7.w),
-                            child: Icon(PhosphorIconsFill.flag, size: 16.sp, color: AppColors.warningDeep),
+                        Text(t.subject, style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                        if (t.milestone) Icon(PhosphorIconsFill.flag, size: 16.sp, color: AppColors.warningDeep),
+                        if (t.pendingDeps > 0)
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                            decoration: BoxDecoration(color: AppColors.tintAmber, borderRadius: BorderRadius.circular(999.r)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(PhosphorIconsRegular.hourglassMedium, size: 11.sp, color: const Color(0xFFB45C00)),
+                              SizedBox(width: 4.w),
+                              Text('Waiting on ${t.pendingDeps}',
+                                  style: AppText.custom(size: 11, weight: FontWeight.w700, color: const Color(0xFFB45C00))),
+                            ]),
                           ),
-                        Expanded(
-                          child: Text(t.subject, style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                        ),
                       ],
                     ),
                     SizedBox(height: 4.h),
-                    GestureDetector(
-                      onTap: () {
-                        if (t.projId.isNotEmpty) context.push('${Routes.projectDetail}?id=${t.projId}');
-                      },
-                      child: Text('$projName › ${t.group}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.blueBright)),
-                    ),
+                    Text(subLine,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    if (t.projId.isNotEmpty) ...[
+                      SizedBox(height: 6.h),
+                      // The project chip: a link when the project can be opened,
+                      // plain text with a lock when it is outside this user's reach.
+                      GestureDetector(
+                        onTap: canOpenProject
+                            ? () => context.push('${Routes.projectDetail}?id=${t.projId}')
+                            : () => ref.read(toastProvider.notifier).show("You don't have access to this project"),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Flexible(
+                            child: Text('$projName › ${t.group.ifEmpty('No group')}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: canOpenProject ? AppColors.blueBright : AppColors.textMuted)),
+                          ),
+                          if (!canOpenProject) ...[
+                            SizedBox(width: 4.w),
+                            Icon(PhosphorIconsRegular.lock, size: 12.sp, color: AppColors.textPlaceholder),
+                          ],
+                        ]),
+                      ),
+                    ],
                     if (t.hasFromTicket) ...[
                       SizedBox(height: 8.h),
                       GestureDetector(
-                        onTap: () => ref.read(toastProvider.notifier).show('Open ${t.fromTicket}'),
+                        // The ticket opens even for an assignee without Helpdesk — its
+                        // detail sits outside the module guard, as on the webapp.
+                        onTap: () => context.push('${Routes.ticketDetail}?id=${t.fromTicket}'),
                         child: Container(
                           padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
                           decoration: BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(8.r)),
@@ -240,7 +346,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                             children: [
                               Icon(PhosphorIconsFill.ticket, size: 12.sp, color: AppColors.blueBright),
                               SizedBox(width: 6.w),
-                              Text('From ticket ${t.fromTicket}', style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                              Text('From ticket', style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
                               SizedBox(width: 6.w),
                               Icon(PhosphorIconsBold.arrowRight, size: 10.sp, color: AppColors.blueBright),
                             ],
@@ -256,8 +362,10 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   GestureDetector(onTap: _openStatusSheet, child: StatusPill.meta(meta)),
-                  SizedBox(height: 5.h),
-                  StatusPill(label: t.pri, color: priColor),
+                  if (showPri) ...[
+                    SizedBox(height: 5.h),
+                    StatusPill(label: t.pri, color: priColor),
+                  ],
                 ],
               ),
             ],
@@ -284,25 +392,66 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
             ],
           ),
           SizedBox(height: 12.h),
+          // Webapp: "Due 17 Nov 2026 · Overdue · PRJ-1003-t2" (red when overdue),
+          // "No end date" when there is none.
           Row(
             children: [
-              Icon(PhosphorIconsRegular.calendarBlank, size: 15.sp, color: AppColors.textPlaceholder),
+              Icon(PhosphorIconsRegular.calendarBlank, size: 15.sp, color: overdue ? AppColors.error : AppColors.textPlaceholder),
               SizedBox(width: 7.w),
-              Text('Due ${t.end.replaceAll(' 2026', '')}${t.endTime.isNotEmpty ? ' · ${t.endTime}' : ''}',
-                  style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-              if (overdue) ...[
-                const Spacer(),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                  decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(7.r)),
-                  child: Text('Overdue', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.error)),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(
+                        text: t.endISO.trim().isEmpty && t.end.trim().isEmpty
+                            ? 'No end date'
+                            : 'Due ${t.endISO.trim().isEmpty ? t.end : dueDateLabel(t.endISO)}',
+                        style: TextStyle(color: dueColor)),
+                    if (overdue) TextSpan(text: ' · Overdue', style: TextStyle(color: AppColors.error)),
+                    if (t.code.isNotEmpty) TextSpan(text: ' · ${t.code}', style: TextStyle(color: AppColors.textPlaceholder)),
+                  ]),
+                  style: AppText.custom(size: 13, weight: FontWeight.w600, color: dueColor),
                 ),
-              ],
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  static const _viewOnlyCopy = 'You can view this task but not change it.';
+
+  /// Webapp `ProjectTaskDetailScreen`: module update granted, record refused.
+  Widget _viewOnlyBanner() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: BoxDecoration(
+        color: AppColors.bgChipGrey,
+        borderRadius: BorderRadius.circular(14.r),
+      ),
+      child: Row(
+        children: [
+          Icon(PhosphorIconsFill.eye, size: 18.sp, color: AppColors.textMuted2),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(_viewOnlyCopy,
+                style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textLabelAlt)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Whether the signed-in role may change task [id]: the module's edit grant
+  /// (webapp `PermissionGate`) and the record's own `can_update`. Says why
+  /// when it may not, instead of sending a write the server will refuse.
+  bool _ensureCanEdit(String id) {
+    if (!ensurePermission(ref, 'project_task', PermVerb.update)) return false;
+    if (ref.read(opsTaskDetailOrListProvider(id))?.canUpdate == false) {
+      ref.read(toastProvider.notifier).showError(_viewOnlyCopy);
+      return false;
+    }
+    return true;
   }
 
   Widget _lockBanner(String status) {
@@ -342,14 +491,15 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       // standalone task and on the slim list row, so the row waits for the
       // retrieve rather than showing the UUID.
       if (t.code.isNotEmpty) ('Task ID', t.code),
-      ('Expected start', '${t.start.replaceAll(' 2026', '')}${t.startTime.isNotEmpty ? ' · ${t.startTime}' : ''}'),
-      ('Expected end', '${t.end.replaceAll(' 2026', '')}${t.endTime.isNotEmpty ? ' · ${t.endTime}' : ''}'),
+      ('Type', t.typeName.ifEmpty('—')),
+      ('Expected start', opsWhenLabel(t.start, t.startTime)),
+      ('Expected end', opsWhenLabel(t.end, t.endTime)),
       // Detail-only decimals, so both wait for the retrieve rather than
       // printing the "0 hrs" / "1" the mapper used to hardcode.
       if (t.expHrs != null) ('Expected time', '${opsDecimalLabel(t.expHrs!)} hrs'),
       if (t.weight != null) ('Task weight', opsDecimalLabel(t.weight!)),
       ('Milestone', t.milestone ? 'Yes' : 'No'),
-      ('Department', t.dept),
+      ('Department', t.dept.trim().isEmpty ? '—' : t.dept),
     ];
     return ClozrCard(
       radius: 18,
@@ -360,7 +510,13 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
           Text('Details', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
           Padding(
             padding: EdgeInsets.fromLTRB(2.w, 12.h, 2.w, 4.h),
-            child: Text(t.desc, style: AppText.custom(size: 14, weight: FontWeight.w500, color: locked ? AppColors.textPlaceholder : AppColors.textLabelAlt, height: 1.6)),
+            // Webapp copy when there is none.
+            child: Text(t.desc.trim().isEmpty ? 'No description yet — use Edit to add context for this task.' : t.desc,
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w500,
+                    color: locked || t.desc.trim().isEmpty ? AppColors.textPlaceholder : AppColors.textLabelAlt,
+                    height: 1.6)),
           ),
           SizedBox(height: 6.h),
           Row(
@@ -406,9 +562,18 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 ],
               ),
             ),
-          if (!locked)
-            GestureDetector(
-              onTap: () => context.push('${Routes.editTask}?id=${t.id}'),
+          if (ApiConfig.apiEnabled && t.color.name.isNotEmpty) _colorRow(t),
+          if (ApiConfig.apiEnabled) _committedRow(t, locked),
+          if (!locked) ...[
+            // Dimmed, with the reason under it, for a user who may not edit
+            // (module grant or this record's can_update) — as Edit project.
+            Opacity(
+              opacity: _canWrite(t) ? 1 : 0.45,
+              child: GestureDetector(
+              onTap: () {
+                if (!_ensureCanEdit(t.id)) return;
+                context.push('${Routes.editTask}?id=${t.id}');
+              },
               child: Container(
                 height: 44.h,
                 margin: EdgeInsets.only(top: 14.h),
@@ -428,10 +593,231 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
                 ),
               ),
             ),
+            ),
+            if (!_canWrite(t)) ...[
+              SizedBox(height: 6.h),
+              Text(
+                hasPermission(ref, 'project_task', PermVerb.update) ? _viewOnlyCopy : permissionCopy(PermVerb.update),
+                textAlign: TextAlign.center,
+                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted),
+              ),
+            ],
+          ],
         ],
       ),
     );
   }
+
+  /// SLA engine — the committed end (webapp `committedDateField`): the date
+  /// or "Not committed yet", how often it moved, and a lock: only admins and
+  /// Executive Leadership (`can_change_committed_date`) may change it, through
+  /// the same reason / approval flow as the expected end.
+  /// Webapp "Color tag": the task's swatch.
+  Widget _colorRow(OpsTask t) => Container(
+        padding: EdgeInsets.symmetric(vertical: 10.h),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        child: Row(children: [
+          Text('Color tag', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          const Spacer(),
+          Container(
+            width: 16.w,
+            height: 16.w,
+            decoration: BoxDecoration(
+              color: t.color.hex,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.borderCardSoft),
+            ),
+          ),
+        ]),
+      );
+
+  Widget _committedRow(OpsTask t, bool locked) {
+    final canChange = !locked && t.canChangeCommitted == true && t.canUpdate != false &&
+        hasPermission(ref, 'project_task', PermVerb.update);
+    final moved = rescheduleLabel({'reschedule_count': t.rescheduleCount, 'slip_days': t.slipDays});
+    final value = t.committedEndISO.isEmpty ? 'Not committed yet' : dueDateLabel(t.committedEndISO);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: canChange
+          ? () => _changeCommitted(t)
+          : () => ref.read(toastProvider.notifier).show('Locked once set; admins and Executive Leadership can change it'),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 10.h),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Committed end', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+            SizedBox(width: 6.w),
+            Icon(canChange ? PhosphorIconsRegular.pencilSimple : PhosphorIconsRegular.lock,
+                size: 13.sp, color: AppColors.textPlaceholder),
+            SizedBox(width: 14.w),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text(value,
+                    textAlign: TextAlign.right,
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: t.committedEndISO.isEmpty ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                if (moved != null) ...[
+                  SizedBox(height: 2.h),
+                  Text(moved, style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.warningDeep)),
+                ],
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeCommitted(OpsTask t) async {
+    final current = DateTime.tryParse(t.committedEndISO)?.toLocal();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: current ?? DateTime.now(),
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2030),
+    );
+    if (d == null || !mounted) return;
+    final iso = '${apiDate(d)}T00:00:00${_tzOffset(d)}';
+    try {
+      final outcome = await writeWithDueDateFlow(
+        context,
+        ref,
+        path: '/projects/tasks/${t.id}/',
+        fields: {'committed_end_date': iso},
+        hadDate: t.committedEndISO.isNotEmpty,
+        dateKey: 'committed_end_date',
+        fieldLabel: 'Committed end',
+        dateLabel: dueDateLabel(apiDate(d)),
+      );
+      if (!mounted) return;
+      if (outcome == DueDateWrite.saved) ref.read(toastProvider.notifier).show('Saved');
+      ref.invalidate(opsTaskDetailProvider(t.id));
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
+    }
+  }
+
+  /// "+05:30" — the device's offset, so a picked day stays that day server-side.
+  static String _tzOffset(DateTime d) {
+    final o = d.timeZoneOffset;
+    final sign = o.isNegative ? '-' : '+';
+    final m = o.inMinutes.abs();
+    return '$sign${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+  }
+
+  /// Webapp Files tab: the task's attachments (`related_to=project_task`),
+  /// "No files yet", and "Upload file" → "File uploaded".
+  Widget _filesCard(OpsTask t, bool locked) {
+    final async = ref.watch(projectTaskFilesProvider(t.id));
+    final files = async.valueOrNull ?? const <LeadFile>[];
+    return ClozrCard(
+      radius: 18,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(PhosphorIconsRegular.paperclip, size: 16.sp, color: AppColors.textLabelAlt),
+            SizedBox(width: 7.w),
+            Text('Files', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          ]),
+          SizedBox(height: 8.h),
+          if (files.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 8.h),
+              child: Text(async.isLoading ? 'Loading files…' : 'No files yet',
+                  style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            ),
+          for (final f in files)
+            InkWell(
+              onTap: () async {
+                final failure = await openAttachment(f.url);
+                if (failure != null && mounted) ref.read(toastProvider.notifier).showError(failure);
+              },
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 9.h),
+                child: Row(children: [
+                  Icon(PhosphorIconsRegular.fileText, size: 17.sp, color: AppColors.textSecondary),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                      if (f.uploadedAt.isNotEmpty) Text(f.uploadedAt, style: AppText.caption()),
+                    ]),
+                  ),
+                  Icon(PhosphorIconsRegular.arrowSquareOut, size: 15.sp, color: AppColors.textPlaceholder),
+                ]),
+              ),
+            ),
+          SizedBox(height: 8.h),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _uploading ? null : () => _uploadFile(t),
+            child: Container(
+              height: 42.h,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(11.r),
+                border: Border.all(color: AppColors.borderInput),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(_uploading ? PhosphorIconsRegular.circleNotch : PhosphorIconsRegular.uploadSimple,
+                    size: 15.sp, color: AppColors.navy),
+                SizedBox(width: 8.w),
+                Text(_uploading ? 'Uploading…' : 'Upload file',
+                    style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadFile(OpsTask t) async {
+    if (!_ensureCanEdit(t.id)) return;
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(withData: false);
+    } on Object catch (e) {
+      if (!mounted) return;
+      ref.read(toastProvider.notifier).showError('Could not open the file picker: $e');
+      return;
+    }
+    final file = picked?.files.singleOrNull;
+    final path = file?.path;
+    if (file == null || path == null || !mounted) return;
+    setState(() => _uploading = true);
+    try {
+      await AttachmentsRemoteDataSource(ref.read(apiServiceProvider)).uploadFile(
+        relatedTo: 'project_task',
+        relatedToId: t.id,
+        path: path,
+        name: file.name,
+      );
+      if (!mounted) return;
+      ref.invalidate(projectTaskFilesProvider(t.id));
+      ref.read(toastProvider.notifier).show('File uploaded');
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  /// Webapp `canEdit`: the module's edit grant and this record's own
+  /// `can_update`. Without it the add-subtask and add-dependency editors are
+  /// not offered at all.
+  bool _canWrite(OpsTask t) =>
+      hasPermission(ref, 'project_task', PermVerb.update) && t.canUpdate != false;
 
   Widget _subtasksCard(OpsTask t, List<Subtask> subs, bool locked) {
     final taskId = t.id;
@@ -456,7 +842,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
             ],
           ),
           for (int i = 0; i < subs.length; i++) _subtaskRow(taskId, i, subs[i], locked),
-          if (!locked) ...[
+          if (!locked && _canWrite(t)) ...[
             SizedBox(height: 12.h),
             Row(
               children: [
@@ -507,7 +893,12 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   Widget _subtaskRow(String taskId, int index, Subtask s, bool locked) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => context.push('${Routes.opsSubtask}?taskId=$taskId&i=$index'),
+      // Webapp: a subtask is a full project task — same detail, notes, files
+      // and audit — so it opens the task page itself (mock rows have no id of
+      // their own and keep the reduced subtask page).
+      onTap: () => ApiConfig.apiEnabled && s.id.isNotEmpty
+          ? context.push('${Routes.opsTaskDetail}?id=${s.id}')
+          : context.push('${Routes.opsSubtask}?taskId=$taskId&i=$index'),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 11.h),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
@@ -574,6 +965,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   /// `DELETE /projects/task-dependencies/{edge}/`. The ✕ used to mutate the
   /// local list only, so the blocker came straight back on the next load.
   Future<void> _removeDep(OpsTask t, String blockerId, String? edgeId) async {
+    if (!_ensureCanEdit(t.id)) return;
     if (!ApiConfig.apiEnabled) {
       setState(() => _waitingOn?.remove(blockerId));
       return;
@@ -591,20 +983,33 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       ref.read(toastProvider.notifier).show('Dependency removed');
     } on AppError catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).showError(e.message);
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
     }
   }
 
-  /// `POST /projects/task-dependencies/`. Picks the blocker from the org's
-  /// tasks, minus this task and the ones it already waits on.
+  /// `POST /projects/task-dependencies/`. Webapp picker: the tasks in **this
+  /// project** ("Search tasks in this project…"), minus this task and every
+  /// task already linked either way.
   Future<void> _addDep(OpsTask t, List<String> waitingOn, List<OpsTask> all) async {
-    final taken = {t.id, ...waitingOn};
+    if (!_ensureCanEdit(t.id)) return;
+    final taken = {t.id, ...waitingOn, for (final b in t.blocking) b.taskId};
+    List<OpsTask> pool = all;
+    if (ApiConfig.apiEnabled) {
+      try {
+        pool = await ref.read(projectTasksProvider(t.projId).future);
+      } on Object {
+        pool = const [];
+      }
+      if (!mounted) return;
+    }
     final options = [
-      for (final x in all)
-        if (!taken.contains(x.id)) (value: x.id, label: x.subject),
+      for (final x in pool)
+        if (!taken.contains(x.id) && (x.projId == t.projId || !ApiConfig.apiEnabled))
+          (value: x.id, label: x.subject.ifEmpty('Untitled task')),
     ];
     if (options.isEmpty) {
-      ref.read(toastProvider.notifier).show('No other tasks to depend on');
+      ref.read(toastProvider.notifier).show('No matching tasks');
       return;
     }
     final chosen = await showOpsOptionPicker(
@@ -612,6 +1017,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       title: 'Waiting on',
       options: options,
       currentValue: '',
+      searchHint: 'Search tasks in this project…',
     );
     if (chosen == null || !mounted) return;
 
@@ -626,9 +1032,10 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       ref.read(toastProvider.notifier).show('Dependency added');
     } on AppError catch (e) {
       if (!mounted) return;
-      // A cycle, a duplicate or a cross-project blocker all land here, and the
-      // backend's message is the only thing that says which.
-      ref.read(toastProvider.notifier).showError(e.message);
+      // A cycle or a duplicate lands here, and the backend's message is the
+      // only thing that says which — shown once, without the field prefix.
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
     }
   }
 
@@ -687,7 +1094,10 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
               runSpacing: 7.h,
               children: [
                 ...waitChips,
-                if (!locked)
+                if (waitChips.isEmpty && (locked || t.projId.isEmpty || !_canWrite(t)))
+                  Text('Nothing yet', style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                // Not available on a standalone task (blockers come from its project).
+                if (!locked && t.projId.isNotEmpty && _canWrite(t))
                   GestureDetector(
                     onTap: () => _addDep(t, waitingOn, all),
                     child: Container(
@@ -832,6 +1242,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   /// still has open dependencies comes back as a `400`, and that message is the
   /// whole explanation.
   Future<void> _toggleSubtask(String taskId, int index) async {
+    if (!_ensureCanEdit(taskId)) return;
     final err = await ref.read(opsSubtasksProvider(taskId).notifier).toggle(index);
     if (!mounted || err == null) return;
     ref.read(toastProvider.notifier).showError(err);
@@ -842,6 +1253,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   Future<void> _addSubtask(String taskId) async {
     final text = _subCtrl.text.trim();
     if (text.isEmpty) return;
+    if (!ensurePermission(ref, 'project_task', PermVerb.create) || !_ensureCanEdit(taskId)) return;
     final err = await ref.read(opsSubtasksProvider(taskId).notifier).add(text);
     if (!mounted) return;
     if (err != null) {
@@ -948,14 +1360,27 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
   /// underneath, so the wrong value quietly returns the wrong thread.
   Widget _notes(String taskId) {
     final seed = CrmNotesSeed(taskId, () => const <NoteEntry>[], apiModel: 'project_task');
+    final notes = ref.read(crmNotesProvider(seed).notifier);
     return NotesThread(
       key: _notesKey,
       author: ref.watch(noteAuthorProvider),
       notes: ref.watch(crmNotesProvider(seed)),
-      onAddNote: (body, atts) =>
-          ref.read(crmNotesProvider(seed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
-      onAddReply: (noteId, body) =>
-          ref.read(crmNotesProvider(seed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
+      onAddNote: (body, atts) => notes.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) => notes.addReply(noteId, body, ref.read(noteAuthorProvider)),
+      // Webapp NotesPanel (related_to=project_task): Tag · Insert (no
+      // @mention source for project tasks), author-only pin / edit / delete.
+      webappToolbar: true,
+      noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
+      currentUserId: UserDirectory.currentUserId,
+      onAddTypedNote: (body, atts, typeId, typeName, mentions) => notes.addNote(
+          body, atts, ref.read(noteAuthorProvider),
+          noteTypeId: typeId,
+          noteTypeName: typeName,
+          mentionedUserIds: mentions,
+          authorId: UserDirectory.currentUserId),
+      onTogglePin: (id) => notes.togglePin(id),
+      onEditNote: (id, body) => notes.editNote(id, body),
+      onDeleteNote: (id) => notes.deleteNote(id),
     );
   }
 
@@ -972,6 +1397,14 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
       return wt != null && wt.status != 'completed' && wt.status != 'cancelled';
     });
     final blockedDel = hasUnresolvedDep || ref.read(opsSubtasksProvider(id)).any((s) => !s.done);
+    // Webapp gates: the module's verbs, narrowed by the record's own
+    // `can_update` / `can_delete` (a view-only record).
+    final modUpdate = hasPermission(ref, 'project_task', PermVerb.update);
+    final canEdit = modUpdate && task.canUpdate != false;
+    final editReason = modUpdate ? _viewOnlyCopy : permissionCopy(PermVerb.update);
+    final canCreate = hasPermission(ref, 'project_task', PermVerb.create);
+    final modDelete = hasPermission(ref, 'project_task', PermVerb.delete);
+    final canDelete = modDelete && task.canDelete != false;
 
     await showActionMenu(
       context,
@@ -980,13 +1413,19 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         MenuAction(
           icon: PhosphorIconsRegular.pencilSimple,
           label: 'Edit task',
-          enabled: !locked,
-          sublabel: locked ? 'Locked while $status' : null,
+          enabled: !locked && canEdit,
+          sublabel: locked
+              ? 'Locked while $status'
+              : canEdit
+                  ? null
+                  : editReason,
           onTap: () => context.push('${Routes.editTask}?id=${task.id}'),
         ),
         MenuAction(
           icon: PhosphorIconsRegular.arrowsClockwise,
           label: 'Change status',
+          enabled: canEdit,
+          sublabel: canEdit ? null : editReason,
           onTap: _openStatusSheet,
         ),
         MenuAction(
@@ -997,14 +1436,20 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         MenuAction(
           icon: PhosphorIconsRegular.copy,
           label: 'Duplicate task',
+          enabled: canCreate,
+          sublabel: canCreate ? null : permissionCopy(PermVerb.create),
           onTap: () => _duplicate(task),
         ),
         MenuAction(
           icon: PhosphorIconsRegular.trash,
           label: 'Delete task',
           destructive: true,
-          enabled: !blockedDel,
-          sublabel: blockedDel ? 'Resolve subtasks & dependencies first' : null,
+          enabled: canDelete && !blockedDel,
+          sublabel: !canDelete
+              ? (modDelete ? _viewOnlyCopy : permissionCopy(PermVerb.delete))
+              : blockedDel
+                  ? 'Resolve subtasks & dependencies first'
+                  : null,
           onTap: () => _delete(task),
         ),
       ],
@@ -1022,6 +1467,7 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     final task = ref.read(opsTaskDetailOrListProvider(id));
     if (task == null) return;
+    if (!_ensureCanEdit(task.id)) return;
 
     // Wait for the catalog before opening. `read` alone returned whatever was
     // cached — which on a detail screen reached directly is nothing, so every
@@ -1040,9 +1486,10 @@ class _OpsTaskDetailScreenState extends ConsumerState<OpsTaskDetailScreen> {
         for (final s in catalog)
           s.name: StatusMeta(
             s.name,
-            (StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)] ??
-                    StatusMeta$.opsTask['open']!)
-                .color,
+            s.color ??
+                (StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)] ??
+                        StatusMeta$.opsTask['open']!)
+                    .color,
           ),
     };
     final current =

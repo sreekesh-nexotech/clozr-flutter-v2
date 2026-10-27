@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
@@ -14,13 +16,14 @@ import '../../domain/entities/ops_task.dart';
 /// The Ops Tasks list card: milestone flag + subject, project·group sub-line,
 /// status/priority pills, an optional "Waiting on" chip, and a footer with
 /// assignee avatars, due date, overdue chip and a subtask counter.
-class OpsTaskCard extends StatelessWidget {
+class OpsTaskCard extends ConsumerWidget {
   const OpsTaskCard({
     super.key,
     required this.task,
     required this.projectName,
     required this.unresolvedCount,
     required this.onTap,
+    this.onMore,
   });
 
   final OpsTask task;
@@ -28,15 +31,33 @@ class OpsTaskCard extends StatelessWidget {
   final int unresolvedCount;
   final VoidCallback onTap;
 
+  /// The row's ⋯ menu (webapp `RowMenu`: Edit / milestone / Delete). Null hides
+  /// the control — a user with neither update nor delete gets no dead button.
+  final VoidCallback? onMore;
+
+  Widget _moreButton() => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onMore,
+        child: Padding(
+          padding: EdgeInsets.only(left: 12.w),
+          child: Icon(PhosphorIconsBold.dotsThreeVertical, size: 18.sp, color: AppColors.textMuted),
+        ),
+      );
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = task;
-    final meta = StatusMeta$.opsTask[t.status] ?? StatusMeta$.opsTask['open']!;
+    // The org's own status name and colour, not the built-in palette.
+    final meta = opsTaskStatusMeta(
+      key: t.status,
+      statusName: t.statusName,
+      statuses: ref.watch(opsTaskStatusOptionsProvider),
+    );
     final priColor = StatusMeta$.projectPriority[t.pri] ?? AppColors.textMuted;
     final overdue = isTaskOverdue(t);
     final ids = t.assignees.take(2).toList();
     final more = t.assignees.length - ids.length;
-    final due = 'Due ${t.end.replaceAll(' 2026', '')}${t.endTime.isNotEmpty ? ' · ${t.endTime}' : ''}';
+    final due = 'Due ${opsWhenLabel(t.end, t.endTime)}';
 
     return ClozrCard(
       radius: 16,
@@ -67,7 +88,8 @@ class OpsTaskCard extends StatelessWidget {
                       ],
                     ),
                     SizedBox(height: 3.h),
-                    Text('${projectName.isEmpty ? '—' : projectName} · ${t.group}',
+                    // Webapp: a task with no project is listed as "Standalone".
+                    Text('${projectName.isEmpty ? (ApiConfig.apiEnabled && t.projId.isEmpty ? 'Standalone' : '—') : projectName} · ${t.group}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
@@ -78,7 +100,11 @@ class OpsTaskCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  StatusPill.meta(meta),
+                  // A task with no status reads "—", as on the webapp.
+                  if (ApiConfig.apiEnabled && t.statusName.trim().isEmpty)
+                    StatusPill(label: '—', color: AppColors.textMuted)
+                  else
+                    StatusPill.meta(meta),
                   SizedBox(height: 5.h),
                   StatusPill(label: t.pri, color: priColor),
                 ],
@@ -105,7 +131,9 @@ class OpsTaskCard extends StatelessWidget {
           Container(
             padding: EdgeInsets.only(top: 11.h),
             decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
+            // The ⋯ sits at the right edge, after everything else in the footer.
+            child: Row(children: [
+              Expanded(child: Row(
               children: [
                 AvatarStack(
                   size: 24,
@@ -141,7 +169,9 @@ class OpsTaskCard extends StatelessWidget {
                       style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
                 ],
               ],
-            ),
+              )),
+              if (onMore != null) _moreButton(),
+            ]),
           ),
         ],
       ),

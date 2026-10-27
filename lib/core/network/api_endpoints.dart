@@ -178,6 +178,8 @@ class ApiEndpoints {
   static const issueSummary = '/crm/issues/summary/';
   static const issueTypes = '/crm/issue-types/';
   static String issueReplies(String id) => '/crm/issues/$id/replies/';
+  static String issueChildren(String id) => '/crm/issues/$id/children/';
+  static String issueLogFirstResponse(String id) => '/crm/issues/$id/log-first-response/';
 
   /// One ticket's own activity feed (`helpdesk.md` §10) — gated by `view_issue`
   /// rather than `view_audit_log`, unlike the org-wide audit trail.
@@ -185,6 +187,14 @@ class ApiEndpoints {
 
   /// The Operations tasks raised from one ticket (§10).
   static String issueTasks(String id) => '/crm/issues/$id/tasks/';
+
+  /// How a billable ticket's charge is invoiced: the tenant's GST basis for
+  /// `billable_amount` and the default SAC (`{amounts_are, default_sac,
+  /// default_gst_rate_pct}`).
+  static const issueBillingDefaults = '/crm/issues/billing-defaults/';
+
+  /// A customer's contacts (`?customer_id=`) — the ticket form's Contact picker.
+  static const contacts = '/crm/contacts/';
 
   // ── Access control: the audit trail behind every record's activity log ──
   static const auditLogs = '/access-control/audit-logs/';

@@ -5,7 +5,6 @@ import '../../../../crm/infrastructure/data_sources/remote/crm_catalog_remote_ds
 import '../../../../crm/infrastructure/data_sources/remote/attachments_remote_ds.dart';
 import '../../../../crm/domain/entities/lead_file.dart';
 import '../../../../../core/network/api_service.dart';
-import '../../../../../core/network/app_error.dart';
 import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/inr_format.dart';
 import '../../../../../core/utils/relative_time.dart';
@@ -60,7 +59,7 @@ class ProjectsRemoteDataSource {
     List<String> nameKeys = const ['name'],
   }) async {
     try {
-      final body = await _api.get(path, query: {'page_size': 100});
+      final body = await _api.get(path, query: {'page_size': 100}, quiet: true);
       final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
@@ -74,7 +73,13 @@ class ProjectsRemoteDataSource {
         if (id.isEmpty || name.isEmpty) continue;
         // The org's own dot colour, so the status pill and the picker agree
         // with the tab strip instead of falling back to the built-in palette.
-        out.add(CatalogOption(id: id, name: name, color: hexColor(row['color'])));
+        out.add(CatalogOption(
+          id: id,
+          name: name,
+          color: hexColor(row['color']),
+          // A closed status shows "Closed" instead of a progress bar.
+          isClosed: row['is_closed'] == true,
+        ));
       }
       return out;
     } on Object {
@@ -113,8 +118,13 @@ class ProjectsRemoteDataSource {
   }
 
   /// `PATCH /projects/projects/{id}/` with the non-empty subset of [fields].
+  ///
+  /// Sent **as built**, not cleaned: an edit clears a customer, quote or team
+  /// with an explicit `null` and a description with `""` (webapp
+  /// `toProjectUpdateBody`). Stripping those meant "No team" saved as no
+  /// change. The builder already omits what the form did not set.
   Future<void> updateProject(String id, Map<String, dynamic> fields) =>
-      _api.patch(ApiEndpoints.project(id), body: _clean(fields));
+      _api.patch(ApiEndpoints.project(id), body: fields);
 
   /// `POST /projects/projects/{project_id}/archive/` — archive or restore.
   ///
@@ -137,19 +147,20 @@ class ProjectsRemoteDataSource {
   /// failure costs the enrichment rather than the page.
   Future<Project?> fetchProject(String id) async {
     if (id.isEmpty) return null;
-    try {
-      // `include_archived`: the bare detail route 404s for an archived project,
-      // so opening one from the Archived view rendered "Project not found" and
-      // "Restore project" could never be reached. With the flag the same route
-      // answers 200 (verified against the dev backend).
-      final body = await _api.get(
-        ApiEndpoints.project(id),
-        query: {'include_archived': 'true'},
-      );
-      return body is Map<String, dynamic> ? mapProject(body) : null;
-    } on AppError {
-      return null;
-    }
+    // `include_archived`: the bare detail route 404s for an archived project,
+    // so opening one from the Archived view rendered "Project not found" and
+    // "Restore project" could never be reached. With the flag the same route
+    // answers 200 (verified against the dev backend).
+    //
+    // Failures are not swallowed: offline, a 403 or a 404 must reach the
+    // screen as an error with Retry (webapp `ErrorNotice`). Returning null here
+    // made the detail fall back to the slim list row and paint its blanks as
+    // the record's own values.
+    final body = await _api.get(
+      ApiEndpoints.project(id),
+      query: {'include_archived': 'true'},
+    );
+    return body is Map<String, dynamic> ? mapProject(body) : null;
   }
 
   /// `GET /projects/project-attachments/?project={id}` — the Files tab (§15).
@@ -219,7 +230,7 @@ class ProjectsRemoteDataSource {
             k == 'status' ||
             k.startsWith('status__') ||
             k.startsWith('status_name')),
-      });
+      }, quiet: true);
       if (body is! Map) return const {};
       final out = <String, int>{'all': _count(body['total'])};
       for (final row in (body['statuses'] as List? ?? const [])) {
@@ -273,8 +284,19 @@ class ProjectsRemoteDataSource {
       visibility: _titleCase(row['visibility'] as String?),
       method: (row['percent_complete_method'] as String? ?? '').trim(),
       team: (row['assigned_team_name'] as String? ?? '').trim(),
+      teamId: switch (row['assigned_team']) {
+        final String id => id,
+        final Map t => '${t['team_id'] ?? ''}',
+        _ => '',
+      },
       isArchived: row['is_archived'] == true,
       desc: row['description'] as String? ?? '',
+      canManage: row['can_manage'] is bool ? row['can_manage'] as bool : null,
+      quotationId: row['quotation'] is String ? row['quotation'] as String : '',
+      archivedAt: row['archived_at'] as String? ?? '',
+      taskCount: row['task_count'] is num ? (row['task_count'] as num).toInt() : null,
+      doneCount: row['done_count'] is num ? (row['done_count'] as num).toInt() : null,
+      startISO: row['expected_start_date'] as String? ?? '',
     );
   }
 

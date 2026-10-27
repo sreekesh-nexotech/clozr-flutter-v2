@@ -29,7 +29,7 @@ void main() {
       )!;
 
       expect(e.title, 'Assignee changed to Pooja Chopra');
-      expect(e.subtitle, 'by Admin Acme');
+      expect(e.subtitle, 'Admin Acme'); // webapp "<actor> · <date-time>"
       expect(e.kind, AuditEventKind.fieldChanged);
     });
 

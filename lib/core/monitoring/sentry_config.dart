@@ -26,7 +26,8 @@ import '../network/app_error.dart';
 class SentryConfig {
   SentryConfig._();
 
-  /// Ingest endpoint for the `clozr` Sentry project.
+  /// Ingest endpoint for the `clozr` Sentry project, shared by UAT and the
+  /// store builds — [environment] is what tells them apart.
   static const String dsn = String.fromEnvironment(
     'SENTRY_DSN',
     defaultValue:
@@ -34,7 +35,9 @@ class SentryConfig {
   );
 
   /// Segregates issues in the Sentry UI. Defaults follow the build mode so a
-  /// developer's stack traces never land in the production issue stream.
+  /// developer's stack traces never land in the production issue stream. UAT
+  /// release builds must pass `--dart-define=SENTRY_ENVIRONMENT=development`,
+  /// or they report as `production`.
   static const String environment = String.fromEnvironment(
     'SENTRY_ENVIRONMENT',
     defaultValue: kReleaseMode

@@ -9,6 +9,7 @@ import '../../domain/entities/ops_task.dart';
 import '../../domain/entities/project.dart';
 import '../providers/ops_tasks_providers.dart';
 import '../providers/projects_providers.dart';
+import 'ops_task_filter_codec.dart';
 
 /// Ops Tasks filter — spec-driven engine wiring for the Operations Tasks list
 /// (ported 1:1 from the prototype's `_fspec.opsTasks`). Follows the Leads
@@ -24,7 +25,9 @@ DateTime? opsTaskDueDate(OpsTask t) => DateTime.tryParse(t.endISO);
 /// mock mode); null defaults to the mock reps.
 FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
     {List<AppUser>? roster,
-    List<CatalogOption> statusCatalog = const [],}) {
+    List<CatalogOption> statusCatalog = const [],
+    List<CatalogOption> typeCatalog = const [],
+    List<CatalogOption> groupCatalog = const [],}) {
   final statuses = [
     // The org's own statuses when the catalog has loaded, the built-in
     // vocabulary otherwise. The built-ins are only right by accident: an org
@@ -38,22 +41,30 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
   final projectOpts = [
     for (final p in projects) FilterOption(id: p.id, label: p.name),
   ];
-  // Task types, keyed by the `task_type_id` the `type__in` param wants and
-  // labelled with the org's own `task_type_name`. Derived from the loaded rows
-  // because no task-type catalog endpoint is documented — this replaced a
-  // hardcoded Task / Approval / Site visit / Meeting list that matched nothing.
-  final typeById = <String, String>{};
-  for (final t in tasks) {
-    if (t.typeId.isNotEmpty && t.typeName.isNotEmpty) typeById[t.typeId] = t.typeName;
+  // Task types, keyed by the `task_type_id` the `type__in` param wants: the
+  // org's catalog (`/projects/task-types/`, webapp Type facet), else the types
+  // the loaded rows carry (mock mode, or the catalog failed).
+  final typeById = <String, String>{
+    for (final t in typeCatalog) t.id: t.name,
+  };
+  if (typeById.isEmpty) {
+    for (final t in tasks) {
+      if (t.typeId.isNotEmpty && t.typeName.isNotEmpty) typeById[t.typeId] = t.typeName;
+    }
   }
   final types = [
     for (final e in typeById.entries.toList()
       ..sort((a, b) => a.value.compareTo(b.value)))
       FilterOption(id: e.key, label: e.value),
   ];
-  final groups = (tasks.map((t) => t.group).where((g) => g.isNotEmpty).toSet().toList()..sort())
-      .map((g) => FilterOption(id: g, label: g))
-      .toList();
+  // Task groups: the org's real lanes keyed by `task_group_id` (labelled with
+  // their project, since every project has its own), so the facet is sent to
+  // the server; the loaded rows' group names only in mock mode.
+  final groups = groupCatalog.isNotEmpty
+      ? [for (final g in groupCatalog) FilterOption(id: g.id, label: g.name)]
+      : (tasks.map((t) => t.group).where((g) => g.isNotEmpty).toSet().toList()..sort())
+          .map((g) => FilterOption(id: g, label: g))
+          .toList();
   final depts = (tasks.map((t) => t.dept).where((d) => d.isNotEmpty).toSet().toList()..sort())
       .map((d) => FilterOption(id: d, label: d))
       .toList();
@@ -92,8 +103,9 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
         if (types.isNotEmpty)
           FilterField(
               id: 'types',
-              label: 'Task type',
-              control: FilterControl.checkboxGroup,
+              label: 'Type',
+              isNotToggle: true,
+              control: FilterControl.checkboxIsNot,
               twoCol: true,
               options: types),
         const FilterField(
@@ -105,6 +117,13 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
               FilterOption(id: 'yes', label: 'Milestones only'),
               FilterOption(id: 'no', label: 'Exclude milestones'),
             ]),
+        // Webapp "Include archived": archived tasks and every task of an
+        // archived project are hidden unless this asks for them.
+        const FilterField(
+            id: 'archived',
+            label: 'Archived',
+            control: FilterControl.checkboxGroup,
+            options: [FilterOption(id: 'archived', label: 'Include archived')]),
       ]),
       FilterSection(title: 'Project & ownership', fields: [
         FilterField(
@@ -196,11 +215,22 @@ bool opsTaskMatchesFilters(OpsTask t, FilterValues v, {bool serverApplied = fals
     if (milestone.id == 'no' && t.milestone) return false;
   }
 
-  if (!FilterMatch.matchAnyOf(v.choice('groups'), [t.group])) return false;
+  // Groups are keyed by lane id (names in mock mode); both sent server-side
+  // in API mode, as is the due date (`is_overdue` / `end_date_after|before`).
+  if (!serverApplied) {
+    if (!FilterMatch.matchAnyOf(v.choice('groups'), [t.groupId, t.group])) return false;
+  }
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), t.assignees)) return false;
   if (!FilterMatch.matchAnyOf(v.choice('depts'), [t.dept])) return false;
 
-  if (!FilterMatch.matchDate(v.date('due'), opsTaskDueDate(t))) return false;
+  final due = v.date('due');
+  if (OpsTaskFilterCodec.isOverdueChip(due)) {
+    // The server's `is_overdue` verdict, not "the date has passed": a finished
+    // task is never overdue. Already applied server-side in API mode.
+    if (!serverApplied && !isTaskOverdue(t)) return false;
+  } else if (!serverApplied && !FilterMatch.matchDate(due, opsTaskDueDate(t))) {
+    return false;
+  }
   // Prototype-only field; an API row has no hours to match, so the facet lets
   // it through rather than filtering every task out.
   if (t.expHrs != null &&
@@ -220,11 +250,14 @@ final opsTasksFilterSpecProvider = Provider<FilterSpec>((ref) {
     ref.watch(allProjectsProvider),
     roster: ref.watch(rosterProvider),
     statusCatalog: ref.watch(opsTaskStatusOptionsProvider),
+    typeCatalog: ref.watch(opsTaskTypeCatalogProvider).valueOrNull ?? const [],
+    groupCatalog: ref.watch(opsTaskGroupCatalogProvider).valueOrNull ?? const [],
   );
 });
 
 /// Applied drawer filters for the Ops Tasks list (the source of the badge count).
-final opsTaskFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final opsTaskFiltersProvider =
+    StateProvider<FilterValues>((ref) => opsPerSession(ref, FilterValues()));
 
 // The saved-view chips are `opsTaskSavedFiltersProvider` in
 // `crm/application/providers/saved_filters_providers.dart` — backed by

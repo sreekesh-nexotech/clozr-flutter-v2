@@ -58,4 +58,22 @@ abstract class TicketsRepository {
   /// field the backend requires.
   Future<TicketTask?> createLinkedTask(String issueId,
       {required String subject, String? priority});
+
+  /// One parent's direct children (`issues/{id}/children/`).
+  Future<List<Ticket>> getChildren(String issueId);
+
+  /// Tickets with no parent matching [search] — the attach-child candidates.
+  Future<List<Ticket>> searchRootTickets(String search);
+
+  /// Attaches [issueId] under [parentId]; null detaches it.
+  Future<void> setParent(String issueId, String? parentId);
+
+  /// Records a first response given outside Clozr.
+  Future<void> logFirstResponse(String issueId);
+
+  /// Sends [body] to the customer through the ticket's channel.
+  Future<void> sendReply(String issueId, String body);
+
+  /// Uploads one file to the ticket.
+  Future<void> uploadAttachment(String issueId, {required String path, required String name});
 }

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 // per-row across large lists.
 final DateFormat _dayMonth = DateFormat('d MMM');
 final DateFormat _dayMonthYear = DateFormat('d MMM yyyy');
+final DateFormat _dayMonthYearTime = DateFormat('d MMM yyyy, h:mm a');
 
 /// Formats server timestamps into the compact relative strings the cards use
 /// ("Just now", "5m ago", "2h ago", "Yesterday", "3d ago", "9 Jul").
@@ -38,3 +39,8 @@ DateTime? parseApiDate(Object? value) {
 /// "9 Jul 2026"-style absolute date used on detail screens.
 String absoluteDate(DateTime? time) =>
     time == null ? '' : _dayMonthYear.format(time.toLocal());
+
+/// "26 Oct 2026, 4:20 PM" — date and time, for detail rows and audit entries
+/// where the moment matters (the webapp's `formatDateTime`).
+String absoluteDateTime(DateTime? time) =>
+    time == null ? '' : _dayMonthYearTime.format(time.toLocal());

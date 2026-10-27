@@ -17,15 +17,24 @@ class ProjectsApiRepository implements ProjectsRepository {
   static const String _box = AppCache.operationsCache;
   static const String _key = 'projects';
 
+  /// One cache entry per query, keyed by its sorted params.
+  static String _keyFor(Map<String, dynamic> filters) {
+    final keys = filters.keys.toList()..sort();
+    return '$_key|${[for (final k in keys) '$k=${filters[k]}'].join('&')}';
+  }
+
   @override
   Future<List<Project>> getProjects({Map<String, dynamic> filters = const {}}) async {
     try {
       final projects = await _remote.fetchProjects(filters: filters);
-      await AppCache.put(_box, _key, [for (final p in projects) _toJson(p)]);
+      await AppCache.put(_box, _keyFor(filters), [for (final p in projects) _toJson(p)]);
       return projects;
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
-        final cached = AppCache.get(_box, _key)?.data;
+        // Offline: the last copy of *this* query only. One shared key served
+        // whatever list was fetched last — offline, a project's Tasks tab
+        // showed the whole org's tasks as its own.
+        final cached = AppCache.get(_box, _keyFor(filters))?.data;
         if (cached is List) {
           return [
             for (final row in cached)
@@ -40,14 +49,14 @@ class ProjectsApiRepository implements ProjectsRepository {
   @override
   Future<Project?> createProject(Map<String, dynamic> fields) async {
     final created = await _remote.createProject(fields);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
     return created;
   }
 
   @override
   Future<void> updateProject(String id, Map<String, dynamic> fields) async {
     await _remote.updateProject(id, fields);
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   @override
@@ -71,7 +80,7 @@ class ProjectsApiRepository implements ProjectsRepository {
     await _remote.archiveProject(id, archive: archive);
     // Archived projects drop out of the default list, restored ones come
     // back — the cached rows are wrong either way.
-    await AppCache.remove(_box, _key);
+    await AppCache.clearBox(_box);
   }
 
   // ── cache round-trip — every entity field is a JSON primitive ──

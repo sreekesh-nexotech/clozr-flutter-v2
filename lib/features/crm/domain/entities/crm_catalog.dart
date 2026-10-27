@@ -18,6 +18,8 @@ class CatalogOption extends Equatable {
     this.isCancelled = false,
     this.depth = 0,
     this.disabled = false,
+    this.isDefault = false,
+    this.defaultPriority,
   });
 
   /// Server UUID (`lead_status_id`, `lead_source_id`, …).
@@ -66,7 +68,25 @@ class CatalogOption extends Equatable {
   /// inside it (webapp `selectable = !is_group`).
   final bool disabled;
 
+  /// Issue statuses only: the org's default for a new ticket (`is_default`).
+  final bool isDefault;
+
+  /// Issue types only: the priority a new ticket in this category starts on
+  /// (`default_priority`, e.g. "High"). Null when the org set none.
+  final String? defaultPriority;
+
   @override
-  List<Object?> get props =>
-      [id, name, color, statusType, isConverted, isClosed, isCancelled, depth, disabled];
+  List<Object?> get props => [
+        id,
+        name,
+        color,
+        statusType,
+        isConverted,
+        isClosed,
+        isCancelled,
+        depth,
+        disabled,
+        isDefault,
+        defaultPriority,
+      ];
 }

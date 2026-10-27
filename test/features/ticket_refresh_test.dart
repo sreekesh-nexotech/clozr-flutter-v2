@@ -39,6 +39,24 @@ Ticket _ticket(String subject) => Ticket(
 
 /// Serves a new subject on every fetch, so a stale read is visible.
 class _CountingRepo implements TicketsRepository {
+  @override
+  Future<List<Ticket>> getChildren(String issueId) async => const [];
+
+  @override
+  Future<List<Ticket>> searchRootTickets(String search) async => const [];
+
+  @override
+  Future<void> setParent(String issueId, String? parentId) async {}
+
+  @override
+  Future<void> logFirstResponse(String issueId) async {}
+
+  @override
+  Future<void> sendReply(String issueId, String body) async {}
+
+  @override
+  Future<void> uploadAttachment(String issueId, {required String path, required String name}) async {}
+
   int fetches = 0;
 
   @override

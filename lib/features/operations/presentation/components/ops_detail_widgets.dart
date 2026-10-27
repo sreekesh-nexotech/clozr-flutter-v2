@@ -25,8 +25,11 @@ String opsInitials(String name) {
 
 /// The "Audit log" card with an icon-dot timeline.
 class OpsAuditLog extends StatelessWidget {
-  const OpsAuditLog({super.key, required this.entries});
+  const OpsAuditLog({super.key, required this.entries, this.emptyText});
   final List<AuditEntry> entries;
+
+  /// Shown when [entries] is empty (webapp "No activity recorded yet.").
+  final String? emptyText;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +47,11 @@ class OpsAuditLog extends StatelessWidget {
             ],
           ),
           SizedBox(height: 12.h),
+          if (entries.isEmpty && emptyText != null)
+            Padding(
+              padding: EdgeInsets.only(bottom: 12.h),
+              child: Text(emptyText!, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            ),
           for (int i = 0; i < entries.length; i++) _row(entries[i], i < entries.length - 1),
         ],
       ),

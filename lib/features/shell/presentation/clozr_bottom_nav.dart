@@ -43,10 +43,15 @@ class ClozrBottomNav extends ConsumerWidget {
   List<_NavItem> _items(ModuleAccess? access) {
     switch (_ctx) {
       case NavContext.ops:
+        // Webapp sidebar: "Projects" needs `project`, "Tasks" `project_task` —
+        // each is offered only to a role that can open it.
+        bool canOps(String m) => access == null || access.can(m);
         return [
           _NavItem('home', 'Home', PhosphorIconsRegular.house, PhosphorIconsFill.house, Routes.opsHome, 46),
-          _NavItem('projects', 'Projects', PhosphorIconsRegular.briefcase, PhosphorIconsFill.briefcase, Routes.opsProjects, 54),
-          _NavItem('tasks', 'Tasks', PhosphorIconsRegular.listChecks, PhosphorIconsFill.listChecks, Routes.opsTasks, 46),
+          if (canOps('project'))
+            _NavItem('projects', 'Projects', PhosphorIconsRegular.briefcase, PhosphorIconsFill.briefcase, Routes.opsProjects, 54),
+          if (canOps('project_task'))
+            _NavItem('tasks', 'Tasks', PhosphorIconsRegular.listChecks, PhosphorIconsFill.listChecks, Routes.opsTasks, 46),
         ];
       case NavContext.help:
         return [
@@ -118,6 +123,7 @@ class ClozrBottomNav extends ConsumerWidget {
         Routes.addCrmTask => 'task',
         Routes.createProject => 'project',
         Routes.createTask => 'project_task',
+        Routes.createTicket => 'issue',
         _ => null,
       };
 

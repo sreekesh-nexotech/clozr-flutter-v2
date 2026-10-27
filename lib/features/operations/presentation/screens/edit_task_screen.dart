@@ -15,7 +15,11 @@ import '../../../../data/mock/status_meta.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../../../core/network/network_providers.dart';
+import '../../../crm/presentation/components/due_date_change.dart';
 import '../../application/ops_task_write_fields.dart';
+import '../../application/project_write_fields.dart' show apiDate;
+import '../../application/project_task_error.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../domain/entities/ops_task.dart';
 import '../../application/providers/projects_providers.dart';
@@ -59,22 +63,35 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   String _weight = '1';
-  String _dept = 'Projects';
+  final _dept = TextEditingController();
   bool _milestone = false;
   double _progress = 0;
   bool _hasSubs = false;
 
-  /// Department is free text server-side — there is no Department model and no
-  /// lookup endpoint (`operations-task.md` §3), so this list is a convenience,
-  /// not a catalog.
-  static const _depts = ['Projects', 'Design', 'MEP', 'Workshop', 'Snagging', 'Accounts'];
+  /// `color` — lowercase `#rrggbb`, empty for none (webapp "Color tag").
+  String _color = '';
+
+  /// The write body as prefilled — the save sends only what differs from it,
+  /// as the webapp does, so a cleared value goes out as an explicit null.
+  Map<String, dynamic>? _original;
+
+  /// Whether the task had an expected end when the form opened: moving an
+  /// existing date may need a reason (SLA engine).
+  bool _hadEnd = false;
+
   static const _weights = ['1', '2', '3', '4', '5'];
+
+  /// The colour-tag swatches (any `#rrggbb` is valid server-side).
+  static const _swatches = [
+    '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#34495e',
+  ];
 
   @override
   void dispose() {
     _subject.dispose();
     _desc.dispose();
     _hours.dispose();
+    _dept.dispose();
     super.dispose();
   }
 
@@ -110,18 +127,68 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     // The picker offers whole numbers, but the field is a decimal server-side —
     // keep whatever is stored so an untouched 3.5 is not silently rewritten.
     _weight = task.weight == null ? '1' : opsDecimalLabel(task.weight!);
-    _dept = task.dept;
+    _dept.text = task.dept;
+    _color = RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(task.color.name) ? task.color.name.toLowerCase() : '';
     _milestone = task.milestone;
+    _hadEnd = task.endISO.trim().isNotEmpty;
     // `subtasks` is never embedded by the API, so the count is what says
     // whether progress is rolled up from children or set by hand here.
     _hasSubs = task.subtasks.isNotEmpty || task.subtaskCount > 0;
     _progress = (task.computedProgress(task.subtasks)).toDouble();
+    _original = _body();
+  }
+
+  /// Every field the form edits, as the PATCH would carry it — a cleared
+  /// project, group, type or date as null (the webapp's `fkSelect` / date
+  /// clear), the description and department as plain (possibly empty) text.
+  Map<String, dynamic> _body() {
+    final base = opsTaskWriteFields(
+      subject: _subject.text,
+      priority: _pri,
+      description: _desc.text,
+      projectId: _projId,
+      groupId: _groupId,
+      statusLabel: _statusKey,
+      assigneeIds: _assignees,
+      start: _start,
+      startTime: _startTime,
+      end: _end,
+      endTime: _endTime,
+      expectedHours: _hours.text,
+      weight: _weight,
+      statuses: ref.read(opsTaskStatusOptionsProvider),
+    );
+    return {
+      ...base,
+      'project': (_projId ?? '').isEmpty ? null : _projId,
+      'task_group': _groupId.isEmpty ? null : _groupId,
+      'type': _ttype.isEmpty ? null : _ttype,
+      'description': _desc.text.trim(),
+      'exp_start_date': base['exp_start_date'],
+      'exp_end_date': base['exp_end_date'],
+      'is_milestone': _milestone,
+      'department': _dept.text.trim(),
+      'color': _color.isEmpty ? null : _color,
+      // Leaf tasks only: a parent's progress is the subtasks' rollup.
+      if (!_hasSubs) 'progress': _progress.round(),
+    };
+  }
+
+  static bool _same(Object? a, Object? b) {
+    if (a is List && b is List) {
+      if (a.length != b.length) return false;
+      final sa = a.map((e) => '$e').toSet();
+      return b.every((e) => sa.contains('$e'));
+    }
+    return a == b;
   }
 
   /// The status chips: the org's own statuses once the catalog has answered,
   /// the built-in vocabulary before that and in mock mode.
   List<(String, String, Color?)> get _statusChips {
-    final catalog = ref.watch(opsTaskStatusOptionsProvider);
+    // Read, not watched: the save builds its body outside build; the build
+    // itself watches the catalog.
+    final catalog = ref.read(opsTaskStatusOptionsProvider);
     if (catalog.isEmpty) {
       return [
         for (final e in StatusMeta$.opsTask.entries) (e.key, e.value.label, e.value.color),
@@ -129,7 +196,9 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     }
     return [
       for (final s in catalog)
-        (s.name, s.name, StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)]?.color),
+        // The org's own colour (Settings › PMO) — the built-in palette only
+        // when the org left it blank.
+        (s.name, s.name, s.color ?? StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)]?.color),
     ];
   }
 
@@ -152,59 +221,66 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
   /// (operations-task.md "PATCH is genuinely partial") — that is correct now
   /// that the form prefills from the real record rather than from a slim row
   /// with a blank start date.
+  /// Webapp: PATCH only the changed keys → "Changes saved". A blank subject is
+  /// refused first ("Subject is required"); a moved expected end goes through
+  /// the SLA reason / approval flow — a 202 is "Sent to your manager for
+  /// approval" and the date stays until the manager decides.
   Future<void> _save() async {
     if (_saving) return;
+    if (_subject.text.trim().isEmpty) {
+      ref.read(toastProvider.notifier).showError('Subject is required');
+      return;
+    }
     if (!ApiConfig.apiEnabled) {
+      ref.read(toastProvider.notifier).show('Changes saved');
+      context.pop();
+      return;
+    }
+    final body = _body();
+    final original = _original ?? const <String, dynamic>{};
+    final patch = <String, dynamic>{
+      for (final e in body.entries)
+        if (!original.containsKey(e.key) || !_same(original[e.key], e.value)) e.key: e.value,
+    };
+    if (patch.isEmpty) {
       ref.read(toastProvider.notifier).show('Changes saved');
       context.pop();
       return;
     }
     setState(() => _saving = true);
     try {
-      await ref.read(opsTasksRepositoryProvider).updateOpsTask(_id, {
-        ...opsTaskWriteFields(
-          subject: _subject.text,
-          priority: _pri,
-          description: _desc.text,
-          projectId: _projId,
-          groupId: _groupId,
-          statusLabel: _statusKey,
-          assigneeIds: _assignees,
-          start: _start,
-          startTime: _startTime,
-          end: _end,
-          endTime: _endTime,
-          expectedHours: _hours.text,
-          weight: _weight,
-          statuses: ref.read(opsTaskStatusOptionsProvider),
-        ),
-        // Edit-only fields, absent from the create form.
-        'is_milestone': _milestone,
-        if (_ttype.isNotEmpty) 'type': _ttype,
-        'department': _dept.trim(),
-        // Only when the slider is the source of truth. A task with subtasks
-        // has its progress rolled up server-side, and posting the slider's
-        // value would fight that rollup.
-        if (!_hasSubs) 'progress': _progress.round(),
-      });
+      final outcome = await writeWithDueDateFlow(
+        context,
+        ref,
+        path: '/projects/tasks/$_id/',
+        fields: patch,
+        hadDate: _hadEnd,
+        dateKey: 'exp_end_date',
+        fieldLabel: 'Expected end',
+        dateLabel: _end == null ? 'no end date' : dueDateLabel(apiDate(_end!)),
+      );
       if (!mounted) return;
+      if (outcome == DueDateWrite.cancelled) {
+        setState(() => _saving = false);
+        return;
+      }
       ref.invalidate(opsTasksProvider);
       ref.invalidate(opsTasksScopedProvider);
-      // Await the record itself before leaving. Invalidating and popping
-      // immediately sent the detail screen back to the stale list row while the
-      // refetch was still in flight, so the old values stayed up for a moment
-      // and then changed under the user.
+      // Await the record itself before leaving, so the detail screen does not
+      // show the old values and then change under the user.
       ref.invalidate(opsTaskDetailProvider(_id));
       await ref.read(opsTaskDetailProvider(_id).future);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show('Changes saved');
+      // A parked change already said "Sent to your manager for approval".
+      if (outcome == DueDateWrite.saved) ref.read(toastProvider.notifier).show('Changes saved');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
       // A completed task rejects every other field (§3A) — that message is the
       // only thing explaining why the save did nothing, so it must be shown.
       setState(() => _saving = false);
-      ref.read(toastProvider.notifier).showError(e.message);
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
     }
   }
 
@@ -216,6 +292,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     // dependency edges.
     final task = ref.watch(opsTaskDetailOrListProvider(id));
     final projects = ref.watch(allProjectsProvider);
+    ref.watch(opsTaskStatusOptionsProvider);
 
     if (task == null) {
       return OpsEditScaffold(
@@ -237,12 +314,14 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
       _prefill(task);
     }
 
-    final projName = _projId == null ? '' : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? '';
+    final projName = (_projId ?? '').isEmpty
+        ? 'No project (standalone)'
+        : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? task.projectName;
 
     // The project's real lanes, same source as the create form. This used to
     // gather group *names* off loaded tasks, and `task_group` wants a UUID.
     final groupCatalog =
-        _projId == null ? const <CatalogOption>[] : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
+        (_projId ?? '').isEmpty ? const <CatalogOption>[] : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
     final groupName = _groupId.isEmpty
         ? 'No group'
         : groupCatalog.where((g) => g.id == _groupId).map((g) => g.name).firstOrNull ?? _group;
@@ -277,8 +356,13 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
           placeholder: 'Select project…',
           caret: PhosphorIconsBold.caretRight,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Select project', options: [for (final p in projects) (value: p.id, label: p.name)], currentValue: _projId ?? '');
-            if (v != null) setState(() { _projId = v; _dirtied(); });
+            final v = await showOpsOptionPicker(context: context, title: 'Select project', options: [
+              (value: '', label: 'No project (standalone)'),
+              for (final p in projects) (value: p.id, label: p.name),
+            ], currentValue: _projId ?? '');
+            // Webapp: a project change always drops the group (groups belong
+            // to a project).
+            if (v != null && v != (_projId ?? '')) setState(() { _projId = v.isEmpty ? null : v; _groupId = ''; _dirtied(); });
           },
         ),
         SizedBox(height: 14.h),
@@ -289,6 +373,8 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
                 label: 'Task group',
                 value: groupName,
                 onTap: () async {
+                  // A standalone task has no groups to pick from.
+                  if ((_projId ?? '').isEmpty) return;
                   final v = await showOpsOptionPicker(
                     context: context,
                     title: 'Task group',
@@ -306,12 +392,13 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
             Expanded(
               child: OpsPickerField(
                 label: 'Type',
-                value: typeName,
+                value: typeName.isEmpty ? '—' : typeName,
                 onTap: () async {
                   final v = await showOpsOptionPicker(
                     context: context,
                     title: 'Type',
-                    options: [for (final t in typeCatalog) (value: t.id, label: t.name)],
+                    // "—" clears the type (sent as null).
+                    options: [(value: '', label: '—'), for (final t in typeCatalog) (value: t.id, label: t.name)],
                     currentValue: _ttype,
                   );
                   if (v != null) setState(() { _ttype = v; _dirtied(); });
@@ -331,7 +418,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
         _label('Priority'),
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
-          for (final p in const ['High', 'Medium', 'Low'])
+          for (final p in const ['Urgent', 'High', 'Medium', 'Low'])
             OpsFormChip(label: p, selected: _pri == p, tone: StatusMeta$.projectPriority[p], onTap: () => setState(() { _pri = p; _dirtied(); })),
         ]),
         SizedBox(height: 14.h),
@@ -395,20 +482,43 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
           ],
         ),
         const OpsSectionLabel('Classification'),
-        OpsPickerField(
-          label: 'Department',
-          value: _dept,
-          onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Department', options: [for (final d in _depts) (value: d, label: d)], currentValue: _dept);
-            if (v != null) setState(() { _dept = v; _dirtied(); });
-          },
-        ),
+        // Free text server-side (no Department model), as on the webapp.
+        AppTextField(label: 'Department', controller: _dept, hint: 'e.g. Design', onChanged: (_) => _dirtied()),
+        SizedBox(height: 14.h),
+        _label('Color tag'),
+        SizedBox(height: 7.h),
+        _colorRow(),
         SizedBox(height: 14.h),
         _milestoneToggle(),
         const OpsSectionLabel('Progress'),
         if (!_hasSubs) _progressSlider() else _calculatedProgress(),
       ],
     );
+  }
+
+  Widget _colorRow() {
+    Widget dot(String hex) {
+      final on = _color == hex;
+      final fill = hex.isEmpty
+          ? AppColors.white
+          : Color(int.parse('FF${hex.substring(1)}', radix: 16));
+      return GestureDetector(
+        onTap: () => setState(() { _color = hex; _dirtied(); }),
+        child: Container(
+          width: 30.w,
+          height: 30.w,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: fill,
+            shape: BoxShape.circle,
+            border: Border.all(color: on ? AppColors.navy : AppColors.borderCardSoft, width: on ? 2.5 : 1.2),
+          ),
+          child: hex.isEmpty ? Icon(PhosphorIconsBold.prohibit, size: 14.sp, color: AppColors.textPlaceholder) : null,
+        ),
+      );
+    }
+
+    return Wrap(spacing: 9.w, runSpacing: 9.h, children: [dot(''), for (final h in _swatches) dot(h)]);
   }
 
   Widget _label(String t) => Text(t, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
