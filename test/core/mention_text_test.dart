@@ -12,7 +12,8 @@ const _users = [
 
 void main() {
   test('the longest name wins and ids come in order of appearance', () {
-    expect(mentionedIdsIn('hi @Cijo George and @Neeraja Pradeep', _users), ['u3', 'u2']);
+    expect(mentionedIdsIn('hi @Cijo George and @Neeraja Pradeep', _users),
+        ['u3', 'u2']);
     expect(mentionedIdsIn('@Neeraja, ping', _users), ['u1']);
   });
 

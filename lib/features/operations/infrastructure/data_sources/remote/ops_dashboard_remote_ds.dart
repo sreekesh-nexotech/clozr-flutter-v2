@@ -24,11 +24,20 @@ class OpsDashboardRemoteDataSource {
   Future<OpsKpis?> fetchKpis({
     String scope = 'own',
     String period = 'month',
+    String? from,
+    String? to,
   }) async {
     try {
       final body = await _api.get(
         ApiEndpoints.dashboardPmoKpis,
-        query: {'scope': scope, 'period': period},
+        query: {
+          'scope': scope,
+          'period': period,
+          if (period == 'custom' && from != null && to != null) ...{
+            'from': from,
+            'to': to,
+          },
+        },
       );
       return OpsKpis.fromJson(body);
     } on Object {
@@ -43,11 +52,20 @@ class OpsDashboardRemoteDataSource {
   Future<List<OpsCompletedRow>> fetchCompletedGrid({
     String scope = 'own',
     String period = 'month',
+    String? from,
+    String? to,
   }) async {
     try {
       final body = await _api.get(
         ApiEndpoints.dashboardPmoCompletedGrid,
-        query: {'scope': scope, 'period': period},
+        query: {
+          'scope': scope,
+          'period': period,
+          if (period == 'custom' && from != null && to != null) ...{
+            'from': from,
+            'to': to,
+          },
+        },
       );
       return OpsCompletedRow.listFromJson(body);
     } on Object {

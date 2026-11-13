@@ -38,9 +38,12 @@ Future<String?> showStatusSheet({
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(ctx).pop(o.key),
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),
                     decoration: BoxDecoration(
-                      color: o.key == currentKey ? const Color(0xFFF6F8FB) : Colors.transparent,
+                      color: o.key == currentKey
+                          ? const Color(0xFFF6F8FB)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(12.r),
                     ),
                     child: Row(
@@ -48,15 +51,20 @@ Future<String?> showStatusSheet({
                         Container(
                           width: 11.w,
                           height: 11.w,
-                          decoration: BoxDecoration(color: o.meta.color, shape: BoxShape.circle),
+                          decoration: BoxDecoration(
+                              color: o.meta.color, shape: BoxShape.circle),
                         ),
                         SizedBox(width: 12.w),
                         Expanded(
                           child: Text(o.meta.label,
-                              style: AppText.custom(size: 14.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                              style: AppText.custom(
+                                  size: 14.5,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textPrimary)),
                         ),
                         if (o.key == currentKey)
-                          Icon(PhosphorIconsBold.check, size: 18.sp, color: AppColors.success),
+                          Icon(PhosphorIconsBold.check,
+                              size: 18.sp, color: AppColors.success),
                       ],
                     ),
                   ),

@@ -147,7 +147,7 @@ class UserDirectory {
   /// still register users lazily via [registerJson].
   static Future<void> hydrate(ApiService api) async {
     try {
-      final body = await api.get(
+      final body = await api.getAllPages(
         ApiEndpoints.users,
         query: {'page_size': 200},
         // The expected 403 for non-admins must not surface as a toast.

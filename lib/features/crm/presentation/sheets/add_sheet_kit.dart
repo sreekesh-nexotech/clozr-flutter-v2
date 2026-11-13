@@ -1,3 +1,4 @@
+import '../../../../core/utils/relative_time.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -45,8 +46,7 @@ Future<TimeOfDay?> pickSheetTime(BuildContext context, String current) {
 }
 
 /// "24 Jun 2026" — the form the sheets show and the entities carry.
-String sheetDateLabel(DateTime d) =>
-    '${d.day.toString().padLeft(2, '0')} ${_monthNames[d.month - 1]} ${d.year}';
+String sheetDateLabel(DateTime d) => fmtDay(d); // DD/MM/YYYY (C17)
 
 /// "2026-06-24" — the form the API stores.
 String sheetIsoDate(DateTime d) =>
@@ -54,20 +54,32 @@ String sheetIsoDate(DateTime d) =>
 
 /// A stored time ("10:00:00", "10:00") as the sheets show it — "10:00". Null
 /// when empty or unparseable, which is what an unfilled field looks like.
-String? sheetTimeText(String raw) => CrmTasksRemoteDataSource.apiTimeOrNull(raw);
+String? sheetTimeText(String raw) =>
+    CrmTasksRemoteDataSource.apiTimeOrNull(raw);
 
 /// "10:00" — shown and stored alike.
 String sheetTimeLabel(TimeOfDay t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 const _monthNames = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /// Two-letter initials from a name (first letters of the first two words).
 String initialsOf(String name) {
-  final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  final words =
+      name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
   if (words.isEmpty) return '?';
   if (words.length == 1) {
     final w = words.first;
@@ -112,10 +124,13 @@ class LinkedLeadField extends StatelessWidget {
                 height: 32.w,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                    color: Colors.white, borderRadius: BorderRadius.circular(9.r)),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(9.r)),
                 child: Text(lead.initials,
                     style: AppText.custom(
-                        size: 11.5, weight: FontWeight.w700, color: AppColors.navy)),
+                        size: 11.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.navy)),
               ),
               SizedBox(width: 10.w),
               Expanded(
@@ -126,14 +141,18 @@ class LinkedLeadField extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(
-                            size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            size: 13.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     if (subtitle.isNotEmpty) ...[
                       SizedBox(height: 2.h),
                       Text(subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.custom(
-                              size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                              size: 11.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     ],
                   ],
                 ),
@@ -159,10 +178,14 @@ class SheetFieldLabel extends StatelessWidget {
       child: Row(
         children: [
           Text(label,
-              style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  color: AppColors.textLabelAlt)),
           if (required)
             Text(' *',
-                style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w700, color: AppColors.error)),
         ],
       ),
     );
@@ -205,10 +228,16 @@ class SelectChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (dot != null) ...[
-              Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+              Container(
+                  width: 9.w,
+                  height: 9.w,
+                  decoration:
+                      BoxDecoration(color: dot, shape: BoxShape.circle)),
               SizedBox(width: 7.w),
             ] else if (icon != null) ...[
-              Icon(icon, size: 14.sp, color: selected ? AppColors.navy : AppColors.textLabelAlt),
+              Icon(icon,
+                  size: 14.sp,
+                  color: selected ? AppColors.navy : AppColors.textLabelAlt),
               SizedBox(width: 6.w),
             ],
             Text(label,
@@ -250,7 +279,8 @@ class SheetSubmitBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 24.h),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         // Null rather than a no-op closure, so the tap is not merely swallowed
@@ -261,7 +291,9 @@ class SheetSubmitBar extends StatelessWidget {
           child: Container(
             height: 48.h,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
+            decoration: BoxDecoration(
+                color: AppColors.navy,
+                borderRadius: BorderRadius.circular(12.r)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -278,7 +310,10 @@ class SheetSubmitBar extends StatelessWidget {
                   Icon(icon, size: 15.sp, color: AppColors.white),
                 SizedBox(width: 8.w),
                 Text(busy ? busyLabel : label,
-                    style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                    style: AppText.custom(
+                        size: 15,
+                        weight: FontWeight.w700,
+                        color: AppColors.white)),
               ],
             ),
           ),
@@ -286,4 +321,33 @@ class SheetSubmitBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The webapp's "Discard changes?" confirm for an accidental dismissal of an
+/// edited form. True when the user chose to discard.
+Future<bool> confirmDiscardChanges(BuildContext context) async {
+  final discard = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+      title: Text('Discard changes?',
+          style: AppText.custom(
+              size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+      content: Text(
+          'You have unsaved changes. If you close now, they will be lost.',
+          style: AppText.body(color: AppColors.textMuted)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Keep editing',
+                style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Discard',
+                style: AppText.bodyStrong(color: AppColors.error))),
+      ],
+    ),
+  );
+  return discard == true;
 }

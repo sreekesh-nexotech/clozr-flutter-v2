@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
-import '../../../crm/application/providers/crm_tasks_providers.dart';
-import '../../../crm/application/providers/followups_providers.dart' show refreshFollowups;
-import '../../../../core/network/network_providers.dart';
-import '../../../../core/network/api_endpoints.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/notification_links.dart';
+import '../../application/notification_navigator.dart';
 import '../../application/providers/notifications_providers.dart';
 import '../../domain/entities/app_notification.dart';
 import '../components/notification_row.dart';
@@ -26,11 +21,16 @@ class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
-  static const _dayLabels = {'today': 'TODAY', 'yesterday': 'YESTERDAY', 'earlier': 'EARLIER'};
+  static const _dayLabels = {
+    'today': 'TODAY',
+    'yesterday': 'YESTERDAY',
+    'earlier': 'EARLIER'
+  };
   static const _dayOrder = ['today', 'yesterday', 'earlier'];
 
   @override
@@ -62,22 +62,25 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 : state.error != null
                     ? ErrorState.forError(state.error!, onRetry: ctrl.refresh)
                     : state.visible.isEmpty
-                    ? _empty(state.filter)
-                    : ListView(
-                        padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 30.h),
-                        children: [
-                          ..._buildGroups(context, ref, state, ctrl),
-                          if (state.hasMore) _loadMore(state, ctrl),
-                          if (!state.hasMore && state.visible.isNotEmpty) _allCaughtUp(),
-                        ],
-                      ),
+                        ? _empty(state.filter)
+                        : ListView(
+                            padding:
+                                EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 30.h),
+                            children: [
+                              ..._buildGroups(context, ref, state, ctrl),
+                              if (state.hasMore) _loadMore(state, ctrl),
+                              if (!state.hasMore && state.visible.isNotEmpty)
+                                _allCaughtUp(),
+                            ],
+                          ),
           ),
         ],
       ),
     );
   }
 
-  Widget _header(BuildContext context, WidgetRef ref, NotificationsState state, NotificationsController ctrl) {
+  Widget _header(BuildContext context, WidgetRef ref, NotificationsState state,
+      NotificationsController ctrl) {
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
       decoration: const BoxDecoration(
@@ -91,7 +94,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               _squareBtn(PhosphorIconsBold.caretLeft, () => context.pop()),
               SizedBox(width: 12.w),
               Text('Notifications',
-                  style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                  style: AppText.custom(
+                      size: 20,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.3)),
               SizedBox(width: 8.w),
               if (state.unreadCount > 0)
                 Container(
@@ -99,9 +106,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   height: 22.w,
                   padding: EdgeInsets.symmetric(horizontal: 7.w),
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                  decoration: BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.circular(11.r)),
                   child: Text('${state.unreadCount}',
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w800, color: AppColors.white)),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w800,
+                          color: AppColors.white)),
                 ),
               const Spacer(),
               _squareBtn(PhosphorIconsRegular.arrowsClockwise, ctrl.refresh),
@@ -114,7 +126,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             children: [
               Expanded(
                 child: Text('${state.unreadCount} unread',
-                    style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.textMuted)),
               ),
               GestureDetector(
                 onTap: () {
@@ -124,10 +139,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(PhosphorIconsBold.checks, size: 14.sp, color: AppColors.blueBright),
+                    Icon(PhosphorIconsBold.checks,
+                        size: 14.sp, color: AppColors.blueBright),
                     SizedBox(width: 5.w),
                     Text('Mark all',
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.blueBright)),
                   ],
                 ),
               ),
@@ -143,27 +162,37 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       final on = state.filter == f;
       return Expanded(
         child: GestureDetector(
-        onTap: () => ctrl.setFilter(f),
-        child: Container(
-          alignment: Alignment.center,
-          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 5.h),
-          decoration: BoxDecoration(
-            color: on ? AppColors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(7.r),
-            boxShadow: on
-                ? [BoxShadow(color: const Color(0xFF101828).withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 1))]
-                : null,
+          onTap: () => ctrl.setFilter(f),
+          child: Container(
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 5.h),
+            decoration: BoxDecoration(
+              color: on ? AppColors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(7.r),
+              boxShadow: on
+                  ? [
+                      BoxShadow(
+                          color: const Color(0xFF101828).withOpacity(0.08),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1))
+                    ]
+                  : null,
+            ),
+            child: Text(label,
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: on ? AppColors.navy : AppColors.textMuted)),
           ),
-          child: Text(label,
-              style: AppText.custom(size: 12, weight: FontWeight.w700, color: on ? AppColors.navy : AppColors.textMuted)),
-        ),
         ),
       );
     }
 
     return Container(
       padding: EdgeInsets.all(2.r),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
+      decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(9.r)),
       child: Row(children: [
         seg('All', NotifFilter.all),
         seg('Unread', NotifFilter.unread),
@@ -189,7 +218,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  List<Widget> _buildGroups(BuildContext context, WidgetRef ref, NotificationsState state, NotificationsController ctrl) {
+  List<Widget> _buildGroups(BuildContext context, WidgetRef ref,
+      NotificationsState state, NotificationsController ctrl) {
     final widgets = <Widget>[];
     final visible = state.visible;
     for (final day in _dayOrder) {
@@ -201,7 +231,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           notif: n,
           onOpen: () {
             ctrl.markRead(n.id);
-            _openTarget(context, n);
+            _open(context, n);
           },
           onMenu: () => _openMenu(context, ref, ctrl, n),
         ));
@@ -216,10 +246,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       child: Row(
         children: [
           Text(label,
-              style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.7)),
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPlaceholder,
+                  letterSpacing: 0.7)),
           SizedBox(width: 8.w),
           Text('$count',
-              style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: const Color(0xFFC2C6CD))),
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w700,
+                  color: const Color(0xFFC2C6CD))),
           SizedBox(width: 8.w),
           Expanded(child: Container(height: 1, color: const Color(0xFFE9EBEF))),
         ],
@@ -241,10 +278,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(PhosphorIconsBold.arrowDown, size: 13.sp, color: AppColors.blueBright),
+            Icon(PhosphorIconsBold.arrowDown,
+                size: 13.sp, color: AppColors.blueBright),
             SizedBox(width: 7.w),
             Text('Load ${state.remaining} older',
-                style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.blueBright)),
           ],
         ),
       ),
@@ -255,7 +296,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         padding: EdgeInsets.only(top: 16.h, bottom: 4.h),
         child: Center(
           child: Text("You're all caught up",
-              style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPlaceholder)),
         ),
       );
 
@@ -269,8 +313,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             Container(
               width: 66.r,
               height: 66.r,
-              decoration: BoxDecoration(color: AppColors.borderCardSoft, borderRadius: BorderRadius.circular(19.r)),
-              child: Icon(PhosphorIconsRegular.bellSlash, size: 30.sp, color: AppColors.navy),
+              decoration: BoxDecoration(
+                  color: AppColors.borderCardSoft,
+                  borderRadius: BorderRadius.circular(19.r)),
+              child: Icon(PhosphorIconsRegular.bellSlash,
+                  size: 30.sp, color: AppColors.navy),
             ),
             SizedBox(height: 16.h),
             Text(
@@ -282,15 +329,20 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 },
                 style: AppText.sectionTitle()),
             SizedBox(height: 6.h),
-            Text(filter == NotifFilter.unread ? "You've read everything. Nice work." : 'New updates will show up here.',
-                textAlign: TextAlign.center, style: AppText.body(color: AppColors.textMuted)),
+            Text(
+                filter == NotifFilter.unread
+                    ? "You've read everything. Nice work."
+                    : 'New updates will show up here.',
+                textAlign: TextAlign.center,
+                style: AppText.body(color: AppColors.textMuted)),
           ],
         ),
       ),
     );
   }
 
-  void _openMenu(BuildContext context, WidgetRef ref, NotificationsController ctrl, AppNotification n) {
+  void _openMenu(BuildContext context, WidgetRef ref,
+      NotificationsController ctrl, AppNotification n) {
     showClozrSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -300,23 +352,33 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           children: [
             SheetHeader(title: 'Notification'),
             if (n.hasTarget)
-              _menuItem(ctx, PhosphorIconsRegular.arrowSquareOut, 'Open record', () {
+              _menuItem(ctx, PhosphorIconsRegular.arrowSquareOut, 'Open record',
+                  () {
                 Navigator.pop(ctx);
                 ctrl.markRead(n.id);
-                _openTarget(context, n);
+                _open(context, n);
               }),
-            _menuItem(ctx, n.unread ? PhosphorIconsRegular.envelopeOpen : PhosphorIconsRegular.envelope,
+            _menuItem(
+                ctx,
+                n.unread
+                    ? PhosphorIconsRegular.envelopeOpen
+                    : PhosphorIconsRegular.envelope,
                 n.unread ? 'Mark as read' : 'Mark as unread', () {
               Navigator.pop(ctx);
               ctrl.toggleRead(n.id);
             }),
-            _menuItem(ctx, n.pinned ? PhosphorIconsRegular.pushPinSlash : PhosphorIconsRegular.pushPin,
+            _menuItem(
+                ctx,
+                n.pinned
+                    ? PhosphorIconsRegular.pushPinSlash
+                    : PhosphorIconsRegular.pushPin,
                 n.pinned ? 'Unpin' : 'Pin', () async {
               Navigator.pop(ctx);
               final err = await ctrl.setPinned(n.id, !n.pinned);
               if (err != null) ref.read(toastProvider.notifier).showError(err);
             }),
-            _menuItem(ctx, PhosphorIconsRegular.alarm, n.snoozed ? 'Unsnooze' : 'Snooze', () async {
+            _menuItem(ctx, PhosphorIconsRegular.alarm,
+                n.snoozed ? 'Unsnooze' : 'Snooze', () async {
               Navigator.pop(ctx);
               final err = await ctrl.setSnoozed(n.id, !n.snoozed);
               final toast = ref.read(toastProvider.notifier);
@@ -338,7 +400,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  Widget _menuItem(BuildContext ctx, IconData icon, String label, VoidCallback onTap, {bool danger = false}) {
+  Widget _menuItem(
+      BuildContext ctx, IconData icon, String label, VoidCallback onTap,
+      {bool danger = false}) {
     final color = danger ? AppColors.error : AppColors.textSecondary;
     return InkWell(
       onTap: onTap,
@@ -355,180 +419,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  /// A task / follow-up notification names its record only in the text
-  /// (`You have been assigned to task: "Send quote".`) — the API sends no id —
-  /// so the record is looked up by that title and opened; the list otherwise.
-  ///
-  /// Follow-ups are Task rows too and their `TaskAssigned` reads the same, so
-  /// both kinds are searched — follow-ups first for a `FollowUp…` event.
-  Future<void> _openTask(BuildContext context, AppNotification n, {bool followupFirst = false}) async {
-    final m = RegExp(r'"([^"]+)"').firstMatch('${n.title} ${n.body}');
-    final title = m?.group(1)?.trim() ?? '';
-    // The lists may predate the record this notification is about.
-    ref.invalidate(crmTasksProvider);
-    refreshFollowups(ref);
-    Future<String?> find(bool followup) async {
-      try {
-        final body = await ref.read(apiServiceProvider).get(ApiEndpoints.crmTasks,
-            query: {'search': title, 'is_followup': '$followup', 'page_size': 20}, quiet: true);
-        final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
-        for (final r in rows) {
-          if (r is Map && '${r['title'] ?? ''}'.trim() == title) return '${r['task_id'] ?? r['id']}';
-        }
-      } on Object {
-        // Fall back to the list.
-      }
-      return null;
-    }
-
-    String? route;
-    if (title.isNotEmpty) {
-      for (final followup in followupFirst ? const [true, false] : const [false, true]) {
-        final id = await find(followup);
-        if (id != null) {
-          route = followup ? '${Routes.followupDetail}?id=$id' : '${Routes.taskDetail}?id=$id';
-          break;
-        }
-      }
-    }
-    if (!context.mounted) return;
-    context.push(route ?? (followupFirst ? Routes.followups : Routes.tasks));
-  }
-
-  void _openTarget(BuildContext context, AppNotification n) {
-    final type = n.type.toLowerCase();
-    if (n.targetKind == 'list' && n.targetId == 'tasks' && type.startsWith('task')) {
-      _openTask(context, n);
-      return;
-    }
-    if (n.targetKind == 'list' && n.targetId == 'followups' && type.startsWith('followup')) {
-      _openTask(context, n, followupFirst: true);
-      return;
-    }
-    if (n.targetKind == 'list') {
-      final link = notificationLinkFor(n.type, n.title);
-      if (link != null) {
-        _openLinked(context, link, _listRoute(n.targetId));
-        return;
-      }
-    }
-    String? route;
-    switch (n.targetKind) {
-      case 'lead':
-        route = '${Routes.leadDetail}?id=${n.targetId}';
-        break;
-      case 'payment':
-        route = '${Routes.paymentDetail}?id=${n.targetId}';
-        break;
-      case 'followup':
-        route = '${Routes.followupDetail}?id=${n.targetId}';
-        break;
-      case 'opstask':
-        route = '${Routes.opsTaskDetail}?id=${n.targetId}';
-        break;
-      case 'ticket':
-        route = '${Routes.ticketDetail}?id=${n.targetId}';
-        break;
-      case 'quote':
-        route = '${Routes.quoteDetail}?id=${n.targetId}';
-        break;
-      case 'project':
-        route = '${Routes.projectDetail}?id=${n.targetId}';
-        break;
-      case 'list':
-        route = _listRoute(n.targetId);
-        break;
-    }
-    if (route != null) context.push(route);
-  }
-
-  /// Opens the record a lead / quote / mention notification names (see
-  /// [notificationLinkFor]); [fallback] — the module list — when the lookup
-  /// finds nothing, as before.
-  Future<void> _openLinked(BuildContext context, NotificationLink link, String fallback) async {
-    final api = ref.read(apiServiceProvider);
-    String? route;
-    try {
-      switch (link) {
-        case TicketByReference(:final reference):
-          // Only a Helpdesk user can search the list; anyone else falls back
-          // to the Tickets entry, which then explains the missing module.
-          final body = await api.get(ApiEndpoints.issues,
-              query: {'reference': reference, 'page_size': 5}, quiet: true);
-          final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
-          for (final r in rows) {
-            if (r is Map && '${r['reference'] ?? ''}'.toUpperCase() == reference.toUpperCase()) {
-              route = '${Routes.ticketDetail}?id=${r['issue_id'] ?? r['id']}';
-              break;
-            }
-          }
-        case QuoteByNumber(:final number):
-          route = '${Routes.quoteDetail}?id=${Uri.encodeQueryComponent(number)}';
-        case LeadByName(:final name):
-          final body = await api.get(ApiEndpoints.leads, query: {'search': name, 'page_size': 20}, quiet: true);
-          final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
-          for (final r in rows) {
-            if (r is Map && '${r['lead_name'] ?? r['name'] ?? ''}'.trim().toLowerCase() == name.toLowerCase()) {
-              route = '${Routes.leadDetail}?id=${r['lead_id'] ?? r['id']}';
-              break;
-            }
-          }
-        case NoteByContent(:final content):
-          final body = await api.get(ApiEndpoints.notes, query: {'page_size': 100}, quiet: true);
-          final rows = body is Map && body['results'] is List ? body['results'] as List : const [];
-          for (final r in rows) {
-            if (r is! Map || !noteMatchesMention('${r['content'] ?? ''}', content)) continue;
-            final src = noteSourceOf(Map<String, dynamic>.from(r));
-            route = switch (src?.$1) {
-              'lead' => '${Routes.leadDetail}?id=${src!.$2}',
-              'customer' => '${Routes.customerDetail}?id=${src!.$2}',
-              'quotation' || 'quote' => '${Routes.quoteDetail}?id=${src!.$2}',
-              'task' => '${Routes.taskDetail}?id=${src!.$2}',
-              'issue' => '${Routes.ticketDetail}?id=${src!.$2}',
-              _ => null,
-            };
-            if (route != null) break;
-          }
-      }
-    } on Object {
-      // Fall back to the list.
-    }
-    if (!context.mounted) return;
-    context.push(route ?? fallback);
-  }
-
-  /// A notification's module list. Record-level links are not possible — the
-  /// API sends no source-object id on the row or its detail — so the row opens
-  /// the list its event belongs to.
-  String _listRoute(String? id) {
-    switch (id) {
-      case 'payments':
-        return Routes.payments;
-      case 'lmsMy':
-        return Routes.lmsMy;
-      case 'rewards':
-        return Routes.rewards;
-      case 'billing':
-        return Routes.billing;
-      case 'leads':
-      case 'mention':
-        return Routes.leads;
-      case 'followups':
-        return Routes.followups;
-      case 'tasks':
-        return Routes.tasks;
-      case 'quotes':
-        return Routes.quotes;
-      case 'opsTasks':
-        return Routes.opsTasks;
-      case 'projects':
-        return Routes.opsProjects;
-      case 'tickets':
-        return Routes.tickets;
-      case 'members':
-        return Routes.members;
-      default:
-        return Routes.home;
-    }
-  }
+  /// Same destination as the in-app banner and a push tap (see
+  /// [openNotificationTarget]).
+  void _open(BuildContext context, AppNotification n) => openNotificationTarget(
+      ProviderScope.containerOf(context), GoRouter.of(context), n);
 }

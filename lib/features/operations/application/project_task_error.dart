@@ -23,7 +23,8 @@ const projectTaskForbiddenCopy = <ProjectTaskAction, String>{
 };
 
 final _genericForbidden = [
-  RegExp(r'^you do not have permission to perform this action\.?$', caseSensitive: false),
+  RegExp(r'^you do not have permission to perform this action\.?$',
+      caseSensitive: false),
   RegExp(r'^you do not have permission to do that\.?$', caseSensitive: false),
 ];
 
@@ -36,7 +37,9 @@ bool isGenericForbidden(AppError? error) {
 
 /// The message to show for a failed project-task request of kind [action].
 String projectTaskErrorMessage(AppError error, ProjectTaskAction action) =>
-    isGenericForbidden(error) ? projectTaskForbiddenCopy[action]! : error.bareMessage;
+    isGenericForbidden(error)
+        ? projectTaskForbiddenCopy[action]!
+        : error.bareMessage;
 
 /// [error] with its message replaced by [projectTaskErrorMessage] — for an
 /// error state that renders `AppError.message`.

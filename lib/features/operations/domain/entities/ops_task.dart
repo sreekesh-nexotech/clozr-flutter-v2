@@ -88,6 +88,7 @@ class OpsTask extends Equatable {
   /// calls it — and what the status tabs and the drawer facet match on now that
   /// both come from `/projects/project-task-statuses/`.
   final String statusName;
+
   /// The project's name as the row itself reports it (`project_name`).
   ///
   /// Carried here rather than resolved from the loaded project list: a task can
@@ -145,6 +146,10 @@ class OpsTask extends Equatable {
   final String end;
   final String endTime;
   final String endISO; // "2026-05-20"
+
+  /// `exp_start_date` as sent — a subtask's window is checked against it.
+  final String startISO;
+
   /// `expected_time` and `task_weight` — decimals on the **full** object only
   /// (`?view=list` drops both), which is why they are nullable: a slim row has
   /// no value to show, as opposed to a value of zero.
@@ -222,6 +227,7 @@ class OpsTask extends Equatable {
     required this.end,
     required this.endTime,
     required this.endISO,
+    this.startISO = '',
     this.expHrs,
     required this.progress,
     this.weight,

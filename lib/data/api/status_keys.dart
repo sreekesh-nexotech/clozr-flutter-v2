@@ -89,7 +89,8 @@ String crmTaskStatusKey({String? name, String? type}) {
 }
 
 /// Follow-up → `overdue | due | done`, derived from completion + due date.
-String followupStatusKey({required bool isCompleted, DateTime? dueDate, DateTime? now}) {
+String followupStatusKey(
+    {required bool isCompleted, DateTime? dueDate, DateTime? now}) {
   if (isCompleted) return 'done';
   if (dueDate == null) return 'due';
   final ref = now ?? DateTime.now();
@@ -100,7 +101,11 @@ String followupStatusKey({required bool isCompleted, DateTime? dueDate, DateTime
 
 /// Quote → `draft | sent | accepted | rejected | expired`.
 /// A sent quote past its validity date renders as expired (effective status).
-String quoteStatusKey({String? name, DateTime? validUntil, bool isConverted = false, DateTime? now}) {
+String quoteStatusKey(
+    {String? name,
+    DateTime? validUntil,
+    bool isConverted = false,
+    DateTime? now}) {
   final n = _norm(name);
   String key;
   if (isConverted || n.contains('accept')) {
@@ -176,7 +181,8 @@ String projectStatusKey({String? name, bool isClosed = false}) {
 }
 
 /// PMO task → `open | working | review | completed | cancelled`.
-String opsTaskStatusKey({String? name, bool isClosed = false, bool isCancelled = false}) {
+String opsTaskStatusKey(
+    {String? name, bool isClosed = false, bool isCancelled = false}) {
   final n = _norm(name);
   if (n.contains('review')) return 'review';
   if (n.contains('working') || n.contains('progress')) return 'working';

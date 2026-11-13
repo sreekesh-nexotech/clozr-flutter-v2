@@ -29,13 +29,15 @@ final crmCatalogRemoteDataSourceProvider =
 });
 
 /// `GET /crm/lead-statuses/` — the org's pipeline stages, in server order.
-final leadStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final leadStatusCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchLeadStatuses();
 });
 
 /// `GET /crm/lead-sources/?is_active=true` — the org's active lead sources.
-final leadSourceCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final leadSourceCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchLeadSources();
 });
@@ -53,38 +55,44 @@ final teamCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
 });
 
 /// `GET /crm/follow-up-types/?is_active=true` — the org's follow-up types.
-final followupTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final followupTypeCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchFollowupTypes();
 });
 
 /// `GET /crm/task-priorities/?is_active=true` — the org's task priorities.
-final taskPriorityCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final taskPriorityCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchTaskPriorities();
 });
 
 /// `GET /crm/crm-task-statuses/` — the org's task statuses, with status types.
-final taskStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final taskStatusCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchTaskStatuses();
 });
 
 /// The task types, read out of `GET /crm/tasks/schema/?view_type=form` — they
 /// are model choices, not an org catalog, so they have no list endpoint.
-final taskTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final taskTypeCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchTaskTypes();
 });
 
 /// `GET /crm/territories/` — the org's territories, for the lead form.
-final territoryCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final territoryCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchTerritories();
 });
 
 /// `GET /crm/industries/` — the org's industries, for the lead form.
-final industryCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final industryCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   final ds = ref.watch(crmCatalogRemoteDataSourceProvider);
   return ds == null ? const <CatalogOption>[] : ds.fetchIndustries();
 });
@@ -177,7 +185,8 @@ final leadFilterCatalogsProvider = FutureProvider<void>((ref) async {
 /// colour of the bucket the lane folds into.
 Color crmTaskStatusColor(CatalogOption status) =>
     status.color ??
-    StatusMeta$.task[crmTaskStatusKey(name: status.name, type: status.statusType)]!
+    StatusMeta$
+        .task[crmTaskStatusKey(name: status.name, type: status.statusType)]!
         .color;
 
 /// The pill a task's status should render as — the twin of [leadStatusMeta].
@@ -188,7 +197,8 @@ Color crmTaskStatusColor(CatalogOption status) =>
 /// keep the built-in vocabulary.
 StatusMeta crmTaskStatusMeta(CrmTask task, List<CatalogOption> statuses) {
   final name = task.statusName.trim();
-  if (name.isEmpty) return StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
+  if (name.isEmpty)
+    return StatusMeta$.task[task.status] ?? StatusMeta$.task['todo']!;
 
   final key = name.toLowerCase();
   for (final s in statuses) {
@@ -231,8 +241,8 @@ StatusMeta quoteStatusMeta(Quote quote, List<CatalogOption> statuses) {
 /// created without a colour still reads as won/lost/junk rather than blank.
 Color leadStatusColor(CatalogOption status) =>
     status.color ??
-    StatusMeta$.lead[leadStatusKey(name: status.name, type: status.statusType)]!
-        .color;
+    StatusMeta$
+        .lead[leadStatusKey(name: status.name, type: status.statusType)]!.color;
 
 /// The pill a lead's status should render as.
 ///
@@ -244,7 +254,8 @@ Color leadStatusColor(CatalogOption status) =>
 /// for the label too.
 StatusMeta leadStatusMeta(Lead lead, List<CatalogOption> statuses) {
   final name = lead.statusName.trim();
-  if (name.isEmpty) return StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
+  if (name.isEmpty)
+    return StatusMeta$.lead[lead.status] ?? StatusMeta$.lead['new']!;
 
   final key = name.toLowerCase();
   for (final s in statuses) {

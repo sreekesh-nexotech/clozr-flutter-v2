@@ -163,11 +163,13 @@ class LeadCallService {
     }
 
     if (!await _dial(Uri(scheme: 'tel', path: to))) {
-      return LeadCallOutcome(LeadCallResult.diallerUnavailable, message: exotelNote);
+      return LeadCallOutcome(LeadCallResult.diallerUnavailable,
+          message: exotelNote);
     }
 
     if (leadId == null || _myNumber.trim().isEmpty) {
-      return LeadCallOutcome(LeadCallResult.dialledNotLogged, message: exotelNote);
+      return LeadCallOutcome(LeadCallResult.dialledNotLogged,
+          message: exotelNote);
     }
 
     try {
@@ -176,7 +178,8 @@ class LeadCallService {
         fromNumber: _myNumber.trim(),
         toNumber: to,
       );
-      return LeadCallOutcome(LeadCallResult.dialledAndLogged, message: exotelNote);
+      return LeadCallOutcome(LeadCallResult.dialledAndLogged,
+          message: exotelNote);
     } on Object catch (e) {
       return LeadCallOutcome(
         LeadCallResult.dialledLogFailed,
@@ -205,7 +208,9 @@ final exotelStatusProvider = FutureProvider<ExotelStatus>((ref) async {
 /// Synchronous view — [ExotelStatus.unknown] while the fetch is in flight, so
 /// an early tap tries Exotel rather than silently taking the dialler.
 final exotelStatusValueProvider = Provider<ExotelStatus>(
-  (ref) => ref.watch(exotelStatusProvider).valueOrNull ?? const ExotelStatus.unknown(),
+  (ref) =>
+      ref.watch(exotelStatusProvider).valueOrNull ??
+      const ExotelStatus.unknown(),
 );
 
 /// Why click-to-call is unavailable to this user, in the server's own words —

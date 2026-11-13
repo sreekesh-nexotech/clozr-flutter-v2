@@ -17,7 +17,8 @@ import '../../application/providers/quote_discount_approvals_providers.dart';
 import '../../application/quote_discount_approval_rules.dart';
 import '../components/crm_async.dart';
 import '../components/due_date_change.dart' show dueDateLabel;
-import '../components/quote_discount_approval.dart' show showDiscountDecisionDialog;
+import '../components/quote_discount_approval.dart'
+    show showDiscountDecisionDialog;
 
 /// Webapp `DiscountApprovalsScreen` (Quotes › Discount approvals), as cards:
 /// Pending / Approved / Rejected requests for quotes whose discount is above
@@ -27,28 +28,37 @@ class QuoteApprovalsScreen extends ConsumerStatefulWidget {
   const QuoteApprovalsScreen({super.key});
 
   @override
-  ConsumerState<QuoteApprovalsScreen> createState() => _QuoteApprovalsScreenState();
+  ConsumerState<QuoteApprovalsScreen> createState() =>
+      _QuoteApprovalsScreenState();
 }
 
-const _tabs = [('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')];
+const _tabs = [
+  ('pending', 'Pending'),
+  ('approved', 'Approved'),
+  ('rejected', 'Rejected')
+];
 
 class _QuoteApprovalsScreenState extends ConsumerState<QuoteApprovalsScreen> {
   String _status = 'pending';
   int _pageSize = 20;
 
-  ({String status, int pageSize}) get _query => (status: _status, pageSize: _pageSize);
+  ({String status, int pageSize}) get _query =>
+      (status: _status, pageSize: _pageSize);
 
   void _open(DiscountApproval r) {
     if (r.quotationNumber.isEmpty) return;
-    context.push('${Routes.quoteDetail}?id=${Uri.encodeQueryComponent(r.quotationNumber)}');
+    context.push(
+        '${Routes.quoteDetail}?id=${Uri.encodeQueryComponent(r.quotationNumber)}');
   }
 
-  Future<void> _decide(DiscountApproval r, bool approve) => showDiscountDecisionDialog(
+  Future<void> _decide(DiscountApproval r, bool approve) =>
+      showDiscountDecisionDialog(
         context,
         ref,
         approve: approve,
         quotationUuid: r.quotationId,
-        quoteLabel: r.quotationNumber.isNotEmpty ? r.quotationNumber : r.quotationTitle,
+        quoteLabel:
+            r.quotationNumber.isNotEmpty ? r.quotationNumber : r.quotationTitle,
         discountPct: r.discountPct,
         limitPct: r.limitPct,
         inboxQuotationNumber: r.quotationNumber,
@@ -60,7 +70,10 @@ class _QuoteApprovalsScreenState extends ConsumerState<QuoteApprovalsScreen> {
     return Container(
       color: AppColors.bgDetail,
       child: Column(children: [
-        DetailAppBar(section: 'Quotes', name: 'Discount approvals', onBack: () => context.pop()),
+        DetailAppBar(
+            section: 'Quotes',
+            name: 'Discount approvals',
+            onBack: () => context.pop()),
         SizedBox(
           height: 52.h,
           child: ListView(
@@ -86,14 +99,19 @@ class _QuoteApprovalsScreenState extends ConsumerState<QuoteApprovalsScreen> {
             skipLoadingOnReload: true,
             loading: () => const ListSkeleton(itemCount: 3),
             error: (e, _) => ErrorState.forError(crmAppError(e),
-                onRetry: () => ref.invalidate(quoteDiscountApprovalsProvider(_query))),
+                onRetry: () =>
+                    ref.invalidate(quoteDiscountApprovalsProvider(_query))),
             data: (page) {
               if (page.rows.isEmpty) {
                 final empty = discountApprovalsEmpty(_status);
                 return RefreshIndicator(
-                  onRefresh: () async => ref.invalidate(quoteDiscountApprovalsProvider(_query)),
+                  onRefresh: () async =>
+                      ref.invalidate(quoteDiscountApprovalsProvider(_query)),
                   child: ListView(children: [
-                    EmptyState(icon: PhosphorIconsRegular.sealCheck, title: empty.title, body: empty.body ?? ''),
+                    EmptyState(
+                        icon: PhosphorIconsRegular.sealCheck,
+                        title: empty.title,
+                        body: empty.body ?? ''),
                   ]),
                 );
               }
@@ -108,8 +126,10 @@ class _QuoteApprovalsScreenState extends ConsumerState<QuoteApprovalsScreen> {
                     for (final r in page.rows) _card(r),
                     if (page.count > page.rows.length)
                       TextButton(
-                        onPressed: () => setState(() => _pageSize = _pageSize >= 50 ? 100 : 50),
-                        child: Text('Showing ${page.rows.length} of ${page.count} — show more'),
+                        onPressed: () => setState(
+                            () => _pageSize = _pageSize >= 50 ? 100 : 50),
+                        child: Text(
+                            'Showing ${page.rows.length} of ${page.count} — show more'),
                       ),
                   ],
                 ),
@@ -139,16 +159,23 @@ class _QuoteApprovalsScreenState extends ConsumerState<QuoteApprovalsScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(r.headline.isEmpty ? '—' : r.headline,
-                    style: AppText.bodyStrong(), maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (r.quotationNumber.isNotEmpty) Text(r.quotationNumber, style: AppText.caption()),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.headline.isEmpty ? '—' : r.headline,
+                        style: AppText.bodyStrong(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    if (r.quotationNumber.isNotEmpty)
+                      Text(r.quotationNumber, style: AppText.caption()),
+                  ]),
             ),
             SizedBox(width: 10.w),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(pctLabel(r.discountPct), style: AppText.bodyStrong(color: AppColors.navy)),
-              if (r.limitPct != null) Text('Limit ${pctLabel(r.limitPct)}', style: AppText.caption()),
+              Text(pctLabel(r.discountPct),
+                  style: AppText.bodyStrong(color: AppColors.navy)),
+              if (r.limitPct != null)
+                Text('Limit ${pctLabel(r.limitPct)}', style: AppText.caption()),
             ]),
           ]),
           SizedBox(height: 8.h),
@@ -164,8 +191,10 @@ class _QuoteApprovalsScreenState extends ConsumerState<QuoteApprovalsScreen> {
             ),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-              decoration: BoxDecoration(color: tone.bg, borderRadius: BorderRadius.circular(99)),
-              child: Text(r.statusLabel, style: AppText.captionStrong(color: tone.fg)),
+              decoration: BoxDecoration(
+                  color: tone.bg, borderRadius: BorderRadius.circular(99)),
+              child: Text(r.statusLabel,
+                  style: AppText.captionStrong(color: tone.fg)),
             ),
           ]),
           if (review.isNotEmpty) ...[

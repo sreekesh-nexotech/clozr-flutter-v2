@@ -32,13 +32,15 @@ ModuleSchemaRemoteDataSource? _source(Ref ref, String schemaPath) {
 /// The customers list request asks for `?view_type=mobile` too, so the payload
 /// is the org's mobile field set. Falling back to the list layout would show
 /// slots the trimmed rows no longer carry.
-final customerListSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
+final customerListSchemaFutureProvider =
+    FutureProvider<ViewSchema>((ref) async {
   final ds = _source(ref, ApiEndpoints.customerSchema);
   return ds == null ? ViewSchema.empty : ds.fetchMobileSchema();
 });
 
 final customerListSchemaProvider = Provider<ViewSchema>((ref) =>
-    ref.watch(customerListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty);
+    ref.watch(customerListSchemaFutureProvider).valueOrNull ??
+    ViewSchema.empty);
 
 final customerDetailSchemaFutureProvider =
     FutureProvider<ViewSchema>((ref) async {
@@ -134,7 +136,9 @@ final paymentRowProvider =
 
 final productListSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
   final ds = _source(ref, ApiEndpoints.productSchema);
-  return ds == null ? ViewSchema.empty : ds.fetchMobileSchema(query: const {'item_type': 'product'});
+  return ds == null
+      ? ViewSchema.empty
+      : ds.fetchMobileSchema(query: const {'item_type': 'product'});
 });
 
 final productListSchemaProvider = Provider<ViewSchema>((ref) =>
@@ -143,7 +147,9 @@ final productListSchemaProvider = Provider<ViewSchema>((ref) =>
 /// The Packages tab's card layout — View Settings › Product packages › Mobile.
 final packageListSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
   final ds = _source(ref, ApiEndpoints.productSchema);
-  return ds == null ? ViewSchema.empty : ds.fetchMobileSchema(query: const {'item_type': 'package'});
+  return ds == null
+      ? ViewSchema.empty
+      : ds.fetchMobileSchema(query: const {'item_type': 'package'});
 });
 
 final packageListSchemaProvider = Provider<ViewSchema>((ref) =>

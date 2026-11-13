@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../features/onboarding/presentation/tour_layer.dart';
+import '../features/shell/presentation/notification_banner.dart';
 import '../features/shell/presentation/offline_banner.dart';
 import '../features/shell/presentation/toast_overlay.dart';
 import 'config/constants.dart';
@@ -27,17 +29,27 @@ class ClozrApp extends StatelessWidget {
           theme: AppTheme.light(),
           routerConfig: appRouter,
           // Lock text scaling to 1.0 so the dense layout matches the design.
-          builder: (context, child) => MediaQuery.withNoTextScaling(
-            // The toast sits here, above the navigator, so it is visible over
-            // routed screens **and** over the bottom sheets that open on the
-            // root navigator. Inside the shell it was hidden behind any open
-            // sheet, which is where most write errors are raised.
-            child: Stack(
-              children: [
-                child ?? const SizedBox.shrink(),
-                const OfflineBanner(),
-                const ToastOverlay(),
-              ],
+          // 24-hour clocks app-wide (C17): time pickers follow this flag.
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: MediaQuery.withNoTextScaling(
+              // The toast sits here, above the navigator, so it is visible over
+              // routed screens **and** over the bottom sheets that open on the
+              // root navigator. Inside the shell it was hidden behind any open
+              // sheet, which is where most write errors are raised.
+              child: Stack(
+                children: [
+                  child ?? const SizedBox.shrink(),
+                  const OfflineBanner(),
+                  // Product tours — below the toast so a toast stays readable
+                  // over a spotlight.
+                  const TourLayer(),
+                  const ToastOverlay(),
+                  // Incoming-notification popup; same "above everything"
+                  // reasoning as the toast.
+                  const NotificationBanner(),
+                ],
+              ),
             ),
           ),
         );

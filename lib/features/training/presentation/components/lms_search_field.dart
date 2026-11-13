@@ -31,7 +31,8 @@ class LmsSearchField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(PhosphorIconsRegular.magnifyingGlass, size: 18.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsRegular.magnifyingGlass,
+              size: 18.sp, color: AppColors.textPlaceholder),
           SizedBox(width: 10.w),
           Expanded(
             child: TextField(

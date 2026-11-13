@@ -84,7 +84,8 @@ void main() {
       for (final f in PhoneFormat.inputFormatters) {
         value = f.formatEditUpdate(
           TextEditingValue.empty,
-          TextEditingValue(text: s, selection: TextSelection.collapsed(offset: s.length)),
+          TextEditingValue(
+              text: s, selection: TextSelection.collapsed(offset: s.length)),
         );
         s = value.text;
       }

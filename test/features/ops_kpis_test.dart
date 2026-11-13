@@ -68,7 +68,9 @@ void main() {
     });
 
     test('a partial payload keeps what it did send', () {
-      final partial = OpsKpis.fromJson({'active_projects': {'count': 2}})!;
+      final partial = OpsKpis.fromJson({
+        'active_projects': {'count': 2}
+      })!;
 
       expect(partial.activeProjects!.count, 2);
       expect(partial.avgTaskCycle, isNull);

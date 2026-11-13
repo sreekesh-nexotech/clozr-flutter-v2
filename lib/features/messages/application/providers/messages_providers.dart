@@ -77,10 +77,13 @@ class ConversationsController extends StateNotifier<ConversationsState> {
   String _nextLocalId() => 'local-${_localSeq++}';
 
   Future<void> _load() async {
-    if (ApiConfig.apiEnabled) state = state.copyWith(loading: true, clearError: true);
+    if (ApiConfig.apiEnabled)
+      state = state.copyWith(loading: true, clearError: true);
     try {
       final conversations = await _repo.getConversations();
-      if (mounted) state = state.copyWith(conversations: conversations, loading: false, clearError: true);
+      if (mounted)
+        state = state.copyWith(
+            conversations: conversations, loading: false, clearError: true);
     } on AppError catch (e) {
       // Mock never throws; in API mode surface the failure for a retry.
       if (mounted) state = state.copyWith(loading: false, error: e);
@@ -88,7 +91,10 @@ class ConversationsController extends StateNotifier<ConversationsState> {
       if (mounted) {
         state = state.copyWith(
           loading: false,
-          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+          error: AppError(
+              type: AppErrorType.unknown,
+              message: 'Something went wrong. Please try again.',
+              cause: e),
         );
       }
     }
@@ -113,7 +119,8 @@ class ConversationsController extends StateNotifier<ConversationsState> {
 
   void markRead(String id) {
     state = state.copyWith(conversations: [
-      for (final c in state.conversations) c.id == id ? c.copyWith(unread: 0) : c,
+      for (final c in state.conversations)
+        c.id == id ? c.copyWith(unread: 0) : c,
     ]);
     unawaited(_repo.markRead(id));
     // The API list rows carry only a last-message preview; opening a chat is
@@ -125,13 +132,28 @@ class ConversationsController extends StateNotifier<ConversationsState> {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     final localId = _nextLocalId();
-    _append(id, ChatMessage(mine: true, text: trimmed, time: 'Now', status: 'sent', localId: localId));
+    _append(
+        id,
+        ChatMessage(
+            mine: true,
+            text: trimmed,
+            time: 'Now',
+            status: 'sent',
+            localId: localId));
     unawaited(_dispatchText(id, localId, trimmed));
   }
 
   void sendTemplate(String id, String body) {
     final localId = _nextLocalId();
-    _append(id, ChatMessage(mine: true, text: body, time: 'Now', status: 'sent', tpl: true, localId: localId));
+    _append(
+        id,
+        ChatMessage(
+            mine: true,
+            text: body,
+            time: 'Now',
+            status: 'sent',
+            tpl: true,
+            localId: localId));
     unawaited(_dispatchTemplate(id, localId, body));
   }
 
@@ -139,7 +161,8 @@ class ConversationsController extends StateNotifier<ConversationsState> {
   /// `/send/document/` — the two are separate endpoints server-side, each with
   /// its own size/type validation, so the caller must already know which kind
   /// of file it staged.
-  void sendAttachment(String id, String path, String filename, {required bool isImage}) {
+  void sendAttachment(String id, String path, String filename,
+      {required bool isImage}) {
     final localId = _nextLocalId();
     _append(
       id,
@@ -153,7 +176,8 @@ class ConversationsController extends StateNotifier<ConversationsState> {
         attachmentKind: isImage ? 'image' : 'document',
       ),
     );
-    unawaited(_dispatchAttachment(id, localId, path, filename, isImage: isImage));
+    unawaited(
+        _dispatchAttachment(id, localId, path, filename, isImage: isImage));
   }
 
   /// Re-fire a bubble that came back rejected. Resets it to optimistic, then
@@ -184,7 +208,8 @@ class ConversationsController extends StateNotifier<ConversationsState> {
   }
 
   Future<void> _dispatchTemplate(String id, String localId, String body) async {
-    final sent = await _repo.sendTemplate(id, _templateIdForBody(id, body), body);
+    final sent =
+        await _repo.sendTemplate(id, _templateIdForBody(id, body), body);
     if (!mounted) return;
     _setStatus(id, localId, sent != null ? _statusOf(sent) : 'failed');
   }
@@ -192,7 +217,8 @@ class ConversationsController extends StateNotifier<ConversationsState> {
   /// Downloads an attachment through the authenticated media proxy, for
   /// opening a message whose local file is gone (a later session, a cleared
   /// cache) — see [ChatMessage.mediaId].
-  Future<(List<int>, String?)?> fetchMedia(String mediaId) => _repo.fetchMedia(mediaId);
+  Future<(List<int>, String?)?> fetchMedia(String mediaId) =>
+      _repo.fetchMedia(mediaId);
 
   Future<void> _dispatchAttachment(
       String id, String localId, String path, String filename,
@@ -212,7 +238,8 @@ class ConversationsController extends StateNotifier<ConversationsState> {
       for (final c in state.conversations)
         if (c.id == conversationId)
           c.copyWith(messages: [
-            for (final m in c.messages) m.localId == localId ? m.copyWith(status: status) : m,
+            for (final m in c.messages)
+              m.localId == localId ? m.copyWith(status: status) : m,
           ])
         else
           c,
@@ -304,7 +331,8 @@ final conversationsProvider =
 });
 
 /// Look up a single conversation by id (used by the chat screen).
-final conversationByIdProvider = Provider.family<Conversation?, String>((ref, id) {
+final conversationByIdProvider =
+    Provider.family<Conversation?, String>((ref, id) {
   for (final c in ref.watch(conversationsProvider).conversations) {
     if (c.id == id) return c;
   }
@@ -342,7 +370,9 @@ final visibleConversationsProvider = Provider<List<Conversation>>((ref) {
   final all = ref.watch(conversationsProvider).conversations;
   final q = ref.watch(chatSearchProvider).trim().toLowerCase();
   if (q.isEmpty) return all;
-  return all.where((c) => ('${c.name} ${c.company}').toLowerCase().contains(q)).toList();
+  return all
+      .where((c) => ('${c.name} ${c.company}').toLowerCase().contains(q))
+      .toList();
 });
 
 /// Active tab on the chat screen: 'chats' | 'medias' | 'links'.

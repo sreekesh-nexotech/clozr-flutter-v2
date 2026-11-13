@@ -23,7 +23,8 @@ Color roleTone(String role) => kRoleTone[role] ?? const Color(0xFF6C6C6C);
 /// "Deactivated" rather than "Inactive" — the word the backend's own status
 /// chips use (`members.md` §Status), and the one that distinguishes an account
 /// an admin switched off from an invitation never accepted.
-({String label, Color color}) memberStatusMeta(String status) => switch (status) {
+({String label, Color color}) memberStatusMeta(String status) =>
+    switch (status) {
       'active' => (label: 'Active', color: AppColors.success),
       'inactive' => (label: 'Deactivated', color: AppColors.textMuted),
       _ => (label: 'Invited', color: AppColors.warningDeep),
@@ -65,12 +66,18 @@ class MemberCard extends StatelessWidget {
                     Text(member.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 2.h),
                     Text(member.email,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -87,12 +94,16 @@ class MemberCard extends StatelessWidget {
                 child: Text(member.scope,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ),
             ],
           ),
           SizedBox(height: 8.h),
-          _metaRow(PhosphorIconsRegular.treeStructure, 'Reports to ${member.reportsTo}'),
+          _metaRow(PhosphorIconsRegular.treeStructure,
+              'Reports to ${member.reportsTo}'),
           SizedBox(height: 6.h),
           _metaRow(PhosphorIconsRegular.usersThree, member.team),
         ],
@@ -111,9 +122,14 @@ class MemberCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 6.w, height: 6.w, decoration: BoxDecoration(color: tone, shape: BoxShape.circle)),
+          Container(
+              width: 6.w,
+              height: 6.w,
+              decoration: BoxDecoration(color: tone, shape: BoxShape.circle)),
           SizedBox(width: 6.w),
-          Text(role, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: tone)),
+          Text(role,
+              style: AppText.custom(
+                  size: 11.5, weight: FontWeight.w700, color: tone)),
         ],
       ),
     );
@@ -128,7 +144,10 @@ class MemberCard extends StatelessWidget {
           child: Text(text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted2)),
         ),
       ],
     );

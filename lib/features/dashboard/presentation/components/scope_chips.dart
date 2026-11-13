@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../application/providers/dashboard_providers.dart';
 import '../../domain/entities/dash_colors.dart';
 import '../../domain/entities/dashboard_models.dart';
@@ -33,9 +34,15 @@ class ScopeChips extends ConsumerWidget {
     final memberId = ref.watch(dashMemberProvider);
     final period = ref.watch(dashPeriodProvider);
     final teamSelected = teamId != 'all';
+    // Team and Member lists come from the tab's own `filter-options` feed,
+    // scoped server-side to the caller, so a CRM, PMO or Helpdesk user gets
+    // their real teams and people instead of an empty picker.
     final module = scopeModule;
-
     final optionsKey = (module: module ?? '', teamId: teamId);
+    final teamOptions = module == null || !ApiConfig.apiEnabled
+        ? data.teamOptions
+        : ref.watch(dashFilterOptionsProvider(module)).valueOrNull?.teams ??
+            data.teamOptions;
     final members = module == null
         ? const <DashTeamOption>[]
         : ref.watch(dashMemberOptionsProvider(optionsKey)).valueOrNull ??
@@ -64,9 +71,9 @@ class ScopeChips extends ConsumerWidget {
         children: [
           if (module != null) ...[
             _TeamChip(
-              label: dashTeamLabel(data, teamId),
+              label: dashTeamLabel(teamOptions, teamId),
               active: teamSelected,
-              onTap: () => showDashTeamPicker(context, ref, data.teamOptions),
+              onTap: () => showDashTeamPicker(context, ref, teamOptions),
             ),
             _MemberChip(
               label: dashMemberLabel(members, memberId),
@@ -86,7 +93,8 @@ class ScopeChips extends ConsumerWidget {
 
 /// Same shape as [_TeamChip] with a single-person glyph.
 class _MemberChip extends StatelessWidget {
-  const _MemberChip({required this.label, required this.active, required this.onTap});
+  const _MemberChip(
+      {required this.label, required this.active, required this.onTap});
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -106,14 +114,20 @@ class _MemberChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(PhosphorIconsRegular.user, size: 15.sp, color: active ? AppColors.white : AppColors.textSecondary),
+            Icon(PhosphorIconsRegular.user,
+                size: 15.sp,
+                color: active ? AppColors.white : AppColors.textSecondary),
             SizedBox(width: 7.w),
             Text(label,
                 style: AppText.custom(
-                    size: 12.5, weight: FontWeight.w700, color: active ? AppColors.white : AppColors.textSecondary)),
+                    size: 12.5,
+                    weight: FontWeight.w700,
+                    color: active ? AppColors.white : AppColors.textSecondary)),
             SizedBox(width: 7.w),
             Icon(PhosphorIconsBold.caretDown,
-                size: 11.sp, color: (active ? AppColors.white : AppColors.textSecondary).withOpacity(0.65)),
+                size: 11.sp,
+                color: (active ? AppColors.white : AppColors.textSecondary)
+                    .withOpacity(0.65)),
           ],
         ),
       ),
@@ -122,7 +136,8 @@ class _MemberChip extends StatelessWidget {
 }
 
 class _TeamChip extends StatelessWidget {
-  const _TeamChip({required this.label, required this.active, required this.onTap});
+  const _TeamChip(
+      {required this.label, required this.active, required this.onTap});
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -142,13 +157,20 @@ class _TeamChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: active ? AppColors.white : AppColors.textSecondary),
+            Icon(PhosphorIconsRegular.usersThree,
+                size: 15.sp,
+                color: active ? AppColors.white : AppColors.textSecondary),
             SizedBox(width: 7.w),
             Text(label,
                 style: AppText.custom(
-                    size: 12.5, weight: FontWeight.w700, color: active ? AppColors.white : AppColors.textSecondary)),
+                    size: 12.5,
+                    weight: FontWeight.w700,
+                    color: active ? AppColors.white : AppColors.textSecondary)),
             SizedBox(width: 7.w),
-            Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: (active ? AppColors.white : AppColors.textSecondary).withOpacity(0.65)),
+            Icon(PhosphorIconsBold.caretDown,
+                size: 11.sp,
+                color: (active ? AppColors.white : AppColors.textSecondary)
+                    .withOpacity(0.65)),
           ],
         ),
       ),
@@ -176,13 +198,29 @@ class _PeriodChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(PhosphorIconsRegular.calendarBlank, size: 15.sp, color: AppColors.textSecondary),
+            Icon(PhosphorIconsRegular.calendarBlank,
+                size: 15.sp, color: AppColors.textSecondary),
             SizedBox(width: 7.w),
-            Text('Period', style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+            Text('Period',
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted)),
             SizedBox(width: 6.w),
-            Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+            // A long custom range ("1 Jan 2025 – 31 Dec 2026") must shrink
+            // with an ellipsis rather than overflow the row.
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textSecondary)),
+            ),
             SizedBox(width: 7.w),
-            Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textSecondary.withOpacity(0.65)),
+            Icon(PhosphorIconsBold.caretDown,
+                size: 11.sp, color: AppColors.textSecondary.withOpacity(0.65)),
           ],
         ),
       ),

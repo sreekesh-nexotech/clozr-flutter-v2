@@ -16,10 +16,12 @@ class LmsRepositoryImpl implements LmsRepository {
   Future<List<Course>> getCourses() => Future.value(_local.fetchCourses());
 
   @override
-  Future<List<LearnerRecord>> getRecords() => Future.value(_local.fetchRecords());
+  Future<List<LearnerRecord>> getRecords() =>
+      Future.value(_local.fetchRecords());
 
   @override
-  Future<List<LmsActivity>> getActivity() => Future.value(_local.fetchActivity());
+  Future<List<LmsActivity>> getActivity() =>
+      Future.value(_local.fetchActivity());
 
   /// No dashboard endpoint in mock mode; null keeps the prototype's derived
   /// tiles exactly as they were.
@@ -57,4 +59,26 @@ class LmsRepositoryImpl implements LmsRepository {
     required List<String> userIds,
   }) async =>
       userIds.length;
+
+  // Mock mode has no server; the writes resolve without effect.
+  @override
+  Future<String> createCourse({required String title}) async => '';
+
+  @override
+  Future<void> updateCourse(
+    String courseId, {
+    required String title,
+    required String description,
+    required bool sequential,
+    required bool mandatory,
+  }) async {}
+
+  @override
+  Future<void> publishCourse(String courseId) async {}
+
+  @override
+  Future<void> draftCourse(String courseId) async {}
+
+  @override
+  Future<void> deleteCourse(String courseId) async {}
 }

@@ -7,7 +7,8 @@ import '../../../../app/theme/app_colors.dart';
 /// the lead-detail tabs. Matches the prototype's `ck()` helper: 26×26, 8px
 /// radius, green fill when done else a 1.5px grey ring.
 class CrmCheckBox extends StatelessWidget {
-  const CrmCheckBox({super.key, required this.done, required this.onTap, this.size = 26});
+  const CrmCheckBox(
+      {super.key, required this.done, required this.onTap, this.size = 26});
 
   final bool done;
   final VoidCallback onTap;
@@ -25,9 +26,13 @@ class CrmCheckBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: done ? AppColors.success : AppColors.white,
           borderRadius: BorderRadius.circular(8.r),
-          border: done ? null : Border.all(color: const Color(0xFFC7CBD3), width: 1.5),
+          border: done
+              ? null
+              : Border.all(color: const Color(0xFFC7CBD3), width: 1.5),
         ),
-        child: Icon(PhosphorIconsBold.check, size: (size * 0.54).sp, color: done ? AppColors.white : Colors.transparent),
+        child: Icon(PhosphorIconsBold.check,
+            size: (size * 0.54).sp,
+            color: done ? AppColors.white : Colors.transparent),
       ),
     );
   }

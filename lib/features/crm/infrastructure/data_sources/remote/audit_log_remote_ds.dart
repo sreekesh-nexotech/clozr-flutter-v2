@@ -1,3 +1,4 @@
+import '../../../../../core/utils/audit_wording.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../../core/network/api_endpoints.dart';
@@ -42,8 +43,10 @@ class AuditLogRemoteDataSource {
         'ordering': '-timestamp',
         'page_size': _pageSize,
       });
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
-      return mapEntries(rows, statusNames: statusNames, recordLabel: recordLabel);
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      return mapEntries(rows,
+          statusNames: statusNames, recordLabel: recordLabel);
     } on Object {
       return const [];
     }
@@ -59,7 +62,8 @@ class AuditLogRemoteDataSource {
     final out = <AuditEntry>[];
     for (final row in rows) {
       if (row is! Map<String, dynamic>) continue;
-      final entry = mapEntry(row, statusNames: statusNames, recordLabel: recordLabel);
+      final entry =
+          mapEntry(row, statusNames: statusNames, recordLabel: recordLabel);
       if (entry != null) out.add(entry);
     }
     return out;
@@ -73,6 +77,7 @@ class AuditLogRemoteDataSource {
   static AuditEntry? mapEntry(
     Map<String, dynamic> row, {
     Map<String, String> statusNames = const {},
+
     /// What the record is called in the log's own sentences ("Lead",
     /// "Customer", "Task", "Follow-up", "Quote"…).
     String recordLabel = 'Lead',
@@ -93,7 +98,8 @@ class AuditLogRemoteDataSource {
     final at = parseApiDate(row['timestamp']);
     final noun = recordLabel.toLowerCase();
 
-    AuditEntry build(AuditEventKind kind, String title, [String detail = '']) => AuditEntry(
+    AuditEntry build(AuditEventKind kind, String title, [String detail = '']) =>
+        AuditEntry(
           id: id,
           kind: kind,
           title: title,
@@ -109,7 +115,9 @@ class AuditLogRemoteDataSource {
       final summary = _appliedSummary(automation['applied']);
       final ruleName = rule.isEmpty ? 'automation' : rule;
       return build(
-        action == 'create' ? AuditEventKind.created : AuditEventKind.fieldChanged,
+        action == 'create'
+            ? AuditEventKind.created
+            : AuditEventKind.fieldChanged,
         'Automation ran',
         summary.isEmpty ? ruleName : '$ruleName — $summary',
       );
@@ -122,8 +130,12 @@ class AuditLogRemoteDataSource {
       final type = _str(related['type']);
       final verb = _verb(_str(related['action']).toLowerCase());
       return build(
-        type.toLowerCase() == 'note' ? AuditEventKind.noteAdded : AuditEventKind.childAdded,
-        '$verb ${_relatedTypeLabel(type)}',
+        type.toLowerCase() == 'note'
+            ? AuditEventKind.noteAdded
+            : AuditEventKind.childAdded,
+        // "Uploaded file", not "Created attachment" (UI/UX audit #36).
+        plainRelatedChange(type, _str(related['action'])) ??
+            '$verb ${_relatedTypeLabel(type)}',
         _str(related['label']),
       );
     }
@@ -149,10 +161,12 @@ class AuditLogRemoteDataSource {
     // "<Record> created" ("Lead created", "Customer created", "Quote created").
     final leadStyle = noun != 'task' && noun != 'follow-up';
     if (action == 'create') {
-      return build(AuditEventKind.created, leadStyle ? '$recordLabel created' : 'Created $noun');
+      return build(AuditEventKind.created,
+          leadStyle ? '$recordLabel created' : 'Created $noun');
     }
     if (action == 'delete') {
-      return build(AuditEventKind.deleted, leadStyle ? '$recordLabel deleted' : 'Deleted $noun');
+      return build(AuditEventKind.deleted,
+          leadStyle ? '$recordLabel deleted' : 'Deleted $noun');
     }
 
     final updated = 'Updated $noun';
@@ -164,8 +178,14 @@ class AuditLogRemoteDataSource {
       final statusOnly = changes['diff'] is List &&
           (changes['diff'] as List).length == 1 &&
           (changes['diff'] as List).first is Map &&
-          '${((changes['diff'] as List).first as Map)['field']}'.startsWith('status');
-      return build(statusOnly ? AuditEventKind.statusChanged : AuditEventKind.fieldChanged, updated, diff);
+          '${((changes['diff'] as List).first as Map)['field']}'
+              .startsWith('status');
+      return build(
+          statusOnly
+              ? AuditEventKind.statusChanged
+              : AuditEventKind.fieldChanged,
+          updated,
+          diff);
     }
 
     // An older row: summarise the submitted fields, old → new where both sides
@@ -173,7 +193,8 @@ class AuditLogRemoteDataSource {
     final body = changes['request_body'];
     if (body is Map && body.isNotEmpty) {
       final keys = body.keys.map((k) => '$k').toList();
-      final isStatus = keys.length == 1 && (keys.first == 'status_id' || keys.first == 'status');
+      final isStatus = keys.length == 1 &&
+          (keys.first == 'status_id' || keys.first == 'status');
       return build(
         isStatus ? AuditEventKind.statusChanged : AuditEventKind.fieldChanged,
         updated,
@@ -248,7 +269,8 @@ class AuditLogRemoteDataSource {
 
   /// "status: New → Contacted, email: a@x.in" for the scalar fields, else
   /// "Changed <fields>" — the webapp's `fieldChangeDetail`.
-  static String _fieldChangeDetail(Map body, Object? before, Map<String, String> statusNames) {
+  static String _fieldChangeDetail(
+      Map body, Object? before, Map<String, String> statusNames) {
     final prev = before is Map ? before : const {};
     final parts = <String>[];
     for (final entry in body.entries) {
@@ -272,9 +294,16 @@ class AuditLogRemoteDataSource {
 
   /// Columns the system derives from another change — never an edit of their own.
   static const _derived = {
-    'stage_entered_at', 'status_entered_at', 'lead_score', 'lead_score_breakdown',
-    'lead_score_updated_at', 'customer_score', 'customer_score_breakdown',
-    'customer_score_updated_at', 'updated_at', 'modified_by',
+    'stage_entered_at',
+    'status_entered_at',
+    'lead_score',
+    'lead_score_breakdown',
+    'lead_score_updated_at',
+    'customer_score',
+    'customer_score_breakdown',
+    'customer_score_updated_at',
+    'updated_at',
+    'modified_by',
   };
 
   static String _diffValue(Object? v) {
@@ -288,8 +317,8 @@ class AuditLogRemoteDataSource {
       final date = DateTime.tryParse(t);
       if (date != null && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(t)) {
         return t.length <= 10
-            ? DateFormat('d MMM yyyy').format(date)
-            : DateFormat('d MMM yyyy, h:mm a').format(date.toLocal());
+            ? DateFormat('dd/MM/yyyy').format(date)
+            : DateFormat('dd/MM/yyyy, HH:mm').format(date.toLocal());
       }
       return t.length > 60 ? '${t.substring(0, 59).trimRight()}…' : t;
     }
@@ -324,15 +353,20 @@ class AuditLogRemoteDataSource {
           : (field is String ? _humanize(field) : '');
       if (label.isEmpty) continue;
       if (raw.containsKey('added') || raw.containsKey('removed')) {
-        List<String> names(Object? v) =>
-            v is List ? v.map(_diffValue).where((n) => n != '—').toList() : const [];
+        List<String> names(Object? v) => v is List
+            ? v.map(_diffValue).where((n) => n != '—').toList()
+            : const [];
         final added = names(raw['added']);
         final removed = names(raw['removed']);
         if (added.isEmpty && removed.isEmpty) continue;
-        out.add('$label: ${[...added.map((n) => '+$n'), ...removed.map((n) => '−$n')].join(', ')}');
+        out.add('$label: ${[
+          ...added.map((n) => '+$n'),
+          ...removed.map((n) => '−$n')
+        ].join(', ')}');
         continue;
       }
-      final from = _diffValue(raw.containsKey('old') ? raw['old'] : raw['before']);
+      final from =
+          _diffValue(raw.containsKey('old') ? raw['old'] : raw['before']);
       final to = _diffValue(raw.containsKey('new') ? raw['new'] : raw['after']);
       if (from != to) out.add('$label: $from → $to');
     }
@@ -343,8 +377,11 @@ class AuditLogRemoteDataSource {
   static String _appliedSummary(Object? applied) {
     if (applied is! List) return '';
     const models = {
-      'lead': 'Lead', 'customer': 'Customer', 'task': 'Task',
-      'followup': 'Follow-up', 'quote': 'Quote',
+      'lead': 'Lead',
+      'customer': 'Customer',
+      'task': 'Task',
+      'followup': 'Follow-up',
+      'quote': 'Quote',
     };
     final parts = <String>[];
     for (final raw in applied) {
@@ -367,7 +404,9 @@ class AuditLogRemoteDataSource {
           final from = _scalar(ch['from']);
           if (to == null) return;
           final label = _humanize('$field');
-          parts.add(from != null && from != to ? '$label: $from → $to' : '$label: $to');
+          parts.add(from != null && from != to
+              ? '$label: $from → $to'
+              : '$label: $to');
         });
       }
     }

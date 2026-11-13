@@ -1,3 +1,4 @@
+import '../../../../core/utils/relative_time.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -32,7 +33,8 @@ Future<Map<String, dynamic>?> showRescheduleSheet({
 }
 
 class _RescheduleSheet extends StatefulWidget {
-  const _RescheduleSheet({required this.ref, required this.due, required this.time});
+  const _RescheduleSheet(
+      {required this.ref, required this.due, required this.time});
 
   final WidgetRef ref;
 
@@ -75,9 +77,7 @@ class _RescheduleSheetState extends State<_RescheduleSheet> {
       lastDate: DateTime(initial.year + 5),
     );
     if (picked == null || !mounted) return;
-    setState(() => _date.text =
-        '${picked.day.toString().padLeft(2, '0')} '
-        '${_monthNames[picked.month - 1]} ${picked.year}');
+    setState(() => _date.text = fmtDay(picked)); // DD/MM/YYYY (C17)
   }
 
   Future<void> _pickTime() async {
@@ -93,8 +93,7 @@ class _RescheduleSheetState extends State<_RescheduleSheet> {
             ),
     );
     if (picked == null || !mounted) return;
-    setState(() => _time.text =
-        '${picked.hour.toString().padLeft(2, '0')}:'
+    setState(() => _time.text = '${picked.hour.toString().padLeft(2, '0')}:'
         '${picked.minute.toString().padLeft(2, '0')}');
   }
 
@@ -119,7 +118,8 @@ class _RescheduleSheetState extends State<_RescheduleSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Reschedule', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Reschedule', onClose: () => Navigator.of(context).pop()),
         Padding(
           padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 12.h),
           child: Column(
@@ -150,7 +150,9 @@ class _RescheduleSheetState extends State<_RescheduleSheet> {
                 'Moving a follow-up updates its due date on the server; the '
                 'activity log records the change.',
                 style: AppText.custom(
-                        size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)
                     .copyWith(height: 1.4),
               ),
             ],
@@ -167,6 +169,16 @@ class _RescheduleSheetState extends State<_RescheduleSheet> {
 }
 
 const _monthNames = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];

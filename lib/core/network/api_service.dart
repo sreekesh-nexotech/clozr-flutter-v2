@@ -7,7 +7,9 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../config/api_config.dart';
 import '../storage/token_storage.dart';
 import 'app_error.dart';
+import 'approval_hold.dart';
 import 'auth_interceptor.dart';
+import 'mandatory_course_block.dart';
 
 /// The single network gateway (rule 6.1: one ApiService for all calls).
 ///
@@ -81,6 +83,18 @@ class ApiService {
   /// itself for free.
   ValueListenable<int> get writes => _writes;
 
+  final ValueNotifier<ApprovalHold?> _holds =
+      ValueNotifier<ApprovalHold?>(null);
+
+  /// Every write the server accepted but held for approval (`202
+  /// APPROVAL_REQUIRED`, a bulk write's `pending_ids`, a due-date move's
+  /// pending change) — a fresh event per answer, so each one notifies.
+  ///
+  /// Published here, at the one point every request passes through, for the
+  /// same reason as [writes]: the shell turns it into the "Sent for approval"
+  /// toast and the approvals refresh, so no save path can forget to.
+  ValueListenable<ApprovalHold?> get holds => _holds;
+
   final ValueNotifier<AppError?> _failures = ValueNotifier<AppError?>(null);
 
   /// The most recent failure the user ought to hear about, with the backend's
@@ -105,6 +119,25 @@ class ApiService {
   /// train the user to ignore the toast that matters.
   ValueListenable<AppError?> get failures => _failures;
 
+  final ValueNotifier<List<IncompleteCourse>?> _courseBlocks =
+      ValueNotifier(null);
+
+  /// Every mandatory-course 403 (`mandatory_course_incomplete`), carrying the
+  /// courses the server says are unfinished — a fresh list per refusal, so
+  /// each one notifies. The shell turns it into the app-wide blocking screen
+  /// (webapp: the Axios interceptor → `onMandatoryCourseBlock`).
+  ValueListenable<List<IncompleteCourse>?> get courseBlocks => _courseBlocks;
+
+  /// Raises the course block for a mandatory-course 403. True when it was one
+  /// — the blocking screen explains it, so it is kept off [failures].
+  bool _raiseCourseBlock(DioException e) {
+    if (e.response?.statusCode != 403) return false;
+    final body = e.response?.data;
+    if (!isMandatoryCourseBlock(body)) return false;
+    _courseBlocks.value = parseIncompleteCourses(body);
+    return true;
+  }
+
   TokenStorage get tokens => _tokens;
 
   /// Called when a 401 survives the refresh-and-retry cycle. The auth
@@ -122,24 +155,90 @@ class ApiService {
   /// on its own. Without it, a role that can read a list but not its side
   /// catalogs got "You do not have permission…" over a screen that loaded
   /// fine. The error is still thrown to the caller.
-  Future<dynamic> get(String path, {Map<String, dynamic>? query, bool quiet = false}) =>
+  Future<dynamic> get(String path,
+          {Map<String, dynamic>? query, bool quiet = false}) =>
       _run(() => _dio.get<dynamic>(path, queryParameters: query), quiet: quiet);
 
-  Future<dynamic> post(String path, {Object? body, Map<String, dynamic>? query}) =>
-      _run(() => _dio.post<dynamic>(path, data: body, queryParameters: query));
+  /// Every page of a paginated list, in order, as one `{count, next: null,
+  /// previous: null, results}` body — the shape a single [get] returns, so a
+  /// caller can switch over without changing how it reads the answer.
+  ///
+  /// Webapp parity (C24): user / team option lists asked for one page
+  /// (100–200 rows) and silently dropped the rest in a larger org. Page 1
+  /// gives the total; the remaining pages are fetched in parallel. A one-page
+  /// org still makes exactly one request. A bare-array answer is returned as
+  /// is. [maxPages] caps a runaway count.
+  Future<dynamic> getAllPages(String path,
+      {Map<String, dynamic>? query,
+      bool quiet = false,
+      int maxPages = 50}) async {
+    final first = await get(path, query: query, quiet: quiet);
+    if (first is! Map || first['results'] is! List || first['next'] == null) {
+      return first;
+    }
+    final rows = <dynamic>[...first['results'] as List];
+    final count = first['count'] is num ? (first['count'] as num).toInt() : 0;
+    final perPage = rows.length;
+    if (perPage == 0) return first;
+    var pages = count > 0 ? (count / perPage).ceil() : 2;
+    if (pages > maxPages) pages = maxPages;
+    final rest = await Future.wait([
+      for (var p = 2; p <= pages; p++)
+        get(path, query: {...?query, 'page': p}, quiet: quiet),
+    ]);
+    for (final body in rest) {
+      if (body is Map && body['results'] is List) {
+        rows.addAll(body['results'] as List);
+      }
+    }
+    // The count was only an estimate (rows added mid-load): keep paging.
+    var last = rest.isEmpty ? first : rest.last;
+    var page = pages;
+    while (last is Map && last['next'] != null && page < maxPages) {
+      page++;
+      last = await get(path, query: {...?query, 'page': page}, quiet: quiet);
+      if (last is Map && last['results'] is List) {
+        rows.addAll(last['results'] as List);
+      }
+    }
+    return <String, dynamic>{
+      'count': rows.length,
+      'next': null,
+      'previous': null,
+      'results': rows,
+    };
+  }
+
+  /// [background] is for bookkeeping writes the user did not make as an edit
+  /// (product-tour progress): no refresh tick for the lists, no toast on
+  /// failure — the caller retries on its own.
+  Future<dynamic> post(String path,
+          {Object? body,
+          Map<String, dynamic>? query,
+          bool background = false}) =>
+      _run(() => _dio.post<dynamic>(path, data: body, queryParameters: query),
+          quiet: background, countsAsWrite: !background);
 
   Future<dynamic> put(String path, {Object? body}) =>
       _run(() => _dio.put<dynamic>(path, data: body));
 
   /// [headers] carries per-request headers — `If-Match` for optimistic locking
   /// on record edits.
-  Future<dynamic> patch(String path, {Object? body, Map<String, dynamic>? headers}) =>
-      _run(() => _dio.patch<dynamic>(path,
-          data: body, options: headers == null ? null : Options(headers: headers)));
+  Future<dynamic> patch(String path,
+          {Object? body,
+          Map<String, dynamic>? headers,
+          bool background = false}) =>
+      _run(
+          () => _dio.patch<dynamic>(path,
+              data: body,
+              options: headers == null ? null : Options(headers: headers)),
+          quiet: background,
+          countsAsWrite: !background);
 
   /// [patch] that also hands back the HTTP status — a due-date move answers
   /// 202 when it went to a manager for approval instead of being applied.
-  Future<(int status, dynamic data)> patchWithStatus(String path, {Object? body}) async {
+  Future<(int status, dynamic data)> patchWithStatus(String path,
+      {Object? body}) async {
     int status = 0;
     final data = await _run(() async {
       final res = await _dio.patch<dynamic>(path, data: body);
@@ -149,8 +248,23 @@ class ApiService {
     return (status, data);
   }
 
-  Future<dynamic> delete(String path, {Object? body}) =>
-      _run(() => _dio.delete<dynamic>(path, data: body));
+  /// [post] that also hands back the HTTP status — a lead conversion answers
+  /// 202 when it went for approval instead of being applied.
+  Future<(int status, dynamic data)> postWithStatus(String path,
+      {Object? body}) async {
+    int status = 0;
+    final data = await _run(() async {
+      final res = await _dio.post<dynamic>(path, data: body);
+      status = res.statusCode ?? 0;
+      return res;
+    });
+    return (status, data);
+  }
+
+  /// [quiet]: a best-effort delete (cleaning up after another write) whose
+  /// refusal must not reach the shell's toast.
+  Future<dynamic> delete(String path, {Object? body, bool quiet = false}) =>
+      _run(() => _dio.delete<dynamic>(path, data: body), quiet: quiet);
 
   /// Multipart upload (attachments, call recordings).
   Future<dynamic> postForm(String path, FormData form) =>
@@ -169,7 +283,23 @@ class ApiService {
       return (res.data ?? const <int>[], res.headers.value('content-type'));
     } on DioException catch (e) {
       final error = AppError.fromDio(e);
-      if (!error.isAuthError) _failures.value = error;
+      if (!_raiseCourseBlock(e) && !error.isAuthError) _failures.value = error;
+      throw error;
+    }
+  }
+
+  /// Authenticated binary POST (a CSV export) — the body is JSON, the answer is a file.
+  Future<List<int>> postBytes(String path, {Object? body}) async {
+    try {
+      final res = await _dio.post<List<int>>(
+        path,
+        data: body,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return res.data ?? const <int>[];
+    } on DioException catch (e) {
+      final error = AppError.fromDio(e);
+      if (!_raiseCourseBlock(e) && !error.isAuthError) _failures.value = error;
       throw error;
     }
   }
@@ -182,11 +312,20 @@ class ApiService {
     if (identical(_failures.value, error)) _failures.value = null;
   }
 
-  Future<dynamic> _run(Future<Response<dynamic>> Function() call, {bool quiet = false}) async {
+  Future<dynamic> _run(Future<Response<dynamic>> Function() call,
+      {bool quiet = false, bool countsAsWrite = true}) async {
     try {
       final res = await call();
-      if (res.requestOptions.method.toUpperCase() != 'GET') _writes.value++;
-      return res.data;
+      if (countsAsWrite && res.requestOptions.method.toUpperCase() != 'GET') {
+        _writes.value++;
+      }
+      final status = res.statusCode ?? 0;
+      final hold = approvalEventOf(status, res.data);
+      if (hold != null) _holds.value = hold;
+      // A held save answers an envelope around the record; callers that read
+      // the answer as the record get the record, with its gated fields still
+      // as they were.
+      return recordOf(status, res.data);
     } on DioException catch (e) {
       final error = AppError.fromDio(e);
       // Announced before the throw, so it is recorded even when the caller
@@ -197,6 +336,7 @@ class ApiService {
       // auth interceptor already handles by logging out, and a toast about it
       // would only add noise to that.
       final isWrite = e.requestOptions.method.toUpperCase() != 'GET';
+      if (_raiseCourseBlock(e)) throw error;
       if (!quiet &&
           !error.isAuthError &&
           (isWrite || error.type == AppErrorType.forbidden)) {

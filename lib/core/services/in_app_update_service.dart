@@ -39,7 +39,8 @@ class InAppUpdateService {
     } on Object catch (error, stack) {
       // Never worth surfacing to the user — but worth knowing if the check
       // itself starts failing across a fleet.
-      unawaited(AppMonitoring.captureError(error, stack, message: 'InAppUpdate check failed'));
+      unawaited(AppMonitoring.captureError(error, stack,
+          message: 'InAppUpdate check failed'));
     }
   }
 }

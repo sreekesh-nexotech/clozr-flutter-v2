@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../filters/tasks_filter_spec.dart' show TaskFilterCodec;
-import 'crm_tasks_providers.dart' show toggleCrmTaskChip, crmTaskOtherChip;
+import 'crm_tasks_providers.dart'
+    show toggleCrmTaskChip, crmTaskOtherChip, crmTaskStatusCountsFor;
 import 'package:flutter/foundation.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/followup.dart';
@@ -40,7 +42,8 @@ class FollowupQuery {
 
   /// Order-independent identity.
   String get signature {
-    final parts = [for (final e in filters.entries) '${e.key}=${e.value}']..sort();
+    final parts = [for (final e in filters.entries) '${e.key}=${e.value}']
+      ..sort();
     return parts.join('&');
   }
 
@@ -55,14 +58,16 @@ class FollowupQuery {
 /// Follow-ups for one query.
 final followupsScopedProvider =
     FutureProvider.family<List<Followup>, FollowupQuery>(
-  (ref, q) => ref.watch(followupsRepositoryProvider).getFollowups(filters: q.filters),
+  (ref, q) =>
+      ref.watch(followupsRepositoryProvider).getFollowups(filters: q.filters),
 );
 
 /// The drawer's filters as server params.
 ///
 /// Empty in mock mode: the seed source cannot execute query params, so there
 /// [visibleFollowupsProvider] keeps matching locally instead.
-Map<String, dynamic> followupFilterParamsFor(FilterValues values, TaskFilterCodec codec) {
+Map<String, dynamic> followupFilterParamsFor(
+    FilterValues values, TaskFilterCodec codec) {
   if (!ApiConfig.apiEnabled || values.isEmpty) return const {};
   return codec.encode(values);
 }
@@ -74,7 +79,8 @@ final followupServerQueryProvider = Provider<Map<String, dynamic>>((ref) {
   if (!ApiConfig.apiEnabled) return const {};
   final q = ref.watch(followupSearchProvider).trim();
   return {
-    ...followupFilterParamsFor(ref.watch(followupFiltersProvider), ref.watch(followupFilterCodecProvider)),
+    ...followupFilterParamsFor(ref.watch(followupFiltersProvider),
+        ref.watch(followupFilterCodecProvider)),
     if (q.isNotEmpty) 'search': q,
   };
 });
@@ -92,7 +98,8 @@ final followupsQueriedProvider = FutureProvider<List<Followup>>((ref) async {
   if (query.isEmpty) return ref.watch(followupsProvider.future);
   // A write elsewhere refetches the base list; follow it.
   ref.watch(followupsProvider);
-  return ref.watch(followupsScopedProvider(FollowupQuery(filters: query)).future);
+  return ref
+      .watch(followupsScopedProvider(FollowupQuery(filters: query)).future);
 });
 
 /// Refetches the follow-ups list. **Use this after any write.**
@@ -198,7 +205,8 @@ String followupLaneNameFor(List<CatalogOption> lanes, String bucket) {
 
 /// Whether [o] would actually change [f] — no point rebuilding otherwise.
 bool _overrideApplies(FollowupStatusOverride? o, Followup f) =>
-    o != null && (o.key != f.status || (o.name.isNotEmpty && o.name != f.statusName));
+    o != null &&
+    (o.key != f.status || (o.name.isNotEmpty && o.name != f.statusName));
 
 /// [_followupWithStatus], exposed for tests — the rebuild is where an
 /// optimistic change silently lost fields, so it is worth pinning directly.
@@ -242,7 +250,9 @@ final followupsBaseProvider = Provider<List<Followup>>((ref) {
   final overrides = ref.watch(followupStatusOverrideProvider);
   return [
     for (final f in repo)
-      _overrideApplies(overrides[f.id], f) ? _followupWithStatus(f, overrides[f.id]!) : f,
+      _overrideApplies(overrides[f.id], f)
+          ? _followupWithStatus(f, overrides[f.id]!)
+          : f,
   ];
 });
 
@@ -262,6 +272,31 @@ final followupChipsProvider = StateProvider<Set<String>>((ref) {
   return const {};
 });
 
+/// The status group picked on the Follow-ups header (the status TYPE), or null
+/// for "All" — see [crmTaskGroupProvider].
+final followupGroupProvider = StateProvider<String?>((ref) {
+  ref.watch(apiServiceProvider); // reset per session
+  return null;
+});
+
+/// The lane names the header selection stands for — the picked chips, else
+/// every lane of the picked group.
+final followupEffectiveChipsProvider = Provider<Set<String>>(
+  (ref) => StatusGroups.effectiveKeys(
+    picked: ref.watch(followupChipsProvider),
+    group: ref.watch(followupGroupProvider),
+    statuses: ref.watch(taskStatusOptionsProvider),
+    groupOf: StatusGroups.ofTyped,
+    keyOf: (s) => s.name,
+  ),
+);
+
+/// The header's counts from `GET /crm/tasks/status-counts/?is_followup=true`.
+final followupStatusCountsProvider = FutureProvider<Map<String, int>>(
+  (ref) => crmTaskStatusCountsFor(ref, ref.watch(followupServerQueryProvider),
+      isFollowup: true),
+);
+
 /// Search query on the Follow-ups list — sent as `?search=`, like the webapp.
 final followupSearchProvider = StateProvider<String>((ref) {
   ref.watch(apiServiceProvider); // reset per session
@@ -276,7 +311,8 @@ const _fuOrder = {'overdue': 0, 'due': 1, 'done': 2};
 /// Whether a follow-up sits in the lane named [lane] — by the org's lane name,
 /// or by the folded bucket in mock mode (which has no lane names).
 bool followupInLane(Followup f, String lane) =>
-    f.statusName.trim().toLowerCase() == lane.trim().toLowerCase() || f.statusKey == lane;
+    f.statusName.trim().toLowerCase() == lane.trim().toLowerCase() ||
+    f.statusKey == lane;
 
 /// Whether [f] sits in none of the org's lanes ("Other / no status").
 bool followupInNoLane(Followup f, List<CatalogOption> lanes) =>
@@ -286,23 +322,30 @@ bool followupInNoLane(Followup f, List<CatalogOption> lanes) =>
 /// view) narrowed by the status chips, sorted overdue→due→done.
 final visibleFollowupsProvider = Provider<List<Followup>>((ref) {
   final server = ApiConfig.apiEnabled;
-  final all = server ? ref.watch(followupsBaseProvider) : ref.watch(followupsAllProvider);
+  final all = server
+      ? ref.watch(followupsBaseProvider)
+      : ref.watch(followupsAllProvider);
   final tab = ref.watch(followupTabProvider);
   final chips = ref.watch(followupChipsProvider);
+  final effective = ref.watch(followupEffectiveChipsProvider);
 
   Iterable<Followup> out = all;
   if (tab == 'overdue') out = out.where((f) => f.status == 'overdue');
   if (chips.contains(crmTaskOtherChip)) {
     final lanes = ref.watch(taskStatusOptionsProvider);
     out = out.where((f) => followupInNoLane(f, lanes));
-  } else if (chips.isNotEmpty) {
-    out = out.where((f) => chips.any((c) => followupInLane(f, c)));
+  } else if (effective.isNotEmpty) {
+    out = out.where((f) => effective.any((c) => followupInLane(f, c)));
+  } else if (ref.watch(followupGroupProvider) != null) {
+    // A group the org has no lane in: nothing can be in it.
+    out = const <Followup>[];
   }
   if (!server) {
     // Mock mode has no query engine: the drawer and search run here.
     final filters = ref.watch(followupFiltersProvider);
     final q = ref.watch(followupSearchProvider).trim().toLowerCase();
-    if (!filters.isEmpty) out = out.where((f) => followupMatchesFilters(f, filters));
+    if (!filters.isEmpty)
+      out = out.where((f) => followupMatchesFilters(f, filters));
     if (q.isNotEmpty) {
       out = out.where((f) =>
           f.title.toLowerCase().contains(q) ||
@@ -333,7 +376,8 @@ final followupSchemaRemoteDataSourceProvider =
 /// `GET /crm/tasks/schema/?view_type=mobile&is_followup=true` — the org's own
 /// card layout. Fetched once per org: it changes when an admin edits it, not
 /// when follow-ups change.
-final followupCardSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
+final followupCardSchemaFutureProvider =
+    FutureProvider<ViewSchema>((ref) async {
   final ds = ref.watch(followupSchemaRemoteDataSourceProvider);
   return ds == null ? ViewSchema.empty : ds.fetchCardSchema();
 });
@@ -343,7 +387,8 @@ final followupCardSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async 
 /// than holding the rows behind a spinner.
 final followupCardSchemaProvider = Provider<ViewSchema>(
   (ref) =>
-      ref.watch(followupCardSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+      ref.watch(followupCardSchemaFutureProvider).valueOrNull ??
+      ViewSchema.empty,
 );
 
 /// `GET /crm/tasks/schema/?view_type=detail&is_followup=true` — the org's own
@@ -352,7 +397,8 @@ final followupCardSchemaProvider = Provider<ViewSchema>(
 /// Kept separate from the Task detail schema: the two are independently
 /// configurable, and an org routinely shows fields on a follow-up that a task
 /// does not have.
-final followupDetailSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
+final followupDetailSchemaFutureProvider =
+    FutureProvider<ViewSchema>((ref) async {
   final ds = ref.watch(followupSchemaRemoteDataSourceProvider);
   return ds == null ? ViewSchema.empty : ds.fetchDetailSchema();
 });
@@ -360,7 +406,8 @@ final followupDetailSchemaFutureProvider = FutureProvider<ViewSchema>((ref) asyn
 /// Synchronous view of [followupDetailSchemaFutureProvider].
 final followupDetailSchemaProvider = Provider<ViewSchema>(
   (ref) =>
-      ref.watch(followupDetailSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+      ref.watch(followupDetailSchemaFutureProvider).valueOrNull ??
+      ViewSchema.empty,
 );
 
 /// Completes once everything the Add follow-up sheet needs has resolved: the

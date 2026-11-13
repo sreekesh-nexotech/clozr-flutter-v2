@@ -37,10 +37,18 @@ class DashSectionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(title,
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     if (subtitle != null) ...[
                       SizedBox(height: 1.h),
-                      Text(subtitle!, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      Text(subtitle!,
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w500,
+                              color: AppColors.textPlaceholder)),
                     ],
                   ],
                 ),
@@ -58,7 +66,11 @@ class DashSectionCard extends StatelessWidget {
 /// A "View more / View all …" footer link (blue) used at the bottom of list
 /// cards in the manager panels.
 class DashViewMore extends StatelessWidget {
-  const DashViewMore({super.key, required this.label, required this.icon, required this.onTap});
+  const DashViewMore(
+      {super.key,
+      required this.label,
+      required this.icon,
+      required this.onTap});
   final String label;
   final IconData icon;
   final VoidCallback onTap;
@@ -73,7 +85,11 @@ class DashViewMore extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(label, style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
+            Text(label,
+                style: AppText.custom(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: AppColors.blueBright)),
             SizedBox(width: 6.w),
             Icon(icon, size: 12.sp, color: AppColors.blueBright),
           ],
@@ -85,7 +101,8 @@ class DashViewMore extends StatelessWidget {
 
 /// A row with the prototype's `inset 0 -1px 0 #F3F4F5` bottom hairline.
 class DashHairlineRow extends StatelessWidget {
-  const DashHairlineRow({super.key, required this.child, this.onTap, this.padding});
+  const DashHairlineRow(
+      {super.key, required this.child, this.onTap, this.padding});
   final Widget child;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry? padding;
@@ -100,6 +117,7 @@ class DashHairlineRow extends StatelessWidget {
       child: child,
     );
     if (onTap == null) return row;
-    return GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: row);
+    return GestureDetector(
+        behavior: HitTestBehavior.opaque, onTap: onTap, child: row);
   }
 }

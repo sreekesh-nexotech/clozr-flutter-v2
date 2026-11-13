@@ -103,13 +103,15 @@ class _SplitRepo implements LeadsRepository {
   Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
 
   @override
-  Future<List<CatalogOption>> getAssignableUsers(String leadId) async => const [];
+  Future<List<CatalogOption>> getAssignableUsers(String leadId) async =>
+      const [];
 
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
 
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async =>
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields,
+          {String? version}) async =>
       null;
 
   @override
@@ -125,8 +127,8 @@ Future<void> _settle() async {
 void main() {
   group('the two endpoints really do carry different fields', () {
     test('a list row has no owner, email, mobile or territory', () {
-      final fromList = LeadsRemoteDataSource.mapLead(
-          Map<String, dynamic>.from(_listRow))!;
+      final fromList =
+          LeadsRemoteDataSource.mapLead(Map<String, dynamic>.from(_listRow))!;
 
       expect(fromList.owner, '', reason: 'this is what rendered as "Unknown"');
       expect(fromList.email, '');
@@ -136,8 +138,8 @@ void main() {
     });
 
     test('the record row carries all of them', () {
-      final fromRecord = LeadsRemoteDataSource.mapLead(
-          Map<String, dynamic>.from(_recordRow))!;
+      final fromRecord =
+          LeadsRemoteDataSource.mapLead(Map<String, dynamic>.from(_recordRow))!;
 
       expect(fromRecord.owner, isNotEmpty);
       expect(fromRecord.email, 'rahul.verma.47@example.com');
@@ -152,7 +154,8 @@ void main() {
     final adapter = _RecordAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
       ..httpClientAdapter = adapter;
-    final ds = LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+    final ds =
+        LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
 
     final row = await ds.fetchLeadRow('L1');
 
@@ -168,7 +171,8 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      container.listen(leadDetailProvider('L1'), (_, __) {}, fireImmediately: true);
+      container.listen(leadDetailProvider('L1'), (_, __) {},
+          fireImmediately: true);
       await _settle();
 
       expect(repo.recordCalls, 1);

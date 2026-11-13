@@ -41,7 +41,8 @@ class Paginated<T> {
       return Paginated.fromJson(body, fromItem);
     }
     if (body is List) {
-      final items = body.whereType<Map<String, dynamic>>().map(fromItem).toList();
+      final items =
+          body.whereType<Map<String, dynamic>>().map(fromItem).toList();
       return Paginated(count: items.length, results: items);
     }
     return Paginated(count: 0, results: <T>[]);

@@ -10,7 +10,8 @@ class FollowupsRepositoryImpl implements FollowupsRepository {
   final FollowupsMockDataSource _local;
 
   @override
-  Future<List<Followup>> getFollowups({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Followup>> getFollowups(
+      {Map<String, dynamic> filters = const {}}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchFollowups();
   }
@@ -50,7 +51,8 @@ class FollowupsRepositoryImpl implements FollowupsRepository {
   /// Mock mode has no schema, so the sheet never takes the schema-driven path
   /// and never calls this.
   @override
-  Future<Followup?> createFollowupFields(Map<String, dynamic> fields) async => null;
+  Future<Followup?> createFollowupFields(Map<String, dynamic> fields) async =>
+      null;
 
   @override
   Future<void> setFollowupDone(String id, bool done) async {}

@@ -9,16 +9,19 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../auth/presentation/components/permission_guard.dart';
-import '../../../crm/presentation/screens/due_date_approvals_screen.dart' show pendingDueDateCountProvider;
+import '../../../crm/presentation/screens/due_date_approvals_screen.dart'
+    show pendingDueDateCountProvider, approvalCountsProvider;
 import '../../infrastructure/data_sources/remote/ops_tasks_remote_ds.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
+import '../../../../core/widgets/status_group_bar.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../crm/application/providers/saved_filters_providers.dart';
@@ -29,6 +32,7 @@ import '../../../../core/config/api_config.dart';
 import '../../application/filters/ops_tasks_filter_spec.dart';
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/ops_task.dart';
 import '../components/ops_task_card.dart';
 import '../components/ops_widgets.dart';
@@ -71,12 +75,21 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
         return;
       }
       final due = params['due'];
-      if (due == null || due.isEmpty) return;
+      final assignee = params['assignee'];
+      if ((due == null || due.isEmpty) &&
+          (assignee == null || assignee.isEmpty)) {
+        return;
+      }
       // The dashboard counts across the whole org ("Across all projects"),
-      // so the slice it links to is everyone's tasks, not just mine.
-      ref.read(myTasksFProvider.notifier).state = false;
+      // so the slice it links to is everyone's tasks, not just mine — unless
+      // the link says `mine=1` (Operations Home counts the user's own).
+      ref.read(myTasksFProvider.notifier).state = params['mine'] == '1';
       final values = ref.read(opsTaskFiltersProvider).copy();
-      values['due'] = DateValue(chip: due);
+      if (due != null && due.isNotEmpty) values['due'] = DateValue(chip: due);
+      // The dashboard's Employee Performance row: that member's open tasks.
+      if (assignee != null && assignee.isNotEmpty) {
+        values['assignees'] = ChoiceValue(ids: {assignee});
+      }
       _applyFilters(values);
     });
   }
@@ -127,10 +140,12 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
     final tabDefs = <(String, String)>[
       ('all', 'All'),
       if (statusCatalog.isEmpty)
-        for (final k in StatusMeta$.opsTask.keys) (k, StatusMeta$.opsTask[k]!.label)
+        for (final k in StatusMeta$.opsTask.keys)
+          (k, StatusMeta$.opsTask[k]!.label)
       else
         for (final s in statusCatalog) (s.id, s.name),
-      if (otherCount > 0) (OpsTasksRemoteDataSource.otherTab, 'Other / no status'),
+      if (otherCount > 0)
+        (OpsTasksRemoteDataSource.otherTab, 'Other / no status'),
       (OpsTasksRemoteDataSource.overdueTab, 'Overdue'),
     ];
 
@@ -146,7 +161,8 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
               title: 'Tasks',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(otSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () =>
+                  ref.read(otSearchOpenProvider.notifier).state = !searchOpen,
               onFilter: _openFilters,
             ),
             if (searchOpen) ...[
@@ -163,19 +179,28 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
               ),
             ],
             SizedBox(height: 10.h),
-            SizedBox(
-              height: 40.h,
-              child: TabChipRow(
-                children: [
-                  for (final (k, label) in tabDefs)
-                    TabChip(
-                      label: '$label (${counts[k] ?? otTabCount(base, k)})',
-                      active: k == 'all' ? tabs.isEmpty : tabs.contains(k),
-                      onTap: () => ref.read(otTabsProvider.notifier).state = toggleOpsTaskTab(tabs, k),
-                    ),
-                ],
+            // The org's statuses grouped open / completed / cancelled (Oct 2026
+            // header); the flat per-status row only while the catalog is
+            // unavailable.
+            if (statusCatalog.isNotEmpty)
+              _groupBar(statusCatalog, tabs,
+                  counts: (k) => counts[k] ?? otTabCount(base, k),
+                  otherCount: otherCount)
+            else
+              SizedBox(
+                height: 40.h,
+                child: TabChipRow(
+                  children: [
+                    for (final (k, label) in tabDefs)
+                      TabChip(
+                        label: '$label (${counts[k] ?? otTabCount(base, k)})',
+                        active: k == 'all' ? tabs.isEmpty : tabs.contains(k),
+                        onTap: () => ref.read(otTabsProvider.notifier).state =
+                            toggleOpsTaskTab(tabs, k),
+                      ),
+                  ],
+                ),
               ),
-            ),
             SizedBox(height: 12.h),
             _savedViewRow(mine, filterCount),
             _approvalsLink(),
@@ -211,8 +236,11 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
                           task: t,
                           projectName: opsTaskProjectName(t, projects),
                           unresolvedCount: unresolvedDepCount(t, all),
-                          onTap: () => context.push('${Routes.opsTaskDetail}?id=${t.id}'),
-                          onMore: _canUpdate(t) || _canDelete(t) ? () => _rowMenu(t) : null,
+                          onTap: () => context
+                              .push('${Routes.opsTaskDetail}?id=${t.id}'),
+                          onMore: _canUpdate(t) || _canDelete(t)
+                              ? () => _rowMenu(t)
+                              : null,
                         );
                       },
                     );
@@ -232,7 +260,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
     )));
     ref.invalidate(opsTaskStatusCatalogProvider);
     ref.invalidate(opsTaskStatusCountsProvider);
-    ref.invalidate(pendingDueDateCountProvider);
+    ref.invalidate(approvalCountsProvider);
     await settle([
       ref.read(opsTasksFilteredProvider.future),
       ref.read(opsTaskStatusCatalogProvider.future),
@@ -253,7 +281,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
         mine: ref.read(myTasksFProvider),
         search: ref.read(otSearchDebouncedProvider),
       ),
-      ref.read(otTabsProvider),
+      ref.read(otEffectiveTabsProvider),
       ref.read(opsTaskStatusOptionsProvider),
     );
     ref.invalidate(opsTasksScopedProvider(OpsTaskListQuery(filters: params)));
@@ -279,7 +307,8 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
         search: ref.read(otSearchDebouncedProvider),
       );
       try {
-        base = await ref.read(opsTasksScopedProvider(OpsTaskListQuery(filters: scope)).future);
+        base = await ref.read(
+            opsTasksScopedProvider(OpsTaskListQuery(filters: scope)).future);
       } on Object {
         // Keep the list on screen.
       }
@@ -291,9 +320,14 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((t) => opsTaskMatchesFilters(t, draft)).length,
+      previewCount: (draft) =>
+          base.where((t) => opsTaskMatchesFilters(t, draft)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(opsTaskSavedFiltersProvider).filters.map((f) => f.name).toSet(),
+      existingViewNames: ref
+          .read(opsTaskSavedFiltersProvider)
+          .filters
+          .map((f) => f.name)
+          .toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;
@@ -319,8 +353,9 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
   /// unknown filter key) come back as user-safe text and are shown as-is.
   Future<void> _saveView(String name, FilterValues draft) async {
     final definition = ref.read(opsTaskFilterCodecProvider).encode(draft);
-    final error =
-        await ref.read(opsTaskSavedFiltersProvider.notifier).save(name, definition);
+    final error = await ref
+        .read(opsTaskSavedFiltersProvider.notifier)
+        .save(name, definition);
     if (!mounted) return;
     ref.read(toastProvider.notifier).show(error ?? 'View "$name" saved');
   }
@@ -345,11 +380,15 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
           SizedBox(width: 8.w),
           Expanded(
             child: chips.SavedChipRow(
-              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name)],
+              views: [
+                for (final f in saved.filters) chips.SavedView(f.id, f.name)
+              ],
               active: {if (saved.activeId != null) saved.activeId!},
               // Webapp: Clear shows while anything narrows the list — facets,
               // a view, My Tasks or a status tab.
-              showClearAlways: filterCount > 0 || mine || ref.watch(otTabsProvider).isNotEmpty,
+              showClearAlways: filterCount > 0 ||
+                  mine ||
+                  ref.watch(otTabsProvider).isNotEmpty,
               onToggle: _toggleView,
               onClear: _clearFilters,
               onRemove: _removeView,
@@ -375,7 +414,9 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.filters.where((f) => f.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     // A filter the server marked invalid fails inert by contract — never run
@@ -400,12 +441,87 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
+  /// The group row: `All`, then Open / Completed / Cancelled, "Other / no
+  /// status" and the date-rule Overdue; a picked group opens a second row with
+  /// its own statuses, which narrow it further.
+  Widget _groupBar(
+    List<CatalogOption> statuses,
+    Set<String> tabs, {
+    required int Function(String) counts,
+    required int otherCount,
+  }) {
+    final open = StatusGroups.displayedGroup(
+      picked: tabs,
+      group: ref.watch(otGroupProvider),
+      statuses: statuses,
+      groupOf: StatusGroups.ofProjectTask,
+      keyOf: (s) => s.id,
+    );
+    final server = ref.watch(opsTaskStatusCountsProvider).valueOrNull ??
+        const <String, int>{};
+    int groupCount(String code) =>
+        server[StatusGroups.countKey(code)] ??
+        [
+          for (final s in statuses)
+            if (StatusGroups.ofProjectTask(s) == code) counts(s.id)
+        ].fold(0, (a, b) => a + b);
+    void setTabs(Set<String> next, {String? group}) {
+      ref.read(otGroupProvider.notifier).state = group;
+      ref.read(otTabsProvider.notifier).state = next;
+    }
+
+    const other = OpsTasksRemoteDataSource.otherTab;
+    const overdue = OpsTasksRemoteDataSource.overdueTab;
+    return StatusGroupBar(
+      allCount: counts('all'),
+      allActive: tabs.isEmpty && open == null,
+      onAll: () => setTabs(const {}),
+      groups: [
+        for (final g in StatusGroups.projectTask)
+          StatusGroupChip(
+              code: g.code, label: g.label, count: groupCount(g.code)),
+      ],
+      activeGroup: open,
+      onGroup: (code) {
+        // A group the org has no status in cannot be listed.
+        if (!statuses.any((s) => StatusGroups.ofProjectTask(s) == code)) return;
+        setTabs(const {}, group: code == open ? null : code);
+      },
+      statuses: [
+        for (final s in statuses)
+          if (open != null && StatusGroups.ofProjectTask(s) == open)
+            StatusGroupStatusChip(
+              key: s.id,
+              label: s.name,
+              count: counts(s.id),
+              active: tabs.contains(s.id),
+              color: s.color,
+            ),
+      ],
+      onStatus: (id) => setTabs(toggleOpsTaskTab(tabs, id), group: open),
+      trailing: [
+        if (otherCount > 0 || tabs.contains(other))
+          TabChip(
+            label: 'Other / no status ($otherCount)',
+            active: tabs.contains(other),
+            onTap: () => setTabs(toggleOpsTaskTab(tabs, other)),
+          ),
+        TabChip(
+          label: 'Overdue (${counts(overdue)})',
+          active: tabs.contains(overdue),
+          onTap: () => setTabs(toggleOpsTaskTab(tabs, overdue)),
+        ),
+      ],
+    );
+  }
+
   /// Webapp `clearAllFilters`: the facets, the applied view, My Tasks, the
   /// status tabs and the search all go.
   void _clearFilters() {
     ref.read(opsTaskSavedFiltersProvider.notifier).deactivate();
     ref.read(myTasksFProvider.notifier).state = false;
     ref.read(otTabsProvider.notifier).state = const {};
+    ref.read(otGroupProvider.notifier).state = null;
     _searchCtrl.clear();
     ref.read(otSearchProvider.notifier).state = '';
     _applyFilters(FilterValues());
@@ -416,7 +532,8 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
   /// the applied one only drops the chip; its filters stay applied.
   Future<void> _removeView(String id) async {
     final wasActive = ref.read(opsTaskSavedFiltersProvider).activeId == id;
-    final error = await ref.read(opsTaskSavedFiltersProvider.notifier).remove(id);
+    final error =
+        await ref.read(opsTaskSavedFiltersProvider.notifier).remove(id);
     if (!mounted) return;
     if (error != null) {
       ref.read(toastProvider.notifier).showError(error);
@@ -431,7 +548,7 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
   Widget _emptyState(bool mine, int filterCount) {
     final narrowing = filterCount > 0 ||
         ref.read(opsTaskSavedFiltersProvider).activeId != null ||
-        ref.read(otTabsProvider).isNotEmpty ||
+        ref.read(otEffectiveTabsProvider).isNotEmpty ||
         ref.read(otSearchProvider).trim().isNotEmpty;
     if (narrowing) {
       return EmptyState(
@@ -460,19 +577,20 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
   /// the changes waiting on this user.
   Widget _approvalsLink() {
     if (!ApiConfig.apiEnabled) return const SizedBox.shrink();
-    final n = ref.watch(pendingDueDateCountProvider).valueOrNull ?? 0;
+    final n = ref.watch(pendingDueDateCountProvider);
     return Align(
       alignment: Alignment.centerLeft,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () async {
           await context.push(Routes.dueDateApprovals);
-          if (mounted) ref.invalidate(pendingDueDateCountProvider);
+          if (mounted) ref.invalidate(approvalCountsProvider);
         },
         child: Padding(
           padding: EdgeInsets.only(top: 10.h),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(PhosphorIconsRegular.sealCheck, size: 15.sp, color: AppColors.navy),
+            Icon(PhosphorIconsRegular.sealCheck,
+                size: 15.sp, color: AppColors.navy),
             SizedBox(width: 6.w),
             Text(n > 0 ? 'Due date approvals ($n)' : 'Due date approvals',
                 style: AppText.captionStrong(color: AppColors.navy)),
@@ -484,9 +602,11 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
 
   // ── Row ⋯ menu (webapp `RowMenu`) ──
   bool _canUpdate(OpsTask t) =>
-      t.canUpdate != false && hasPermission(ref, 'project_task', PermVerb.update);
+      t.canUpdate != false &&
+      hasPermission(ref, 'project_task', PermVerb.update);
   bool _canDelete(OpsTask t) =>
-      t.canDelete != false && hasPermission(ref, 'project_task', PermVerb.delete);
+      t.canDelete != false &&
+      hasPermission(ref, 'project_task', PermVerb.delete);
 
   Future<void> _rowMenu(OpsTask t) async {
     final pick = await showModalBottomSheet<String>(
@@ -494,7 +614,8 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
       // Above the shell's bottom nav, which otherwise covers the last row.
       useRootNavigator: true,
       backgroundColor: AppColors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20.r))),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20.r))),
       builder: (ctx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           SizedBox(height: 8.h),
@@ -512,7 +633,8 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
           ],
           if (_canDelete(t))
             ListTile(
-              leading: Icon(PhosphorIconsRegular.trash, size: 18.sp, color: AppColors.error),
+              leading: Icon(PhosphorIconsRegular.trash,
+                  size: 18.sp, color: AppColors.error),
               title: Text('Delete', style: TextStyle(color: AppColors.error)),
               onTap: () => Navigator.of(ctx).pop('delete'),
             ),
@@ -528,17 +650,22 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
         if (await _rowWrite(() => ref
             .read(opsTasksRepositoryProvider)
             .updateOpsTask(t.id, {'is_milestone': !t.milestone}))) {
-          ref.read(toastProvider.notifier).show(t.milestone ? 'Milestone cleared' : 'Marked as milestone');
+          ref
+              .read(toastProvider.notifier)
+              .show(t.milestone ? 'Milestone cleared' : 'Marked as milestone');
         }
       case 'delete':
         final ok = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Delete this task?'),
-            content: Text('This permanently removes "${t.subject}". Remove its dependencies and '
+            content: Text(
+                'This permanently removes "${t.subject}". Remove its dependencies and '
                 'subtasks first if it\'s blocking others.'),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel')),
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(true),
                 child: Text('Delete', style: TextStyle(color: AppColors.error)),
@@ -547,7 +674,8 @@ class _OpsTasksScreenState extends ConsumerState<OpsTasksScreen> {
           ),
         );
         if (ok != true || !mounted) return;
-        if (await _rowWrite(() => ref.read(opsTasksRepositoryProvider).deleteOpsTask(t.id))) {
+        if (await _rowWrite(
+            () => ref.read(opsTasksRepositoryProvider).deleteOpsTask(t.id))) {
           ref.read(toastProvider.notifier).show('Task deleted');
         }
     }

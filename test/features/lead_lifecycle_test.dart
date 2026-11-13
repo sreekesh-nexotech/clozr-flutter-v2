@@ -22,32 +22,52 @@ void main() {
     });
 
     test('pending approval only counts when the org requires approval', () {
-      final row = {'pending_conversion': {'approval_id': 'a1'}};
+      final row = {
+        'pending_conversion': {'approval_id': 'a1'}
+      };
       expect(LeadConversion.fromRow(row, isWon: true).pendingApproval, isFalse);
       expect(
-        LeadConversion.fromRow({...row, 'conversion_requires_approval': true}, isWon: true).pendingApproval,
+        LeadConversion.fromRow({...row, 'conversion_requires_approval': true},
+                isWon: true)
+            .pendingApproval,
         isTrue,
       );
     });
 
     test('quote mode waits for an accepted quote', () {
       final c = LeadConversion.fromRow(
-          {'conversion_mode': 'quote', 'has_accepted_quote': false}, isWon: true);
+          {'conversion_mode': 'quote', 'has_accepted_quote': false},
+          isWon: true);
       expect(c.waitingForQuote, isTrue);
     });
 
     test('lost reason text follows the webapp', () {
-      expect(LeadConversion.fromRow({'lost_reason_name': 'Price', 'lost_reason_note': 'Too high'}, isWon: false)
-          .lostReasonText, 'Price — Too high');
-      expect(LeadConversion.fromRow({}, isWon: false).lostReasonText, 'No reason recorded');
+      expect(
+          LeadConversion.fromRow(
+                  {'lost_reason_name': 'Price', 'lost_reason_note': 'Too high'},
+                  isWon: false)
+              .lostReasonText,
+          'Price — Too high');
+      expect(LeadConversion.fromRow({}, isWon: false).lostReasonText,
+          'No reason recorded');
     });
   });
 
   group('LostChoice body', () {
-    test('sends the reason, a trimmed note and the credit flag only when set', () {
+    test('sends the reason, a trimmed note and the credit flag only when set',
+        () {
       expect(const LostChoice(reasonId: 'r1').toBody(), {'lost_reason': 'r1'});
-      expect(const LostChoice(reasonId: 'r1', note: '  lost to X ', creditOpenInvoices: true).toBody(),
-          {'lost_reason': 'r1', 'lost_reason_note': 'lost to X', 'credit_open_invoices': true});
+      expect(
+          const LostChoice(
+                  reasonId: 'r1',
+                  note: '  lost to X ',
+                  creditOpenInvoices: true)
+              .toBody(),
+          {
+            'lost_reason': 'r1',
+            'lost_reason_note': 'lost to X',
+            'credit_open_invoices': true
+          });
     });
   });
 
@@ -60,7 +80,12 @@ void main() {
       extra: {
         'cause': {
           'candidates': [
-            {'customer_id': 'c1', 'reference': 'CU-1', 'name': 'Elsa Mary', 'match_on': ['name', 'email']},
+            {
+              'customer_id': 'c1',
+              'reference': 'CU-1',
+              'name': 'Elsa Mary',
+              'match_on': ['name', 'email']
+            },
           ],
           'hidden_count': 1,
           'suggested_name': 'Elsa Mary',

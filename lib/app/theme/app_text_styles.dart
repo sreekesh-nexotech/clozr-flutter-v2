@@ -46,8 +46,11 @@ class AppText {
   static TextStyle h1({Color color = AppColors.textPrimary}) =>
       _s(size: 22, weight: FontWeight.w800, color: color, letterSpacing: -0.5);
 
-  static TextStyle logo() =>
-      _s(size: 19, weight: FontWeight.w800, color: AppColors.ink, letterSpacing: -0.5);
+  static TextStyle logo() => _s(
+      size: 19,
+      weight: FontWeight.w800,
+      color: AppColors.ink,
+      letterSpacing: -0.5);
 
   static TextStyle cardTitle({Color color = AppColors.textPrimary}) =>
       _s(size: 15, weight: FontWeight.w700, color: color);

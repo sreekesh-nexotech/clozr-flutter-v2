@@ -51,7 +51,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     super.initState();
     // A query left behind by a collapsed box would filter the list with
     // nothing on screen saying so; only keep it while the box is open.
-    if (!ref.read(quoteSearchOpenProvider) && ref.read(quoteSearchProvider).isNotEmpty) {
+    if (!ref.read(quoteSearchOpenProvider) &&
+        ref.read(quoteSearchProvider).isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(quoteSearchProvider.notifier).state = '';
       });
@@ -72,11 +73,13 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
   /// picked a built-in key, swapping "Draft" for the org's own status. Matching
   /// the folded key as well keeps that chip highlighted through the swap
   /// instead of leaving the row with nothing selected.
-  bool _tabActive(Set<String> chips, String chipKey, List<CatalogOption> statuses) {
+  bool _tabActive(
+      Set<String> chips, String chipKey, List<CatalogOption> statuses) {
     if (chipKey == 'all') return chips.isEmpty;
     if (chips.contains(chipKey)) return true;
     for (final s in statuses) {
-      if (s.name == chipKey && chips.contains(quoteStatusKey(name: s.name))) return true;
+      if (s.name == chipKey && chips.contains(quoteStatusKey(name: s.name)))
+        return true;
     }
     return false;
   }
@@ -86,7 +89,10 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     // Contextual add: the bottom-nav `+` opens the Add quote form on this screen.
     registerAdd(
       ref,
-      AddAction(label: 'Add quote', module: 'quotation', run: (ctx) => ctx.push(Routes.addQuote)),
+      AddAction(
+          label: 'Add quote',
+          module: 'quotation',
+          run: (ctx) => ctx.push(Routes.addQuote)),
     );
 
     final async = ref.watch(quotesProvider);
@@ -94,6 +100,16 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     // which the card reads as "use the built-in layout".
     final cardSchema = ref.watch(quoteListSchemaProvider);
     final all = async.valueOrNull ?? const [];
+    // The status chips count within the drawer filters (a dashboard period
+    // window included), so "Accepted (n)" is what the chip would show.
+    final chipFilters = ref.watch(quoteFiltersProvider);
+    final chipLookup = ref.watch(crmPartyLookupProvider);
+    final chipBase = chipFilters.isEmpty
+        ? all
+        : [
+            for (final x in all)
+              if (quoteMatchesFilters(x, chipFilters, chipLookup)) x
+          ];
     final tab = ref.watch(quoteTabProvider);
     final searchOpen = ref.watch(quoteSearchOpenProvider);
     final query = ref.watch(quoteSearchProvider);
@@ -114,7 +130,13 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     final tabs = <(String, String)>[
       ('all', 'All'),
       if (statuses.isEmpty)
-        for (final k in const ['draft', 'sent', 'accepted', 'rejected', 'expired'])
+        for (final k in const [
+          'draft',
+          'sent',
+          'accepted',
+          'rejected',
+          'expired'
+        ])
           (k, StatusMeta$.quote[k]!.label)
       else
         for (final s in statuses) (s.name, s.name),
@@ -149,7 +171,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search quotes…',
-                onChanged: (v) => ref.read(quoteSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(quoteSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(quoteSearchProvider.notifier).state = '';
@@ -164,7 +187,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                 children: [
                   for (final (k, lbl) in tabs)
                     TabChip(
-                      label: '$lbl (${quoteTabCount(all, k, tabKeys: tabKeys)})',
+                      label:
+                          '$lbl (${quoteTabCount(chipBase, k, tabKeys: tabKeys)})',
                       active: _tabActive(tab, k, statuses),
                       // Multi-select like the webapp: chips add up, All clears.
                       onTap: () => ref.read(quoteTabProvider.notifier).update(
@@ -194,7 +218,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                         ? EmptyState(
                             icon: PhosphorIconsRegular.funnel,
                             title: 'No quotes match your filters',
-                            body: 'Try widening your search or clearing a filter to see more.',
+                            body:
+                                'Try widening your search or clearing a filter to see more.',
                             ctaLabel: 'Clear filters',
                             ctaIcon: PhosphorIconsBold.xCircle,
                             onCta: _resetListView,
@@ -202,7 +227,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                         : EmptyState(
                             icon: PhosphorIconsRegular.fileText,
                             title: 'No quotes yet',
-                            body: 'Quotes let you send priced proposals to your leads and customers. Create your first one to get started.',
+                            body:
+                                'Quotes let you send priced proposals to your leads and customers. Create your first one to get started.',
                             ctaLabel: 'Add quote',
                             ctaIcon: PhosphorIconsBold.plus,
                             onCta: () => context.push(Routes.addQuote),
@@ -210,22 +236,28 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                   ],
                 );
               }
+              // The options of one alternative-options quote sit together.
+              final rows = groupedQuoteOrder(visible);
               return ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                itemCount: visible.length,
+                itemCount: rows.length,
                 separatorBuilder: (_, __) => SizedBox(height: 10.h),
                 itemBuilder: (context, i) {
-                  final quote = visible[i];
+                  final quote = rows[i];
                   // Long-press offers the webapp row's actions (View, Delete).
-                  return GestureDetector(
-                    onLongPress: () => _rowActions(quote),
-                    child: QuoteCard(
-                      quote: quote,
-                      schema: cardSchema,
-                      onTap: () => context.push('${Routes.quoteDetail}?id=${quote.id}'),
-                    ),
-                  );
+                  return Padding(
+                      padding: EdgeInsets.only(
+                          left: isFollowingOption(rows, i) ? 16.w : 0),
+                      child: GestureDetector(
+                        onLongPress: () => _rowActions(quote),
+                        child: QuoteCard(
+                          quote: quote,
+                          schema: cardSchema,
+                          onTap: () => context
+                              .push('${Routes.quoteDetail}?id=${quote.id}'),
+                        ),
+                      ));
                 },
               );
             },
@@ -261,10 +293,12 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
       spec: spec,
       initial: current,
       previewCount: (draft) => base
-          .where((q) => quoteMatchesFilters(q, draft, ref.read(crmPartyLookupProvider)))
+          .where((q) =>
+              quoteMatchesFilters(q, draft, ref.read(crmPartyLookupProvider)))
           .length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(quoteSavedViewsProvider).views.map((v) => v.name).toSet(),
+      existingViewNames:
+          ref.read(quoteSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(quoteSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');
@@ -285,7 +319,8 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
   void _removeView(String id) {
     final wasActive = ref.read(quoteSavedViewsProvider).activeId == id;
     ref.read(quoteSavedViewsProvider.notifier).remove(id);
-    if (wasActive) ref.read(quoteFiltersProvider.notifier).state = FilterValues();
+    if (wasActive)
+      ref.read(quoteFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('View removed');
   }
 
@@ -315,7 +350,9 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.views.where((v) => v.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     ref.read(quoteSavedViewsProvider.notifier).apply(id);
@@ -347,8 +384,19 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
   // ── Toolbar: discount approvals, win / loss report, Grand total sort ──
   Widget _toolbarActions() {
     final sort = ref.watch(quoteSortProvider);
-    final pending = ref.watch(quoteDiscountApprovalsBadgeProvider).valueOrNull ?? 0;
+    final pending =
+        ref.watch(quoteDiscountApprovalsBadgeProvider).valueOrNull ?? 0;
     return Row(mainAxisSize: MainAxisSize.min, children: [
+      // The webapp's Refresh icon button (pull-to-refresh does the same).
+      _toolbarIcon(
+        icon: PhosphorIconsRegular.arrowClockwise,
+        tip: 'Refresh',
+        onTap: () async {
+          await _refresh();
+          if (mounted)
+            ref.read(toastProvider.notifier).show('Quotes refreshed');
+        },
+      ),
       _toolbarIcon(
         icon: sort.isEmpty
             ? PhosphorIconsRegular.arrowsDownUp
@@ -361,10 +409,10 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
           final next = nextQuoteSort(ref.read(quoteSortProvider));
           ref.read(quoteSortProvider.notifier).state = next;
           ref.read(toastProvider.notifier).show(switch (next) {
-            '-grand_total' => 'Sorted by Grand total (high → low)',
-            'grand_total' => 'Sorted by Grand total (low → high)',
-            _ => 'Sort cleared',
-          });
+                '-grand_total' => 'Sorted by Grand total (high → low)',
+                'grand_total' => 'Sorted by Grand total (low → high)',
+                _ => 'Sort cleared',
+              });
         },
       ),
       _toolbarIcon(
@@ -416,14 +464,17 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
                   top: 3.h,
                   right: 1.w,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
                     decoration: BoxDecoration(
                       color: AppColors.error,
                       borderRadius: BorderRadius.circular(8.r),
                     ),
                     child: Text(badge,
                         style: TextStyle(
-                            color: Colors.white, fontSize: 9.sp, fontWeight: FontWeight.w700)),
+                            color: Colors.white,
+                            fontSize: 9.sp,
+                            fontWeight: FontWeight.w700)),
                   ),
                 ),
             ],
@@ -447,47 +498,62 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
           icon: PhosphorIconsRegular.trash,
           label: 'Delete',
           destructive: true,
-          // An accepted / paid quote has a plan the server will not delete
-          // (409 QUOTE_HAS_PAYMENTS) — shown disabled with the reason, as on web.
-          enabled: !quote.isDeleteBlocked,
-          sublabel: quote.isDeleteBlocked
-              ? "Accepted or paid quotes can't be deleted — cancel or credit-note in accounting first"
-              : null,
+          // An unpaid accepted quote is deleted with its plan; the server refuses
+          // one with a paid record / receipt / invoice (409 QUOTE_HAS_PAYMENTS) and
+          // its reason is shown.
           onTap: () => _confirmDelete(quote),
         ),
     ]);
   }
 
   Future<void> _confirmDelete(Quote quote) async {
-    final ok = await confirmDeleteQuote(context, quote.id);
+    final grouped = quote.optionGroupId.isNotEmpty;
+    final ok = await confirmDeleteQuote(context, quote.id, grouped: grouped);
     if (!ok || !mounted) return;
     try {
-      await ref.read(apiServiceProvider).delete(ApiEndpoints.quotation(quote.uuid));
+      await ref
+          .read(apiServiceProvider)
+          // An option of an alternative-options quote goes with its group (the
+          // single-quote API refuses it with QUOTE_IN_OPTION_GROUP).
+          .delete(quote.optionGroupId.isNotEmpty
+              ? '/quotations/option-groups/${quote.optionGroupId}/'
+              : ApiEndpoints.quotation(quote.uuid));
     } on AppError catch (e) {
       if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
       return;
     }
     if (!mounted) return;
-    ref.read(toastProvider.notifier).show('${quote.id} deleted');
+    ref.read(toastProvider.notifier).show(
+        grouped ? 'Every option of the quote deleted' : '${quote.id} deleted');
     ref.invalidate(quotesProvider);
   }
 }
 
 /// The webapp's "Delete this quote?" confirm — shared by the list row and the
-/// detail screen.
-Future<bool> confirmDeleteQuote(BuildContext context, String number) async {
+/// detail screen. A quote that is one option of an alternative-options quote is
+/// deleted with its whole group, and the dialog says so (webapp wording).
+Future<bool> confirmDeleteQuote(BuildContext context, String number,
+    {bool grouped = false}) async {
+  final name = number.isEmpty ? 'This quote' : number;
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Delete this quote?'),
-      content: Text(
-          "${number.isEmpty ? 'This quote' : number} and its unpaid payment plan will be deleted. "
-          "A quote whose plan has a recorded payment, a receipt or an invoice can't be deleted."),
+      title: Text(grouped
+          ? 'Delete every option of this quote?'
+          : 'Delete this quote?'),
+      content: Text(grouped
+          ? "$name is one option of an alternative-options quote; every option (and its unpaid payment plan) is deleted together. "
+              "A quote whose plan has a recorded payment, a receipt or an invoice can't be deleted."
+          : "$name and its unpaid payment plan will be deleted. "
+              "A quote whose plan has a recorded payment, a receipt or an invoice can't be deleted."),
       actions: [
-        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel')),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: Text('Delete quote', style: TextStyle(color: AppColors.error)),
+          child: Text(grouped ? 'Delete every option' : 'Delete quote',
+              style: TextStyle(color: AppColors.error)),
         ),
       ],
     ),

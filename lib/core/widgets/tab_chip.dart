@@ -30,7 +30,9 @@ class TabChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 40.h,
-        padding: EdgeInsets.only(left: dotColor != null ? 13.w : 17.w, right: dotColor != null ? 15.w : 17.w),
+        padding: EdgeInsets.only(
+            left: dotColor != null ? 13.w : 17.w,
+            right: dotColor != null ? 15.w : 17.w),
         decoration: BoxDecoration(
           color: active ? AppColors.blueSubtle : AppColors.white,
           borderRadius: BorderRadius.circular(13.r),
@@ -43,14 +45,17 @@ class TabChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 14.sp, color: active ? AppColors.navy : AppColors.textLabelAlt),
+              Icon(icon,
+                  size: 14.sp,
+                  color: active ? AppColors.navy : AppColors.textLabelAlt),
               SizedBox(width: 6.w),
             ],
             if (dotColor != null) ...[
               Container(
                 width: 9.w,
                 height: 9.w,
-                decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                decoration:
+                    BoxDecoration(color: dotColor, shape: BoxShape.circle),
               ),
               SizedBox(width: 7.w),
             ],

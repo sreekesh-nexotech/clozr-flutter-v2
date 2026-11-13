@@ -23,7 +23,12 @@ import 'tasks_filter_spec.dart';
 /// editable and rows join on the type *name* exactly, so a hard-coded list
 /// silently matches nothing the moment an org renames or adds one.
 const List<String> kBuiltinFollowupTypes = [
-  'Call', 'Email', 'Meeting', 'WhatsApp', 'Site visit', 'Payment',
+  'Call',
+  'Email',
+  'Meeting',
+  'WhatsApp',
+  'Site visit',
+  'Payment',
 ];
 
 /// Build the Follow-ups drawer spec.
@@ -42,7 +47,9 @@ FilterSpec buildFollowupsFilterSpec({
     buildTasksFilterSpec(
       title: 'Filter follow-ups by:',
       roster: roster,
-      typeCatalog: [for (final t in typeCatalog) CatalogOption(id: t.name, name: t.name)],
+      typeCatalog: [
+        for (final t in typeCatalog) CatalogOption(id: t.name, name: t.name)
+      ],
       builtinTypes: kBuiltinFollowupTypes,
       priorityCatalog: priorityCatalog,
       statusCatalog: statusCatalog,
@@ -55,7 +62,8 @@ FilterSpec buildFollowupsFilterSpec({
 bool followupMatchesFilters(Followup f, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), [f.owner])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('types'), [f.kind])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('priorities'), [priorityKey(f.priority)])) return false;
+  if (!FilterMatch.matchAnyOf(
+      v.choice('priorities'), [priorityKey(f.priority)])) return false;
   if (!FilterMatch.matchDate(v.date('due'), parseCrmDate(f.due))) return false;
   return true;
 }
@@ -69,17 +77,22 @@ final followupsFilterSpecProvider = Provider<FilterSpec>(
     typeCatalog: ref.watch(followupTypeOptionsProvider),
     priorityCatalog: ref.watch(taskPriorityOptionsProvider),
     statusCatalog: ref.watch(taskStatusOptionsProvider),
-    teamCatalog: ref.watch(assignableTeamsForModuleProvider('followup')).valueOrNull ?? const [],
-    assignableUsers: ref.watch(assignableUsersForModuleProvider('followup')).valueOrNull ?? const [],
+    teamCatalog:
+        ref.watch(assignableTeamsForModuleProvider('followup')).valueOrNull ??
+            const [],
+    assignableUsers:
+        ref.watch(assignableUsersForModuleProvider('followup')).valueOrNull ??
+            const [],
   ),
 );
 
 /// The drawer as `/crm/tasks/` params — the Tasks codec, since the params and
 /// a saved view's `filter_definition` are the same on both lists.
-final followupFilterCodecProvider = Provider<TaskFilterCodec>((ref) => TaskFilterCodec(
-      statuses: ref.watch(taskStatusOptionsProvider),
-      priorities: ref.watch(taskPriorityOptionsProvider),
-    ));
+final followupFilterCodecProvider =
+    Provider<TaskFilterCodec>((ref) => TaskFilterCodec(
+          statuses: ref.watch(taskStatusOptionsProvider),
+          priorities: ref.watch(taskPriorityOptionsProvider),
+        ));
 
 /// Applied drawer filters for the Follow-ups list (the source of the badge).
 final followupFiltersProvider = StateProvider<FilterValues>((ref) {
@@ -92,6 +105,8 @@ final followupFiltersProvider = StateProvider<FilterValues>((ref) {
 /// the **same** set the Tasks list shows (webapp: follow-ups have no module
 /// of their own). Its own controller so applying a view here does not apply
 /// it on Tasks.
-final followupSavedFiltersProvider = StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
-  (ref) => SavedFiltersController(module: 'task', remote: ref.watch(savedFiltersRemoteProvider)),
+final followupSavedFiltersProvider =
+    StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
+  (ref) => SavedFiltersController(
+      module: 'task', remote: ref.watch(savedFiltersRemoteProvider)),
 );

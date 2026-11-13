@@ -8,13 +8,15 @@ import '../../infrastructure/data_sources/remote/billing_remote_ds.dart';
 
 /// The billing reads. Null data source in mock mode, where the screen keeps the
 /// prototype's static cards — there is nothing to read from.
-final billingRemoteDataSourceProvider = Provider<BillingRemoteDataSource?>((ref) {
+final billingRemoteDataSourceProvider =
+    Provider<BillingRemoteDataSource?>((ref) {
   if (!ApiConfig.apiEnabled) return null;
   return BillingRemoteDataSource(ref.watch(apiServiceProvider));
 });
 
 /// `GET /billing/invoices/` — the billing history.
-final billingInvoicesProvider = FutureProvider<List<BillingInvoice>>((ref) async {
+final billingInvoicesProvider =
+    FutureProvider<List<BillingInvoice>>((ref) async {
   final ds = ref.watch(billingRemoteDataSourceProvider);
   if (ds == null) return const [];
   return ds.fetchInvoices();
@@ -29,7 +31,8 @@ final billingStorageProvider = FutureProvider<StorageUsage?>((ref) async {
 
 /// `GET /billing/subscriptions/` — the plan header. Null when unreadable or
 /// absent, and the screen leaves the header out rather than inventing one.
-final billingSubscriptionProvider = FutureProvider<BillingSubscription?>((ref) async {
+final billingSubscriptionProvider =
+    FutureProvider<BillingSubscription?>((ref) async {
   final ds = ref.watch(billingRemoteDataSourceProvider);
   if (ds == null) return null;
   try {

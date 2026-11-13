@@ -26,7 +26,8 @@ enum IssueFollowUp { editDraft, voidDraft }
 
 /// Opens the "Preview & issue" sheet (plan §4.5). Resolves to the issued
 /// document, an [IssueFollowUp] the caller should run, or null.
-Future<Object?> showIssueSheet(BuildContext context, AccDocument doc) => showClozrSheet<Object>(
+Future<Object?> showIssueSheet(BuildContext context, AccDocument doc) =>
+    showClozrSheet<Object>(
       context: context,
       builder: (_) => _IssueSheet(doc: doc),
     );
@@ -72,7 +73,9 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
       _previewError = null;
     });
     try {
-      final p = await ref.read(accountingRepositoryProvider).previewTax(widget.doc.id);
+      final p = await ref
+          .read(accountingRepositoryProvider)
+          .previewTax(widget.doc.id);
       if (mounted) setState(() => _preview = p);
     } on AppError catch (e) {
       if (mounted) setState(() => _previewError = e);
@@ -81,7 +84,8 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
 
   List<Map<String, String>> get _adjustments => [
         for (final e in _adjust.entries)
-          if (moneyInput(e.value.text) != null && !moneyIsZero(moneyInput(e.value.text)))
+          if (moneyInput(e.value.text) != null &&
+              !moneyIsZero(moneyInput(e.value.text)))
             {'advance_id': e.key, 'amount': moneyInput(e.value.text)!},
       ];
 
@@ -92,10 +96,14 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
       _error = null;
     });
     try {
-      final issued = await ref.read(accountingRepositoryProvider).issue(widget.doc.id, advanceAdjustments: _adjustments);
+      final issued = await ref
+          .read(accountingRepositoryProvider)
+          .issue(widget.doc.id, advanceAdjustments: _adjustments);
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show('Issued ${issued?.number ?? 'invoice'}');
+      ref
+          .read(toastProvider.notifier)
+          .show('Issued ${issued?.number ?? 'invoice'}');
       Navigator.of(context).pop(issued);
     } on AppError catch (e) {
       if (!mounted) return;
@@ -108,7 +116,8 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
           _candidates = [
             if (cands is List)
               for (final c in cands)
-                if (c is Map && (c['variant_key'] ?? c['rate_variant_key']) != null)
+                if (c is Map &&
+                    (c['variant_key'] ?? c['rate_variant_key']) != null)
                   RateVariant(
                     variantKey: '${c['variant_key'] ?? c['rate_variant_key']}',
                     hsnSac: c['hsn_sac']?.toString(),
@@ -126,7 +135,8 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
 
   /// Pins the chosen variant on the line's product, then retries the issue.
   Future<void> _pinVariant(RateVariant v) async {
-    final line = widget.doc.lines.where((l) => l.lineNo == _variantLine).firstOrNull;
+    final line =
+        widget.doc.lines.where((l) => l.lineNo == _variantLine).firstOrNull;
     final productId = line?.productId;
     if (productId == null) {
       ref.read(toastProvider.notifier).showError(
@@ -165,10 +175,16 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
     switch (_error?.code) {
       case 'AMOUNTS_ARE_REQUIRED':
       case 'PERIOD_FILED_DATE_IN_OPEN_PERIOD':
-        return ('Edit draft', () => Navigator.of(context).pop(IssueFollowUp.editDraft));
+        return (
+          'Edit draft',
+          () => Navigator.of(context).pop(IssueFollowUp.editDraft)
+        );
       case 'HSN_DIGITS_REQUIRED':
       case 'CUSTOMER_REQUIRED':
-        return ('Void this draft', () => Navigator.of(context).pop(IssueFollowUp.voidDraft));
+        return (
+          'Void this draft',
+          () => Navigator.of(context).pop(IssueFollowUp.voidDraft)
+        );
       default:
         return (null, null);
     }
@@ -191,7 +207,8 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
       onSubmit: _issue,
       children: [
         if (!approve)
-          const AccInfoBanner('Issuing needs approve rights on invoices. Ask someone who has them.',
+          const AccInfoBanner(
+              'Issuing needs approve rights on invoices. Ask someone who has them.',
               icon: PhosphorIconsRegular.lock),
         if (_candidates.isNotEmpty) _variantPicker(),
         ..._previewBody(),
@@ -205,14 +222,21 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
 
   List<Widget> _previewBody() {
     if (_previewError != null) {
-      return [ConflictBanner(error: _previewError!, actionLabel: 'Try again', onAction: _loadPreview)];
+      return [
+        ConflictBanner(
+            error: _previewError!,
+            actionLabel: 'Try again',
+            onAction: _loadPreview)
+      ];
     }
     final p = _preview;
     if (p == null) {
       return [
         SizedBox(
           height: 120.h,
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)),
+          child: const Center(
+              child: CircularProgressIndicator(
+                  strokeWidth: 2.4, color: AppColors.navy)),
         ),
       ];
     }
@@ -223,11 +247,18 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
           Expanded(
             child: Text(
               [
-                if (p.supply != null) p.supply == 'INTER' ? 'Inter-state (IGST)' : 'Intra-state (CGST + SGST)',
-                if (p.transactionClass != null) label(transactionClassLabels, p.transactionClass),
+                if (p.supply != null)
+                  p.supply == 'INTER'
+                      ? 'Inter-state (IGST)'
+                      : 'Intra-state (CGST + SGST)',
+                if (p.transactionClass != null)
+                  label(transactionClassLabels, p.transactionClass),
                 if (p.amountsAre != null) label(amountsAreLabels, p.amountsAre),
               ].join(' · '),
-              style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted),
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textMuted),
             ),
           ),
         ],
@@ -239,7 +270,8 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
           children: [
             for (int i = 0; i < p.lines.length; i++)
               MetaRow(
-                label: 'Line ${p.lines[i].lineNo}${p.lines[i].hsnSac == null ? '' : ' · ${p.lines[i].hsnSac}'}',
+                label:
+                    'Line ${p.lines[i].lineNo}${p.lines[i].hsnSac == null ? '' : ' · ${p.lines[i].hsnSac}'}',
                 value: p.lines[i].ratePct == null
                     ? 'No rate found'
                     : '${p.lines[i].ratePct}%${p.lines[i].matchLevel == null ? '' : ' · ${label(const {}, p.lines[i].matchLevel)}'}',
@@ -263,8 +295,12 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('It is saved on the product, so the next invoice picks it up on its own.',
-              style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text(
+              'It is saved on the product, so the next invoice picks it up on its own.',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
           SizedBox(height: 8.h),
           for (final v in _candidates)
             GestureDetector(
@@ -272,17 +308,26 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
               onTap: _busy ? null : () => _pinVariant(v),
               child: Container(
                 padding: EdgeInsets.symmetric(vertical: 10.h),
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+                decoration: const BoxDecoration(
+                    border:
+                        Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(v.description ?? v.variantKey,
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                          style: AppText.custom(
+                              size: 13.5,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPrimary)),
                     ),
                     Text('${v.ratePct ?? '—'}%',
-                        style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.navy)),
+                        style: AppText.custom(
+                            size: 13.5,
+                            weight: FontWeight.w800,
+                            color: AppColors.navy)),
                     SizedBox(width: 8.w),
-                    Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+                    Icon(PhosphorIconsBold.caretRight,
+                        size: 13.sp, color: AppColors.textPlaceholder),
                   ],
                 ),
               ),
@@ -295,13 +340,18 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
   /// Open taxed advances of this customer that can be set off at issue.
   Widget _advances(String customerId) {
     final async = ref.watch(advancesProvider(customerId));
-    final open = [for (final a in async.valueOrNull ?? const <AccAdvance>[]) if (a.isOpen) a];
+    final open = [
+      for (final a in async.valueOrNull ?? const <AccAdvance>[])
+        if (a.isOpen) a
+    ];
     if (open.isEmpty) return const SizedBox.shrink();
     return AccDisclosure(
       title: 'Adjust advances (${open.length})',
       children: [
-        Text('Advances this customer paid before the invoice. Enter how much of each to set off.',
-            style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+        Text(
+            'Advances this customer paid before the invoice. Enter how much of each to set off.',
+            style: AppText.custom(
+                size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
         for (final a in open)
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -312,9 +362,19 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
                   children: [
                     const SheetFieldLabel('Advance'),
                     Text('${formatMoneyStr(a.remainingTaxable)} open',
-                        style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                    Text([label(supplyNatureLabels, a.supplyNature), if (a.ratePct != null) '${a.ratePct}%'].join(' · '),
-                        style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                        style: AppText.custom(
+                            size: 13.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
+                    Text(
+                        [
+                          label(supplyNatureLabels, a.supplyNature),
+                          if (a.ratePct != null) '${a.ratePct}%'
+                        ].join(' · '),
+                        style: AppText.custom(
+                            size: 11.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -322,7 +382,8 @@ class _IssueSheetState extends ConsumerState<_IssueSheet> {
               Expanded(
                 child: MoneyField(
                   label: 'Adjust',
-                  controller: _adjust.putIfAbsent(a.id, TextEditingController.new),
+                  controller:
+                      _adjust.putIfAbsent(a.id, TextEditingController.new),
                 ),
               ),
             ],

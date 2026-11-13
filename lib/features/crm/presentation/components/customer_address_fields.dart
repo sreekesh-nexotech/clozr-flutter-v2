@@ -38,7 +38,8 @@ class CustomerAddressController extends ChangeNotifier {
   String? errorOf(String name) => _errors[name];
   bool get hasErrors => _errors.isNotEmpty;
 
-  Map<String, String> get values => {for (final e in _text.entries) e.key: e.value.text};
+  Map<String, String> get values =>
+      {for (final e in _text.entries) e.key: e.value.text};
 
   /// The block's part of a create body.
   Map<String, String> get createPayload =>
@@ -94,7 +95,8 @@ class CustomerAddressController extends ChangeNotifier {
         if (!_errors.containsKey(spec.name)) continue;
         final ctx = _keys[spec.name]?.currentContext;
         if (ctx != null) {
-          Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 250));
+          Scrollable.ensureVisible(ctx,
+              alignment: 0.3, duration: const Duration(milliseconds: 250));
         }
         return;
       }
@@ -170,8 +172,12 @@ class CustomerAddressFields extends ConsumerWidget {
       onTap: () => controller.setSameAsBilling(!same),
       child: Row(
         children: [
-          Icon(same ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.square,
-              size: 18.sp, color: same ? AppColors.navy : AppColors.textMuted),
+          Icon(
+              same
+                  ? PhosphorIconsFill.checkSquare
+                  : PhosphorIconsRegular.square,
+              size: 18.sp,
+              color: same ? AppColors.navy : AppColors.textMuted),
           SizedBox(width: 8.w),
           Text('Same as billing address', style: AppText.bodyStrong()),
         ],
@@ -179,7 +185,8 @@ class CustomerAddressFields extends ConsumerWidget {
     );
   }
 
-  Widget _input(BuildContext context, AddressFieldSpec spec, List<GstState> states) {
+  Widget _input(
+      BuildContext context, AddressFieldSpec spec, List<GstState> states) {
     final ctrl = controller.controller(spec.name);
     final error = controller.errorOf(spec.name);
     switch (spec.kind) {
@@ -205,7 +212,10 @@ class CustomerAddressFields extends ConsumerWidget {
           hint: 'e.g. 682001',
           errorText: error,
           keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(6)
+          ],
           onChanged: (_) => controller.clearError(spec.name),
         );
       case 'gstin':
@@ -232,14 +242,16 @@ class CustomerAddressFields extends ConsumerWidget {
     }
   }
 
-  Future<void> _pickState(BuildContext context, AddressFieldSpec spec, List<GstState> states) async {
+  Future<void> _pickState(BuildContext context, AddressFieldSpec spec,
+      List<GstState> states) async {
     FocusManager.instance.primaryFocus?.unfocus();
     final picked = await showOptionPicker(
       context: context,
       title: spec.label,
       options: [
         const CatalogOption(id: _none, name: '—'),
-        for (final st in states) CatalogOption(id: st.code, name: '${st.name} (${st.code})'),
+        for (final st in states)
+          CatalogOption(id: st.code, name: '${st.name} (${st.code})'),
       ],
       selected: {controller.controller(spec.name).text.trim()},
       emptyNote: 'Loading states…',
@@ -254,6 +266,7 @@ class _UpperCaseFormatter extends TextInputFormatter {
   const _UpperCaseFormatter();
 
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) =>
+  TextEditingValue formatEditUpdate(
+          TextEditingValue oldValue, TextEditingValue newValue) =>
       newValue.copyWith(text: newValue.text.toUpperCase());
 }

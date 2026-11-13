@@ -67,7 +67,9 @@ void main() {
     test('a row is counted under its org status, whatever it folds into', () {
       // "Under Review" folds into the `draft` bucket, but the pill shows the
       // org's name, so the org's tab is where it belongs.
-      final quotes = [_quote('Q1', status: 'draft', statusName: 'Under Review')];
+      final quotes = [
+        _quote('Q1', status: 'draft', statusName: 'Under Review')
+      ];
 
       expect(quoteTabCount(quotes, 'under review', tabKeys: orgKeys), 1);
       expect(quoteTabCount(quotes, 'draft', tabKeys: orgKeys), 0);

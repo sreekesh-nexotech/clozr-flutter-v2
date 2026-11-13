@@ -11,7 +11,8 @@ class AppColors {
   // ── Brand / Primary ──
   static const navy = Color(0xFF00113B); // Primary navy — navbar, CTAs, active
   static const navyMid = Color(0xFF152856); // Hover / secondary navy
-  static const blueBright = Color(0xFF074ADB); // Links, "New" status, active tab
+  static const blueBright =
+      Color(0xFF074ADB); // Links, "New" status, active tab
   static const blueSubtle = Color(0xFFEEF6FF); // Active tab bg
   static const blueTint = Color(0xFFEFF7FF); // CTA button bg
   static const blueCta = Color(0xFFEFF4FB); // Lead card call button bg
@@ -60,7 +61,8 @@ class AppColors {
 
   // ── Borders & strokes ──
   static const borderCard = Color(0xFFE8E9EB);
-  static const borderCardSoft = Color(0xFFEEF0F3); // header divider / card inset
+  static const borderCardSoft =
+      Color(0xFFEEF0F3); // header divider / card inset
   static const borderInput = Color(0xFFDADADA);
   static const borderLight = Color(0xFFEEEEEE);
   static const borderMedium = Color(0xFFDFDCDC);
@@ -73,7 +75,8 @@ class AppColors {
   static const tintAmber = Color(0xFFFFF5EB);
   static const tintRed = Color(0xFFFCEBEB);
   static const tintPurple = Color(0xFFF3EAFF);
-  static const tintPurpleSoft = Color(0xFFF3E8FA); // reward trophy / LMS chip bg
+  static const tintPurpleSoft =
+      Color(0xFFF3E8FA); // reward trophy / LMS chip bg
   static const tintNavy = Color(0xFFEAECF3);
   static const tintRedSoft = Color(0xFFFFE9E9);
   static const tintGrey = Color(0xFFF1F2F4);

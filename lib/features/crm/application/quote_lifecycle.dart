@@ -3,6 +3,7 @@
 // detail screen's gating. Pure Dart over the raw quote record
 // (`GET /quotations/quotations/{uuid}/`), so every rule is unit-tested.
 
+import '../../../core/utils/relative_time.dart';
 import '../../../core/network/app_error.dart';
 import 'quote_discount_approval_rules.dart' as approval;
 
@@ -34,15 +35,28 @@ String localDayOf(String iso) {
   return d == null ? '' : isoDayOf(d.toLocal());
 }
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
-/// Webapp `fmtIsoDate` — `2026-10-10` / an ISO timestamp → `10-Oct-2026`;
-/// '' when unparseable.
+/// `2026-10-10` / an ISO timestamp → `10 Oct 2026` — the app-wide date style
+/// (UI/UX audit #07); '' when unparseable.
 String fmtQuoteDate(String? iso) {
   final day = localDayOf(iso ?? '');
   if (day.isEmpty) return '';
   final d = DateTime.parse(day);
-  return '${d.day.toString().padLeft(2, '0')}-${_months[d.month - 1]}-${d.year}';
+  return fmtDay(d); // DD/MM/YYYY (C17)
 }
 
 /// Webapp `humanizeEnum`: `installment_even` → `Installment even`.
@@ -62,19 +76,32 @@ const _planTypeLabel = {
 String planTypeLabel(String? value) {
   final k = _s(value);
   if (k.isEmpty) return '';
-  return _planTypeLabel[k] ?? _planTypeLabel[k.toLowerCase()] ?? humanizeEnum(k);
+  return _planTypeLabel[k] ??
+      _planTypeLabel[k.toLowerCase()] ??
+      humanizeEnum(k);
 }
 
 /// Webapp `AMOUNTS_ARE_LABEL`.
 String amountsAreLabel(String? value) {
   final k = _s(value).toUpperCase();
   if (k.isEmpty) return '';
-  return switch (k) { 'EXCLUSIVE' => 'Tax exclusive', 'INCLUSIVE' => 'Tax inclusive', _ => humanizeEnum(k) };
+  return switch (k) {
+    'EXCLUSIVE' => 'Tax exclusive',
+    'INCLUSIVE' => 'Tax inclusive',
+    _ => humanizeEnum(k)
+  };
 }
 
 // ── Statuses ──────────────────────────────────────────────────────────────
 
-const quoteStatusTypes = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'SUPERSEDED'];
+const quoteStatusTypes = [
+  'DRAFT',
+  'SENT',
+  'ACCEPTED',
+  'REJECTED',
+  'EXPIRED',
+  'SUPERSEDED'
+];
 
 /// One `/quotations/statuses/` row, with the meaning (`status_type`) the
 /// lifecycle rules read. Inactive rows are kept (the picker hides them).
@@ -175,7 +202,9 @@ QuoteStatusRow? findStatusOfType(List<QuoteStatusRow> statuses, String type) {
 
 /// Statuses a user may pick: Superseded, deactivated and (once sent) Draft
 /// are hidden — unless current.
-List<QuoteStatusRow> pickableStatuses(List<QuoteStatusRow> statuses, String currentId, {bool wasSent = false}) {
+List<QuoteStatusRow> pickableStatuses(
+    List<QuoteStatusRow> statuses, String currentId,
+    {bool wasSent = false}) {
   final legacy = isLegacyStatusList(statuses);
   return [
     for (final s in statuses)
@@ -188,7 +217,8 @@ List<QuoteStatusRow> pickableStatuses(List<QuoteStatusRow> statuses, String curr
 }
 
 /// Moving into a Rejected-type status asks for a decline reason.
-bool needsDeclineReason(String? target, String? current) => target == 'REJECTED' && current != 'REJECTED';
+bool needsDeclineReason(String? target, String? current) =>
+    target == 'REJECTED' && current != 'REJECTED';
 
 const kStatusNotConfigured = 'That status isn’t configured for this workspace.';
 
@@ -253,7 +283,18 @@ class QuoteFacts {
     this.numInstallments,
     this.billingPeriodDays,
     this.grandTotal,
+    this.optionGroupId = '',
+    this.optionLabel = '',
+    this.optionRole = '',
   });
+
+  /// Alternative-options quote (rulebook v1.7): the group this quote is one
+  /// option of ('' for an ordinary quote), its letter and its role
+  /// (`primary` / `alternative` / `chosen`).
+  final String optionGroupId;
+  final String optionLabel;
+  final String optionRole;
+  bool get isGrouped => optionGroupId.isNotEmpty;
 
   final String id;
   final String number;
@@ -282,11 +323,13 @@ class QuoteFacts {
   final String? grandTotal;
 
   /// Number, else title, else "this quote" — the dialogs' label.
-  String get label => number.isNotEmpty ? number : (title.isNotEmpty ? title : 'this quote');
+  String get label =>
+      number.isNotEmpty ? number : (title.isNotEmpty ? title : 'this quote');
 
   /// Facts from a raw record. [statuses] resolves a status the record sends
   /// without a type (an older backend).
-  factory QuoteFacts.fromRow(Map<String, dynamic> row, {List<QuoteStatusRow> statuses = const []}) {
+  factory QuoteFacts.fromRow(Map<String, dynamic> row,
+      {List<QuoteStatusRow> statuses = const []}) {
     final status = row['status'];
     final statusMap = status is Map ? status : const {};
     final statusId = _s(statusMap['quotation_status_id']).isNotEmpty
@@ -324,7 +367,13 @@ class QuoteFacts {
       paymentType: _s(row['payment_type']),
       numInstallments: _int(row['num_installments']),
       billingPeriodDays: _int(row['billing_period_days']),
-      grandTotal: _s(row['grand_total']).isEmpty ? null : _s(row['grand_total']),
+      grandTotal:
+          _s(row['grand_total']).isEmpty ? null : _s(row['grand_total']),
+      optionGroupId: row['option_group'] is Map
+          ? _s((row['option_group'] as Map)['option_group_id'])
+          : _s(row['option_group']),
+      optionLabel: _s(row['option_label']),
+      optionRole: _s(row['option_role']),
     );
   }
 }
@@ -376,36 +425,51 @@ class QuoteLifecycleActions {
 }
 
 const kSendNeedsLine = 'Add a line item before sending this quote.';
-const kSendNeedsValidity = 'Set a “Valid until” date before sending this quote.';
-const kSendValidityPassed = 'This quote’s validity date has passed — set a new “Valid until” date before sending it.';
+const kSendNeedsValidity =
+    'Set a “Valid until” date before sending this quote.';
+const kSendValidityPassed =
+    'This quote’s validity date has passed — set a new “Valid until” date before sending it.';
 const kAcceptNotSent = 'Mark the quote as sent before accepting it.';
-const kAcceptExpired = 'This quote has expired — renew it to accept the current prices.';
+const kAcceptExpired =
+    'This quote has expired — renew it to accept the current prices.';
 
 /// R4 — only a back-dated acceptance (≤ `valid_until`) can get it accepted.
 bool canBackdateAcceptance(AcceptanceBlock? block) =>
-    block != null && block.code == 'QUOTE_EXPIRED' && block.acceptedOnMax.isNotEmpty;
+    block != null &&
+    block.code == 'QUOTE_EXPIRED' &&
+    block.acceptedOnMax.isNotEmpty;
 
 /// The webapp's `quoteLifecycleActions`, plus the discount-approval copy for
 /// the send block (pending / rejected approval).
-QuoteLifecycleActions quoteLifecycleActions(QuoteFacts q, {DateTime? today, Map<String, dynamic>? row}) {
+QuoteLifecycleActions quoteLifecycleActions(QuoteFacts q,
+    {DateTime? today, Map<String, dynamic>? row}) {
   final now = today ?? DateTime.now();
   final type = q.statusType;
   final isSuperseded = type == 'SUPERSEDED';
   final isAccepted = type == 'ACCEPTED' || q.isConverted;
   final isOpen = type == null || type == 'DRAFT' || type == 'SENT';
   final validDay = localDayOf(q.validUntil);
-  final pastValidity = validDay.isNotEmpty && validDay.compareTo(isoDayOf(now)) < 0;
-  final isExpired = !isAccepted && !isSuperseded && (type == 'EXPIRED' || (isOpen && pastValidity));
+  final pastValidity =
+      validDay.isNotEmpty && validDay.compareTo(isoDayOf(now)) < 0;
+  final isExpired = !isAccepted &&
+      !isSuperseded &&
+      (type == 'EXPIRED' || (isOpen && pastValidity));
   final isDraftLike = (type == null || type == 'DRAFT') && !isAccepted;
-  final wasSent = type == 'SENT' || type == 'REJECTED' || (q.isLocked && q.sentAt.isNotEmpty);
+  final wasSent = type == 'SENT' ||
+      type == 'REJECTED' ||
+      (q.isLocked && q.sentAt.isNotEmpty);
   final backdatable = canBackdateAcceptance(q.acceptanceBlock);
-  final canAccept = (isOpen || (backdatable && type == 'EXPIRED')) && !isAccepted;
+  final canAccept =
+      (isOpen || (backdatable && type == 'EXPIRED')) && !isAccepted;
   final sent = type == 'SENT' || q.sentAt.isNotEmpty;
   var acceptReason = '';
   if (canAccept && !backdatable) {
     if (q.acceptanceBlock != null) {
-      acceptReason = q.acceptanceBlock!.message.isEmpty ? 'This quote can’t be accepted right now.' : q.acceptanceBlock!.message;
-    } else if (q.approvalStatus == 'PENDING' || q.approvalStatus == 'REJECTED') {
+      acceptReason = q.acceptanceBlock!.message.isEmpty
+          ? 'This quote can’t be accepted right now.'
+          : q.acceptanceBlock!.message;
+    } else if (q.approvalStatus == 'PENDING' ||
+        q.approvalStatus == 'REJECTED') {
       acceptReason = approval.kAcceptNeedsApproval;
     } else if (!sent) {
       acceptReason = kAcceptNotSent;
@@ -439,26 +503,32 @@ QuoteLifecycleActions quoteLifecycleActions(QuoteFacts q, {DateTime? today, Map<
     canAccept: canAccept,
     acceptBlockedReason: acceptReason,
     canReject: isOpen && !isAccepted,
-    canRevise: wasSent && !isAccepted && !isSuperseded && !isExpired && q.paymentPlanId.isEmpty,
+    canRevise: wasSent &&
+        !isAccepted &&
+        !isSuperseded &&
+        !isExpired &&
+        q.paymentPlanId.isEmpty,
     canRenew: isExpired,
-    wasSent: wasSent || q.sentAt.isNotEmpty || q.isConverted || type == 'ACCEPTED',
+    wasSent:
+        wasSent || q.sentAt.isNotEmpty || q.isConverted || type == 'ACCEPTED',
   );
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────
 
-const kDeleteBlocked = 'Accepted or paid quotes can’t be deleted — cancel or credit-note in accounting first';
-
-/// Why Delete is greyed ('' when allowed): an accepted quote, or one with a
-/// payment plan.
-String deleteBlockedReason(QuoteFacts q) =>
-    (q.isConverted || q.statusType == 'ACCEPTED' || q.paymentPlanId.isNotEmpty) ? kDeleteBlocked : '';
+// Delete is never greyed client-side: an unpaid accepted quote is deleted with its
+// payment plan, and the server refuses one with a paid record, receipt or invoice
+// (409 QUOTE_HAS_PAYMENTS) with the reason shown to the user.
 
 // ── Accept dialog ─────────────────────────────────────────────────────────
 
 /// The "Accepted on" window (`YYYY-MM-DD`; [min] '' = no floor).
 class AcceptDateWindow {
-  const AcceptDateWindow({required this.min, required this.max, required this.initial, required this.backdatedOnly});
+  const AcceptDateWindow(
+      {required this.min,
+      required this.max,
+      required this.initial,
+      required this.backdatedOnly});
   final String min;
   final String max;
   final String initial;
@@ -469,11 +539,22 @@ AcceptDateWindow acceptDateWindow(QuoteFacts q, {DateTime? today}) {
   final todayIso = isoDayOf(today ?? DateTime.now());
   final block = q.acceptanceBlock;
   if (canBackdateAcceptance(block)) {
-    final max = block!.acceptedOnMax.compareTo(todayIso) < 0 ? block.acceptedOnMax : todayIso;
+    final max = block!.acceptedOnMax.compareTo(todayIso) < 0
+        ? block.acceptedOnMax
+        : todayIso;
     return AcceptDateWindow(
-        min: block.acceptedOnMin.isNotEmpty ? block.acceptedOnMin : localDayOf(q.sentAt), max: max, initial: max, backdatedOnly: true);
+        min: block.acceptedOnMin.isNotEmpty
+            ? block.acceptedOnMin
+            : localDayOf(q.sentAt),
+        max: max,
+        initial: max,
+        backdatedOnly: true);
   }
-  return AcceptDateWindow(min: localDayOf(q.sentAt), max: todayIso, initial: todayIso, backdatedOnly: false);
+  return AcceptDateWindow(
+      min: localDayOf(q.sentAt),
+      max: todayIso,
+      initial: todayIso,
+      backdatedOnly: false);
 }
 
 /// The hint under "Accepted on".
@@ -497,19 +578,26 @@ String? validateAcceptedOn(String value, AcceptDateWindow w) {
 
 /// The plan schedule chosen at acceptance (`schedule` in the PATCH body).
 class AcceptSchedule {
-  const AcceptSchedule({required this.numInstallments, required this.billingPeriodDays, required this.firstDueDate});
+  const AcceptSchedule(
+      {required this.numInstallments,
+      required this.billingPeriodDays,
+      required this.firstDueDate});
   final int numInstallments;
   final int billingPeriodDays;
   final String firstDueDate;
 
-  Map<String, dynamic> toJson() =>
-      {'num_installments': numInstallments, 'billing_period_days': billingPeriodDays, 'first_due_date': firstDueDate};
+  Map<String, dynamic> toJson() => {
+        'num_installments': numInstallments,
+        'billing_period_days': billingPeriodDays,
+        'first_due_date': firstDueDate
+      };
 }
 
 const kMaxInstalments = 60;
 const kMaxPeriodDays = 366;
 const _defaultPeriodDays = 30;
-const kScheduleHelp = '1 instalment = lump sum. Until something is paid or invoiced the plan can still be re-split on its page.';
+const kScheduleHelp =
+    '1 instalment = lump sum. Until something is paid or invoiced the plan can still be re-split on its page.';
 
 /// The first due date: the due date when on/after acceptance, else acceptance.
 String planStartDate(String dueDate, String acceptedOn) {
@@ -518,63 +606,91 @@ String planStartDate(String dueDate, String acceptedOn) {
 }
 
 /// Whether the dialog offers the schedule (lump sum / even instalments).
-bool scheduleEditable(String paymentType) => paymentType.isEmpty || paymentType == 'lumpsum' || paymentType == 'installment_even';
+bool scheduleEditable(String paymentType) =>
+    paymentType.isEmpty ||
+    paymentType == 'lumpsum' ||
+    paymentType == 'installment_even';
 
 AcceptSchedule defaultSchedule(QuoteFacts q, String acceptedOn) {
   final even = q.paymentType == 'installment_even';
   return AcceptSchedule(
-    numInstallments: even && (q.numInstallments ?? 0) > 0 ? q.numInstallments! : 1,
-    billingPeriodDays: (q.billingPeriodDays ?? 0) > 0 ? q.billingPeriodDays! : _defaultPeriodDays,
+    numInstallments:
+        even && (q.numInstallments ?? 0) > 0 ? q.numInstallments! : 1,
+    billingPeriodDays: (q.billingPeriodDays ?? 0) > 0
+        ? q.billingPeriodDays!
+        : _defaultPeriodDays,
     firstDueDate: planStartDate(q.dueDate, acceptedOn),
   );
 }
 
-int? _whole(String raw) => RegExp(r'^\d+$').hasMatch(raw.trim()) ? int.parse(raw.trim()) : null;
+int? _whole(String raw) =>
+    RegExp(r'^\d+$').hasMatch(raw.trim()) ? int.parse(raw.trim()) : null;
 
 /// The schedule typed in the dialog ([firstDue] '' = the default start), or
 /// an error. Returns `(schedule, error)`.
 (AcceptSchedule?, String?) resolveSchedule(
-    {required String count, required String periodDays, required String firstDue, required QuoteFacts quote, required String acceptedOn}) {
+    {required String count,
+    required String periodDays,
+    required String firstDue,
+    required QuoteFacts quote,
+    required String acceptedOn}) {
   final n = _whole(count);
-  if (n == null || n < 1 || n > kMaxInstalments) return (null, 'Choose between 1 and $kMaxInstalments instalments.');
+  if (n == null || n < 1 || n > kMaxInstalments)
+    return (null, 'Choose between 1 and $kMaxInstalments instalments.');
   final fallback = defaultSchedule(quote, acceptedOn);
   var period = fallback.billingPeriodDays;
   if (n > 1) {
     final p = _whole(periodDays);
-    if (p == null || p < 1 || p > kMaxPeriodDays) return (null, 'The interval must be between 1 and $kMaxPeriodDays days.');
+    if (p == null || p < 1 || p > kMaxPeriodDays)
+      return (null, 'The interval must be between 1 and $kMaxPeriodDays days.');
     period = p;
   }
   final first = firstDue.isNotEmpty ? firstDue : fallback.firstDueDate;
   if (!_ymd.hasMatch(first)) return (null, 'Pick the first due date.');
   if (first.compareTo(acceptedOn) < 0) {
     final shown = fmtQuoteDate(acceptedOn);
-    return (null, 'The first instalment can’t be due before the acceptance date (${shown.isEmpty ? acceptedOn : shown}).');
+    return (
+      null,
+      'The first instalment can’t be due before the acceptance date (${shown.isEmpty ? acceptedOn : shown}).'
+    );
   }
-  return (AcceptSchedule(numInstallments: n, billingPeriodDays: period, firstDueDate: first), null);
+  return (
+    AcceptSchedule(
+        numInstallments: n, billingPeriodDays: period, firstDueDate: first),
+    null
+  );
 }
 
 /// True when the chosen schedule differs from the default (then it is sent).
 bool scheduleChanged(AcceptSchedule chosen, QuoteFacts q, String acceptedOn) {
   final base = defaultSchedule(q, acceptedOn);
-  if (chosen.numInstallments != base.numInstallments || chosen.firstDueDate != base.firstDueDate) return true;
-  return chosen.numInstallments > 1 && chosen.billingPeriodDays != base.billingPeriodDays;
+  if (chosen.numInstallments != base.numInstallments ||
+      chosen.firstDueDate != base.firstDueDate) return true;
+  return chosen.numInstallments > 1 &&
+      chosen.billingPeriodDays != base.billingPeriodDays;
 }
 
 String _every(int p) => 'every $p day${p == 1 ? '' : 's'}';
 
 /// "Lump sum, due 10-Oct-2026" / "3 instalments from 10-Oct-2026, every 30 days".
 String scheduleSummary(AcceptSchedule s) {
-  final start = fmtQuoteDate(s.firstDueDate).isEmpty ? s.firstDueDate : fmtQuoteDate(s.firstDueDate);
+  final start = fmtQuoteDate(s.firstDueDate).isEmpty
+      ? s.firstDueDate
+      : fmtQuoteDate(s.firstDueDate);
   if (s.numInstallments <= 1) return 'Lump sum, due $start';
   return '${s.numInstallments} instalments from $start, ${_every(s.billingPeriodDays)}';
 }
 
 /// The Accept dialog's plan box: type label, schedule line, amount
 /// (already formatted by the caller from [QuoteFacts.grandTotal]).
-({String typeLabel, String schedule}) acceptPlanSummary(QuoteFacts q, String acceptedOn) {
+({String typeLabel, String schedule}) acceptPlanSummary(
+    QuoteFacts q, String acceptedOn) {
   final startIso = planStartDate(q.dueDate, acceptedOn);
-  final start = fmtQuoteDate(startIso).isEmpty ? acceptedOn : fmtQuoteDate(startIso);
-  final period = (q.billingPeriodDays ?? 0) > 0 ? q.billingPeriodDays! : _defaultPeriodDays;
+  final start =
+      fmtQuoteDate(startIso).isEmpty ? acceptedOn : fmtQuoteDate(startIso);
+  final period = (q.billingPeriodDays ?? 0) > 0
+      ? q.billingPeriodDays!
+      : _defaultPeriodDays;
   final type = q.paymentType.isEmpty ? 'lumpsum' : q.paymentType;
   final typeLabel = planTypeLabel(type);
   switch (type) {
@@ -584,12 +700,21 @@ String scheduleSummary(AcceptSchedule s) {
       final count = (q.numInstallments ?? 0) > 0 ? q.numInstallments! : 1;
       return (
         typeLabel: typeLabel,
-        schedule: count == 1 ? '1 instalment, due $start' : '$count instalments from $start, ${_every(period)}'
+        schedule: count == 1
+            ? '1 instalment, due $start'
+            : '$count instalments from $start, ${_every(period)}'
       );
     case 'subscription':
-      return (typeLabel: typeLabel, schedule: 'Subscription from $start, billed ${_every(period)}');
+      return (
+        typeLabel: typeLabel,
+        schedule: 'Subscription from $start, billed ${_every(period)}'
+      );
     case 'installment_custom':
-      return (typeLabel: typeLabel, schedule: 'Milestone-based — add the milestones on the payment plan after accepting');
+      return (
+        typeLabel: typeLabel,
+        schedule:
+            'Milestone-based — add the milestones on the payment plan after accepting'
+      );
     default:
       return (typeLabel: typeLabel, schedule: '$typeLabel, from $start');
   }
@@ -603,14 +728,28 @@ const kNoDeclineReasons =
 
 /// `(reasonId, note)` to send, or the error. A reason is required and must
 /// be one of [activeReasonIds]; the note is optional, trimmed and capped.
-({String? error, String reasonId, String note}) validateDeclineDraft(String reasonId, String note, Iterable<String> activeReasonIds) {
-  if (reasonId.isEmpty) return (error: 'Choose why the quote was declined.', reasonId: '', note: '');
+({String? error, String reasonId, String note}) validateDeclineDraft(
+    String reasonId, String note, Iterable<String> activeReasonIds) {
+  if (reasonId.isEmpty)
+    return (
+      error: 'Choose why the quote was declined.',
+      reasonId: '',
+      note: ''
+    );
   if (!activeReasonIds.contains(reasonId)) {
-    return (error: 'That reason is no longer available — choose another.', reasonId: '', note: '');
+    return (
+      error: 'That reason is no longer available — choose another.',
+      reasonId: '',
+      note: ''
+    );
   }
   final trimmed = note.trim();
   if (trimmed.length > kDeclineNoteMax) {
-    return (error: 'Keep the note under $kDeclineNoteMax characters.', reasonId: '', note: '');
+    return (
+      error: 'Keep the note under $kDeclineNoteMax characters.',
+      reasonId: '',
+      note: ''
+    );
   }
   return (error: null, reasonId: reasonId, note: trimmed);
 }
@@ -620,7 +759,9 @@ String? validateRenewDate(String value, {DateTime? today}) {
   if (value.isEmpty) return null;
   final now = today ?? DateTime.now();
   final tomorrow = isoDayOf(DateTime(now.year, now.month, now.day + 1));
-  return value.compareTo(tomorrow) < 0 ? 'Pick a date in the future, or leave it blank for the default validity.' : null;
+  return value.compareTo(tomorrow) < 0
+      ? 'Pick a date in the future, or leave it blank for the default validity.'
+      : null;
 }
 
 // ── Conflicts / locks ────────────────────────────────────────────────────
@@ -635,7 +776,14 @@ const lifecycleConflictCodes = [
   'ANOTHER_QUOTE_ACCEPTED',
   'QUOTE_HAS_PAYMENTS',
 ];
-const _nextSteps = ['REVISE', 'RENEW', 'OPEN_LATEST_REVISION', 'WAIT_FOR_APPROVAL', 'MARK_SENT', 'OPEN_ACCEPTED_QUOTE'];
+const _nextSteps = [
+  'REVISE',
+  'RENEW',
+  'OPEN_LATEST_REVISION',
+  'WAIT_FOR_APPROVAL',
+  'MARK_SENT',
+  'OPEN_ACCEPTED_QUOTE'
+];
 
 /// A 409 lifecycle refusal with the step the server suggests.
 class LifecycleConflict {
@@ -687,16 +835,20 @@ const quoteLockCopy = {
   ),
   QuoteLockKind.revert: (
     title: 'This quote can’t leave Accepted.',
-    body: 'Its payment plan already has a tax invoice. Cancel the invoice, or raise a credit note, in Accounting first.',
+    body:
+        'Its payment plan already has a tax invoice. Cancel the invoice, or raise a credit note, in Accounting first.',
   ),
 };
 
 /// Webapp `quoteLockKind`: a validation refusal while moving an accepted
 /// quote off Accepted (or on `status_id`) is the revert block; any other
 /// "…locked…" refusal is the paid lock.
-QuoteLockKind? quoteLockKind(Object? error, {required bool wasStatusChange, required bool wasAccepted}) {
+QuoteLockKind? quoteLockKind(Object? error,
+    {required bool wasStatusChange, required bool wasAccepted}) {
   if (error is! AppError || error.type != AppErrorType.validation) return null;
-  if (wasStatusChange && (wasAccepted || (error.fieldErrors?.containsKey('status_id') ?? false))) return QuoteLockKind.revert;
+  if (wasStatusChange &&
+      (wasAccepted || (error.fieldErrors?.containsKey('status_id') ?? false)))
+    return QuoteLockKind.revert;
   if (RegExp(r'\blocked\b', caseSensitive: false).hasMatch(error.bareMessage) ||
       RegExp(r'\blocked\b', caseSensitive: false).hasMatch(error.message)) {
     return QuoteLockKind.paid;
@@ -712,7 +864,8 @@ final _revisionSuffix = RegExp(r'-R(\d+)$');
 String baseQuoteNumber(String number) => number.replaceAll(_revisionSuffix, '');
 
 /// The newest revision in a chain from a search over the base number, or null.
-Map<String, dynamic>? pickLatestRevision(List<Map<String, dynamic>> rows, QuoteFacts current) {
+Map<String, dynamic>? pickLatestRevision(
+    List<Map<String, dynamic>> rows, QuoteFacts current) {
   final base = baseQuoteNumber(current.number);
   if (base.isEmpty) return null;
   Map<String, dynamic>? best;
@@ -732,7 +885,12 @@ Map<String, dynamic>? pickLatestRevision(List<Map<String, dynamic>> rows, QuoteF
 // ── Payment instructions ─────────────────────────────────────────────────
 
 class QuoteBankAccount {
-  const QuoteBankAccount({this.bankName = '', this.accountName = '', this.accountNumber = '', this.ifsc = '', this.branch = ''});
+  const QuoteBankAccount(
+      {this.bankName = '',
+      this.accountName = '',
+      this.accountNumber = '',
+      this.ifsc = '',
+      this.branch = ''});
   final String bankName;
   final String accountName;
   final String accountNumber;
@@ -765,11 +923,14 @@ class QuotePaymentInstructions {
     final pi = body is Map ? body['payment_instructions'] : null;
     if (pi is! Map) return null;
     final qr = _s(pi['upi_qr_data_uri']);
-    final m = RegExp(r'^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$').firstMatch(qr);
+    final m = RegExp(r'^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$')
+        .firstMatch(qr);
     final link = _s(pi['payment_link']);
     return QuotePaymentInstructions(
       bankAccounts: [
-        for (final b in (pi['bank_accounts'] is List ? pi['bank_accounts'] as List : const []))
+        for (final b in (pi['bank_accounts'] is List
+            ? pi['bank_accounts'] as List
+            : const []))
           if (b is Map)
             QuoteBankAccount(
               bankName: _s(b['bank_name']),
@@ -780,7 +941,9 @@ class QuotePaymentInstructions {
             ),
       ],
       upiId: _s(pi['upi_id']),
-      paymentLink: RegExp(r'^https?://', caseSensitive: false).hasMatch(link) ? link : '',
+      paymentLink: RegExp(r'^https?://', caseSensitive: false).hasMatch(link)
+          ? link
+          : '',
       upiQrBase64: m == null ? '' : m.group(2)!.replaceAll(RegExp(r'\s'), ''),
       amount: _s(pi['amount']).isEmpty ? '0.00' : _s(pi['amount']),
       note: _s(pi['note']),
@@ -812,8 +975,16 @@ class DocTemplateField {
 }
 
 class DocTemplate {
-  const DocTemplate({required this.id, required this.name, this.description = '', this.fields = const []});
+  const DocTemplate(
+      {required this.id,
+      required this.name,
+      this.description = '',
+      this.requiresQuotation = false,
+      this.fields = const []});
   final String id;
+
+  /// Proposal / Quotation documents are generated from a quote, never from a lead or customer alone.
+  final bool requiresQuotation;
   final String name;
   final String description;
   final List<DocTemplateField> fields;
@@ -826,19 +997,33 @@ class DocTemplate {
         if (r is Map && _s(r['template_id']).isNotEmpty)
           DocTemplate(
             id: _s(r['template_id']),
-            name: _s(r['template_name']).isEmpty ? _s(r['name']) : _s(r['template_name']),
+            name: _s(r['template_name']).isEmpty
+                ? _s(r['name'])
+                : _s(r['template_name']),
             description: _s(r['description']),
+            requiresQuotation: r['requires_quotation'] == true,
             fields: [
-              for (final f in (r['field_definitions'] is List ? r['field_definitions'] as List : const []))
+              for (final f in (r['field_definitions'] is List
+                  ? r['field_definitions'] as List
+                  : const []))
                 if (f is Map && _s(f['field_key']).isNotEmpty)
                   DocTemplateField(
                     key: _s(f['field_key']),
-                    label: _s(f['field_label']).isEmpty ? _s(f['field_key']) : _s(f['field_label']),
-                    type: _s(f['field_type']).isEmpty ? 'text' : _s(f['field_type']),
+                    label: _s(f['field_label']).isEmpty
+                        ? _s(f['field_key'])
+                        : _s(f['field_label']),
+                    type: _s(f['field_type']).isEmpty
+                        ? 'text'
+                        : _s(f['field_type']),
                     required: f['is_required'] == true,
                     defaultValue: _s(f['default_value']),
                     helpText: _s(f['help_text']),
-                    choices: [for (final c in (f['choices'] is List ? f['choices'] as List : const [])) _s(c)],
+                    choices: [
+                      for (final c in (f['choices'] is List
+                          ? f['choices'] as List
+                          : const []))
+                        _s(c)
+                    ],
                   ),
             ],
           ),
@@ -846,19 +1031,146 @@ class DocTemplate {
   }
 }
 
+const kNeedsQuote = 'Needs a quote — generate it from the quote instead.';
+
+/// A document generated on a lead / customer / quote (`GeneratedDocument`).
+class GeneratedDoc {
+  const GeneratedDoc({
+    required this.id,
+    this.number = '',
+    this.title = '',
+    this.templateId = '',
+    this.templateName = '',
+    this.quotationId = '',
+    this.quotationNumber = '',
+    this.fileUrl = '',
+    this.sizeBytes = 0,
+    this.fieldValues = const {},
+    this.createdByName = '',
+    this.createdAt,
+    this.isStale = false,
+  });
+  final String id;
+  final String number;
+  final String title;
+  final String templateId;
+  final String templateName;
+  final String quotationId;
+  final String quotationNumber;
+
+  /// Signed URL of the stored PDF ('' when unavailable).
+  final String fileUrl;
+  final int sizeBytes;
+  final Map<String, dynamic> fieldValues;
+  final String createdByName;
+  final DateTime? createdAt;
+
+  /// The quote changed after this document was rendered.
+  final bool isStale;
+
+  factory GeneratedDoc.fromJson(Map<String, dynamic> j) => GeneratedDoc(
+        id: _s(j['generated_document_id']),
+        number: _s(j['document_number']),
+        title: _s(j['title']),
+        templateId: _s(j['template_id']),
+        templateName: _s(j['template_name']),
+        quotationId: _s(j['quotation_id']),
+        quotationNumber: _s(j['quotation_number']),
+        fileUrl: _s(j['file_url_signed']).isNotEmpty
+            ? _s(j['file_url_signed'])
+            : _s(j['file_url']),
+        sizeBytes:
+            j['size_bytes'] is num ? (j['size_bytes'] as num).toInt() : 0,
+        fieldValues: j['field_values'] is Map
+            ? Map<String, dynamic>.from(j['field_values'] as Map)
+            : const {},
+        createdByName: _s(j['created_by_name']),
+        createdAt: DateTime.tryParse(_s(j['created_at'])),
+        isStale: j['is_stale'] == true,
+      );
+
+  static List<GeneratedDoc> listFrom(Object? body) {
+    final list = body is Map ? body['results'] : body;
+    return [
+      for (final r in (list is List ? list : const []))
+        if (r is Map) GeneratedDoc.fromJson(Map<String, dynamic>.from(r))
+    ];
+  }
+
+  /// The row title: the server's title already carries the number for numbered kinds.
+  String get displayName => title.isEmpty ? templateName : title;
+  String get numberSuffix =>
+      number.isNotEmpty && !displayName.contains(number) ? number : '';
+}
+
+/// "84 KB", "1.2 MB" — the webapp's `formatBytes`.
+String formatFileBytes(int bytes) {
+  if (bytes < 0) return '';
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).round()} KB';
+  final mb = bytes / (1024 * 1024);
+  return '${mb >= 10 ? mb.round() : mb.toStringAsFixed(1)} MB';
+}
+
+/// The row's meta line (webapp `documentMeta`): template name only when the title
+/// doesn't start with it, then time · creator · size · quote.
+String generatedDocMeta(GeneratedDoc d, String Function(DateTime?) fmt) => [
+      if (d.templateName.isNotEmpty && !d.title.startsWith(d.templateName))
+        d.templateName,
+      if (d.createdAt != null) fmt(d.createdAt),
+      d.createdByName,
+      if (d.sizeBytes > 0) formatFileBytes(d.sizeBytes),
+      if (d.quotationNumber.isNotEmpty) 'quote ${d.quotationNumber}',
+    ].where((e) => e.isNotEmpty).join(' · ');
+
+/// A regenerate form opens with the values the document was generated with
+/// (webapp `storedDocumentValues`): stored over the template default, dates trimmed to the day.
+Map<String, String> storedDocumentValues(
+    DocTemplate t, Map<String, dynamic> stored) {
+  final out = {for (final f in t.fields) f.key: f.defaultValue};
+  for (final f in t.fields) {
+    final raw = stored[f.key];
+    if (raw == null) continue;
+    final s = '$raw';
+    out[f.key] = f.type == 'date' && s.length >= 10 ? s.substring(0, 10) : s;
+  }
+  return out;
+}
+
+/// The generate body for a lead / customer / quote (exactly one source).
+Map<String, dynamic> generateDocumentBodyFor(
+        DocTemplate t, Map<String, String> values,
+        {String quotationId = '',
+        String leadId = '',
+        String customerId = ''}) =>
+    {
+      ...generateDocumentBody(t, quotationId, values),
+      if (quotationId.isEmpty) 'quotation_id': null,
+      if (leadId.isNotEmpty) 'lead_id': leadId,
+      if (customerId.isNotEmpty) 'customer_id': customerId,
+    }..removeWhere((k, v) => v == null);
+
 /// Webapp `documentFieldProblem` ('' = fine).
 String documentFieldProblem(DocTemplateField f, String value) {
   final text = value.trim();
-  if (text.isEmpty) return f.required && f.defaultValue.isEmpty ? '${f.label} is required.' : '';
-  if ((f.type == 'number' || f.type == 'decimal') && double.tryParse(text.replaceAll(',', '')) == null) {
+  if (text.isEmpty)
+    return f.required && f.defaultValue.isEmpty
+        ? '${f.label} is required.'
+        : '';
+  if ((f.type == 'number' || f.type == 'decimal') &&
+      double.tryParse(text.replaceAll(',', '')) == null) {
     return '${f.label} must be a number.';
   }
-  if (f.type == 'date' && (!_ymd.hasMatch(text) || DateTime.tryParse(text) == null)) return '${f.label} must be a date.';
+  if (f.type == 'date' &&
+      (!_ymd.hasMatch(text) || DateTime.tryParse(text) == null))
+    return '${f.label} must be a date.';
   return '';
 }
 
 /// The generate body: blank values are omitted so the server fills defaults.
-Map<String, dynamic> generateDocumentBody(DocTemplate t, String quotationId, Map<String, String> values) => {
+Map<String, dynamic> generateDocumentBody(
+        DocTemplate t, String quotationId, Map<String, String> values) =>
+    {
       'template_id': t.id,
       'quotation_id': quotationId,
       'field_values': {

@@ -13,6 +13,18 @@ class HelpDashboardRemoteDataSource {
 
   final ApiService _api;
 
+  /// The shared query: a custom range also carries its `from` / `to` dates.
+  static Map<String, String> _query(
+          String scope, String period, String? from, String? to) =>
+      {
+        'scope': scope,
+        'period': period,
+        if (period == 'custom' && from != null && to != null) ...{
+          'from': from,
+          'to': to,
+        },
+      };
+
   /// `GET /crm/dashboard-issue/kpis/?scope=own&period=…`.
   ///
   /// Best-effort: **any** failure answers null — including the 403 a user
@@ -22,11 +34,13 @@ class HelpDashboardRemoteDataSource {
   Future<HelpKpis?> fetchKpis({
     String scope = 'own',
     String period = 'month',
+    String? from,
+    String? to,
   }) async {
     try {
       final body = await _api.get(
         ApiEndpoints.dashboardIssueKpis,
-        query: {'scope': scope, 'period': period},
+        query: _query(scope, period, from, to),
       );
       return HelpKpis.fromJson(body);
     } on Object {
@@ -41,10 +55,12 @@ class HelpDashboardRemoteDataSource {
   Future<SlaPriorityMix?> fetchSlaPriorityMix({
     String scope = 'own',
     String period = 'month',
+    String? from,
+    String? to,
   }) async {
     try {
       final body = await _api.get(ApiEndpoints.dashboardIssueSlaPriorityMix,
-          query: {'scope': scope, 'period': period});
+          query: _query(scope, period, from, to));
       return SlaPriorityMix.fromJson(body);
     } on Object {
       return null;
@@ -56,10 +72,12 @@ class HelpDashboardRemoteDataSource {
   Future<List<CompletedGridRow>?> fetchCompletedGrid({
     String scope = 'own',
     String period = 'month',
+    String? from,
+    String? to,
   }) async {
     try {
       final body = await _api.get(ApiEndpoints.dashboardIssueCompletedGrid,
-          query: {'scope': scope, 'period': period});
+          query: _query(scope, period, from, to));
       return CompletedGridRow.listFrom(body);
     } on Object {
       return null;

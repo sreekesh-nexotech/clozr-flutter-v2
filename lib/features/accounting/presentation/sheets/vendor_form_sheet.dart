@@ -17,18 +17,22 @@ import 'acc_sheet_scaffold.dart';
 ///
 /// A duplicate active name is a 500 on the backend (handover §12.3), so the
 /// app looks first and refuses with a sentence instead.
-Future<bool> vendorNameTaken(WidgetRef ref, String name, {String? exceptId}) async {
+Future<bool> vendorNameTaken(WidgetRef ref, String name,
+    {String? exceptId}) async {
   final n = name.trim().toLowerCase();
   if (n.isEmpty) return false;
-  final hits = await ref.read(accountingRepositoryProvider).vendors(search: name.trim());
-  return hits.any((v) => v.isActive && v.id != exceptId && v.name.trim().toLowerCase() == n);
+  final hits =
+      await ref.read(accountingRepositoryProvider).vendors(search: name.trim());
+  return hits.any((v) =>
+      v.isActive && v.id != exceptId && v.name.trim().toLowerCase() == n);
 }
 
 const vendorDuplicateMessage = 'A vendor with this name already exists';
 
 /// Add or edit a vendor (plan §4.10).
 Future<Vendor?> showVendorFormSheet(BuildContext context, {Vendor? vendor}) =>
-    showClozrSheet<Vendor>(context: context, builder: (_) => _VendorFormSheet(vendor: vendor));
+    showClozrSheet<Vendor>(
+        context: context, builder: (_) => _VendorFormSheet(vendor: vendor));
 
 class _VendorFormSheet extends ConsumerStatefulWidget {
   const _VendorFormSheet({this.vendor});
@@ -40,17 +44,21 @@ class _VendorFormSheet extends ConsumerStatefulWidget {
 
 class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
   late final _name = TextEditingController(text: widget.vendor?.name ?? '');
-  late final _legal = TextEditingController(text: widget.vendor?.legalName ?? '');
+  late final _legal =
+      TextEditingController(text: widget.vendor?.legalName ?? '');
   late final _email = TextEditingController(text: widget.vendor?.email ?? '');
   late final _phone = TextEditingController(text: widget.vendor?.phone ?? '');
-  late final _address = TextEditingController(text: widget.vendor?.address ?? '');
-  late final _account = TextEditingController(text: widget.vendor?.bankAccountNoMasked ?? '');
+  late final _address =
+      TextEditingController(text: widget.vendor?.address ?? '');
+  late final _account =
+      TextEditingController(text: widget.vendor?.bankAccountNoMasked ?? '');
   late final _ifsc = TextEditingController(text: widget.vendor?.ifsc ?? '');
   late final _notes = TextEditingController(text: widget.vendor?.notes ?? '');
   late String? _state = widget.vendor?.stateCode;
   late bool _bodyCorporate = widget.vendor?.isBodyCorporate ?? false;
   late bool _gta = widget.vendor?.isGtaFcmOpted ?? false;
-  late bool _smallTransporter = widget.vendor?.isSmallTransporterDeclared ?? false;
+  late bool _smallTransporter =
+      widget.vendor?.isSmallTransporterDeclared ?? false;
   bool _busy = false;
   AppError? _error;
 
@@ -58,7 +66,16 @@ class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
 
   @override
   void dispose() {
-    for (final c in [_name, _legal, _email, _phone, _address, _account, _ifsc, _notes]) {
+    for (final c in [
+      _name,
+      _legal,
+      _email,
+      _phone,
+      _address,
+      _account,
+      _ifsc,
+      _notes
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -75,8 +92,10 @@ class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
       _error = null;
     });
     try {
-      final renamed = !_editing || widget.vendor!.name.trim().toLowerCase() != name.toLowerCase();
-      if (renamed && await vendorNameTaken(ref, name, exceptId: widget.vendor?.id)) {
+      final renamed = !_editing ||
+          widget.vendor!.name.trim().toLowerCase() != name.toLowerCase();
+      if (renamed &&
+          await vendorNameTaken(ref, name, exceptId: widget.vendor?.id)) {
         if (!mounted) return;
         setState(() => _busy = false);
         ref.read(toastProvider.notifier).showError(vendorDuplicateMessage);
@@ -97,12 +116,16 @@ class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
         'notes': _notes.text.trim(),
       };
       final repo = ref.read(accountingRepositoryProvider);
-      final saved = _editing ? await repo.updateVendor(widget.vendor!.id, fields) : await repo.createVendor(fields);
+      final saved = _editing
+          ? await repo.updateVendor(widget.vendor!.id, fields)
+          : await repo.createVendor(fields);
       invalidateAccountingReads(ref.invalidate);
       ref.invalidate(vendorsProvider);
       ref.invalidate(vendorDetailProvider);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(_editing ? 'Vendor updated' : 'Vendor added');
+      ref
+          .read(toastProvider.notifier)
+          .show(_editing ? 'Vendor updated' : 'Vendor added');
       Navigator.of(context).pop(saved);
     } on AppError catch (e) {
       if (!mounted) return;
@@ -110,7 +133,10 @@ class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
         _busy = false;
         // The duplicate-name race still ends in a 500 (§12.3).
         _error = e.type == AppErrorType.server
-            ? AppError(type: e.type, message: vendorDuplicateMessage, statusCode: e.statusCode)
+            ? AppError(
+                type: e.type,
+                message: vendorDuplicateMessage,
+                statusCode: e.statusCode)
             : e;
       });
     }
@@ -128,9 +154,16 @@ class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
       error: _error,
       onSubmit: _save,
       children: [
-        AccInput(label: 'Name', required: true, controller: _name, hint: 'As you call them',
+        AccInput(
+            label: 'Name',
+            required: true,
+            controller: _name,
+            hint: 'As you call them',
             textCapitalization: TextCapitalization.words),
-        AccInput(label: 'Legal name', controller: _legal, hint: 'As on their invoices',
+        AccInput(
+            label: 'Legal name',
+            controller: _legal,
+            hint: 'As on their invoices',
             textCapitalization: TextCapitalization.words),
         AccPickerBox(
           label: 'State',
@@ -138,20 +171,36 @@ class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
           hint: 'Select state…',
           icon: PhosphorIconsRegular.mapPin,
           onTap: () async {
-            final code = await pickGstState(context, ref, selected: _state, title: 'Vendor state');
+            final code = await pickGstState(context, ref,
+                selected: _state, title: 'Vendor state');
             if (code != null) setState(() => _state = code);
           },
         ),
-        AccInput(label: 'Email', controller: _email, keyboardType: TextInputType.emailAddress),
-        AccInput(label: 'Phone', controller: _phone, keyboardType: TextInputType.phone),
+        AccInput(
+            label: 'Email',
+            controller: _email,
+            keyboardType: TextInputType.emailAddress),
+        AccInput(
+            label: 'Phone',
+            controller: _phone,
+            keyboardType: TextInputType.phone),
         AccInput(label: 'Address', controller: _address, maxLines: 3),
         AccDisclosure(
           title: 'Bank and tax details',
           initiallyOpen: _editing,
           children: [
-            AccInput(label: 'Account no (masked)', controller: _account, hint: 'e.g. XXXX1234'),
-            AccInput(label: 'IFSC', controller: _ifsc, textCapitalization: TextCapitalization.characters),
-            AccCheckRow(label: 'Body corporate', value: _bodyCorporate, onChanged: (v) => setState(() => _bodyCorporate = v)),
+            AccInput(
+                label: 'Account no (masked)',
+                controller: _account,
+                hint: 'e.g. XXXX1234'),
+            AccInput(
+                label: 'IFSC',
+                controller: _ifsc,
+                textCapitalization: TextCapitalization.characters),
+            AccCheckRow(
+                label: 'Body corporate',
+                value: _bodyCorporate,
+                onChanged: (v) => setState(() => _bodyCorporate = v)),
             AccCheckRow(
                 label: 'GTA opted for forward charge',
                 value: _gta,

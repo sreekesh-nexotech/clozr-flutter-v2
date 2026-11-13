@@ -9,7 +9,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../../app/theme/app_colors.dart';
 import '../../../../../app/theme/app_text_styles.dart';
 import '../../../../../core/utils/money_format.dart';
-import '../../../../accounting/presentation/components/acc_pickers.dart' show PickItem, showSearchPicker;
+import '../../../../accounting/presentation/components/acc_pickers.dart'
+    show PickItem, showSearchPicker;
 import '../../../application/providers/quote_builder_providers.dart';
 import '../../../application/quote_builder/quote_lines.dart';
 import '../../../domain/entities/product.dart';
@@ -111,7 +112,8 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
       });
 
   void _update(String key, QuoteFormItem Function(QuoteFormItem) patch) {
-    widget.onItemsChange([for (final it in widget.items) it.key == key ? patch(it) : it]);
+    widget.onItemsChange(
+        [for (final it in widget.items) it.key == key ? patch(it) : it]);
   }
 
   Product? _product(String id) {
@@ -122,24 +124,34 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
   }
 
   Future<void> _pickProduct(QuoteFormItem it) async {
-    final usable = [for (final p in widget.catalog) if (p.active || p.id == it.productId) p];
+    final usable = [
+      for (final p in widget.catalog)
+        if (p.active || p.id == it.productId) p
+    ];
     final id = await showSearchPicker<String>(
       context: context,
       title: 'Select product',
       hint: 'Search products',
-      empty: widget.catalogLoading ? 'Loading catalog…' : 'No products in the catalog',
+      empty: widget.catalogLoading ? 'Loading catalog…' : 'No products match',
       loading: widget.catalogLoading && usable.isEmpty,
       selected: it.productId,
       items: [
         for (final p in usable)
-          PickItem(p.id, p.name,
-              subtitle: [formatMoneyStr(p.priceNum), if (p.isPackage) 'Package'].join(' · '),
-              searchText: '${p.code} ${p.hsn}'),
+          // The webapp's option: "UAT Service 18% (₹1,000)" over the product code.
+          PickItem(p.id, '${p.name} (${formatMoneyStr(p.priceNum)})',
+              subtitle: [
+                if (p.code.isNotEmpty) p.code,
+                if (p.isPackage) 'Package'
+              ].join(' · '),
+              searchText: '${p.name} ${p.code} ${p.hsn}'),
       ],
     );
     if (id == null || !mounted) return;
     final p = _product(id);
-    _update(it.key, (row) => row.withProduct(id, productName: p?.name ?? '', package: p?.isPackage ?? false));
+    _update(
+        it.key,
+        (row) => row.withProduct(id,
+            productName: p?.name ?? '', package: p?.isPackage ?? false));
   }
 
   // ── HSN / rate master (typed lines) ──────────────────────────────────────
@@ -154,9 +166,12 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
       try {
         final results = await ref.read(quoteBuilderDsProvider).hsnSearch(c);
         final hit = resolveHsn(results, c);
-        if (mounted) setState(() => _hsnInfo[c] = _HsnInfo(hit == null ? _HsnState.missing : _HsnState.found, hit));
+        if (mounted)
+          setState(() => _hsnInfo[c] =
+              _HsnInfo(hit == null ? _HsnState.missing : _HsnState.found, hit));
       } on Object {
-        if (mounted) setState(() => _hsnInfo[c] = const _HsnInfo(_HsnState.error));
+        if (mounted)
+          setState(() => _hsnInfo[c] = const _HsnInfo(_HsnState.error));
       }
     });
   }
@@ -179,25 +194,43 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
       items: [
         for (final r in results)
           PickItem('${r.code}|${r.supplyNature}', r.code,
-              subtitle: r.rates.map((v) => '${formatRate(v.ratePct)}%').toSet().join(' / ')),
+              subtitle: r.rates
+                  .map((v) => '${formatRate(v.ratePct)}%')
+                  .toSet()
+                  .join(' / ')),
       ],
     );
     if (code == null || !mounted) return;
-    final picked = results.firstWhere((r) => '${r.code}|${r.supplyNature}' == code);
+    final picked =
+        results.firstWhere((r) => '${r.code}|${r.supplyNature}' == code);
     _hsnInfo[picked.code] = _HsnInfo(_HsnState.found, picked);
     HsnRate? variant;
     for (final r in picked.rates) {
       if (r.variantKey == picked.defaultVariantKey) variant = r;
     }
-    if (variant == null && picked.rates.length == 1) variant = picked.rates.first;
-    _update(it.key, (row) => row.copyWith(hsnSac: picked.code, gstRate: variant?.ratePct ?? ''));
+    if (variant == null && picked.rates.length == 1)
+      variant = picked.rates.first;
+    _update(
+        it.key,
+        (row) =>
+            row.copyWith(hsnSac: picked.code, gstRate: variant?.ratePct ?? ''));
   }
 
   Future<void> _pickGstRate(QuoteFormItem it, {HsnCode? code}) async {
     final options = code != null
-        ? [for (final r in code.rates) (r.ratePct, '${formatRate(r.ratePct)}%${r.condition.isEmpty ? '' : ' — ${r.condition}'}')]
-        : [('', 'No GST'), for (final r in gstRateOptions(it.gstRate)) (r, '${formatRate(r)}%')];
-    final v = await qbPickOne(context, title: 'GST rate', options: options, selected: it.gstRate);
+        ? [
+            for (final r in code.rates)
+              (
+                r.ratePct,
+                '${formatRate(r.ratePct)}%${r.condition.isEmpty ? '' : ' — ${r.condition}'}'
+              )
+          ]
+        : [
+            ('', 'No GST'),
+            for (final r in gstRateOptions(it.gstRate)) (r, '${formatRate(r)}%')
+          ];
+    final v = await qbPickOne(context,
+        title: 'GST rate', options: options, selected: it.gstRate);
     if (v != null) _update(it.key, (row) => row.copyWith(gstRate: v));
   }
 
@@ -206,7 +239,10 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
   String _lineDetail(QuoteFormItem it, List<PricedLine>? lines) {
     if (lines == null || lines.isEmpty) return '';
     if (it.isPackage) {
-      final rates = {for (final l in lines) if (l.ratePct != null) '${formatRate(l.ratePct!)}%'};
+      final rates = {
+        for (final l in lines)
+          if (l.ratePct != null) '${formatRate(l.ratePct!)}%'
+      };
       return [
         '${lines.length} item${lines.length == 1 ? '' : 's'}',
         if (rates.isNotEmpty) 'GST ${rates.join(', ')}',
@@ -216,18 +252,22 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
     return [
       if (l.hsnSac.isNotEmpty) 'HSN/SAC ${l.hsnSac}',
       l.ratePct == null ? 'No GST rate' : 'GST ${formatRate(l.ratePct!)}%',
-      if (l.cessPct != null && (double.tryParse(l.cessPct!) ?? 0) != 0) 'Cess ${formatRate(l.cessPct!)}%',
-      if ((double.tryParse(l.lineDiscount) ?? 0) != 0) 'Discount −${formatMoneyStr(l.lineDiscount)}',
+      if (l.cessPct != null && (double.tryParse(l.cessPct!) ?? 0) != 0)
+        'Cess ${formatRate(l.cessPct!)}%',
+      if ((double.tryParse(l.lineDiscount) ?? 0) != 0)
+        'Discount −${formatMoneyStr(l.lineDiscount)}',
     ].join(' · ');
   }
 
   String _lineAmount(QuoteFormItem it, List<PricedLine>? lines) {
     if (lines != null && lines.isNotEmpty) {
-      final paise = lines.fold<int>(0, (a, l) => a + ((double.tryParse(l.totalPrice) ?? 0) * 100).round());
+      final paise = lines.fold<int>(0,
+          (a, l) => a + ((double.tryParse(l.totalPrice) ?? 0) * 100).round());
       return formatMoneyStr(paise / 100);
     }
     if (sendsOwnPrice(it) && isValidUnitPrice(it.rate)) {
-      return formatMoneyStr(toQty(it.qty) * double.parse(cleanUnitPrice(it.rate)));
+      return formatMoneyStr(
+          toQty(it.qty) * double.parse(cleanUnitPrice(it.rate)));
     }
     return '—';
   }
@@ -252,10 +292,14 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
           trailing: priceHint.isEmpty
               ? null
               : Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(PhosphorIconsRegular.info, size: 13.sp, color: AppColors.textPlaceholder),
+                  Icon(PhosphorIconsRegular.info,
+                      size: 13.sp, color: AppColors.textPlaceholder),
                   SizedBox(width: 4.w),
                   Text(priceHint,
-                      style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 11,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPlaceholder)),
                 ]),
         ),
         for (var i = 0; i < widget.items.length; i++) ...[
@@ -263,7 +307,8 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
           _lineCard(widget.items[i]),
         ],
         if (widget.items.any((it) => it.isPackage))
-          const QbHint('Package lines expand into their items (with any bundle discount) when the quote is saved.'),
+          const QbHint(
+              'Package lines expand into their items (with any bundle discount) when the quote is saved.'),
         if (!widget.disabled) ...[
           SizedBox(height: 10.h),
           Row(children: [
@@ -271,7 +316,8 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
               child: QbAddButton(
                 label: 'Add product line',
                 icon: PhosphorIconsBold.plus,
-                onTap: () => widget.onItemsChange([...widget.items, QuoteFormItem.blank()]),
+                onTap: () => widget
+                    .onItemsChange([...widget.items, QuoteFormItem.blank()]),
               ),
             ),
             SizedBox(width: 9.w),
@@ -279,7 +325,8 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
               child: QbAddButton(
                 label: 'Add free-text line',
                 icon: PhosphorIconsRegular.pencilLine,
-                onTap: () => widget.onItemsChange([...widget.items, QuoteFormItem.blank(LineKind.free)]),
+                onTap: () => widget.onItemsChange(
+                    [...widget.items, QuoteFormItem.blank(LineKind.free)]),
               ),
             ),
           ]),
@@ -293,18 +340,26 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
     final lines = widget.priced[it.key];
     final problem = lineProblem(it);
     final disabled = widget.disabled;
-    final untouchedCatalog = it.kind == LineKind.catalog && !it.priceTouched && !it.isPackage;
-    final serverPrice = lines != null && lines.length == 1 && !it.isPackage ? lines.first.unitPrice : '';
-    final raw = it.priceTouched || it.kind == LineKind.free ? it.rate : serverPrice;
+    final untouchedCatalog =
+        it.kind == LineKind.catalog && !it.priceTouched && !it.isPackage;
+    final serverPrice = lines != null && lines.length == 1 && !it.isPackage
+        ? lines.first.unitPrice
+        : '';
+    final raw =
+        it.priceTouched || it.kind == LineKind.free ? it.rate : serverPrice;
     final focused = c.priceFocus.hasFocus;
-    if (!focused) qbSync(c.price, raw.isEmpty ? '' : displayUnitPrice(raw, toQty(it.qty)));
+    if (!focused)
+      qbSync(c.price, raw.isEmpty ? '' : displayUnitPrice(raw, toQty(it.qty)));
     qbSync(c.qty, it.qty);
     if (it.kind == LineKind.free) {
       qbSync(c.name, it.name);
       qbSync(c.hsn, it.hsnSac);
     }
     final detail = _lineDetail(it, lines);
-    final sub = [detail, if (untouchedCatalog && it.productId.isNotEmpty) 'catalog price'].where((s) => s.isNotEmpty).join(' · ');
+    final sub = [
+      detail,
+      if (untouchedCatalog && it.productId.isNotEmpty) 'catalog price'
+    ].where((s) => s.isNotEmpty).join(' · ');
 
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
@@ -318,8 +373,13 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
         children: [
           if (it.kind == LineKind.catalog)
             QbPickerBox(
-              text: it.productId.isEmpty ? '' : (_product(it.productId)?.name ?? (it.name.isEmpty ? 'Product' : it.name)),
-              placeholder: widget.catalogLoading ? 'Loading catalog…' : 'Select product…',
+              text: it.productId.isEmpty
+                  ? ''
+                  : (_product(it.productId)?.name ??
+                      (it.name.isEmpty ? 'Product' : it.name)),
+              placeholder: widget.catalogLoading
+                  ? 'Loading catalog…'
+                  : 'Select product…',
               onTap: disabled ? null : () => _pickProduct(it),
             )
           else
@@ -351,20 +411,25 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                     // Digits, one dot, at most three decimals (the server's 3 dp).
-                    TextInputFormatter.withFunction(
-                        (o, n) => RegExp(r'^\d*\.?\d{0,3}$').hasMatch(n.text) ? n : o),
+                    TextInputFormatter.withFunction((o, n) =>
+                        RegExp(r'^\d*\.?\d{0,3}$').hasMatch(n.text) ? n : o),
                   ],
-                  onChanged: (v) => _update(it.key, (row) => row.copyWith(qty: v)),
+                  onChanged: (v) =>
+                      _update(it.key, (row) => row.copyWith(qty: v)),
                 ),
               ),
               SizedBox(width: 9.w),
               Expanded(
                 child: it.isPackage
                     ? Tooltip(
-                        message: 'A package is priced from the catalog and expands into its items when saved.',
+                        message:
+                            'A package is priced from the catalog and expands into its items when saved.',
                         child: Text('Package',
                             textAlign: TextAlign.center,
-                            style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+                            style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w600,
+                                color: AppColors.textMuted)),
                       )
                     : QbBox(
                         controller: c.price,
@@ -373,23 +438,37 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                         numeric: true,
                         align: TextAlign.end,
                         muted: untouchedCatalog,
-                        hint: it.kind == LineKind.free ? '0.00' : (it.productId.isNotEmpty ? '…' : 'Unit price'),
+                        hint: it.kind == LineKind.free
+                            ? '0.00'
+                            : (it.productId.isNotEmpty ? '…' : 'Unit price'),
                         error: problem == LineProblem.price,
-                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,₹ ]'))],
-                        onChanged: (v) => _update(it.key, (row) => row.copyWith(rate: v, priceTouched: true)),
-                        suffix: it.kind == LineKind.catalog && it.priceTouched && it.productId.isNotEmpty && !disabled
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,₹ -]'))
+                        ],
+                        onChanged: (v) => _update(it.key,
+                            (row) => row.copyWith(rate: v, priceTouched: true)),
+                        suffix: it.kind == LineKind.catalog &&
+                                it.priceTouched &&
+                                it.productId.isNotEmpty &&
+                                !disabled
                             ? GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: () {
                                   c.priceFocus.unfocus();
-                                  _update(it.key, (row) => row.withCatalogPrice());
+                                  _update(
+                                      it.key, (row) => row.withCatalogPrice());
                                 },
                                 child: Tooltip(
                                   message: 'Use the catalog price',
                                   child: Padding(
                                     padding: EdgeInsets.all(6.w),
-                                    child: Icon(PhosphorIconsRegular.arrowCounterClockwise,
-                                        size: 15.sp, color: AppColors.textLabelAlt, semanticLabel: 'Use the catalog price'),
+                                    child: Icon(
+                                        PhosphorIconsRegular
+                                            .arrowCounterClockwise,
+                                        size: 15.sp,
+                                        color: AppColors.textLabelAlt,
+                                        semanticLabel: 'Use the catalog price'),
                                   ),
                                 ),
                               )
@@ -402,9 +481,16 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('Amount', style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    Text('Amount',
+                        style: AppText.custom(
+                            size: 11,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
                     Text(_lineAmount(it, lines),
-                        style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
                   ],
                 ),
               ),
@@ -414,16 +500,22 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                   icon: PhosphorIconsRegular.trash,
                   danger: true,
                   tooltip: 'Remove line',
-                  onTap: () => widget.onItemsChange([for (final r in widget.items) if (r.key != it.key) r]),
+                  onTap: () => widget.onItemsChange([
+                    for (final r in widget.items)
+                      if (r.key != it.key) r
+                  ]),
                 ),
               ],
             ],
           ),
           if (sub.isNotEmpty)
             Opacity(opacity: widget.pricing ? 0.6 : 1, child: QbHint(sub)),
-          if (widget.recurringEnabled && (it.productId.isNotEmpty || it.name.trim().isNotEmpty)) ...[
+          if (widget.recurringEnabled &&
+              (it.productId.isNotEmpty || it.name.trim().isNotEmpty)) ...[
             SizedBox(height: 8.h),
-            disabled ? QbHint(chargeLabel(effectiveCharge(it, lines))) : _chargeControl(it, c, effectiveCharge(it, lines)),
+            disabled
+                ? QbHint(chargeLabel(effectiveCharge(it, lines)))
+                : _chargeControl(it, c, effectiveCharge(it, lines)),
           ],
         ],
       ),
@@ -443,14 +535,17 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
     final variantMissing = widget.rateMaster &&
         found != null &&
         found.needsVariantChoice &&
-        !found.rates.any((r) => it.gstRate.isNotEmpty && double.tryParse(r.ratePct) == double.tryParse(it.gstRate));
+        !found.rates.any((r) =>
+            it.gstRate.isNotEmpty &&
+            double.tryParse(r.ratePct) == double.tryParse(it.gstRate));
     if (widget.rateMaster && code.isNotEmpty) _lookupHsn(code);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const QbFieldLabel('HSN / SAC'),
               SizedBox(height: 6.h),
               QbBox(
@@ -458,16 +553,23 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                 numeric: true,
                 hint: 'e.g. 998313',
                 error: hsnError != null,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(8)
+                ],
                 // On a rate-master tenant the rate is the code's: forget the old code's rate.
-                onChanged: (v) => _update(it.key, (row) => row.copyWith(hsnSac: v, gstRate: widget.rateMaster ? '' : null)),
+                onChanged: (v) => _update(
+                    it.key,
+                    (row) => row.copyWith(
+                        hsnSac: v, gstRate: widget.rateMaster ? '' : null)),
                 suffix: widget.rateMaster
                     ? GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () => _pickHsn(it),
                         child: Padding(
                           padding: EdgeInsets.all(6.w),
-                          child: Icon(PhosphorIconsRegular.magnifyingGlass, size: 15.sp, color: AppColors.textLabelAlt),
+                          child: Icon(PhosphorIconsRegular.magnifyingGlass,
+                              size: 15.sp, color: AppColors.textLabelAlt),
                         ),
                       )
                     : null,
@@ -477,12 +579,15 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
           SizedBox(width: 9.w),
           SizedBox(
             width: 128.w,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const QbFieldLabel('GST rate'),
               SizedBox(height: 6.h),
               if (!widget.rateMaster)
                 QbPickerBox(
-                  text: it.gstRate.isEmpty ? 'No GST' : '${formatRate(it.gstRate)}%',
+                  text: it.gstRate.isEmpty
+                      ? 'No GST'
+                      : '${formatRate(it.gstRate)}%',
                   placeholder: 'No GST',
                   error: taxProblem == FreeTaxProblem.rate,
                   onTap: () => _pickGstRate(it),
@@ -490,19 +595,26 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
               else
                 QbPickerBox(
                   text: it.gstRate.isEmpty
-                      ? (found != null && !found.needsVariantChoice && found.rates.isNotEmpty
+                      ? (found != null &&
+                              !found.needsVariantChoice &&
+                              found.rates.isNotEmpty
                           ? '${formatRate(found.rates.first.ratePct)}%'
                           : '')
                       : '${formatRate(it.gstRate)}%',
-                  placeholder: info?.state == _HsnState.loading ? 'Looking up…' : 'From the code',
+                  placeholder: info?.state == _HsnState.loading
+                      ? 'Looking up…'
+                      : 'From the code',
                   error: variantMissing,
-                  onTap: found != null && found.rates.length > 1 ? () => _pickGstRate(it, code: found) : null,
+                  onTap: found != null && found.rates.length > 1
+                      ? () => _pickGstRate(it, code: found)
+                      : null,
                 ),
             ]),
           ),
         ]),
         if (hsnError != null) QbHint(hsnError, error: true),
-        if (variantMissing) const QbHint('Choose the GST rate for this code.', error: true),
+        if (variantMissing)
+          const QbHint('Choose the GST rate for this code.', error: true),
       ],
     );
   }
@@ -511,8 +623,10 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
     final problem = chargeProblem(charge);
     qbSync(c.days, charge.billingPeriodDays?.toString() ?? '');
     qbSync(c.term, charge.termPeriods?.toString() ?? '');
-    int? intOrNull(String v) => v.trim().isEmpty ? null : int.tryParse(v.trim());
-    void set(LineCharge next) => _update(it.key, (row) => row.copyWith(charge: next));
+    int? intOrNull(String v) =>
+        v.trim().isEmpty ? null : int.tryParse(v.trim());
+    void set(LineCharge next) =>
+        _update(it.key, (row) => row.copyWith(charge: next));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -521,7 +635,11 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
           runSpacing: 6.h,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text('Billed', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+            Text('Billed',
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
             QbChip(
               label: 'One-time',
               selected: !charge.isRecurring,
@@ -545,16 +663,23 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
             Expanded(
               child: QbPickerBox(
                 height: 38.h,
-                text: billingPeriodLabels[charge.billingPeriod ?? 'month'] ?? '',
+                text:
+                    billingPeriodLabels[charge.billingPeriod ?? 'month'] ?? '',
                 placeholder: 'Billing period',
                 onTap: () async {
                   final v = await qbPickOne(context,
                       title: 'Billing period',
-                      options: [for (final p in billingPeriods) (p, billingPeriodLabels[p]!)],
+                      options: [
+                        for (final p in billingPeriods)
+                          (p, billingPeriodLabels[p]!)
+                      ],
                       selected: charge.billingPeriod);
                   if (v != null) {
                     set(charge.copyWith(
-                        billingPeriod: v, billingPeriodDays: v == 'custom_days' ? (charge.billingPeriodDays ?? 30) : null));
+                        billingPeriod: v,
+                        billingPeriodDays: v == 'custom_days'
+                            ? (charge.billingPeriodDays ?? 30)
+                            : null));
                   }
                 },
               ),
@@ -570,12 +695,17 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                   hint: 'days',
                   align: TextAlign.end,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (v) => set(charge.copyWith(billingPeriodDays: intOrNull(v))),
+                  onChanged: (v) =>
+                      set(charge.copyWith(billingPeriodDays: intOrNull(v))),
                 ),
               ),
             ],
             SizedBox(width: 6.w),
-            Text('for', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+            Text('for',
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted)),
             SizedBox(width: 6.w),
             SizedBox(
               width: 56.w,
@@ -586,11 +716,14 @@ class _QuoteLinesEditorState extends ConsumerState<QuoteLinesEditor> {
                 hint: '∞',
                 align: TextAlign.end,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                onChanged: (v) => set(charge.copyWith(termPeriods: intOrNull(v))),
+                onChanged: (v) =>
+                    set(charge.copyWith(termPeriods: intOrNull(v))),
               ),
             ),
           ]),
-          QbHint(charge.termPeriods != null ? 'periods' : 'periods (blank = until cancelled)'),
+          QbHint(charge.termPeriods != null
+              ? 'periods'
+              : 'periods (blank = until cancelled)'),
         ],
         if (problem != null) QbHint(problem, error: true),
       ],

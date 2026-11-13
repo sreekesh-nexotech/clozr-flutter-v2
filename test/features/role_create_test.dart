@@ -94,9 +94,11 @@ void main() {
     final catalog = ModuleCatalog.fromJson(_catalogBody);
 
     test('groups keep their key, label, blurb and coming-soon flag', () {
-      expect([for (final g in catalog.groups) g.key], ['crm', 'pmo', 'helpdesk']);
+      expect(
+          [for (final g in catalog.groups) g.key], ['crm', 'pmo', 'helpdesk']);
       expect(catalog.groups.first.label, 'CRM');
-      expect(catalog.groups.first.description, 'Leads, customers, quotes & payments');
+      expect(catalog.groups.first.description,
+          'Leads, customers, quotes & payments');
       expect(catalog.groups.first.comingSoon, isFalse);
       // Rendered locked — granting one is a 400.
       expect(catalog.groups.last.comingSoon, isTrue);

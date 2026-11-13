@@ -1,10 +1,14 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../approvals/domain/entities/approval.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
+import '../../../approvals/presentation/components/approval_request_note.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -26,11 +30,18 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/utils/attachment_link.dart';
 import '../../domain/entities/lead_schema.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
+import '../../application/customer_detail_rules.dart'
+    show webMoney, productsText;
+import '../../application/lead_deal_fields.dart';
+import '../../../accounting/application/providers/accounting_providers.dart'
+    show gstStatesProvider, gstStateNameProvider;
+import '../../application/record_rows.dart';
 import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/call_logs_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/lead_call_providers.dart';
 import '../../../messages/application/providers/messages_providers.dart';
+import '../../../messages/application/whatsapp_gate.dart';
 import '../../application/providers/lead_whatsapp_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
@@ -40,7 +51,11 @@ import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
+import '../../../../core/utils/upload_rules.dart';
+import '../../../../core/widgets/file_name_dialog.dart';
 import '../../application/providers/quotes_providers.dart';
+import '../components/quote_detail/generate_for_record.dart';
+
 import '../../domain/entities/call_log.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
@@ -54,6 +69,8 @@ import '../../../../data/api/user_directory.dart';
 import '../components/crm_async.dart';
 import '../components/crm_check_box.dart';
 import '../components/crm_detail_parts.dart';
+import '../components/customer_detail/customer_products_sheet.dart';
+import '../components/field_value_sheet.dart';
 import '../components/inline_edit_row.dart';
 import '../sheets/reassign_owner_sheet.dart';
 import '../components/option_picker_sheet.dart';
@@ -68,6 +85,9 @@ import '../components/lead_lifecycle_sheets.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../components/call_log_actions.dart';
 import '../components/sla_clocks_section.dart';
+import '../components/quote_pdf.dart';
+import '../../infrastructure/data_sources/remote/lead_record_actions.dart';
+import '../../application/attachment_cascade.dart';
 import '../components/closing_note.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/utils/money_format.dart';
@@ -85,6 +105,9 @@ class LeadDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<LeadDetailScreen> createState() => _LeadDetailScreenState();
 }
 
+final RegExp _uuidRe = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
 class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   int _tab = 0;
   bool _infoMore = false;
@@ -99,7 +122,13 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// the lazy list has not built it yet.
   final _scroll = ScrollController();
 
-  static const _tabLabels = ['Tasks', 'Call log', 'Follow-ups', 'Quotes', 'Files'];
+  static const _tabLabels = [
+    'Tasks',
+    'Call log',
+    'Follow-ups',
+    'Quotes',
+    'Files'
+  ];
 
   /// Information rows shown before "Show more". An org with a long detail
   /// layout collapses to this; a shorter one shows every row and drops the
@@ -170,7 +199,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       users = await ref.read(assignableUsersProvider(lead.id).future);
     } on Object catch (e) {
       if (!mounted) return;
-      toast.showError(e is AppError ? e.message : 'Could not load the user list.');
+      toast.showError(
+          e is AppError ? e.message : 'Could not load the user list.');
       return;
     }
     if (!mounted) return;
@@ -284,7 +314,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       context: context,
       title: team == null ? 'Assign team' : 'Change assigned team',
       options: [
-        if (team != null) const CatalogOption(id: '__remove__', name: 'Remove team'),
+        if (team != null)
+          const CatalogOption(id: '__remove__', name: 'Remove team'),
         ...teams,
       ],
       selected: {if (team != null) team.$1},
@@ -317,7 +348,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // Won but not converted: the webapp locks the fields and only lets the
     // status move.
     if (lead.status == 'won') {
-      ref.read(toastProvider.notifier).show('Won — details are locked. Move it out of Won to edit.');
+      ref
+          .read(toastProvider.notifier)
+          .show('Won — details are locked. Move it out of Won to edit.');
       return;
     }
     if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
@@ -332,7 +365,6 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       );
 
   void _openLeadMenu(Lead lead, LeadConversion conversion) {
-    final toast = ref.read(toastProvider.notifier);
     final converted = conversion.isConverted;
     final canUpdate = hasPermission(ref, 'lead', PermVerb.update);
     final isWon = lead.status == 'won';
@@ -350,16 +382,26 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     showActionMenu(
       context,
       actions: [
-        MenuAction(icon: PhosphorIconsFill.phone, label: 'Call lead', onTap: () => _callLead(lead)),
-        MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => _openWhatsapp(lead)),
-        MenuAction(icon: PhosphorIconsRegular.envelopeSimple, label: 'Send email', onTap: () => toast.show('Composing email…')),
+        MenuAction(
+            icon: PhosphorIconsFill.phone,
+            label: 'Call lead',
+            onTap: () => _callLead(lead)),
+        MenuAction(
+            icon: PhosphorIconsRegular.whatsappLogo,
+            label: 'WhatsApp chat',
+            onTap: () => _openWhatsapp(lead)),
+        MenuAction(
+            icon: PhosphorIconsRegular.envelopeSimple,
+            label: 'Send email',
+            onTap: () => _sendEmail(lead)),
         if (converted)
           MenuAction(
             icon: PhosphorIconsRegular.buildings,
             label: 'View customer',
             sublabel: conversion.customerName,
             enabled: conversion.customerId != null,
-            onTap: () => context.push('${Routes.customerDetail}?id=${conversion.customerId}'),
+            onTap: () => context
+                .push('${Routes.customerDetail}?id=${conversion.customerId}'),
           )
         else
           MenuAction(
@@ -369,6 +411,17 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             sublabel: convertBlock,
             onTap: () => _convert(lead),
           ),
+        MenuAction(
+          icon: PhosphorIconsRegular.filePlus,
+          label: 'Generate document',
+          enabled: canUpdate,
+          sublabel: canUpdate ? null : permissionCopy(PermVerb.update),
+          onTap: () async {
+            final ok =
+                await generateDocumentForRecord(context, ref, leadId: lead.id);
+            if (ok) ref.invalidate(leadFilesProvider(lead.id));
+          },
+        ),
         MenuAction(
           icon: PhosphorIconsRegular.userSwitch,
           label: 'Reassign owner',
@@ -382,7 +435,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         ),
         // The sticky bar's pencil now opens Edit lead, so the notes composer
         // keeps its shortcut here rather than losing one entirely.
-        MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
+        MenuAction(
+            icon: PhosphorIconsRegular.notePencil,
+            label: 'Add note',
+            onTap: _focusNotes),
         MenuAction(
           icon: PhosphorIconsRegular.pencilSimple,
           label: 'Edit lead',
@@ -395,6 +451,24 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       ? null
                       : permissionCopy(PermVerb.update),
           onTap: () => _editLead(lead),
+        ),
+        // Archive / Delete on the record itself (UI/UX audit #14).
+        MenuAction(
+          icon: PhosphorIconsRegular.archive,
+          label: 'Archive lead',
+          enabled: canUpdate,
+          sublabel: canUpdate ? null : permissionCopy(PermVerb.update),
+          onTap: () => _archiveLead(lead),
+        ),
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete lead',
+          destructive: true,
+          enabled: hasPermission(ref, 'lead', PermVerb.delete),
+          sublabel: hasPermission(ref, 'lead', PermVerb.delete)
+              ? null
+              : permissionCopy(PermVerb.delete),
+          onTap: () => _deleteLead(lead),
         ),
       ],
     );
@@ -451,6 +525,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    // A malformed id never reaches the API (its "Enter a valid UUID." must not
+    // leak into the page) — it is simply a lead that cannot exist.
+    if (ApiConfig.apiEnabled && !_uuidRe.hasMatch(id)) return _notFound();
     final record = ref.watch(leadDetailProvider(id));
 
     // The record is authoritative — it is the only source carrying the owner,
@@ -459,7 +536,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // A 404 means the lead was deleted or merged since the list loaded — the
     // list row must not stand in for it then, or a record that no longer
     // exists stays on screen looking editable.
-    final gone = record.hasError && crmAppError(record.error!).type == AppErrorType.notFound;
+    final gone = record.hasError &&
+        crmAppError(record.error!).type == AppErrorType.notFound;
     if (gone) return _notFound();
     final lead = record.valueOrNull ?? ref.watch(leadByIdProvider(id));
     if (lead != null) return _buildLead(context, lead);
@@ -520,7 +598,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       LeadCallResult.dialledNotLogged =>
         'Call not logged — add your phone number to your profile.',
       // The dialler is already on screen, and a failed log carries its own text.
-      LeadCallResult.dialledAndLogged || LeadCallResult.dialledLogFailed => null,
+      LeadCallResult.dialledAndLogged ||
+      LeadCallResult.dialledLogFailed =>
+        null,
     };
     final parts = [
       if (outcome.message != null) outcome.message!,
@@ -529,6 +609,22 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (parts.isNotEmpty) {
       ref.read(toastProvider.notifier).show(parts.join(' · '));
     }
+  }
+
+  /// "Send email" — the webapp's mail action: hands the lead's address to the
+  /// device mail client (`mailto:`). Was a placeholder toast (UAT).
+  Future<void> _sendEmail(Lead lead) async {
+    final toast = ref.read(toastProvider.notifier);
+    final row = ref.read(leadRowProvider(lead.id)).valueOrNull;
+    final raw = row?['email'] ?? lead.email;
+    final email = raw is String ? raw.trim() : '';
+    if (email.isEmpty) {
+      toast.show('No email address on this lead.');
+      return;
+    }
+    final ok = await launchUrl(Uri(scheme: 'mailto', path: email),
+        mode: LaunchMode.externalApplication);
+    if (!ok) toast.show('Could not open a mail app on this device.');
   }
 
   /// Opens WhatsApp for the lead, as the webapp's chat icon does: the lead's
@@ -540,6 +636,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// has no side effect, so the header's unread badge only clears because
   /// `POST /conversations/<id>/read/` was fired here.
   Future<void> _openWhatsapp(Lead lead) async {
+    if (!await ensureWhatsappConnected(ref)) return;
+    if (!mounted) return;
     final phone = _waMobileOf(lead);
     final outcome = await ref
         .read(leadWhatsappServiceProvider)
@@ -592,6 +690,74 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     return v is String ? v.trim() : '';
   }
 
+  /// Asks before an Archive / Delete.
+  Future<bool> _confirm(String title, String body, String action) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(action,
+                    style: TextStyle(
+                        color: action == 'Delete'
+                            ? AppColors.error
+                            : AppColors.navy))),
+          ],
+        ),
+      ) ==
+      true;
+
+  /// ⋯ › Archive lead — `POST /crm/leads/bulk-archive/` for this one lead.
+  Future<void> _archiveLead(Lead lead) async {
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+    if (!await _confirm(
+        'Archive this lead?',
+        '"${lead.name}" moves to the archived leads. It can be restored from the web app.',
+        'Archive')) return;
+    try {
+      await LeadRecordActions(ref.read(apiServiceProvider)).archive(lead.id);
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(leadsScopedProvider);
+    ref.read(toastProvider.notifier).show('Lead archived');
+    context.canPop() ? context.pop() : context.go(Routes.leads);
+  }
+
+  /// ⋯ › Delete lead — its files first (UI/UX audit #09: the server leaves
+  /// them behind), then `DELETE /crm/leads/{id}/`.
+  Future<void> _deleteLead(Lead lead) async {
+    if (!ensurePermission(ref, 'lead', PermVerb.delete)) return;
+    if (!await _confirm(
+        'Delete this lead?',
+        '"${lead.name}" and its files will be permanently removed.',
+        'Delete')) return;
+    try {
+      await deleteRecordWithFiles(ref.read(attachmentsRepositoryProvider),
+          relatedTo: 'lead',
+          recordId: lead.id,
+          deleteRecord: () =>
+              LeadRecordActions(ref.read(apiServiceProvider)).delete(lead.id));
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(leadsScopedProvider);
+    ref.read(toastProvider.notifier).show('Lead deleted');
+    context.canPop() ? context.pop() : context.go(Routes.leads);
+  }
+
   /// Reassigns the lead to another user.
   ///
   /// The candidates come from the record's own `assignable-users` endpoint, not
@@ -616,7 +782,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     }
 
     // Webapp: the current owner is not offered.
-    users = [for (final u in users) if (UserDirectory.realUserId(u.id) != ownerId) u];
+    users = [
+      for (final u in users)
+        if (UserDirectory.realUserId(u.id) != ownerId) u
+    ];
     if (users.isEmpty) {
       toast.show('No one else can be assigned to this lead.');
       return;
@@ -629,11 +798,28 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (picked == null || !mounted) return;
     final newOwner = UserDirectory.realUserId(picked);
     if (newOwner == null || newOwner == ownerId) return; // unchanged
+    // An owner transfer may need approval: ask for the approver's comment.
+    final requestNote = await approvalNoteForOwner(context, ref,
+        module: ApprovalModules.lead,
+        objectId: lead.id,
+        ownerName: users
+                .where((u) => UserDirectory.realUserId(u.id) == newOwner)
+                .map((u) => u.name)
+                .firstOrNull ??
+            '');
+    if (requestNote == null || !mounted) return;
     // The new owner leaves the assignee set, as the webapp's reassign does.
-    await _patchLead(lead, {
-      'lead_owner': newOwner,
-      'assignees': [for (final a in _assigneesOf(row)) if (a.$1 != newOwner) a.$1],
-    }, success: 'Owner reassigned');
+    await _patchLead(
+        lead,
+        {
+          ...requestNoteField(requestNote),
+          'lead_owner': newOwner,
+          'assignees': [
+            for (final a in _assigneesOf(row))
+              if (a.$1 != newOwner) a.$1
+          ],
+        },
+        success: 'Owner reassigned');
   }
 
   /// Opens the stage picker.
@@ -645,7 +831,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   void _openStatusSheet(Lead lead, List<CatalogOption> statuses) {
     // A converted lead is frozen; the status needs lead.update (webapp).
     if (_conversionOf(lead).isConverted) {
-      ref.read(toastProvider.notifier).show('This lead has converted — edit the customer instead.');
+      ref
+          .read(toastProvider.notifier)
+          .show('This lead has converted — edit the customer instead.');
       return;
     }
     if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
@@ -663,6 +851,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // The record does not echo `status_id` back, so the current selection is
     // matched on the stage name the API did send.
     final currentKey = lead.statusName.toLowerCase().trim();
+    // Webapp `movableStatuses` (GR-01): a Won lead may only leave Won, so its
+    // choices are its own status and every status of another type — never a
+    // second Won status.
+    final current = statuses.where((s) => s.key == currentKey).firstOrNull;
+    if (current?.statusType == 'won') {
+      statuses = [
+        for (final s in statuses)
+          if (s.statusType != 'won' || s.id == current!.id) s
+      ];
+    }
     showCrmStatusSheet(
       context: context,
       ref: ref,
@@ -672,9 +870,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         for (final s in statuses) s.id: StatusMeta(s.name, leadStatusColor(s)),
       },
       current: statuses
-          .where((s) => s.key == currentKey)
-          .map((s) => s.id)
-          .firstOrNull ?? '',
+              .where((s) => s.key == currentKey)
+              .map((s) => s.id)
+              .firstOrNull ??
+          '',
       onSelect: (statusId) => _setStatus(lead, statusId, statuses),
     );
   }
@@ -684,7 +883,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   ///
   /// A Lost stage first asks why (webapp "Move to Lost"): the reason is
   /// required, and open invoices are credited only when the user agreed.
-  Future<void> _setStatus(Lead lead, String statusId, [List<CatalogOption> statuses = const []]) async {
+  Future<void> _setStatus(Lead lead, String statusId,
+      [List<CatalogOption> statuses = const []]) async {
     final target = statuses.where((s) => s.id == statusId).firstOrNull;
     LostChoice? lost;
     if (target?.statusType == 'lost') {
@@ -692,21 +892,44 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           kind: 'lead', recordId: lead.id, statusName: target!.name);
       if (lost == null || !mounted) return;
     }
+    // Closing (Won / Lost / Junk, as the org gates it) may need approval.
+    final requestNote = await approvalNoteForClose(context, ref,
+        module: ApprovalModules.lead,
+        objectId: lead.id,
+        statusCode: target?.statusType,
+        statusLabel: target?.name ?? 'the new status');
+    if (requestNote == null || !mounted) return;
     try {
-      if (lost != null) {
-        await ref
-            .read(leadsRepositoryProvider)
-            .updateLead(lead.id, {'status_id': statusId, ...lost.toBody()});
-      } else {
-        await ref.read(leadsRepositoryProvider).updateLeadStatus(lead.id, statusId);
-      }
+      final held = await writeWasHeld(ref, lead.id, () async {
+        if (lost != null || requestNote.isNotEmpty) {
+          await ref.read(leadsRepositoryProvider).updateLead(lead.id, {
+            'status_id': statusId,
+            ...?lost?.toBody(),
+            ...requestNoteField(requestNote),
+          });
+        } else {
+          await ref
+              .read(leadsRepositoryProvider)
+              .updateLeadStatus(lead.id, statusId);
+        }
+      });
       ref.invalidate(leadDetailProvider(lead.id));
       ref.invalidate(leadRowProvider(lead.id));
       ref.invalidate(leadsScopedProvider);
-      if (!mounted) return;
-      ref.read(toastProvider.notifier).show(target != null ? 'Status set to ${target.name}' : 'Status updated');
+      if (!mounted || held) return;
+      ref.read(toastProvider.notifier).show(
+          target != null ? 'Status set to ${target.name}' : 'Status updated');
     } on Object catch (e) {
       if (!mounted) return;
+      if (e is AppError && e.statusCode == 404) {
+        ref.invalidate(leadDetailProvider(lead.id));
+        ref.invalidate(leadRowProvider(lead.id));
+        ref.invalidate(leadsScopedProvider);
+        ref
+            .read(toastProvider.notifier)
+            .showError('This lead no longer exists.');
+        return;
+      }
       // A rejected write must not leave a stage on screen that was never saved.
       ref.read(toastProvider.notifier).show(
             e is AppError ? e.message : 'Could not update the status.',
@@ -739,29 +962,35 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // attached to it — was composed, shown, and never sent anywhere. The
     // builder below is the **mock-mode** seed; the remote notifier ignores it
     // and loads `GET /crm/notes/?related_to=lead&related_to_id=…` instead.
-    final notesSeed = CrmNotesSeed(lead.id, () => [
-          NoteEntry(
-            id: '${lead.id}-n0',
-            author: 'You',
-            time: '2h ago',
-            via: 'Call',
-            body: 'Spoke with ${lead.name.split(' ').first}. Wants a site visit this week for ${lead.project}. Following up with a quote.',
-          ),
-          NoteEntry(
-            id: '${lead.id}-n1',
-            author: 'Anjana Menon',
-            time: '1d ago',
-            via: 'Email',
-            avatarColor: AppColors.blueBright,
-            body: 'Shared capability deck & reference projects for ${lead.project}. Client responded positively.',
-          ),
-          NoteEntry(
-            id: '${lead.id}-n2',
-            author: 'You',
-            time: '3d ago',
-            body: '${lead.industry} enquiry from ${lead.source} — ${lead.company ?? lead.name}. Value around ${lead.value}.',
-          ),
-        ], apiModel: 'lead');
+    final notesSeed = CrmNotesSeed(
+        lead.id,
+        () => [
+              NoteEntry(
+                id: '${lead.id}-n0',
+                author: 'You',
+                time: '2h ago',
+                via: 'Call',
+                body:
+                    'Spoke with ${lead.name.split(' ').first}. Wants a site visit this week for ${lead.project}. Following up with a quote.',
+              ),
+              NoteEntry(
+                id: '${lead.id}-n1',
+                author: 'Anjana Menon',
+                time: '1d ago',
+                via: 'Email',
+                avatarColor: AppColors.blueBright,
+                body:
+                    'Shared capability deck & reference projects for ${lead.project}. Client responded positively.',
+              ),
+              NoteEntry(
+                id: '${lead.id}-n2',
+                author: 'You',
+                time: '3d ago',
+                body:
+                    '${lead.industry} enquiry from ${lead.source} — ${lead.company ?? lead.name}. Value around ${lead.value}.',
+              ),
+            ],
+        apiModel: 'lead');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     return Container(
@@ -781,61 +1010,85 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             child: AppRefresh(
               onRefresh: () => _refresh(lead.id),
               child: ListView(
-              controller: _scroll,
-              // Dragging the page puts the keyboard away — the only other exit
-              // from the notes composer was submitting or leaving the screen.
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, keyboardOpen ? 24.h : 140.h),
-              children: [
-                _profileCard(lead, meta, statuses),
-                SizedBox(height: 14.h),
-                ..._lifecycleBanners(lead, conversion),
-                // The whole score card is one configurable column; an org that
-                // hides `lead_score` should not see a card about it.
-                if (ref.watch(leadDetailSchemaProvider).shows('lead_score')) ...[
-                  _scoreCard(lead),
+                controller: _scroll,
+                // Dragging the page puts the keyboard away — the only other exit
+                // from the notes composer was submitting or leaving the screen.
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                    16.w, 4.h, 16.w, keyboardOpen ? 24.h : 140.h),
+                children: [
+                  _profileCard(lead, meta, statuses),
                   SizedBox(height: 14.h),
-                ],
-                // Webapp: the SLA section sits above Lead information, and
-                // only when the lead has clocks.
-                LeadSlaClocks(leadId: lead.id),
-                _infoCard(lead),
-                SizedBox(height: 14.h),
-                _activityCard(lead),
-                SizedBox(height: 14.h),
-                NotesThread(
-                  author: ref.watch(noteAuthorProvider),
-                  key: _notesKey,
-                  notes: notes,
-                  onAddNote: (body, atts) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
-                  onAddReply: (noteId, body) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
-                  // Webapp NotesPanel: tag, @mention (the lead's assignable
-                  // users), author-only pin/edit/delete, read-only once converted.
-                  webappToolbar: true,
-                  noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
-                  mentionables: [
-                    for (final u in ref.watch(assignableUsersProvider(lead.id)).valueOrNull ?? const <CatalogOption>[])
-                      (id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name),
+                  ..._lifecycleBanners(lead, conversion),
+                  // The whole score card is one configurable column; an org that
+                  // hides `lead_score` should not see a card about it.
+                  if (ref
+                      .watch(leadDetailSchemaProvider)
+                      .shows('lead_score')) ...[
+                    _scoreCard(lead),
+                    SizedBox(height: 14.h),
                   ],
-                  currentUserId: UserDirectory.currentUserId,
-                  readOnly: conversion.isConverted,
-                  onAddTypedNote: (body, atts, typeId, typeName, mentions) => ref
-                      .read(crmNotesProvider(notesSeed).notifier)
-                      .addNote(body, atts, ref.read(noteAuthorProvider),
-                          noteTypeId: typeId,
-                          noteTypeName: typeName,
-                          mentionedUserIds: mentions,
-                          authorId: UserDirectory.currentUserId),
-                  onTogglePin: (id) => ref.read(crmNotesProvider(notesSeed).notifier).togglePin(id),
-                  onEditNote: (id, body) => ref.read(crmNotesProvider(notesSeed).notifier).editNote(id, body),
-                  onDeleteNote: (id) => ref.read(crmNotesProvider(notesSeed).notifier).deleteNote(id),
-                ),
-                SizedBox(height: 14.h),
-                _activityLogCard(lead),
-              ],
+                  // Webapp: the SLA section sits above Lead information, and
+                  // only when the lead has clocks.
+                  LeadSlaClocks(leadId: lead.id),
+                  ApprovalBanner(
+                      module: ApprovalModules.lead,
+                      objectId: lead.id,
+                      margin: EdgeInsets.only(bottom: 14.h)),
+                  _infoCard(lead),
+                  ..._dealSections(lead),
+                  SizedBox(height: 14.h),
+                  _activityCard(lead),
+                  SizedBox(height: 14.h),
+                  NotesThread(
+                    author: ref.watch(noteAuthorProvider),
+                    key: _notesKey,
+                    notes: notes,
+                    onAddNote: (body, atts) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .addNote(body, atts, ref.read(noteAuthorProvider)),
+                    onAddReply: (noteId, body) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .addReply(noteId, body, ref.read(noteAuthorProvider)),
+                    // Webapp NotesPanel: tag, @mention (the lead's assignable
+                    // users), author-only pin/edit/delete, read-only once converted.
+                    webappToolbar: true,
+                    noteTypes:
+                        ref.watch(noteTypesProvider).valueOrNull ?? const [],
+                    mentionables: [
+                      for (final u in ref
+                              .watch(assignableUsersProvider(lead.id))
+                              .valueOrNull ??
+                          const <CatalogOption>[])
+                        (
+                          id: UserDirectory.realUserId(u.id) ?? u.id,
+                          name: u.name
+                        ),
+                    ],
+                    currentUserId: UserDirectory.currentUserId,
+                    readOnly: conversion.isConverted,
+                    onAddTypedNote: (body, atts, typeId, typeName, mentions) =>
+                        ref.read(crmNotesProvider(notesSeed).notifier).addNote(
+                            body, atts, ref.read(noteAuthorProvider),
+                            noteTypeId: typeId,
+                            noteTypeName: typeName,
+                            mentionedUserIds: mentions,
+                            authorId: UserDirectory.currentUserId),
+                    onTogglePin: (id) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .togglePin(id),
+                    onEditNote: (id, body) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .editNote(id, body),
+                    onDeleteNote: (id) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .deleteNote(id),
+                  ),
+                  SizedBox(height: 14.h),
+                  _activityLogCard(lead),
+                ],
               ),
             ),
           ),
@@ -848,21 +1101,30 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// Webapp banners: CONVERTED with the customer, the Won lock, a pending
   /// approval, the quote-mode wait, and the recorded lost reason.
   List<Widget> _lifecycleBanners(Lead lead, LeadConversion c) {
-    Widget banner(IconData icon, Color fg, Color bg, String text, {VoidCallback? onTap, String? action}) =>
+    Widget banner(IconData icon, Color fg, Color bg, String text,
+            {VoidCallback? onTap, String? action}) =>
         Padding(
           padding: EdgeInsets.only(bottom: 14.h),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12.r)),
+            decoration: BoxDecoration(
+                color: bg, borderRadius: BorderRadius.circular(12.r)),
             child: Row(
               children: [
                 Icon(icon, size: 15.sp, color: fg),
                 SizedBox(width: 8.w),
-                Expanded(child: Text(text, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: fg))),
+                Expanded(
+                    child: Text(text,
+                        style: AppText.custom(
+                            size: 12.5, weight: FontWeight.w600, color: fg))),
                 if (onTap != null && action != null)
                   GestureDetector(
                     onTap: onTap,
-                    child: Text(action, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                    child: Text(action,
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.blueBright)),
                   ),
               ],
             ),
@@ -874,21 +1136,33 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         banner(PhosphorIconsFill.lock, AppColors.success, AppColors.tintGreen,
             'CONVERTED${c.customerName != null ? ' · ${c.customerName}' : ''}',
             action: c.customerId != null ? 'View customer' : null,
-            onTap: c.customerId != null ? () => context.push('${Routes.customerDetail}?id=${c.customerId}') : null)
+            onTap: c.customerId != null
+                ? () =>
+                    context.push('${Routes.customerDetail}?id=${c.customerId}')
+                : null)
       else if (isWon && c.pendingApproval)
-        banner(PhosphorIconsRegular.hourglass, AppColors.warningDeep, AppColors.tintAmber,
+        banner(
+            PhosphorIconsRegular.hourglass,
+            AppColors.warningDeep,
+            AppColors.tintAmber,
             'Conversion requested — waiting for a manager to approve')
       else if (isWon && c.waitingForQuote)
-        banner(PhosphorIconsRegular.clock, AppColors.warningDeep, AppColors.tintAmber,
-            'Won · converts when a quote is accepted')
+        banner(PhosphorIconsRegular.clock, AppColors.warningDeep,
+            AppColors.tintAmber, 'Won · converts when a quote is accepted')
       else if (isWon)
-        banner(PhosphorIconsFill.lock, AppColors.textSecondary, AppColors.bgLight,
+        banner(
+            PhosphorIconsFill.lock,
+            AppColors.textSecondary,
+            AppColors.bgLight,
             'Won — details are locked. Move it out of Won to edit.',
-            action: 'Convert', onTap: () => _convert(lead))
+            action: 'Convert',
+            onTap: () => _convert(lead))
       else if (!isWon && c.pendingApproval)
-        banner(PhosphorIconsRegular.hourglass, AppColors.warningDeep, AppColors.tintAmber, 'Conversion requested'),
+        banner(PhosphorIconsRegular.hourglass, AppColors.warningDeep,
+            AppColors.tintAmber, 'Conversion requested'),
       if (lead.status == 'lost')
-        banner(PhosphorIconsFill.xCircle, AppColors.error, AppColors.tintRed, 'Lost reason: ${c.lostReasonText}'),
+        banner(PhosphorIconsFill.xCircle, AppColors.error, AppColors.tintRed,
+            'Lost reason: ${c.lostReasonText}'),
     ];
   }
 
@@ -915,10 +1189,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           if (choice == null || !mounted) return;
           body = choice;
           continue;
-        case ConversionRequested():
-          toast.show('Conversion requested — waiting for approval');
+        case ConversionRequested(:final unified):
+          if (!unified) {
+            toast.show('Conversion requested — waiting for approval');
+          }
         case Converted(:final customerName, :final attached):
-          toast.show(attached ? 'Added to customer — $customerName' : 'Converted to customer — $customerName');
+          toast.show(attached
+              ? 'Added to customer — $customerName'
+              : 'Converted to customer — $customerName');
       }
       break;
     }
@@ -929,9 +1207,20 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   }
 
   // ── Profile ──
-  Widget _profileCard(Lead lead, StatusMeta meta, List<CatalogOption> statuses) {
+  /// The header's compact value ("₹5L") in full — "₹5,00,000 excl. GST", the
+  /// webapp tile's tooltip.
+  void _showFullValue(Lead lead) {
+    final raw = ref.read(leadRowProvider(lead.id)).valueOrNull?['lead_value'];
+    final n = raw is num ? raw : num.tryParse('${raw ?? ''}') ?? lead.valueNum;
+    ref.read(toastProvider.notifier).show('${webMoney(n)} excl. GST');
+  }
+
+  Widget _profileCard(
+      Lead lead, StatusMeta meta, List<CatalogOption> statuses) {
     final sd = lead.statusDays;
-    final stageLine = sd == 0 ? 'In status since today' : '$sd ${sd == 1 ? 'day' : 'days'} in status';
+    final stageLine = sd == 0
+        ? 'In status since today'
+        : '$sd ${sd == 1 ? 'day' : 'days'} in status';
     // Company when there is one, location otherwise — `company` can arrive as
     // an empty string as well as null, so a plain `??` is not enough.
     final subtitle = (lead.company?.trim().isNotEmpty ?? false)
@@ -950,8 +1239,15 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 width: 62.w,
                 height: 62.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(15.r)),
-                child: Text(lead.initials, style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.navy, letterSpacing: 0.4)),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEEF1F4),
+                    borderRadius: BorderRadius.circular(15.r)),
+                child: Text(lead.initials,
+                    style: AppText.custom(
+                        size: 17,
+                        weight: FontWeight.w700,
+                        color: AppColors.navy,
+                        letterSpacing: 0.4)),
               ),
               SizedBox(width: 13.w),
               Expanded(
@@ -964,9 +1260,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                           child: Text(lead.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+                              style: AppText.custom(
+                                  size: 20,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.4)),
                         ),
-                        if (lead.upsell) ...[SizedBox(width: 8.w), _upsellBadge()],
+                        if (lead.upsell) ...[
+                          SizedBox(width: 8.w),
+                          _upsellBadge()
+                        ],
                       ],
                     ),
                     // The id used to lead this line as "#L-1042". Server ids are
@@ -978,14 +1281,22 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                       Text(subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     ],
                     SizedBox(height: 5.h),
                     Row(
                       children: [
-                        Icon(PhosphorIconsRegular.clock, size: 13.sp, color: AppColors.textPlaceholder),
+                        Icon(PhosphorIconsRegular.clock,
+                            size: 13.sp, color: AppColors.textPlaceholder),
                         SizedBox(width: 5.w),
-                        Text(stageLine, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted2)),
+                        Text(stageLine,
+                            style: AppText.custom(
+                                size: 12,
+                                weight: FontWeight.w600,
+                                color: AppColors.textMuted2)),
                       ],
                     ),
                   ],
@@ -993,13 +1304,31 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               ),
               if (ref.watch(leadDetailSchemaProvider).shows('lead_value')) ...[
                 SizedBox(width: 8.w),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(lead.value, style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                    SizedBox(height: 1.h),
-                    Text('VALUE', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
-                  ],
+                // Webapp: the header keeps the compact figure and its tooltip
+                // carries the full rupee amount with the "excl. GST" basis;
+                // a tap or long press says the same here.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showFullValue(lead),
+                  onLongPress: () => _showFullValue(lead),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(lead.value,
+                          style: AppText.custom(
+                              size: 20,
+                              weight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                              letterSpacing: -0.4)),
+                      SizedBox(height: 1.h),
+                      Text('VALUE',
+                          style: AppText.custom(
+                              size: 10,
+                              weight: FontWeight.w700,
+                              color: AppColors.textPlaceholder,
+                              letterSpacing: 0.4)),
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -1021,11 +1350,23 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
+                        Container(
+                            width: 9.w,
+                            height: 9.w,
+                            decoration: BoxDecoration(
+                                color: meta.color, shape: BoxShape.circle)),
                         SizedBox(width: 8.w),
-                        Flexible(child: Text(meta.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textBody))),
+                        Flexible(
+                            child: Text(meta.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.custom(
+                                    size: 13.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textBody))),
                         SizedBox(width: 6.w),
-                        Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textMuted2),
+                        Icon(PhosphorIconsBold.caretDown,
+                            size: 11.sp, color: AppColors.textMuted2),
                       ],
                     ),
                   ),
@@ -1038,32 +1379,43 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 // quotation.create. Greyed rather than hidden; a tap says why,
                 // as the activity card's add control does.
                 child: Opacity(
-                  opacity: !_conversionOf(lead).isConverted && hasPermission(ref, 'quotation', PermVerb.create) ? 1 : 0.45,
+                  opacity: !_conversionOf(lead).isConverted &&
+                          hasPermission(ref, 'quotation', PermVerb.create)
+                      ? 1
+                      : 0.45,
                   child: GestureDetector(
-                  onTap: () {
-                    if (_conversionOf(lead).isConverted) {
-                      ref.read(toastProvider.notifier).show('This lead has converted — add activity on the customer instead.');
-                      return;
-                    }
-                    // Webapp: the lead's Create quote presets the lead.
-                    if (ensurePermission(ref, 'quotation', PermVerb.create)) {
-                      context.push('${Routes.addQuote}?leadId=${lead.id}');
-                    }
-                  },
-                  child: Container(
-                    height: 44.h,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(PhosphorIconsRegular.fileText, size: 16.sp, color: AppColors.white),
-                        SizedBox(width: 8.w),
-                        Text('Create quote', style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.white)),
-                      ],
+                    onTap: () {
+                      if (_conversionOf(lead).isConverted) {
+                        ref.read(toastProvider.notifier).show(
+                            'This lead has converted — add activity on the customer instead.');
+                        return;
+                      }
+                      // Webapp: the lead's Create quote presets the lead.
+                      if (ensurePermission(ref, 'quotation', PermVerb.create)) {
+                        context.push('${Routes.addQuote}?leadId=${lead.id}');
+                      }
+                    },
+                    child: Container(
+                      height: 44.h,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: AppColors.navy,
+                          borderRadius: BorderRadius.circular(11.r)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(PhosphorIconsRegular.fileText,
+                              size: 16.sp, color: AppColors.white),
+                          SizedBox(width: 8.w),
+                          Text('Create quote',
+                              style: AppText.custom(
+                                  size: 13.5,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.white)),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 ),
               ),
             ],
@@ -1076,13 +1428,18 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   Widget _upsellBadge() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-      decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(7.r)),
+      decoration: BoxDecoration(
+          color: AppColors.tintPurple,
+          borderRadius: BorderRadius.circular(7.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsFill.trendUp, size: 11.sp, color: AppColors.pending),
+          Icon(PhosphorIconsFill.trendUp,
+              size: 11.sp, color: AppColors.pending),
           SizedBox(width: 4.w),
-          Text('UPSELL', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.pending)),
+          Text('UPSELL',
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w700, color: AppColors.pending)),
         ],
       ),
     );
@@ -1091,7 +1448,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   // ── Score + AI ──
   Widget _scoreCard(Lead lead) {
     final score = lead.score;
-    final color = score >= 75 ? AppColors.success : (score >= 45 ? AppColors.warningDeep : AppColors.error);
+    final color = score >= 75
+        ? AppColors.success
+        : (score >= 45 ? AppColors.warningDeep : AppColors.error);
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -1102,18 +1461,27 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             children: [
               Row(
                 children: [
-                  Text('Lead score', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                  Text('Lead score',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: AppColors.textLabelAlt)),
                   SizedBox(width: 6.w),
                   GestureDetector(
                     onTap: () => setState(() => _scoreInfo = !_scoreInfo),
-                    child: Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.textPlaceholder),
+                    child: Icon(PhosphorIconsRegular.info,
+                        size: 15.sp, color: AppColors.textPlaceholder),
                   ),
                 ],
               ),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 2.h),
-                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(7.r)),
-                child: Text('$score / 100', style: AppText.custom(size: 12, weight: FontWeight.w700, color: color)),
+                decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(7.r)),
+                child: Text('$score / 100',
+                    style: AppText.custom(
+                        size: 12, weight: FontWeight.w700, color: color)),
               ),
             ],
           ),
@@ -1121,9 +1489,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             SizedBox(height: 9.h),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 9.h),
-              decoration: BoxDecoration(color: const Color(0xFFF6F8FB), borderRadius: BorderRadius.circular(10.r)),
-              child: Text('Blends recency, engagement, deal size and stage progress. Scoring rules are configured in the web app.',
-                  style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textLabelAlt).copyWith(height: 1.55)),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFF6F8FB),
+                  borderRadius: BorderRadius.circular(10.r)),
+              child: Text(
+                  'Blends recency, engagement, deal size and stage progress. Scoring rules are configured in the web app.',
+                  style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textLabelAlt)
+                      .copyWith(height: 1.55)),
             ),
           ],
           SizedBox(height: 10.h),
@@ -1143,16 +1518,29 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 width: 34.w,
                 height: 34.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(10.r)),
-                child: Icon(PhosphorIconsFill.sparkle, size: 18.sp, color: AppColors.pending),
+                decoration: BoxDecoration(
+                    color: AppColors.tintPurple,
+                    borderRadius: BorderRadius.circular(10.r)),
+                child: Icon(PhosphorIconsFill.sparkle,
+                    size: 18.sp, color: AppColors.pending),
               ),
               SizedBox(width: 11.w),
-              Text('AI summary', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('AI summary',
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               SizedBox(width: 7.w),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-                decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(6.r)),
-                child: Text('SOON', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.pending)),
+                decoration: BoxDecoration(
+                    color: AppColors.tintPurple,
+                    borderRadius: BorderRadius.circular(6.r)),
+                child: Text('SOON',
+                    style: AppText.custom(
+                        size: 10,
+                        weight: FontWeight.w700,
+                        color: AppColors.pending)),
               ),
             ],
           ),
@@ -1185,58 +1573,120 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// One key, under the name the schema says (`status_id`, not `status`) and
   /// coerced by the column's type — a `PATCH` carrying the whole record would
   /// re-submit values the user never looked at.
-  Future<void> _saveField(Lead lead, String key, Object? value, String label) async {
+  Future<String?> _saveField(
+      Lead lead, String key, Object? value, String label) async {
     // Webapp `canEditFields`: not converted, not Won-locked, and lead.update.
     final toast = ref.read(toastProvider.notifier);
     if (_conversionOf(lead).isConverted) {
       toast.show('This lead has converted — edit the customer instead.');
-      return;
+      return null;
     }
     // The stage itself may still move on a Won lead, and a Lost stage asks
     // why — the same path as the status pill.
     if (key == 'status_id' && value != null) {
-      if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+      if (!ensurePermission(ref, 'lead', PermVerb.update)) return null;
       await _setStatus(lead, '$value', ref.read(leadStatusesProvider));
-      return;
+      return null;
     }
     if (lead.status == 'won') {
       toast.show('Won — details are locked. Move it out of Won to edit.');
-      return;
+      return null;
     }
-    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return null;
+    // Plan-4.1 deal / address fields: shape the value the way the webapp does
+    // (money as a decimal string, GSTIN upper-case, Yes/No/Unknown as a bool).
+    final dealKind = dealKindOf(key);
+    if (dealKind != null) {
+      final wire = toDealWire(dealKind, value == null ? '' : '$value');
+      if (!wire.ok) return wire.error;
+      value = wire.value;
+    } else if (value is String && value.trim().isEmpty && key != 'lead_name') {
+      // A cleared text box clears the field (webapp sends null, not "").
+      value = null;
+    }
     // The name is stored as first/last; the webapp edits it that way.
-    var body = <String, dynamic>{key: value};
+    var body = inlineWriteBody(
+        key, value, ref.read(leadRowProvider(lead.id)).valueOrNull);
     if (key == 'lead_name') {
-      final parts = '${value ?? ''}'.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+      final parts = '${value ?? ''}'
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((p) => p.isNotEmpty)
+          .toList();
       if (parts.isEmpty) {
-        toast.showError('Enter a first name.');
-        return;
+        return 'Enter a first name.';
       }
-      body = {'first_name': parts.first, 'last_name': parts.length > 1 ? parts.skip(1).join(' ') : null};
+      body = {
+        'first_name': parts.first,
+        'last_name': parts.length > 1 ? parts.skip(1).join(' ') : null
+      };
     }
-    await _patchLead(lead, body, success: 'Saved');
+    _inlineRefusal = null;
+    final ok = await _patchLead(lead, body, success: 'Saved', inline: true);
+    return ok ? null : (_inlineRefusal ?? 'Could not save.');
   }
 
   /// One lead PATCH with the record's version as `If-Match`, as every webapp
   /// write does: a change made elsewhere since this screen loaded is refused
   /// with 412 instead of being overwritten.
-  Future<bool> _patchLead(Lead lead, Map<String, dynamic> body, {required String success}) async {
+  /// The refusal text of the last inline save, for the editor to show beside
+  /// the field.
+  String? _inlineRefusal;
+
+  Future<bool> _patchLead(Lead lead, Map<String, dynamic> body,
+      {required String success, bool inline = false}) async {
     final toast = ref.read(toastProvider.notifier);
-    final version = ref.read(leadRowProvider(lead.id)).valueOrNull?['updated_at'];
+    final version =
+        ref.read(leadRowProvider(lead.id)).valueOrNull?['updated_at'];
+    // A save that changes a gated field (the owner) may be held for approval:
+    // the rest applies, and the shell says what is waiting.
+    var held = false;
     try {
-      await ref
-          .read(leadsRepositoryProvider)
-          .updateLead(lead.id, body, version: version is String && version.isNotEmpty ? version : null);
+      held = await writeWasHeld(
+          ref,
+          lead.id,
+          () => ref.read(leadsRepositoryProvider).updateLead(lead.id, body,
+              version:
+                  version is String && version.isNotEmpty ? version : null));
     } on AppError catch (e) {
+      // This screen explains every refusal itself (beside the field or its own
+      // toast) — keep the shell's raw "field: msg" toast from repeating it.
+      ref.read(apiServiceProvider).handled(e);
       if (!mounted) return false;
+      if (e.statusCode == 404) {
+        // Deleted or merged while this screen was open: re-read, which lands
+        // on the "Lead not found" state instead of a record that is gone.
+        ref.invalidate(leadDetailProvider(lead.id));
+        ref.invalidate(leadRowProvider(lead.id));
+        ref.invalidate(leadsScopedProvider);
+        toast.showError('This lead no longer exists.');
+        _inlineRefusal = null;
+        return false;
+      }
       if (e.statusCode == 412) {
         ref.read(apiServiceProvider).handled(e);
         ref.invalidate(leadRowProvider(lead.id));
         ref.invalidate(leadDetailProvider(lead.id));
-        toast.showError('Changed elsewhere — ${e.message}');
+        // Inline: the notice sits beside the field and the typed text stays in
+        // the box, so nothing is lost silently (the record has been re-read).
+        if (inline) {
+          _inlineRefusal = 'Changed elsewhere — ${e.message}';
+        } else {
+          toast.showError('Changed elsewhere — ${e.message}');
+          _inlineRefusal = null;
+        }
       } else {
-        final first = e.fieldErrors?.values.where((v) => v.isNotEmpty).map((v) => v.first).firstOrNull;
-        toast.showError(first ?? e.message);
+        final first = e.fieldErrors?.values
+            .where((v) => v.isNotEmpty)
+            .map((v) => v.first)
+            .firstOrNull;
+        // Inline: the rule sits beside the field (no "email:" prefix, no
+        // toast); the box stays open with the typed text.
+        if (inline) {
+          _inlineRefusal = first ?? e.bareMessage;
+        } else {
+          toast.showError(first ?? e.message);
+        }
       }
       return false;
     }
@@ -1244,19 +1694,38 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     ref.invalidate(leadRowProvider(lead.id));
     ref.invalidate(leadDetailProvider(lead.id));
     ref.invalidate(leadsScopedProvider);
-    toast.show(success);
+    if (!held) toast.show(success);
     return true;
   }
 
   /// Webapp `leadFieldRules` read-only columns: system-kept, never edited.
   static const _readOnlyColumns = {
-    'reference', 'lead_score', 'lead_score_updated_at', 'stage_entered_at',
-    'last_followup_at', 'last_followup_type', 'activity', 'created_at',
-    'updated_at', 'lead_value', 'is_converted', 'converted_on', 'is_duplicate',
-    'is_upsell', 'parent_customer', 'created_by', 'modified_by', 'lost_reason',
-    'lost_reason_name', 'lost_reason_note', 'consent_captured_at',
-    'consent_notice_version', 'last_call_at', 'last_call_outcome',
-    'consecutive_unanswered_calls', 'calls_last_7d',
+    'reference',
+    'lead_score',
+    'lead_score_updated_at',
+    'stage_entered_at',
+    'last_followup_at',
+    'last_followup_type',
+    'activity',
+    'created_at',
+    'updated_at',
+    'lead_value',
+    'is_converted',
+    'converted_on',
+    'is_duplicate',
+    'is_upsell',
+    'parent_customer',
+    'created_by',
+    'modified_by',
+    'lost_reason',
+    'lost_reason_name',
+    'lost_reason_note',
+    'consent_captured_at',
+    'consent_notice_version',
+    'last_call_at',
+    'last_call_outcome',
+    'consecutive_unanswered_calls',
+    'calls_last_7d',
   };
 
   /// Picker columns the webapp edits in place, with a leading "—" to clear.
@@ -1267,7 +1736,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       // and the list is flat.
       'territory' => [
           for (final o in ref.read(territoryOptionsProvider))
-            if (!o.disabled || o.name == lead.territory || o.id == lead.territory) CatalogOption(id: o.id, name: o.name),
+            if (!o.disabled ||
+                o.name == lead.territory ||
+                o.id == lead.territory)
+              CatalogOption(id: o.id, name: o.name),
         ],
       'industry' => ref.read(industryOptionsProvider),
       _ => const <CatalogOption>[],
@@ -1277,10 +1749,12 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       title: label,
       options: [const CatalogOption(id: '__none__', name: '—'), ...options],
       selected: const {},
-      emptyNote: 'No ${label.toLowerCase()} options are configured for this organisation yet.',
+      emptyNote:
+          'No ${label.toLowerCase()} options are configured for this organisation yet.',
     );
     if (picked == null || picked.isEmpty || !mounted) return;
-    await _saveField(lead, column.name, picked.first == '__none__' ? null : picked.first, label);
+    await _saveField(lead, column.name,
+        picked.first == '__none__' ? null : picked.first, label);
   }
 
   Widget _infoRow(
@@ -1292,14 +1766,44 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (column != null && _readOnlyColumns.contains(column.name)) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onLongPress: () => ref.read(toastProvider.notifier).show('${r.label} is read-only.'),
+        onLongPress: () =>
+            ref.read(toastProvider.notifier).show('${r.label} is read-only.'),
         child: DetailInfoRow(label: r.label, value: r.value),
       );
     }
-    if (column != null && const {'lead_source', 'territory', 'industry'}.contains(column.name)) {
+    if (column != null &&
+        const {'lead_source', 'territory', 'industry'}.contains(column.name)) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onLongPress: () => _pickField(lead, column, r.label),
+        child: DetailInfoRow(label: r.label, value: r.value),
+      );
+    }
+    // Webapp `canEditFields`: a converted or Won lead, or a role without
+    // `lead.update`, gets read-only rows — no editor opens, and the row says why.
+    final blocked = _editBlock(lead);
+    // Products read "Name ×3" with their quantities, as in the webapp.
+    if (column?.name == 'products' && row?['products'] is List) {
+      final txt = productsText(row!['products']);
+      r = (label: r.label, value: txt == '—' ? r.value : txt, column: column);
+    }
+    // Products of interest: the webapp's modal with a quantity per product.
+    if (blocked == null && column != null && column.name == 'products') {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _editProducts(lead, row),
+        child: DetailInfoRow(label: r.label, value: r.value),
+      );
+    }
+    // Tri-state / fixed-choice / state-code deal fields pick from a list.
+    final dealKind = column == null ? null : dealKindOf(column.name);
+    if (blocked == null &&
+        column != null &&
+        const {DealKind.tristate, DealKind.choice, DealKind.state}
+            .contains(dealKind)) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _pickDeal(lead, column, r.label, row),
         child: DetailInfoRow(label: r.label, value: r.value),
       );
     }
@@ -1307,13 +1811,179 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       label: r.label,
       display: r.value,
       column: r.column,
-      rawValue: row?[r.column?.name],
+      rawValue: rawFieldValue(row, r.column),
       editForm: 'Edit lead',
       writeKey: LeadsRemoteDataSource.writeKeyFor,
+      canEdit: blocked == null,
+      deniedHint: blocked,
       onSave: (key, value) => _saveField(lead, key, value, r.label),
       onBlocked: (msg) => ref.read(toastProvider.notifier).show(msg),
       child: DetailInfoRow(label: r.label, value: r.value),
     );
+  }
+
+  /// The webapp's "Products of interest" dialog: each product with a whole
+  /// quantity; save sends `{products: [{product_id, quantity}]}` and the lead
+  /// value recalculates on the server.
+  Future<void> _editProducts(Lead lead, Map<String, dynamic>? row) async {
+    List<CatalogOption> options;
+    try {
+      options = await ref.read(productCatalogProvider.future);
+    } on Object {
+      options = const [];
+    }
+    if (!mounted) return;
+    await showCustomerProductsSheet(
+      context,
+      current: row?['products'],
+      options: options,
+      onSave: (patch) async {
+        _inlineRefusal = null;
+        final ok = await _patchLead(lead, patch,
+            success: 'Products updated', inline: true);
+        if (ok) return null;
+        return (message: _inlineRefusal ?? 'Could not save.', stale: false);
+      },
+    );
+  }
+
+  /// Why this lead's fields cannot be edited right now (null when they can) —
+  /// the webapp's `canEditFields = !frozen && !wonLocked && perms.can('update')`.
+  String? _editBlock(Lead lead) {
+    if (_conversionOf(lead).isConverted) {
+      return 'This lead has converted — edit the customer instead.';
+    }
+    if (lead.status == 'won') {
+      return 'Won — details are locked. Move it out of Won to edit.';
+    }
+    if (!hasPermission(ref, 'lead', PermVerb.update)) {
+      return permissionCopy(PermVerb.update);
+    }
+    return null;
+  }
+
+  /// The pickers for the deal fields a text box cannot do: Decision maker
+  /// (Yes / No / Unknown), Deal type / Payment preference (fixed choices) and
+  /// the billing / delivery State (GST state, shown "Kerala (32)").
+  Future<void> _pickDeal(Lead lead, LeadColumn column, String label,
+      Map<String, dynamic>? row) async {
+    final kind = dealKindOf(column.name)!;
+    final raw = row?[column.name];
+    List<(String, String)> options;
+    Object? initial;
+    var blank = '—';
+    switch (kind) {
+      case DealKind.tristate:
+        options = decisionMakerOptions;
+        blank = unknownLabel;
+        initial = raw == true ? 'true' : (raw == false ? 'false' : '');
+      case DealKind.state:
+        final states = ref.read(gstStatesProvider).valueOrNull ?? const [];
+        options = [
+          for (final st in states) (st.code, '${st.name} (${st.code})')
+        ];
+        final current = raw is String ? raw : '';
+        // Until the list loads the stored code stays selectable, so opening the
+        // picker can never silently clear it.
+        if (current.isNotEmpty && !options.any((o) => o.$1 == current)) {
+          options = [(current, current), ...options];
+        }
+        initial = current;
+      default:
+        options = dealChoiceOptions(column.name);
+        initial = raw is String ? raw : '';
+    }
+    final picked = await showFieldValueSheet(context,
+        label: label,
+        kind: InlineKind.select,
+        initial: initial,
+        options: options,
+        blankLabel: blank);
+    if (picked == null || !mounted) return;
+    final refused =
+        await _saveField(lead, column.name, picked.value ?? '', label);
+    if (refused != null && mounted) {
+      ref.read(toastProvider.notifier).showError(refused);
+    }
+  }
+
+  /// Webapp `DealInfoSections`: the Deal, Billing & delivery and Commercial
+  /// cards (only the ones whose fields the org made visible) and the single
+  /// read-only consent line. Empty when the org has none of them enabled.
+  List<Widget> _dealSections(Lead lead) {
+    final schema = ref.watch(leadDetailSchemaProvider);
+    if (schema.isEmpty) return const [];
+    final rawRow = ref.watch(leadRowProvider(lead.id)).valueOrNull;
+    if (rawRow == null) return const [];
+    ref.watch(gstStatesProvider);
+    final stateName = ref.watch(gstStateNameProvider);
+    final rows =
+        <DealGroup, List<({String label, String value, LeadColumn column})>>{};
+    String? consent;
+    var consentShown = false;
+    for (final c in schema.columns) {
+      final group = dealGroupOf(c.name);
+      if (group == null || !rawRow.containsKey(c.name)) continue;
+      if (group == DealGroup.consent) {
+        consentShown = true;
+        continue;
+      }
+      final shown =
+          formatDealValue(c.name, rawRow[c.name], stateName: stateName);
+      rows
+          .putIfAbsent(group, () => [])
+          .add((label: c.label, value: shown.isEmpty ? '—' : shown, column: c));
+    }
+    if (consentShown) {
+      consent = consentLine(
+          rawRow['consent_captured_at'], rawRow['consent_notice_version']);
+    }
+    final out = <Widget>[];
+    for (final g in dealGroupOrder) {
+      final list = rows[g];
+      if (list == null || list.isEmpty) continue;
+      out.addAll([
+        SizedBox(height: 14.h),
+        ClozrCard(
+          radius: 18,
+          padding: EdgeInsets.all(18.r),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(dealGroupTitles[g]!,
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              SizedBox(height: 6.h),
+              for (final r in list) _infoRow(lead, r, rawRow),
+            ],
+          ),
+        ),
+      ]);
+    }
+    if (consent != null) {
+      out.addAll([
+        SizedBox(height: 14.h),
+        ClozrCard(
+          radius: 18,
+          padding: EdgeInsets.all(18.r),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(dealGroupTitles[DealGroup.consent]!,
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              SizedBox(height: 6.h),
+              DetailInfoRow(label: consentRowLabel, value: consent),
+            ],
+          ),
+        ),
+      ]);
+    }
+    return out;
   }
 
   // ── Information ──
@@ -1325,24 +1995,42 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // from the stored value rather than the formatted one.
     final rawRow = ref.watch(leadRowProvider(lead.id)).valueOrNull;
     // The record names its territory by uuid only; show the catalog's name.
-    final territories = {for (final t in ref.watch(territoryOptionsProvider)) t.id: t.name};
+    final territories = {
+      for (final t in ref.watch(territoryOptionsProvider)) t.id: t.name
+    };
     final all = [
-      for (final r in schema.isEmpty ? _fallbackInfoRows(lead) : leadDetailRows(lead, schema))
+      for (final r in schema.isEmpty
+          ? _fallbackInfoRows(lead)
+          : leadDetailRows(lead, schema))
         r.column?.name == 'territory' && territories[r.value] != null
             ? (label: r.label, value: territories[r.value]!, column: r.column)
             : r,
     ];
+    // The plan-4.1 deal / address / commercial fields have their own sections
+    // below (webapp `DealInfoSections`) and the consent stamp one read-only
+    // line, so they are not part of this list.
+    final main = [
+      for (final r in all)
+        if (r.column == null || dealGroupOf(r.column!.name) == null) r
+    ];
     // Long layouts stay collapsed behind "Show more"; a short one shows whole.
-    final collapsible = all.length > _infoRowsCollapsed;
-    final rows =
-        (_infoMore || !collapsible) ? all : all.take(_infoRowsCollapsed).toList();
+    final collapsible = main.length > _infoRowsCollapsed;
+    final rows = (_infoMore || !collapsible)
+        ? main
+        : main.take(_infoRowsCollapsed).toList();
     // People come from the record itself, as the webapp reads them.
     final ownerRec = _ownerOf(rawRow);
-    final owner = MockUsers.of(ownerRec == null ? lead.owner : UserDirectory.mapUserId(ownerRec.$1));
+    final owner = MockUsers.of(
+        ownerRec == null ? lead.owner : UserDirectory.mapUserId(ownerRec.$1));
     final ownerName = ownerRec?.$2 ?? '—';
     final ownerInitials = ownerRec == null
         ? '—'
-        : ownerRec.$2.split(' ').where((p) => p.isNotEmpty).take(2).map((p) => p[0].toUpperCase()).join();
+        : ownerRec.$2
+            .split(' ')
+            .where((p) => p.isNotEmpty)
+            .take(2)
+            .map((p) => p[0].toUpperCase())
+            .join();
     final assigneeNames = [for (final a in _assigneesOf(rawRow)) a.$2];
     final team = _teamOf(rawRow);
 
@@ -1352,7 +2040,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Lead information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Lead information',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
           // Long-press a row to edit it in place, for the fields the org's
           // layout says are writable. Read-only columns (`created_at`,
@@ -1362,130 +2054,190 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           if (rawRow?['is_upsell'] == true && _parentCustomerId(rawRow) != null)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => context.push('${Routes.customerDetail}?id=${_parentCustomerId(rawRow)}'),
+              onTap: () => context.push(
+                  '${Routes.customerDetail}?id=${_parentCustomerId(rawRow)}'),
               child: DetailInfoRow(
                 label: 'Parent customer',
                 value: _parentCustomerName(rawRow),
               ),
             ),
           for (final r in rows)
-            if (!(r.column?.name == 'parent_customer' && rawRow?['is_upsell'] == true)) _infoRow(lead, r, rawRow),
+            if (!(r.column?.name == 'parent_customer' &&
+                rawRow?['is_upsell'] == true))
+              _infoRow(lead, r, rawRow),
           if (collapsible)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _infoMore = !_infoMore),
-            child: Container(
-              margin: EdgeInsets.only(top: 6.h),
-              padding: EdgeInsets.only(top: 11.h, bottom: 2.h),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_infoMore ? 'Show less' : 'Show more', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
-                  SizedBox(width: 6.w),
-                  Icon(_infoMore ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.blueBright),
-                ],
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _infoMore = !_infoMore),
+              child: Container(
+                margin: EdgeInsets.only(top: 6.h),
+                padding: EdgeInsets.only(top: 11.h, bottom: 2.h),
+                decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(_infoMore ? 'Show less' : 'Show more',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: AppColors.blueBright)),
+                    SizedBox(width: 6.w),
+                    Icon(
+                        _infoMore
+                            ? PhosphorIconsBold.caretUp
+                            : PhosphorIconsBold.caretDown,
+                        size: 12.sp,
+                        color: AppColors.blueBright),
+                  ],
+                ),
               ),
             ),
-          ),
-          SizedBox(height: 8.h),
-          Row(
-            children: [
-              Icon(PhosphorIconsRegular.handTap, size: 13.sp, color: AppColors.textPlaceholder),
-              SizedBox(width: 6.w),
-              Text('Long-press a field to edit it', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-            ],
-          ),
+          if (_editBlock(lead) == null) ...[
+            SizedBox(height: 8.h),
+            Row(
+              children: [
+                Icon(PhosphorIconsRegular.handTap,
+                    size: 13.sp, color: AppColors.textPlaceholder),
+                SizedBox(width: 6.w),
+                Text('Long-press a field to edit it',
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
+              ],
+            ),
+          ],
           // The people block mirrors three configurable columns; when the org
           // has hidden all three there is nothing to head, so the whole section
           // goes with them.
-          if (schema.showsAny(const ['lead_owner', 'assignees', 'assigned_team'])) ...[
-          SizedBox(height: 18.h),
-          Text('OWNER & ASSIGNEES', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6)),
-          SizedBox(height: 4.h),
-          if (schema.shows('lead_owner'))
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 10.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
-              children: [
-                Container(
-                  width: 42.w,
-                  height: 42.w,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: owner.color, borderRadius: BorderRadius.circular(12.r)),
-                  child: Text(ownerInitials, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(ownerName, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                      SizedBox(height: 1.h),
-                      Text('Lead owner', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                    ],
-                  ),
-                ),
-                _roundAction(PhosphorIconsRegular.arrowsClockwise, () => _reassignOwner(lead)),
-              ],
-            ),
-          ),
-          if (schema.shows('assignees'))
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 10.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(schema.labelOf('assignees', 'Assignees'),
-                          style: AppText.caption(color: AppColors.textMuted)),
-                      SizedBox(height: 4.h),
-                      if (assigneeNames.isEmpty)
-                        Text('No assignees yet', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
-                      else
-                        Text(assigneeNames.join(', '),
-                            style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
-                    ],
-                  ),
-                ),
-                _roundAction(PhosphorIconsRegular.userPlus, () => _editAssignees(lead)),
-              ],
-            ),
-          ),
-          if (schema.shows('assigned_team'))
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _editTeam(lead),
-            child: Padding(
-            padding: EdgeInsets.only(top: 10.h),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(schema.labelOf('assigned_team', 'Assigned team'),
-                    style: AppText.caption(color: AppColors.textMuted)),
-                SizedBox(height: 5.h),
-                Row(
+          if (schema.showsAny(
+              const ['lead_owner', 'assignees', 'assigned_team'])) ...[
+            SizedBox(height: 18.h),
+            Text('OWNER & ASSIGNEES',
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder,
+                    letterSpacing: 0.6)),
+            SizedBox(height: 4.h),
+            if (schema.shows('lead_owner'))
+              Container(
+                padding: EdgeInsets.symmetric(vertical: 10.h),
+                decoration: const BoxDecoration(
+                    border:
+                        Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+                child: Row(
                   children: [
-                    Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: AppColors.textLabelAlt),
-                    SizedBox(width: 7.w),
-                    Expanded(
-                      child: Text(team?.$2 ?? 'No team assigned',
+                    Container(
+                      width: 42.w,
+                      height: 42.w,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: owner.color,
+                          borderRadius: BorderRadius.circular(12.r)),
+                      child: Text(ownerInitials,
                           style: AppText.custom(
-                              size: 13.5,
-                              weight: team == null ? FontWeight.w500 : FontWeight.w700,
-                              color: team == null ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                              size: 13,
+                              weight: FontWeight.w700,
+                              color: AppColors.white)),
                     ),
-                    Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
+                    SizedBox(width: 12.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(ownerName,
+                              style: AppText.custom(
+                                  size: 14,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary)),
+                          SizedBox(height: 1.h),
+                          Text('Lead owner',
+                              style: AppText.custom(
+                                  size: 11.5,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted)),
+                        ],
+                      ),
+                    ),
+                    _roundAction(PhosphorIconsRegular.arrowsClockwise,
+                        () => _reassignOwner(lead)),
                   ],
                 ),
-              ],
-            ),
-          ),
-          ),
+              ),
+            if (schema.shows('assignees'))
+              Container(
+                padding: EdgeInsets.symmetric(vertical: 10.h),
+                decoration: const BoxDecoration(
+                    border:
+                        Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(schema.labelOf('assignees', 'Assignees'),
+                              style:
+                                  AppText.caption(color: AppColors.textMuted)),
+                          SizedBox(height: 4.h),
+                          if (assigneeNames.isEmpty)
+                            Text('No assignees yet',
+                                style: AppText.custom(
+                                    size: 13.5,
+                                    weight: FontWeight.w500,
+                                    color: AppColors.textPlaceholder))
+                          else
+                            Text(assigneeNames.join(', '),
+                                style: AppText.custom(
+                                    size: 12.5,
+                                    weight: FontWeight.w600,
+                                    color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                    _roundAction(PhosphorIconsRegular.userPlus,
+                        () => _editAssignees(lead)),
+                  ],
+                ),
+              ),
+            if (schema.shows('assigned_team'))
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _editTeam(lead),
+                child: Padding(
+                  padding: EdgeInsets.only(top: 10.h),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(schema.labelOf('assigned_team', 'Assigned team'),
+                          style: AppText.caption(color: AppColors.textMuted)),
+                      SizedBox(height: 5.h),
+                      Row(
+                        children: [
+                          Icon(PhosphorIconsRegular.usersThree,
+                              size: 15.sp, color: AppColors.textLabelAlt),
+                          SizedBox(width: 7.w),
+                          Expanded(
+                            child: Text(team?.$2 ?? 'No team assigned',
+                                style: AppText.custom(
+                                    size: 13.5,
+                                    weight: team == null
+                                        ? FontWeight.w500
+                                        : FontWeight.w700,
+                                    color: team == null
+                                        ? AppColors.textPlaceholder
+                                        : AppColors.textPrimary)),
+                          ),
+                          Icon(PhosphorIconsBold.caretRight,
+                              size: 12.sp, color: AppColors.textPlaceholder),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ],
       ),
@@ -1499,7 +2251,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         width: 38.w,
         height: 38.w,
         alignment: Alignment.center,
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(11.r), border: Border.all(color: const Color(0xFFE6E7EA))),
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(11.r),
+            border: Border.all(color: const Color(0xFFE6E7EA))),
         child: Icon(icon, size: 17.sp, color: AppColors.textSecondary),
       ),
     );
@@ -1522,7 +2276,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // A converted lead takes no new activity (webapp hides these), and each
     // add needs its own module's grant.
     if (_conversionOf(lead).isConverted) {
-      ref.read(toastProvider.notifier).show('This lead has converted — add activity on the customer instead.');
+      ref.read(toastProvider.notifier).show(
+          'This lead has converted — add activity on the customer instead.');
       return;
     }
     final need = switch (_tab) {
@@ -1562,11 +2317,29 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
     if (picked == null || !mounted) return; // cancelled
 
+    // Refuse a wrong type, an empty or an over-limit file before anything is sent.
+    for (final f in picked.files) {
+      final problem = fileProblem(f.name, f.size);
+      if (problem.isNotEmpty) {
+        toast.showError(problem);
+        return;
+      }
+    }
     final files = [
       for (final f in picked.files)
         if (f.path != null) (path: f.path!, name: f.name),
     ];
     if (files.isEmpty) return;
+
+    // One file: offer its name (the extension stays) like the webapp's upload dialog.
+    if (files.length == 1) {
+      final typed = await showFileNameDialog(context, files.first.name);
+      if (typed == null || !mounted) return;
+      files[0] = (
+        path: files.first.path,
+        name: storedFileName(typed, files.first.name)
+      );
+    }
 
     if (!ApiConfig.apiEnabled) {
       toast.show('Files upload once the app is connected to the API.');
@@ -1605,7 +2378,13 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
 
   // ── Activity card (tabs) ──
   Widget _activityCard(Lead lead) {
-    const ctaLabels = ['Add task', 'Log call', 'Add follow-up', 'Create quote', 'Upload file'];
+    const ctaLabels = [
+      'Add task',
+      'Add call log',
+      'Add follow-up',
+      'Create quote',
+      'Upload file'
+    ];
     final ctaLabel = _uploading && _tab == 4 ? 'Uploading…' : ctaLabels[_tab];
     return ClozrCard(
       radius: 18,
@@ -1614,33 +2393,51 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Lead activity', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
+              Expanded(
+                  child: Text('Lead activity',
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary))),
               // Webapp: a converted lead has no add controls at all; without
               // the module's create grant the control is greyed (tapping says
               // why, as the webapp's tooltip does).
               if (!_conversionOf(lead).isConverted)
-              Opacity(
-                opacity: _ctaAllowed ? 1 : 0.45,
-                child: GestureDetector(
-                onTap: () => _activityCta(lead),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(9.r), border: Border.all(color: const Color(0xFFE6E7EA))),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_tab >= 3 ? (_tab == 3 ? PhosphorIconsRegular.fileText : PhosphorIconsRegular.uploadSimple) : PhosphorIconsBold.plus, size: 13.sp, color: AppColors.textSecondary),
-                      SizedBox(width: 6.w),
-                      Text(ctaLabel, style: AppText.bodyStrong()),
-                    ],
+                Opacity(
+                  opacity: _ctaAllowed ? 1 : 0.45,
+                  child: GestureDetector(
+                    onTap: () => _activityCta(lead),
+                    child: Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
+                      decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(9.r),
+                          border: Border.all(color: const Color(0xFFE6E7EA))),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                              _tab >= 3
+                                  ? (_tab == 3
+                                      ? PhosphorIconsRegular.fileText
+                                      : PhosphorIconsRegular.uploadSimple)
+                                  : PhosphorIconsBold.plus,
+                              size: 13.sp,
+                              color: AppColors.textSecondary),
+                          SizedBox(width: 6.w),
+                          Text(ctaLabel, style: AppText.bodyStrong()),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              ),
             ],
           ),
           SizedBox(height: 14.h),
-          DetailUnderlineTabs(labels: _tabLabels, index: _tab, onChanged: (i) => setState(() => _tab = i)),
+          DetailUnderlineTabs(
+              labels: _tabLabels,
+              index: _tab,
+              onChanged: (i) => setState(() => _tab = i)),
           SizedBox(height: 6.h),
           _tabContent(lead),
         ],
@@ -1697,7 +2494,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(PhosphorIconsRegular.lockSimple, size: 16.sp, color: AppColors.textMuted),
+            Icon(PhosphorIconsRegular.lockSimple,
+                size: 16.sp, color: AppColors.textMuted),
             SizedBox(width: 8.w),
             Expanded(
               child: Text(
@@ -1725,7 +2523,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   /// meaning. The Tasks list has spoken the org's vocabulary for a while; this
   /// card had been left behind.
   StatusMeta _taskMeta(CrmTask t) {
-    final statuses = ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [];
+    final statuses =
+        ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [];
     final key = _taskStatus(t);
     // No local override: the record's own name is exact.
     if (key == t.status) return crmTaskStatusMeta(t, statuses);
@@ -1750,11 +2549,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   Future<void> _toggleTask(Lead lead, CrmTask t) async {
     final next = _taskStatus(t) == 'done' ? 'todo' : 'done';
     final prev = ref.read(crmTaskStatusOverrideProvider);
-    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, t.id: next};
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {
+      ...prev,
+      t.id: next
+    };
 
     if (ApiConfig.apiEnabled) {
       try {
-        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, next);
+        await ref
+            .read(crmTasksRepositoryProvider)
+            .setTaskStatusByKey(t.id, next);
       } on AppError catch (e) {
         final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
         if (prev.containsKey(t.id)) {
@@ -1771,7 +2575,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               title: t.title,
               followup: false,
               cause: e,
-              complete: () => ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, 'done'));
+              complete: () => ref
+                  .read(crmTasksRepositoryProvider)
+                  .setTaskStatusByKey(t.id, 'done'));
           if (done && mounted) {
             ref.invalidate(leadTasksProvider(lead.id));
             ref.invalidate(crmTasksProvider);
@@ -1804,47 +2610,62 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       ref.watch(leadTasksProvider(lead.id)),
       onRetry: () => ref.invalidate(leadTasksProvider(lead.id)),
       subject: 'tasks for this lead',
-      empty: const DetailTabEmpty(icon: PhosphorIconsRegular.checkSquare, title: 'No tasks yet', body: 'Tasks linked to this lead will appear here.'),
+      empty: const DetailTabEmpty(
+          icon: PhosphorIconsRegular.checkSquare,
+          title: 'No tasks yet',
+          body: 'Tasks linked to this lead will appear here.'),
       data: (tasks) => Column(
         children: [
           for (final t in tasks)
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CrmCheckBox(done: _taskStatus(t) == 'done', onTap: () => _toggleTask(lead, t)),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => context.push('${Routes.taskDetail}?id=${t.id}'),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(t.titleClean,
-                            style: AppText.custom(size: 14, weight: FontWeight.w600, color: _taskStatus(t) == 'done' ? AppColors.textPlaceholder : AppColors.textPrimary)
-                                .copyWith(decoration: _taskStatus(t) == 'done' ? TextDecoration.lineThrough : null)),
-                        SizedBox(height: 3.h),
-                        Text(_taskSubline(t), style: AppText.caption()),
-                      ],
+            Container(
+              padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
+              decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CrmCheckBox(
+                      done: _taskStatus(t) == 'done',
+                      onTap: () => _toggleTask(lead, t)),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () =>
+                          context.push('${Routes.taskDetail}?id=${t.id}'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(t.titleClean,
+                              style: AppText.custom(
+                                      size: 14,
+                                      weight: FontWeight.w600,
+                                      color: _taskStatus(t) == 'done'
+                                          ? AppColors.textPlaceholder
+                                          : AppColors.textPrimary)
+                                  .copyWith(
+                                      decoration: _taskStatus(t) == 'done'
+                                          ? TextDecoration.lineThrough
+                                          : null)),
+                          SizedBox(height: 3.h),
+                          Text(_taskSubline(t), style: AppText.caption()),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(width: 8.w),
-                // Reads through the override like the checkbox and title do —
-                // on the raw status the pill kept the old lane after a tick
-                // here, or after a status change made on the task detail.
-                _miniPill(_taskBadge(t) ?? _taskMeta(t)),
-              ],
+                  SizedBox(width: 8.w),
+                  // Reads through the override like the checkbox and title do —
+                  // on the raw status the pill kept the old lane after a tick
+                  // here, or after a status change made on the task detail.
+                  _miniPill(_taskBadge(t) ?? _taskMeta(t)),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  static final _dueFormat = DateFormat('dd MMM yyyy');
+  static final _dueFormat = DateFormat('dd/MM/yyyy');
 
   DateTime? _taskDueDate(CrmTask t) {
     try {
@@ -1864,19 +2685,23 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             ? 'No due date'
             : 'Due ${_dueFormat.format(due)}';
     final who = MockUsers.of(t.assignee).name;
-    return who.isEmpty || who == 'Unknown' ? when : '$when · ${who.split(' ').first}';
+    return who.isEmpty || who == 'Unknown'
+        ? when
+        : '$when · ${who.split(' ').first}';
   }
 
   /// Webapp badge: Done, else Overdue / Today / Upcoming by the due date; null
   /// (the status pill) when there is no date.
   StatusMeta? _taskBadge(CrmTask t) {
-    if (_taskStatus(t) == 'done') return const StatusMeta('Done', AppColors.success);
+    if (_taskStatus(t) == 'done')
+      return const StatusMeta('Done', AppColors.success);
     final due = _taskDueDate(t);
     if (due == null) return null;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(due.year, due.month, due.day);
-    if (day.isBefore(today)) return const StatusMeta('Overdue', AppColors.error);
+    if (day.isBefore(today))
+      return const StatusMeta('Overdue', AppColors.error);
     if (day == today) return const StatusMeta('Today', AppColors.error);
     return const StatusMeta('Upcoming', AppColors.blueBright);
   }
@@ -1900,12 +2725,17 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               child: Padding(
                 padding: EdgeInsets.only(top: 8.h, bottom: 2.h),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(PhosphorIconsRegular.arrowsClockwise, size: 13.sp,
-                      color: hasPermission(ref, 'call_log', PermVerb.create) ? AppColors.navy : AppColors.textPlaceholder),
+                  Icon(PhosphorIconsRegular.arrowsClockwise,
+                      size: 13.sp,
+                      color: hasPermission(ref, 'call_log', PermVerb.create)
+                          ? AppColors.navy
+                          : AppColors.textPlaceholder),
                   SizedBox(width: 5.w),
                   Text('Sync from Exotel',
                       style: AppText.captionStrong(
-                          color: hasPermission(ref, 'call_log', PermVerb.create) ? AppColors.navy : AppColors.textPlaceholder)),
+                          color: hasPermission(ref, 'call_log', PermVerb.create)
+                              ? AppColors.navy
+                              : AppColors.textPlaceholder)),
                 ]),
               ),
             ),
@@ -1914,8 +2744,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
           ref.watch(leadCallLogsProvider(lead.id)),
           onRetry: () => ref.invalidate(leadCallLogsProvider(lead.id)),
           subject: 'call logs for this lead',
-          empty: const DetailTabEmpty(icon: PhosphorIconsRegular.phone, title: 'No calls logged yet.', body: 'Calls made to or received from this lead will appear here.'),
-          data: (calls) => Column(children: [for (final c in calls) _callRow(c, lead, allowActivity: !converted)]),
+          empty: const DetailTabEmpty(
+              icon: PhosphorIconsRegular.phone,
+              title: 'No calls logged yet.',
+              body:
+                  'Calls made to or received from this lead will appear here.'),
+          data: (calls) => Column(children: [
+            for (final c in calls) _callRow(c, lead, allowActivity: !converted)
+          ]),
         ),
       ],
     );
@@ -1949,7 +2785,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                 : AppColors.success;
     final row = Container(
       padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1957,7 +2794,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
             width: 38.w,
             height: 38.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgChipGrey,
+                borderRadius: BorderRadius.circular(11.r)),
             child: Icon(icon, size: 18.sp, color: tone),
           ),
           SizedBox(width: 12.w),
@@ -1967,10 +2806,12 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: Text(c.outcome, style: AppText.bodyStrong())),
+                    Expanded(
+                        child: Text(c.outcome, style: AppText.bodyStrong())),
                     if (c.hasRecording) ...[
                       SizedBox(width: 6.w),
-                      Icon(PhosphorIconsFill.playCircle, size: 16.sp, color: AppColors.blueBright),
+                      Icon(PhosphorIconsFill.playCircle,
+                          size: 16.sp, color: AppColors.blueBright),
                     ],
                   ],
                 ),
@@ -1981,7 +2822,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   Text(c.summary,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.4)),
+                      style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)
+                          .copyWith(height: 1.4)),
                 ],
               ],
             ),
@@ -1991,12 +2836,17 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
     // Webapp `CallLogActions`: note / task / transcribe / summarize, plus
     // playing the recording. Nothing to offer → the row stays inert.
-    final hasActions = allowActivity || c.hasRecording || (c.transcript.isNotEmpty && c.summary.isEmpty);
+    final hasActions = allowActivity ||
+        c.hasRecording ||
+        (c.transcript.isNotEmpty && c.summary.isEmpty);
     if (!hasActions) return row;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => showCallLogActions(context, ref,
-          call: c, leadId: lead.id, allowActivity: allowActivity, onPlay: () => _openRecording(c)),
+          call: c,
+          leadId: lead.id,
+          allowActivity: allowActivity,
+          onPlay: () => _openRecording(c)),
       child: row,
     );
   }
@@ -2006,53 +2856,78 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       ref.watch(leadFollowupsProvider(lead.id)),
       onRetry: () => ref.invalidate(leadFollowupsProvider(lead.id)),
       subject: 'follow-ups for this lead',
-      empty: const DetailTabEmpty(icon: PhosphorIconsRegular.clock, title: 'No follow-ups scheduled', body: 'Follow-ups scheduled for this lead will appear here.'),
+      empty: const DetailTabEmpty(
+          icon: PhosphorIconsRegular.clock,
+          title: 'No follow-ups scheduled',
+          body: 'Follow-ups scheduled for this lead will appear here.'),
       data: (fus) => Padding(
         padding: EdgeInsets.only(top: 12.h),
         child: Column(
           children: [
             for (final f in fus)
-            Container(
-              margin: EdgeInsets.only(bottom: 12.h),
-              padding: EdgeInsets.all(14.r),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14.r), border: Border.all(color: AppColors.borderCardSoft)),
-              child: GestureDetector(
-                onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.only(top: 10.h, right: 10.w),
-                      child: CrmCheckBox(done: f.status == 'done', onTap: () => _toggleFollowup(lead, f)),
-                    ),
-                    Container(
-                      width: 42.w,
-                      height: 42.w,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(12.r)),
-                      child: Icon(PhosphorIconsRegular.calendarBlank, size: 19.sp, color: AppColors.navy),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(f.title.isEmpty ? '${f.kind} follow-up' : f.title,
-                              style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                          SizedBox(height: 3.h),
-                          // Webapp row: "<type> · <date>", then the description.
-                          Text(
-                              '${f.kind.trim().isEmpty ? 'Follow-up' : f.kind}'
-                              '${f.due.trim().isEmpty || f.due.contains('No due') ? '' : ' · ${f.due}'}',
-                              style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
-                          if (f.description.trim().isNotEmpty) ...[
-                            SizedBox(height: 3.h),
-                            Text(f.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.caption(color: AppColors.textPlaceholder)),
-                          ],
-                        ],
+              Container(
+                margin: EdgeInsets.only(bottom: 12.h),
+                padding: EdgeInsets.all(14.r),
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14.r),
+                    border: Border.all(color: AppColors.borderCardSoft)),
+                child: GestureDetector(
+                  onTap: () =>
+                      context.push('${Routes.followupDetail}?id=${f.id}'),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(top: 10.h, right: 10.w),
+                        child: CrmCheckBox(
+                            done: f.status == 'done',
+                            onTap: () => _toggleFollowup(lead, f)),
                       ),
-                    ),
-                      _miniPill(StatusMeta$.followup[f.status] ?? StatusMeta$.followup['due']!),
+                      Container(
+                        width: 42.w,
+                        height: 42.w,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFEEF1F4),
+                            borderRadius: BorderRadius.circular(12.r)),
+                        child: Icon(PhosphorIconsRegular.calendarBlank,
+                            size: 19.sp, color: AppColors.navy),
+                      ),
+                      SizedBox(width: 12.w),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                                f.title.isEmpty
+                                    ? '${f.kind} follow-up'
+                                    : f.title,
+                                style: AppText.custom(
+                                    size: 14.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textPrimary)),
+                            SizedBox(height: 3.h),
+                            // Webapp row: "<type> · <date>", then the description.
+                            Text(
+                                '${f.kind.trim().isEmpty ? 'Follow-up' : f.kind}'
+                                '${f.due.trim().isEmpty || f.due.contains('No due') ? '' : ' · ${f.due}'}',
+                                style: AppText.custom(
+                                    size: 12.5,
+                                    weight: FontWeight.w500,
+                                    color: AppColors.textMuted2)),
+                            if (f.description.trim().isNotEmpty) ...[
+                              SizedBox(height: 3.h),
+                              Text(f.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.caption(
+                                      color: AppColors.textPlaceholder)),
+                            ],
+                          ],
+                        ),
+                      ),
+                      _miniPill(StatusMeta$.followup[f.status] ??
+                          StatusMeta$.followup['due']!),
                     ],
                   ),
                 ),
@@ -2092,7 +2967,9 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     if (!mounted) return;
     ref.invalidate(leadFollowupsProvider(lead.id));
     refreshFollowups(ref);
-    ref.read(toastProvider.notifier).show(done ? 'Follow-up completed' : 'Task reopened');
+    ref
+        .read(toastProvider.notifier)
+        .show(done ? 'Follow-up completed' : 'Task reopened');
   }
 
   Widget _quotesTab(Lead lead) {
@@ -2106,41 +2983,53 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         body: 'Create a quotation to share pricing with this lead.',
         // Webapp: no add control on a converted lead or without
         // quotation.create (the header control explains why).
-        cta: _conversionOf(lead).isConverted || !hasPermission(ref, 'quotation', PermVerb.create)
+        cta: _conversionOf(lead).isConverted ||
+                !hasPermission(ref, 'quotation', PermVerb.create)
             ? null
             : GestureDetector(
-          onTap: () => context.push('${Routes.addQuote}?leadId=${lead.id}'),
-          child: Container(
-            height: 42.h,
-            padding: EdgeInsets.symmetric(horizontal: 18.w),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(PhosphorIconsBold.plus, size: 14.sp, color: AppColors.white),
-                SizedBox(width: 7.w),
-                Text('Create quote', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
-              ],
-            ),
-          ),
-        ),
+                onTap: () =>
+                    context.push('${Routes.addQuote}?leadId=${lead.id}'),
+                child: Container(
+                  height: 42.h,
+                  padding: EdgeInsets.symmetric(horizontal: 18.w),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.circular(10.r)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(PhosphorIconsBold.plus,
+                          size: 14.sp, color: AppColors.white),
+                      SizedBox(width: 7.w),
+                      Text('Create quote',
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w600,
+                              color: AppColors.white)),
+                    ],
+                  ),
+                ),
+              ),
       ),
       data: (quotes) {
         // Webapp row data (totals, created date, status colour) comes from the
         // raw rows; the mapped list still decides what exists.
         final raw = {
-          for (final r in ref.watch(leadQuoteRowsProvider(lead.id)).valueOrNull ?? const <Map<String, dynamic>>[])
+          for (final r
+              in ref.watch(leadQuoteRowsProvider(lead.id)).valueOrNull ??
+                  const <Map<String, dynamic>>[])
             '${r['quotation_id']}': r,
         };
         return Column(children: [
-          for (final q in quotes) raw[q.uuid] != null ? _quoteRawRow(raw[q.uuid]!) : _quoteRow(q),
+          for (final q in quotes)
+            raw[q.uuid] != null ? _quoteRawRow(raw[q.uuid]!) : _quoteRow(q),
         ]);
       },
     );
   }
 
-  static final _quoteDate = DateFormat('dd MMM yyyy');
+  static final _quoteDate = DateFormat('dd/MM/yyyy');
 
   /// Webapp Quotes-tab row: number over "<created> · Valid till <date>", the
   /// org's status pill, the pre-tax amount and "excl. GST · ₹… incl. GST".
@@ -2153,17 +3042,24 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     final status = r['status'] is Map ? r['status'] as Map : const {};
     final statusName = '${status['name'] ?? '—'}';
     final hex = '${status['color'] ?? ''}'.replaceFirst('#', '');
-    final color = hex.length == 6 ? Color(int.parse('FF$hex', radix: 16)) : AppColors.textMuted;
+    final color = hex.length == 6
+        ? Color(int.parse('FF$hex', radix: 16))
+        : AppColors.textMuted;
     final created = date(r['created_at']);
     final valid = date(r['valid_until']);
-    final sub = [if (created != null) created, if (valid != null) 'Valid till $valid'].join(' · ');
+    final sub = [
+      if (created != null) created,
+      if (valid != null) 'Valid till $valid'
+    ].join(' · ');
     final amount = r['taxable_total'] ?? r['total_amount'] ?? 0;
     final grand = r['grand_total'];
     return Container(
       padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: GestureDetector(
-        onTap: () => context.push('${Routes.quoteDetail}?id=${r['quotation_id']}'),
+        onTap: () =>
+            context.push('${Routes.quoteDetail}?id=${r['quotation_id']}'),
         behavior: HitTestBehavior.opaque,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2172,8 +3068,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               width: 38.w,
               height: 38.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(PhosphorIconsRegular.fileText, size: 18.sp, color: AppColors.textSecondary),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsRegular.fileText,
+                  size: 18.sp, color: AppColors.textSecondary),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -2183,7 +3082,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   Text('${r['quotation_number'] ?? '—'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
                   if (sub.isNotEmpty) Text(sub, style: AppText.caption()),
                   SizedBox(height: 5.h),
@@ -2196,12 +3098,45 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(formatMoneyStr(amount).replaceAll('.00', ''),
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 if (grand != null) ...[
                   SizedBox(height: 3.h),
-                  Text('excl. GST · ${formatMoneyStr(grand).replaceAll('.00', '')} incl. GST',
+                  Text(
+                      'excl. GST · ${formatMoneyStr(grand).replaceAll('.00', '')} incl. GST',
                       style: AppText.caption()),
                 ],
+                // UI/UX audit #58: download straight from the lead, without
+                // opening the quote first.
+                SizedBox(height: 4.h),
+                Semantics(
+                  button: true,
+                  label: 'Download PDF',
+                  child: Tooltip(
+                    message: 'Download PDF',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8.r),
+                      onTap: () => downloadQuotePdf(ref,
+                          quoteId: '${r['quotation_id']}',
+                          number: '${r['quotation_number'] ?? ''}'),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(8.w, 4.h, 0, 4.h),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(PhosphorIconsRegular.downloadSimple,
+                              size: 15.sp, color: AppColors.blueBright),
+                          SizedBox(width: 4.w),
+                          Text('PDF',
+                              style: AppText.custom(
+                                  size: 12,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.blueBright)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -2212,10 +3147,13 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
 
   Widget _quoteRow(Quote q) {
     final meta = StatusMeta$.quote[q.status] ?? StatusMeta$.quote['draft']!;
-    final validLabel = q.valid == '—' || q.valid.isEmpty ? 'Draft — not issued' : 'Valid till ${q.valid}';
+    final validLabel = q.valid == '—' || q.valid.isEmpty
+        ? 'Draft — not issued'
+        : 'Valid till ${q.valid}';
     return Container(
       padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: GestureDetector(
         onTap: () => context.push('${Routes.quoteDetail}?id=${q.id}'),
         behavior: HitTestBehavior.opaque,
@@ -2226,8 +3164,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               width: 38.w,
               height: 38.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(PhosphorIconsRegular.fileText, size: 18.sp, color: AppColors.textSecondary),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsRegular.fileText,
+                  size: 18.sp, color: AppColors.textSecondary),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -2237,7 +3178,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   Text('#${q.id}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
                   Text(validLabel, style: AppText.caption()),
                 ],
@@ -2249,7 +3193,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               children: [
                 _miniPill(meta),
                 SizedBox(height: 5.h),
-                Text(q.amount, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(q.amount,
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
               ],
             ),
           ],
@@ -2268,26 +3216,53 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         title: 'No files shared',
         body: 'Drawings, moodboards and documents will appear here.',
       ),
-      data: (files) => Column(children: [for (final f in files) _fileRow(f)]),
+      data: (files) =>
+          Column(children: [for (final f in files) _fileRow(f, lead.id)]),
     );
   }
 
   /// Hands one attachment to the OS viewer, reporting why if it cannot be.
   Future<void> _openFile(LeadFile f) async {
     final failure = await openAttachment(f.url);
-    if (failure != null && mounted) ref.read(toastProvider.notifier).show(failure);
+    if (failure != null && mounted)
+      ref.read(toastProvider.notifier).show(failure);
   }
 
   /// One attachment. Tapping it opens the stored file — the row used to be
   /// inert, so a file could be uploaded and listed but never viewed.
-  Widget _fileRow(LeadFile f) {
+  /// Webapp "rename in place": the same name dialog as an upload, then
+  /// `PATCH` the attachment's name (the extension is kept).
+  Future<void> _renameFile(LeadFile f, String leadId) async {
+    final typed = await showFileNameDialog(context, f.name,
+        title: 'Rename file', action: 'Save');
+    if (typed == null || !mounted) return;
+    final next = storedFileName(typed, f.name);
+    if (next == f.name) return;
+    final err =
+        await ref.read(attachmentsRepositoryProvider).renameFile(f.id, next);
+    if (!mounted) return;
+    final toast = ref.read(toastProvider.notifier);
+    if (err != null) {
+      toast.showError(err);
+      return;
+    }
+    ref.invalidate(leadFilesProvider(leadId));
+    toast.show('File renamed');
+  }
+
+  Widget _fileRow(LeadFile f, String leadId) {
     final uploader = MockUsers.of(f.uploadedBy).name.split(' ').first;
-    final meta = [f.ext, if (uploader.isNotEmpty) uploader, if (f.uploadedAt.isNotEmpty) f.uploadedAt].join(' · ');
+    final meta = [
+      f.ext,
+      if (uploader.isNotEmpty) uploader,
+      if (f.uploadedAt.isNotEmpty) f.uploadedAt
+    ].join(' · ');
     return InkWell(
       onTap: () => _openFile(f),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2295,8 +3270,11 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               width: 38.w,
               height: 38.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(attachmentIcon(f.ext), size: 18.sp, color: AppColors.textSecondary),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(attachmentIcon(f.ext),
+                  size: 18.sp, color: AppColors.textSecondary),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -2306,7 +3284,10 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   Text(f.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
                   Text(meta, style: AppText.caption()),
                   if (f.description.isNotEmpty) ...[
@@ -2314,13 +3295,27 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                     Text(f.description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.4)),
+                        style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted)
+                            .copyWith(height: 1.4)),
                   ],
                 ],
               ),
             ),
             SizedBox(width: 8.w),
-            Icon(PhosphorIconsRegular.arrowSquareOut, size: 16.sp, color: AppColors.textPlaceholder),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _renameFile(f, leadId),
+              child: Padding(
+                padding: EdgeInsets.all(6.w),
+                child: Icon(PhosphorIconsRegular.pencilSimple,
+                    size: 17.sp, color: AppColors.textMuted),
+              ),
+            ),
+            Icon(PhosphorIconsRegular.arrowSquareOut,
+                size: 16.sp, color: AppColors.textPlaceholder),
           ],
         ),
       ),
@@ -2330,25 +3325,48 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
   Widget _miniPill(StatusMeta meta) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 3.h),
-      decoration: BoxDecoration(color: meta.color.withOpacity(0.09), borderRadius: BorderRadius.circular(7.r)),
-      child: Text(meta.label, style: AppText.custom(size: 11, weight: FontWeight.w700, color: meta.color)),
+      decoration: BoxDecoration(
+          color: meta.color.withOpacity(0.09),
+          borderRadius: BorderRadius.circular(7.r)),
+      child: Text(meta.label,
+          style: AppText.custom(
+              size: 11, weight: FontWeight.w700, color: meta.color)),
     );
   }
 
   /// The row styling for one kind of audit event.
   static ActivityItem _activityRow(AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created =>
-        (PhosphorIconsRegular.userPlus, AppColors.textMuted2, AppColors.bgChipGrey),
-      AuditEventKind.statusChanged =>
-        (PhosphorIconsRegular.flag, AppColors.blueBright, AppColors.tintBlue),
-      AuditEventKind.noteAdded =>
-        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.childAdded =>
-        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
-      AuditEventKind.deleted =>
-        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.userPlus,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.flag,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.paperclip,
+          AppColors.warningDeep,
+          AppColors.tintAmber
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.bgChipGrey
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
     };
     return ActivityItem(
       icon: icon,
@@ -2364,7 +3382,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     // The record's real audit trail. Empty in mock mode, on failure, and for a
     // user without `view_audit_log` — in which case the card is not rendered at
     // all rather than showing an invented history.
-    final entries = ref.watch(leadActivityLogProvider(lead.id)).valueOrNull ?? const [];
+    final entries =
+        ref.watch(leadActivityLogProvider(lead.id)).valueOrNull ?? const [];
     if (entries.isEmpty) return const SizedBox.shrink();
     final items = [for (final e in entries) _activityRow(e)];
     return ClozrCard(
@@ -2375,9 +3394,14 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16.sp, color: AppColors.textLabelAlt),
+              Icon(PhosphorIconsRegular.clockCounterClockwise,
+                  size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
-              Text('Activity log', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Activity log',
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
@@ -2413,20 +3437,29 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   child: Container(
                     height: 52.h,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(13.r)),
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(13.r)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(PhosphorIconsRegular.phone, size: 19.sp, color: AppColors.white),
+                        Icon(PhosphorIconsRegular.phone,
+                            size: 19.sp, color: AppColors.white),
                         SizedBox(width: 9.w),
-                        Text('Call', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                        Text('Call',
+                            style: AppText.custom(
+                                size: 15,
+                                weight: FontWeight.w700,
+                                color: AppColors.white)),
                       ],
                     ),
                   ),
                 ),
               ),
               SizedBox(width: 10.w),
-              _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => _openWhatsapp(lead), border: const Color(0xFFC9DCF5)),
+              _squareAction(PhosphorIconsRegular.whatsappLogo,
+                  AppColors.blueCta, () => _openWhatsapp(lead),
+                  border: const Color(0xFFC9DCF5)),
               SizedBox(width: 10.w),
               // Same destination as the overflow menu's Edit lead, and the same
               // lock: a converted lead is frozen server-side (403), so offering
@@ -2457,7 +3490,8 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.warningDeep),
+          Icon(PhosphorIconsRegular.info,
+              size: 15.sp, color: AppColors.warningDeep),
           SizedBox(width: 9.w),
           Expanded(
             child: Column(
@@ -2465,11 +3499,16 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
               children: [
                 Text('Click-to-call unavailable',
                     style: AppText.custom(
-                        size: 12.5, weight: FontWeight.w700, color: AppColors.warningDeep)),
+                        size: 12.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.warningDeep)),
                 SizedBox(height: 2.h),
-                Text('$reason Call opens your phone\'s dialler instead, and the call is still logged.',
+                Text(
+                    '$reason Call opens your phone\'s dialler instead, and the call is still logged.',
                     style: AppText.custom(
-                            size: 11.5, weight: FontWeight.w500, color: AppColors.textLabelAlt)
+                            size: 11.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textLabelAlt)
                         .copyWith(height: 1.4)),
               ],
             ),
@@ -2479,14 +3518,18 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
     );
   }
 
-  Widget _squareAction(IconData icon, Color bg, VoidCallback onTap, {required Color border, double borderWidth = 1}) {
+  Widget _squareAction(IconData icon, Color bg, VoidCallback onTap,
+      {required Color border, double borderWidth = 1}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 52.w,
         height: 52.h,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(13.r), border: Border.all(color: border, width: borderWidth)),
+        decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(13.r),
+            border: Border.all(color: border, width: borderWidth)),
         child: Icon(icon, size: 22.sp, color: AppColors.navy),
       ),
     );

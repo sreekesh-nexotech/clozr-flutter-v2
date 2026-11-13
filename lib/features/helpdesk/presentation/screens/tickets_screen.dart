@@ -4,11 +4,13 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
@@ -16,6 +18,7 @@ import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
+import '../../../../core/widgets/status_group_bar.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/status_meta.dart';
@@ -29,6 +32,7 @@ import '../../application/filters/tickets_filter_spec.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/ticket.dart';
 import '../components/ticket_card.dart';
+import '../../../onboarding/presentation/tour_anchor.dart';
 
 /// Tickets list — the webapp's `TicketsListScreen` on a phone: search, the
 /// org's status chips (multi-select), the My Tickets / All presets, saved
@@ -55,9 +59,40 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     // the list opens on the Breaching-soon view rather than every ticket.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final b = GoRouterState.of(context).uri.queryParameters['breaching'];
+      final q = GoRouterState.of(context).uri.queryParameters;
+      // The dashboard's org-wide figures (Open tickets, SLA Breaches, …) link
+      // here with `all=1`: the list must open on every ticket, not on "My
+      // Tickets", or a figure of 29 lands on an empty list.
+      if (q['all'] == '1') {
+        ref.read(ticketMineProvider.notifier).state = false;
+      }
+      final b = q['breaching'];
       if (b == '1' || b == 'true') {
         ref.read(ticketBreachingProvider.notifier).state = true;
+      }
+      // The dashboard's donut slices, category bars and roster rows link to
+      // one facet each: SLA bucket, priority, category (issue type id) or
+      // assignee (user id). Applied as the drawer would, on top of nothing.
+      final sla = q['sla'];
+      final pri = q['pri'];
+      final cat = q['cat'];
+      final assignee = q['assignee'];
+      if ((sla ?? pri ?? cat ?? assignee) != null) {
+        final values = FilterValues();
+        if (sla != null && sla.isNotEmpty) {
+          values['sla'] = RadioValue(id: sla, defaultId: 'any');
+        }
+        if (pri != null && pri.isNotEmpty) {
+          values['pri'] = ChoiceValue(ids: {pri});
+        }
+        if (cat != null && cat.isNotEmpty) {
+          values['cats'] = ChoiceValue(ids: {cat});
+        }
+        if (assignee != null && assignee.isNotEmpty) {
+          values['assignees'] = ChoiceValue(ids: {assignee});
+        }
+        ref.read(ticketFiltersProvider.notifier).state = values;
+        ref.read(ticketSavedFiltersProvider.notifier).deactivate();
       }
     });
   }
@@ -76,7 +111,10 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     // Contextual add: the bottom-nav `+` opens the Create ticket form here.
     registerAdd(
       ref,
-      AddAction(label: 'New ticket', module: 'issue', run: (ctx) => ctx.push(Routes.createTicket)),
+      AddAction(
+          label: 'New ticket',
+          module: 'issue',
+          run: (ctx) => ctx.push(Routes.createTicket)),
     );
 
     final ticketsAsync = ApiConfig.apiEnabled
@@ -96,7 +134,10 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final query = ref.watch(ticketSearchProvider);
     final mine = ref.watch(ticketMineProvider);
     final breach = ref.watch(ticketBreachingProvider);
-    final filterCount = ref.watch(ticketFiltersProvider).activeCount;
+    // A dashboard card's "open only" scope counts as a filter (badge + Clear).
+    final filterCount = ref.watch(ticketFiltersProvider).activeCount +
+        (ref.watch(ticketOpenOnlyProvider) ? 1 : 0) +
+        (ref.watch(ticketScopeParamsProvider).isNotEmpty ? 1 : 0);
     final saved = ref.watch(ticketSavedFiltersProvider);
     // Webapp `hasNarrowingFilters`: anything the user picked beyond the
     // default "My Tickets" scope — it drives "Clear filters" and the empty
@@ -104,6 +145,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final narrowing = filterCount > 0 ||
         query.trim().isNotEmpty ||
         statusChips.isNotEmpty ||
+        ref.watch(ticketGroupProvider) != null ||
         saved.activeId != null ||
         breach;
 
@@ -116,18 +158,31 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             const HeaderHairline(),
             SizedBox(height: 14.h),
             ScreenTitleRow(
+              tourArea: 'tickets',
               title: 'Tickets',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(ticketSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () => ref
+                  .read(ticketSearchOpenProvider.notifier)
+                  .state = !searchOpen,
               onFilter: _openFilters,
+              // Tickets › Trash (C09): deleted tickets, restorable.
+              trailing: hasPermission(ref, 'issue', PermVerb.delete)
+                  ? IconButton(
+                      tooltip: 'Trash',
+                      icon: Icon(PhosphorIconsRegular.trash,
+                          size: 20.sp, color: AppColors.textSecondary),
+                      onPressed: () => context.push(Routes.ticketTrash),
+                    )
+                  : null,
             ),
             if (searchOpen) ...[
               SizedBox(height: 10.h),
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search tickets, reference or customer…',
-                onChanged: (v) => ref.read(ticketSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(ticketSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(ticketSearchProvider.notifier).state = '';
@@ -136,31 +191,54 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               ),
             ],
             SizedBox(height: 12.h),
-            SizedBox(
-              height: 40.h,
-              child: TabChipRow(
-                children: [
-                  TabChip(
-                    label: 'All (${ticketTabCountOf(serverCounts, all, mine, breach, 'all')})',
-                    active: statusChips.isEmpty,
-                    onTap: () => _toggleStatus('all'),
-                  ),
-                  for (final (k, label, color) in tabs)
+            // The org's statuses grouped open / on hold / resolved (Oct 2026
+            // header); the flat per-status row only while the catalog is
+            // unavailable.
+            if (statusCatalog.isNotEmpty)
+              _groupBar(statusCatalog, statusChips,
+                  counts: (k) =>
+                      ticketTabCountOf(serverCounts, all, mine, breach, k))
+            else
+              SizedBox(
+                height: 40.h,
+                child: TabChipRow(
+                  children: [
                     TabChip(
-                      label: '$label (${ticketTabCountOf(serverCounts, all, mine, breach, k)})',
-                      active: _chipActive(statusChips, k, statusCatalog),
-                      dotColor: color,
-                      onTap: () => _toggleStatus(k),
+                      label:
+                          'All (${ticketTabCountOf(serverCounts, all, mine, breach, 'all')})',
+                      active: statusChips.isEmpty,
+                      onTap: () => _toggleStatus('all'),
                     ),
-                ],
+                    for (final (k, label, color) in tabs)
+                      TabChip(
+                        label:
+                            '$label (${ticketTabCountOf(serverCounts, all, mine, breach, k)})',
+                        active: _chipActive(statusChips, k, statusCatalog),
+                        dotColor: color,
+                        onTap: () => _toggleStatus(k),
+                      ),
+                  ],
+                ),
               ),
-            ),
             SizedBox(height: 12.h),
             _presetRow(mine, breach),
+            // Says which scope the status counts above are for, so a count
+            // changing with the chip is never a surprise (UI/UX audit #22).
+            Padding(
+              padding: EdgeInsets.only(top: 8.h, left: 2.w),
+              child: Text(
+                mine
+                    ? 'Showing tickets assigned to you — counts are for My Tickets'
+                    : 'Showing all tickets — counts are for the whole queue',
+                style: AppText.caption(),
+              ),
+            ),
             if (saved.filters.isNotEmpty || narrowing) ...[
               SizedBox(height: 10.h),
               chips.SavedChipRow(
-                views: [for (final f in saved.filters) chips.SavedView(f.id, f.name)],
+                views: [
+                  for (final f in saved.filters) chips.SavedView(f.id, f.name)
+                ],
                 active: {if (saved.activeId != null) saved.activeId!},
                 showClearAlways: narrowing,
                 onToggle: _toggleView,
@@ -174,37 +252,45 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           ],
         ),
         Expanded(
-          child: AsyncStateView<List<Ticket>>(
-                  value: ticketsAsync,
-                  onRetry: _refresh,
+          child: TourAnchor(
+              id: TourAnchors.ticketsList,
+              child: AsyncStateView<List<Ticket>>(
+                value: ticketsAsync,
+                onRetry: _refresh,
+                onRefresh: _refresh,
+                error: (e, retry) => AppRefresh(
                   onRefresh: _refresh,
-                  error: (e, retry) => AppRefresh(
-                    onRefresh: _refresh,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: [ErrorState.forSubject(e, 'your tickets', onRetry: retry)],
-                    ),
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      ErrorState.forSubject(e, 'your tickets', onRetry: retry)
+                    ],
                   ),
-                  data: (_) {
-                    final visible = ref.watch(filteredTicketsProvider);
-                    return visible.isEmpty
-                        ? _empty(narrowing: narrowing, mine: mine, canCreate: perm.create)
-                        : ListView.separated(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                            itemCount: visible.length,
-                            separatorBuilder: (_, __) => SizedBox(height: 12.h),
-                            itemBuilder: (context, i) {
-                              final t = visible[i];
-                              return TicketCard(
-                                ticket: t,
-                                onTap: () => context.push('${Routes.ticketDetail}?id=${t.id}'),
-                                onLongPress: () => _rowActions(t),
-                              );
-                            },
-                          );
-                  },
                 ),
+                data: (_) {
+                  final visible = ref.watch(filteredTicketsProvider);
+                  return visible.isEmpty
+                      ? _empty(
+                          narrowing: narrowing,
+                          mine: mine,
+                          canCreate: perm.create)
+                      : ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                          itemBuilder: (context, i) {
+                            final t = visible[i];
+                            return TicketCard(
+                              ticket: t,
+                              onTap: () => context
+                                  .push('${Routes.ticketDetail}?id=${t.id}'),
+                              onLongPress: () => _rowActions(t),
+                            );
+                          },
+                        );
+                },
+              )),
         ),
       ],
     );
@@ -214,12 +300,69 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
 
   /// Whether a chip reads as selected — by id, or through a folded key another
   /// screen put in the set ("show me resolved").
-  bool _chipActive(Set<String> picked, String chipKey, List<CatalogOption> catalog) {
+  bool _chipActive(
+      Set<String> picked, String chipKey, List<CatalogOption> catalog) {
     if (picked.contains(chipKey)) return true;
     for (final s in catalog) {
-      if (s.id == chipKey && picked.contains(ticketStatusKey(s.name))) return true;
+      if (s.id == chipKey && picked.contains(ticketStatusKey(s.name)))
+        return true;
     }
     return false;
+  }
+
+  /// The group row: `All`, then Open / On hold / Resolved; a picked group
+  /// opens a second row with its own statuses, which narrow it further.
+  Widget _groupBar(List<CatalogOption> statuses, Set<String> picked,
+      {required int Function(String) counts}) {
+    // A folded key another screen put in the set ("resolved") names no status,
+    // so the group the screen set alongside it stays the open one.
+    final open = StatusGroups.displayedGroup(
+      picked: picked,
+      group: ref.watch(ticketGroupProvider),
+      statuses: statuses,
+      groupOf: StatusGroups.ofTicket,
+      keyOf: (s) => s.id,
+    );
+    final server = ref.watch(ticketTabCountsProvider);
+    int groupCount(String code) =>
+        server[StatusGroups.countKey(code)] ??
+        [
+          for (final s in statuses)
+            if (StatusGroups.ofTicket(s) == code) counts(s.id)
+        ].fold(0, (a, b) => a + b);
+    return StatusGroupBar(
+      allCount: counts('all'),
+      allActive: picked.isEmpty && open == null,
+      onAll: () => _toggleStatus('all'),
+      groups: [
+        for (final g in StatusGroups.ticket)
+          StatusGroupChip(
+              code: g.code, label: g.label, count: groupCount(g.code)),
+      ],
+      activeGroup: open,
+      onGroup: (code) {
+        // A group the org has no status in cannot be listed.
+        if (!statuses.any((s) => StatusGroups.ofTicket(s) == code)) return;
+        _toggleStatus('all');
+        ref.read(ticketGroupProvider.notifier).state =
+            code == open ? null : code;
+      },
+      statuses: [
+        for (final s in statuses)
+          if (open != null && StatusGroups.ofTicket(s) == open)
+            StatusGroupStatusChip(
+              key: s.id,
+              label: s.name,
+              count: counts(s.id),
+              active: _chipActive(picked, s.id, statuses),
+              color: s.color,
+            ),
+      ],
+      onStatus: (id) {
+        _toggleStatus(id);
+        ref.read(ticketGroupProvider.notifier).state = open;
+      },
+    );
   }
 
   // ── Header controls ──
@@ -231,12 +374,14 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final n = ref.read(ticketStatusChipsProvider.notifier);
     if (key == 'all') {
       n.state = const <String>{};
+      ref.read(ticketGroupProvider.notifier).state = null;
       return;
     }
     final next = {...n.state};
     // A folded key from another screen is swapped for the real id it covers.
     final catalog = ref.read(ticketStatusOptionsProvider);
-    next.removeWhere((k) => catalog.any((s) => s.id == key && ticketStatusKey(s.name) == k));
+    next.removeWhere(
+        (k) => catalog.any((s) => s.id == key && ticketStatusKey(s.name) == k));
     next.contains(key) ? next.remove(key) : next.add(key);
     n.state = next;
   }
@@ -258,7 +403,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           ),
           SizedBox(width: 8.w),
           _chip(
-            label: 'All',
+            // "All tickets", not "All": the status tab row already has an
+            // "All (n)" (UI/UX audit #22).
+            label: 'All tickets',
             icon: PhosphorIconsFill.bookmarkSimple,
             active: !mine,
             filled: true,
@@ -271,7 +418,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             active: breach,
             filled: false,
             iconColorOff: AppColors.warningDeep,
-            onTap: () => ref.read(ticketBreachingProvider.notifier).state = !breach,
+            onTap: () =>
+                ref.read(ticketBreachingProvider.notifier).state = !breach,
           ),
         ],
       ),
@@ -290,7 +438,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     ref.invalidate(ticketStatusCatalogProvider);
     if (ApiConfig.apiEnabled) ref.invalidate(ticketStatusCountsProvider);
     await settle([
-      ref.read(ApiConfig.apiEnabled ? ticketsFilteredProvider.future : ticketsProvider.future),
+      ref.read(ApiConfig.apiEnabled
+          ? ticketsFilteredProvider.future
+          : ticketsProvider.future),
       ref.read(ticketStatusCatalogProvider.future),
       if (ApiConfig.apiEnabled) ref.read(ticketStatusCountsProvider.future),
       ref.read(ticketSavedFiltersProvider.notifier).load(),
@@ -319,7 +469,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       // "Apply filters").
       previewCount: ApiConfig.apiEnabled
           ? (_) => -1
-          : (draft) => base.where((t) => ticketMatchesFilters(t, draft, dir)).length,
+          : (draft) =>
+              base.where((t) => ticketMatchesFilters(t, draft, dir)).length,
       activeViewName: saved.active?.name,
       existingViewNames: saved.filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
@@ -330,7 +481,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     // Hand-picked facets replace an applied saved view, unless the draft still
     // means exactly what the view stores.
     final active = ref.read(ticketSavedFiltersProvider).active;
-    if (active != null && !sameFilterDefinition(encodeTicketView(result).definition, active.definition)) {
+    if (active != null &&
+        !sameFilterDefinition(
+            encodeTicketView(result).definition, active.definition)) {
       ref.read(ticketSavedFiltersProvider.notifier).deactivate();
     }
     ref.read(toastProvider.notifier).show('Filters applied');
@@ -347,10 +500,16 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       return;
     }
     if (built.unsupported.isNotEmpty) {
-      toast.show('"Is not" isn\'t supported for ${built.unsupported.join(', ')} — those were left out.');
+      toast.show(
+          '"Is not" isn\'t supported for ${built.unsupported.join(', ')} — those were left out.');
     }
-    final updating = ref.read(ticketSavedFiltersProvider).filters.any((f) => f.name.toLowerCase() == name.trim().toLowerCase());
-    final error = await ref.read(ticketSavedFiltersProvider.notifier).save(name, built.definition);
+    final updating = ref
+        .read(ticketSavedFiltersProvider)
+        .filters
+        .any((f) => f.name.toLowerCase() == name.trim().toLowerCase());
+    final error = await ref
+        .read(ticketSavedFiltersProvider.notifier)
+        .save(name, built.definition);
     if (!mounted) return;
     if (error != null) {
       toast.showError(error);
@@ -361,6 +520,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     ref.read(ticketFiltersProvider.notifier).state = draft.copy();
     ref.read(ticketMineProvider.notifier).state = false;
     ref.read(ticketStatusChipsProvider.notifier).state = const <String>{};
+    ref.read(ticketGroupProvider.notifier).state = null;
     toast.show(updating ? 'View updated' : 'View saved');
   }
 
@@ -376,17 +536,22 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     }
     final view = saved.filters.where((f) => f.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     // An invalid view fails inert (webapp: greyed with a warning).
     if (!view.isValid) {
-      ref.read(toastProvider.notifier).showError('View "${view.name}" refers to a field that no longer exists.');
+      ref.read(toastProvider.notifier).showError(
+          'View "${view.name}" refers to a field that no longer exists.');
       return;
     }
-    ref.read(ticketFiltersProvider.notifier).state = decodeTicketView(view.definition);
+    ref.read(ticketFiltersProvider.notifier).state =
+        decodeTicketView(view.definition);
     ref.read(ticketMineProvider.notifier).state = false;
     ref.read(ticketStatusChipsProvider.notifier).state = const <String>{};
+    ref.read(ticketGroupProvider.notifier).state = null;
     ref.read(ticketSavedFiltersProvider.notifier).apply(id);
   }
 
@@ -394,13 +559,15 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   /// confirm; an applied view falls back to no view.
   Future<void> _removeView(String id) async {
     final wasActive = ref.read(ticketSavedFiltersProvider).activeId == id;
-    final error = await ref.read(ticketSavedFiltersProvider.notifier).remove(id);
+    final error =
+        await ref.read(ticketSavedFiltersProvider.notifier).remove(id);
     if (!mounted) return;
     if (error != null) {
       ref.read(toastProvider.notifier).showError(error);
       return;
     }
-    if (wasActive) ref.read(ticketFiltersProvider.notifier).state = FilterValues();
+    if (wasActive)
+      ref.read(ticketFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('View deleted');
   }
 
@@ -412,7 +579,10 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     ref.read(ticketSearchOpenProvider.notifier).state = false;
     ref.read(ticketFiltersProvider.notifier).state = FilterValues();
     ref.read(ticketStatusChipsProvider.notifier).state = const <String>{};
+    ref.read(ticketGroupProvider.notifier).state = null;
     ref.read(ticketBreachingProvider.notifier).state = false;
+    ref.read(ticketOpenOnlyProvider.notifier).state = false;
+    ref.read(ticketScopeParamsProvider.notifier).state = const {};
     ref.read(ticketMineProvider.notifier).state = false;
     ref.read(ticketSavedFiltersProvider.notifier).deactivate();
   }
@@ -461,7 +631,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     } else {
       bg = active ? AppColors.blueSubtle : AppColors.white;
       fg = active ? AppColors.navy : AppColors.textLabelAlt;
-      iconColor = active ? AppColors.blueBright : (iconColorOff ?? AppColors.textMuted2);
+      iconColor = active
+          ? AppColors.blueBright
+          : (iconColorOff ?? AppColors.textMuted2);
     }
     return GestureDetector(
       onTap: onTap,
@@ -478,7 +650,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           children: [
             Icon(icon, size: 13.sp, color: iconColor),
             SizedBox(width: 6.w),
-            Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: fg)),
+            Text(label,
+                style: AppText.custom(
+                    size: 12.5, weight: FontWeight.w600, color: fg)),
           ],
         ),
       ),
@@ -488,7 +662,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   /// The webapp's three empty states: filters that match nothing (→ Clear
   /// filters), nothing assigned under "My Tickets" (→ New Ticket), and an org
   /// with no tickets yet (→ New Ticket). New Ticket is hidden without create.
-  Widget _empty({required bool narrowing, required bool mine, required bool canCreate}) {
+  Widget _empty(
+      {required bool narrowing, required bool mine, required bool canCreate}) {
     final (IconData icon, String title, String body) = narrowing
         ? (
             PhosphorIconsRegular.magnifyingGlassMinus,
@@ -499,7 +674,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             ? (
                 PhosphorIconsRegular.ticket,
                 'No tickets assigned to you',
-                'Nothing is assigned to you right now. Raise a ticket, or switch to “All” to see the whole team’s queue.',
+                'Nothing is assigned to you right now. Raise a ticket, or switch to “All tickets” to see the whole team’s queue.',
               )
             : (
                 PhosphorIconsRegular.ticket,
@@ -518,30 +693,48 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                 width: 66.r,
                 height: 66.r,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.borderCardSoft, borderRadius: BorderRadius.circular(19.r)),
-                child: Icon(icon, size: 30.sp, color: AppColors.textPlaceholder),
+                decoration: BoxDecoration(
+                    color: AppColors.borderCardSoft,
+                    borderRadius: BorderRadius.circular(19.r)),
+                child:
+                    Icon(icon, size: 30.sp, color: AppColors.textPlaceholder),
               ),
               SizedBox(height: 16.h),
-              Text(title, style: AppText.sectionTitle(), textAlign: TextAlign.center),
+              Text(title,
+                  style: AppText.sectionTitle(), textAlign: TextAlign.center),
               SizedBox(height: 6.h),
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: 260.w),
                 child: Text(body,
                     textAlign: TextAlign.center,
-                    style: AppText.body(color: AppColors.textMuted).copyWith(height: 1.5)),
+                    style: AppText.body(color: AppColors.textMuted)
+                        .copyWith(height: 1.5)),
               ),
               if (showAction) ...[
                 SizedBox(height: 18.h),
                 GestureDetector(
-                  onTap: narrowing ? _clearAll : () => context.push(Routes.createTicket),
+                  onTap: narrowing
+                      ? _clearAll
+                      : () => context.push(Routes.createTicket),
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 11.h),
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 18.w, vertical: 11.h),
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(11.r)),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(narrowing ? PhosphorIconsBold.x : PhosphorIconsBold.plus, size: 15.sp, color: AppColors.white),
+                      Icon(
+                          narrowing
+                              ? PhosphorIconsBold.x
+                              : PhosphorIconsBold.plus,
+                          size: 15.sp,
+                          color: AppColors.white),
                       SizedBox(width: 7.w),
                       Text(narrowing ? 'Clear filters' : 'New Ticket',
-                          style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.white)),
+                          style: AppText.custom(
+                              size: 14,
+                              weight: FontWeight.w700,
+                              color: AppColors.white)),
                     ]),
                   ),
                 ),

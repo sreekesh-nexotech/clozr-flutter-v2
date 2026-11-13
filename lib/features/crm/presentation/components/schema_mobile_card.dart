@@ -1,3 +1,5 @@
+import '../../../../core/utils/relative_time.dart';
+import '../../../../data/mock/status_meta.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -6,6 +8,7 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../application/customer_detail_rules.dart';
 import '../../domain/entities/view_schema.dart';
+import '../../application/product_display.dart';
 
 /// The mobile list card from the webapp's **View Settings › <module> › Mobile
 /// view** (`SchemaMobileViewEditor.tsx`), drawn the same way for every module
@@ -30,6 +33,8 @@ class SchemaMobileCard extends StatelessWidget {
     required this.statusLabel,
     required this.onTap,
     this.onCall,
+    this.onLongPress,
+    this.showCall = true,
     this.customFields = const {},
     this.notif = 0,
     this.statusColor,
@@ -38,6 +43,7 @@ class SchemaMobileCard extends StatelessWidget {
     this.fallbackTime = '',
     this.fallbackPeople = const [],
     this.mockCell,
+    this.badge,
   });
 
   /// The record's protected name column — never configurable away.
@@ -78,6 +84,16 @@ class SchemaMobileCard extends StatelessWidget {
   /// falls through to [onTap].
   final VoidCallback? onCall;
 
+  /// Long press — the shared row-actions sheet (View / Edit).
+  final VoidCallback? onLongPress;
+
+  /// False for a record with no one to call (a product): the call button is
+  /// left out instead of opening the record.
+  final bool showCall;
+
+  /// An optional marker under the name — the "Sent for approval" chip.
+  final Widget? badge;
+
   // Webapp tokens (`index.css`).
   static const _text0 = Color(0xFF000000);
   static const _text1 = Color(0xFF1A1A1A);
@@ -105,8 +121,10 @@ class SchemaMobileCard extends StatelessWidget {
       return null;
     }
 
-    final companyCol = pick(const ['organization_name', 'company_name', 'customer_name']);
-    final subtitleCol = pick(const ['lead_need', 'requirement', 'title', 'subject', 'product_code']);
+    final companyCol =
+        pick(const ['organization_name', 'company_name', 'customer_name']);
+    final subtitleCol = pick(
+        const ['lead_need', 'requirement', 'title', 'subject', 'product_code']);
     final moneyCol = live
         ? schema.columns
             .map((c) => c.name)
@@ -114,127 +132,178 @@ class SchemaMobileCard extends StatelessWidget {
             .firstOrNull
         : null;
     // With no layout (mock mode, or none loaded yet) the built-in slots show.
-    final pillCol = live ? pick(const ['status', 'status_name', 'priority', 'lead_source', 'source']) : 'status';
-    final timeCol = pick(const ['last_followup_at', 'due_date', 'updated_at', 'created_at']);
-    final peopleCol = live ? pick(const ['assignees', 'assigned_to', 'lead_owner']) : 'assignees';
+    final pillCol = live
+        ? pick(const [
+            'status',
+            'status_name',
+            'priority',
+            'lead_source',
+            'source'
+          ])
+        : 'status';
+    final timeCol = pick(
+        const ['last_followup_at', 'due_date', 'updated_at', 'created_at']);
+    final peopleCol = live
+        ? pick(const ['assignees', 'assigned_to', 'lead_owner'])
+        : 'assignees';
 
     final company = live ? _nameOf(raw[companyCol]) : fallbackCompany;
-    final subtitle = subtitleCol == null || subtitleCol == schema.columns.firstOrNull?.name
-        ? ''
-        : _nameOf(raw[subtitleCol]);
+    final subtitle =
+        subtitleCol == null || subtitleCol == schema.columns.firstOrNull?.name
+            ? ''
+            : _nameOf(raw[subtitleCol]);
     final pill = _pillText(pillCol);
-    final money = live ? (moneyCol == null ? '' : _money(raw[moneyCol])) : fallbackValue;
+    final money =
+        live ? (moneyCol == null ? '' : _money(raw[moneyCol])) : fallbackValue;
     final time = live ? _timeAgo(raw[timeCol]) : fallbackTime;
     final people = live ? _people(raw[peopleCol]) : fallbackPeople;
-    final peopleLabel = peopleCol == null ? null : (live ? schema.labelOf(peopleCol, 'Team') : 'Team');
+    final peopleLabel = peopleCol == null
+        ? null
+        : (live ? schema.labelOf(peopleCol, 'Team') : 'Team');
 
     // Non-protected visible columns, in the org's order — the webapp's
     // toggleable extra rows. The field already drawn as the header pill is
     // not repeated as a row (a task's Status is toggleable, so the webapp's
     // card would show it twice).
-    final extras = [for (final c in schema.columns) if (!c.isFixed && c.name != pillCol) c];
+    final extras = [
+      for (final c in schema.columns)
+        if (!c.isFixed && c.name != pillCol) c
+    ];
 
-    return ClozrCard(
-      radius: 12,
-      padding: EdgeInsets.all(14.r),
-      borderColor: _line,
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _avatar(),
-              SizedBox(width: 12.w),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _line1(name, 15, FontWeight.w700, _text0),
-                    if (company.isNotEmpty) ...[
-                      SizedBox(height: 2.h),
-                      _line1(company, 13, FontWeight.w400, _text2),
-                    ],
-                    if (subtitle.isNotEmpty) ...[
-                      SizedBox(height: 2.h),
-                      _line1(subtitle, 12, FontWeight.w400, _text3),
-                    ],
-                  ],
-                ),
-              ),
-              SizedBox(width: 12.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (pill.isNotEmpty)
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 3.h),
-                      decoration: BoxDecoration(color: _warningBg, borderRadius: BorderRadius.circular(6.r)),
-                      child: Text(pill, style: AppText.custom(size: 11, weight: FontWeight.w600, color: _warning)),
-                    ),
-                  if (money.isNotEmpty) ...[
-                    SizedBox(height: 5.h),
-                    Text(money, style: AppText.custom(size: 14, weight: FontWeight.w700, color: _navy)),
-                  ],
-                  if (time.isNotEmpty) ...[
-                    SizedBox(height: 5.h),
-                    Text(time, style: AppText.custom(size: 11, weight: FontWeight.w400, color: _text3)),
-                  ],
-                ],
-              ),
-            ],
-          ),
-          if (extras.isNotEmpty) ...[
-            SizedBox(height: 10.h),
-            for (final (i, c) in extras.indexed) ...[
-              if (i > 0) SizedBox(height: 5.h),
-              _fieldRow(c.label, _cell(c)),
-            ],
-          ],
-          SizedBox(height: 10.h),
-          Container(
-            padding: EdgeInsets.only(top: 10.h),
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: _line))),
-            child: Row(
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: ClozrCard(
+        radius: 12,
+        padding: EdgeInsets.all(14.r),
+        borderColor: _line,
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (peopleLabel != null) ...[
-                  _avatarStack(people),
-                  SizedBox(width: 8.w),
-                  Expanded(
-                    child: Text(peopleLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12, weight: FontWeight.w400, color: _text3)),
+                _avatar(),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _line1(name, 15, FontWeight.w700, _text0),
+                      if (company.isNotEmpty) ...[
+                        SizedBox(height: 2.h),
+                        _line1(company, 13, FontWeight.w400, _text2),
+                      ],
+                      if (subtitle.isNotEmpty) ...[
+                        SizedBox(height: 2.h),
+                        _line1(subtitle, 12, FontWeight.w400, _text3),
+                      ],
+                      if (badge != null) badge!,
+                    ],
                   ),
-                ] else
-                  const Spacer(),
-                GestureDetector(
-                  onTap: onCall,
-                  child: Container(
-                    width: 40.w,
-                    height: 40.w,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: _surfaceMuted, borderRadius: BorderRadius.circular(10.r)),
-                    child: Icon(PhosphorIconsRegular.phone, size: 17.sp, color: _navy),
-                  ),
+                ),
+                SizedBox(width: 12.w),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (pill.isNotEmpty)
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 9.w, vertical: 3.h),
+                        decoration: BoxDecoration(
+                            color: _warningBg,
+                            borderRadius: BorderRadius.circular(6.r)),
+                        child: Text(pill,
+                            style: AppText.custom(
+                                size: 11,
+                                weight: FontWeight.w600,
+                                color: _warning)),
+                      ),
+                    if (money.isNotEmpty) ...[
+                      SizedBox(height: 5.h),
+                      Text(money,
+                          style: AppText.custom(
+                              size: 14, weight: FontWeight.w700, color: _navy)),
+                    ],
+                    if (time.isNotEmpty) ...[
+                      SizedBox(height: 5.h),
+                      Text(time,
+                          style: AppText.custom(
+                              size: 11,
+                              weight: FontWeight.w400,
+                              color: _text3)),
+                    ],
+                  ],
                 ),
               ],
             ),
-          ),
-        ],
+            if (extras.isNotEmpty) ...[
+              SizedBox(height: 10.h),
+              for (final (i, c) in extras.indexed) ...[
+                if (i > 0) SizedBox(height: 5.h),
+                _fieldRow(c.label, _cell(c)),
+              ],
+            ],
+            // No people and no call button (a product): no empty footer.
+            if (peopleLabel != null || showCall) ...[
+              SizedBox(height: 10.h),
+              Container(
+                padding: EdgeInsets.only(top: 10.h),
+                decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: _line))),
+                child: Row(
+                  children: [
+                    if (peopleLabel != null) ...[
+                      _avatarStack(people),
+                      SizedBox(width: 8.w),
+                      Expanded(
+                        child: Text(peopleLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.custom(
+                                size: 12,
+                                weight: FontWeight.w400,
+                                color: _text3)),
+                      ),
+                    ] else
+                      const Spacer(),
+                    if (showCall)
+                      GestureDetector(
+                        onTap: onCall,
+                        child: Container(
+                          width: 40.w,
+                          height: 40.w,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                              color: _surfaceMuted,
+                              borderRadius: BorderRadius.circular(10.r)),
+                          child: Icon(PhosphorIconsRegular.phone,
+                              size: 17.sp, color: _navy),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _line1(String text, double size, FontWeight weight, Color color) => Text(text,
-      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: size, weight: weight, color: color));
+  Widget _line1(String text, double size, FontWeight weight, Color color) =>
+      Text(text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppText.custom(size: size, weight: weight, color: color));
 
   /// The webapp's `fieldRow`: label on the left, value on the right.
   Widget _fieldRow(String label, Widget value) {
     return Row(
       children: [
-        Text(label, style: AppText.custom(size: 12, weight: FontWeight.w400, color: _text3)),
+        Text(label,
+            style: AppText.custom(
+                size: 12, weight: FontWeight.w400, color: _text3)),
         SizedBox(width: 8.w),
         Expanded(child: Align(alignment: Alignment.centerRight, child: value)),
       ],
@@ -243,10 +312,11 @@ class SchemaMobileCard extends StatelessWidget {
 
   /// A row value. Wraps rather than truncating, and folds line breaks and runs
   /// of spaces into one, as the webapp's row (normal HTML white-space) does.
-  Widget _text(String s, {Color color = _text1, FontWeight weight = FontWeight.w500}) => Text(
-      s.replaceAll(RegExp(r'\s+'), ' ').trim(),
-      textAlign: TextAlign.right,
-      style: AppText.custom(size: 12, weight: weight, color: color));
+  Widget _text(String s,
+          {Color color = _text1, FontWeight weight = FontWeight.w500}) =>
+      Text(s.replaceAll(RegExp(r'\s+'), ' ').trim(),
+          textAlign: TextAlign.right,
+          style: AppText.custom(size: 12, weight: weight, color: color));
 
   /// One row's value, formatted as the webapp's `renderSchemaCell` does.
   Widget _cell(ViewColumn column) {
@@ -263,24 +333,46 @@ class SchemaMobileCard extends StatelessWidget {
     final empty = _text('—', color: _text4, weight: FontWeight.w400);
     if (_blank(v)) return empty;
 
+    // Priority reads capitalised in every module ("Medium", not the
+    // catalog's "medium") — UI/UX audit #28.
+    if (field == 'priority' || field == 'priority_name') {
+      final name = v is Map ? _nameOf(v) : '$v';
+      if (name.isEmpty || _uuid.hasMatch(name)) {
+        final sibling = raw['${field}_name'];
+        if (sibling is String && sibling.isNotEmpty) {
+          return _text(StatusMeta$.priorityLabel(sibling));
+        }
+        return empty;
+      }
+      return _text(StatusMeta$.priorityLabel(name));
+    }
+
     if (field == 'status' || field == 'status_name') {
       final label = _pillText(field);
       if (label.isEmpty) return empty;
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-        decoration: BoxDecoration(color: _surfaceMuted, borderRadius: BorderRadius.circular(999)),
+        decoration: BoxDecoration(
+            color: _surfaceMuted, borderRadius: BorderRadius.circular(999)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Container(
               width: 8.w,
               height: 8.w,
-              decoration: BoxDecoration(color: statusColor ?? _text3, shape: BoxShape.circle)),
+              decoration: BoxDecoration(
+                  color: statusColor ?? _text3, shape: BoxShape.circle)),
           SizedBox(width: 7.w),
-          Text(label, style: AppText.custom(size: 12, weight: FontWeight.w600, color: _text1)),
+          Text(label,
+              style: AppText.custom(
+                  size: 12, weight: FontWeight.w600, color: _text1)),
         ]),
       );
     }
 
-    if (field.contains('value') || field.contains('amount') || field == 'price' || field == 'total_amount' || field == 'revenue') {
+    if (field.contains('value') ||
+        field.contains('amount') ||
+        field == 'price' ||
+        field == 'total_amount' ||
+        field == 'revenue') {
       final scalar = v is Map && v.containsKey('value') ? v['value'] : v;
       final n = scalar is num ? scalar : num.tryParse('$scalar');
       if (n != null) return _text(_moneyCompact(n), weight: FontWeight.w600);
@@ -292,7 +384,9 @@ class SchemaMobileCard extends StatelessWidget {
         final pct = n.clamp(0, 100).toDouble();
         // The lead detail screen's score colours, so a score reads the same
         // on the card as on the record.
-        final color = pct >= 75 ? AppColors.success : (pct >= 45 ? AppColors.warningDeep : AppColors.error);
+        final color = pct >= 75
+            ? AppColors.success
+            : (pct >= 45 ? AppColors.warningDeep : AppColors.error);
         return Row(mainAxisSize: MainAxisSize.min, children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
@@ -301,11 +395,14 @@ class SchemaMobileCard extends StatelessWidget {
               height: 6.h,
               color: _surfaceMuted,
               alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(widthFactor: pct / 100, child: Container(color: color)),
+              child: FractionallySizedBox(
+                  widthFactor: pct / 100, child: Container(color: color)),
             ),
           ),
           SizedBox(width: 9.w),
-          Text(_num(n), style: AppText.custom(size: 13, weight: FontWeight.w700, color: color)),
+          Text(_num(n),
+              style: AppText.custom(
+                  size: 13, weight: FontWeight.w700, color: color)),
         ]);
       }
     }
@@ -319,9 +416,12 @@ class SchemaMobileCard extends StatelessWidget {
 
     if (field == 'activity' || field == 'last_followup_at') {
       final ago = _timeAgoLong(v);
-      return _text(ago.isNotEmpty ? ago : _date(v), color: _text3, weight: FontWeight.w400);
+      return _text(ago.isNotEmpty ? ago : _date(v),
+          color: _text3, weight: FontWeight.w400);
     }
-    if (field.endsWith('_at') || field.contains('date') || field == 'valid_until') return _text(_date(v));
+    if (field.endsWith('_at') ||
+        field.contains('date') ||
+        field == 'valid_until') return _text(_date(v));
 
     if (v is Map) {
       final n = _nameOf(v);
@@ -337,15 +437,16 @@ class SchemaMobileCard extends StatelessWidget {
     return _text(v is num ? _num(v) : '$v');
   }
 
-  static String _num(num n) => n == n.roundToDouble() && n is double ? '${n.toInt()}' : '$n';
+  static String _num(num n) =>
+      n == n.roundToDouble() && n is double ? '${n.toInt()}' : '$n';
 
-  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   /// The webapp's `fmtDate`: `DD-Mon-YYYY`, or the raw text when unparseable.
   static String _date(Object? v) {
     final d = DateTime.tryParse('$v')?.toLocal();
     if (d == null) return '$v';
-    return '${d.day.toString().padLeft(2, '0')}-${_months[d.month - 1]}-${d.year}';
+    // The app-wide date style, DD/MM/YYYY (webapp parity C17).
+    return fmtDay(d);
   }
 
   /// The webapp's shared `timeAgo`: Just now / Nm / Nh / Yesterday / Nd ago,
@@ -367,7 +468,8 @@ class SchemaMobileCard extends StatelessWidget {
 
   /// The webapp's `moneyCompact`: ₹1.5L / ₹2Cr / ₹12,000.
   static String _moneyCompact(num n) {
-    String trim(num x) => x.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+    String trim(num x) =>
+        x.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
     final abs = n.abs();
     if (abs >= 10000000) return '₹${trim(n / 10000000)}Cr';
     if (abs >= 100000) return '₹${trim(n / 100000)}L';
@@ -382,8 +484,11 @@ class SchemaMobileCard extends StatelessWidget {
           width: 46.w,
           height: 46.w,
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: _surfaceMuted, borderRadius: BorderRadius.circular(12.r)),
-          child: Text(_initials(name), style: AppText.custom(size: 15, weight: FontWeight.w700, color: _navy)),
+          decoration: BoxDecoration(
+              color: _surfaceMuted, borderRadius: BorderRadius.circular(12.r)),
+          child: Text(_initials(name),
+              style: AppText.custom(
+                  size: 15, weight: FontWeight.w700, color: _navy)),
         ),
         if (notif > 0)
           Positioned(
@@ -399,7 +504,9 @@ class SchemaMobileCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: Colors.white, width: 2),
               ),
-              child: Text('$notif', style: AppText.custom(size: 10, weight: FontWeight.w700, color: Colors.white)),
+              child: Text('$notif',
+                  style: AppText.custom(
+                      size: 10, weight: FontWeight.w700, color: Colors.white)),
             ),
           ),
       ],
@@ -430,8 +537,13 @@ class SchemaMobileCard extends StatelessWidget {
                   border: Border.all(color: Colors.white, width: 2),
                 ),
                 child: p.isEmpty
-                    ? Icon(PhosphorIconsRegular.user, size: 12.sp, color: _text4)
-                    : Text(_initials(p), style: AppText.custom(size: 9, weight: FontWeight.w700, color: Colors.white)),
+                    ? Icon(PhosphorIconsRegular.user,
+                        size: 12.sp, color: _text4)
+                    : Text(_initials(p),
+                        style: AppText.custom(
+                            size: 9,
+                            weight: FontWeight.w700,
+                            color: Colors.white)),
               ),
             ),
         ],
@@ -465,7 +577,9 @@ class SchemaMobileCard extends StatelessWidget {
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    child: Text(_initials(n), style: AppText.custom(size: 10, weight: FontWeight.w700, color: _navy)),
+                    child: Text(_initials(n),
+                        style: AppText.custom(
+                            size: 10, weight: FontWeight.w700, color: _navy)),
                   ),
                 ),
             ],
@@ -473,7 +587,9 @@ class SchemaMobileCard extends StatelessWidget {
         ),
         if (names.length > 3) ...[
           SizedBox(width: 12.w),
-          Text('+${names.length - 3} more', style: AppText.custom(size: 12, weight: FontWeight.w400, color: _text3)),
+          Text('+${names.length - 3} more',
+              style: AppText.custom(
+                  size: 12, weight: FontWeight.w400, color: _text3)),
         ],
       ],
     );
@@ -490,15 +606,26 @@ class SchemaMobileCard extends StatelessWidget {
     return text;
   }
 
-  static final _uuid = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', caseSensitive: false);
+  static final _uuid = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false);
 
-  static bool _blank(Object? v) => v == null || v == '' || (v is List && v.isEmpty);
+  static bool _blank(Object? v) =>
+      v == null || v == '' || (v is List && v.isEmpty);
 
   /// A display name from a string, number or `{full_name/name/label/title}`.
+  ///
+  /// A product (`{product_name, short_name, …}` — a lead's `products[]` item)
+  /// reads by the list rule: its short name when set, else its full name.
   static String _nameOf(Object? v) {
     if (v == null) return '';
     if (v is String) return v;
     if (v is num || v is bool) return '$v';
+    if (v is Map &&
+        (v.containsKey('product_name') || v.containsKey('short_name'))) {
+      final n = productListName(v);
+      if (n.isNotEmpty) return n;
+    }
     if (v is Map) {
       for (final k in const ['full_name', 'name', 'label', 'title']) {
         final s = v[k];
@@ -511,7 +638,10 @@ class SchemaMobileCard extends StatelessWidget {
   }
 
   static List<String> _people(Object? v) {
-    if (v is List) return [for (final p in v) _nameOf(p)].where((s) => s.isNotEmpty).toList();
+    if (v is List)
+      return [for (final p in v) _nameOf(p)]
+          .where((s) => s.isNotEmpty)
+          .toList();
     final one = _nameOf(v);
     return one.isEmpty ? const [] : [one];
   }
@@ -529,7 +659,9 @@ class SchemaMobileCard extends StatelessWidget {
     if (iso is! String || iso.isEmpty) return '';
     final then = DateTime.tryParse(iso);
     if (then == null) return '';
-    final mins = (DateTime.now().difference(then).inSeconds / 60).round().clamp(0, 1 << 31);
+    final mins = (DateTime.now().difference(then).inSeconds / 60)
+        .round()
+        .clamp(0, 1 << 31);
     if (mins < 60) return '${mins}m ago';
     final hrs = (mins / 60).round();
     if (hrs < 24) return '${hrs}h ago';

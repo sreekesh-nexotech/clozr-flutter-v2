@@ -27,31 +27,43 @@ void main() {
   group('is_pinned mapping', () {
     // The field is an integer column; 1/0 is what actually comes back.
     test('1 and 0 map to pinned and unpinned', () {
-      expect(NotesRemoteDataSource.noteFromJson(const {
-        'note_id': 'n1',
-        'content': 'x',
-        'is_pinned': 1,
-      })!.pinned, isTrue);
+      expect(
+          NotesRemoteDataSource.noteFromJson(const {
+            'note_id': 'n1',
+            'content': 'x',
+            'is_pinned': 1,
+          })!
+              .pinned,
+          isTrue);
 
-      expect(NotesRemoteDataSource.noteFromJson(const {
-        'note_id': 'n2',
-        'content': 'x',
-        'is_pinned': 0,
-      })!.pinned, isFalse);
+      expect(
+          NotesRemoteDataSource.noteFromJson(const {
+            'note_id': 'n2',
+            'content': 'x',
+            'is_pinned': 0,
+          })!
+              .pinned,
+          isFalse);
     });
 
     test('a missing field is not pinned, and a real bool still works', () {
-      expect(NotesRemoteDataSource.noteFromJson(const {
-        'note_id': 'n3',
-        'content': 'x',
-      })!.pinned, isFalse);
+      expect(
+          NotesRemoteDataSource.noteFromJson(const {
+            'note_id': 'n3',
+            'content': 'x',
+          })!
+              .pinned,
+          isFalse);
 
       // Tolerated in case the serializer is ever changed to a proper bool.
-      expect(NotesRemoteDataSource.noteFromJson(const {
-        'note_id': 'n4',
-        'content': 'x',
-        'is_pinned': true,
-      })!.pinned, isTrue);
+      expect(
+          NotesRemoteDataSource.noteFromJson(const {
+            'note_id': 'n4',
+            'content': 'x',
+            'is_pinned': true,
+          })!
+              .pinned,
+          isTrue);
     });
   });
 
@@ -76,8 +88,8 @@ void main() {
     });
 
     test('a second pin joins the pinned group without reshuffling it', () {
-      final notifier = CrmNotesNotifier(
-          [_note('one'), _note('two'), _note('three')]);
+      final notifier =
+          CrmNotesNotifier([_note('one'), _note('two'), _note('three')]);
 
       notifier.togglePin('three');
       expect([for (final n in notifier.state) n.id], ['three', 'one', 'two']);

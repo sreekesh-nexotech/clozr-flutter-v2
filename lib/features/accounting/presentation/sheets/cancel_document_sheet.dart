@@ -14,8 +14,10 @@ import 'acc_sheet_scaffold.dart';
 /// Cancel an issued document (plan §4.3) — reverses its tax and its
 /// receivable (or payable). Refused once money or a note touches it, in which
 /// case the refusal says what to do instead.
-Future<AccDocument?> showCancelDocumentSheet(BuildContext context, AccDocument doc) =>
-    showClozrSheet<AccDocument>(context: context, builder: (_) => _CancelSheet(doc: doc));
+Future<AccDocument?> showCancelDocumentSheet(
+        BuildContext context, AccDocument doc) =>
+    showClozrSheet<AccDocument>(
+        context: context, builder: (_) => _CancelSheet(doc: doc));
 
 class _CancelSheet extends ConsumerStatefulWidget {
   const _CancelSheet({required this.doc});
@@ -39,7 +41,9 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
   Future<void> _cancel() async {
     final reason = _reason.text.trim();
     if (reason.isEmpty) {
-      ref.read(toastProvider.notifier).showError('Say why it is being cancelled');
+      ref
+          .read(toastProvider.notifier)
+          .showError('Say why it is being cancelled');
       return;
     }
     final ok = await confirmAcc(
@@ -55,10 +59,14 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
       _error = null;
     });
     try {
-      final doc = await ref.read(accountingRepositoryProvider).cancel(widget.doc.id, reason);
+      final doc = await ref
+          .read(accountingRepositoryProvider)
+          .cancel(widget.doc.id, reason);
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show('${widget.doc.displayNumber} cancelled');
+      ref
+          .read(toastProvider.notifier)
+          .show('${widget.doc.displayNumber} cancelled');
       Navigator.of(context).pop(doc);
     } on AppError catch (e) {
       if (!mounted) return;

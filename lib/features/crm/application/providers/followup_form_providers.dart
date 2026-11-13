@@ -10,12 +10,18 @@ import '../followup_form_rules.dart';
 ///
 /// Unlike the option catalogs this one is allowed to fail: the sheet then says
 /// so (the server still checks required fields on save), as the webapp does.
-final taskCustomFieldDefsProvider = FutureProvider.autoDispose<List<TaskCustomFieldDef>>((ref) async {
+final taskCustomFieldDefsProvider =
+    FutureProvider.autoDispose<List<TaskCustomFieldDef>>((ref) async {
   if (!ApiConfig.apiEnabled) return const [];
   final body = await ref.read(apiServiceProvider).get(
-    '/management/custom-fields/',
-    query: {'model_name': 'task', 'is_active': true, 'ordering': 'order', 'page_size': 100},
-    quiet: true,
-  );
+        '/management/custom-fields/',
+        query: {
+          'model_name': 'task',
+          'is_active': true,
+          'ordering': 'order',
+          'page_size': 100
+        },
+        quiet: true,
+      );
   return TaskCustomFieldDef.listFromResponse(body);
 });

@@ -22,11 +22,11 @@ import '../components/crm_async.dart';
 
 /// The report for one created-date range ('' bounds = open-ended). The server
 /// caches it for 90 s; every figure on the screen comes from here.
-final quoteWinLossReportProvider =
-    FutureProvider.autoDispose.family<WinLossReport, ({String from, String to})>((ref, range) async {
-  final body = await ref
-      .read(apiServiceProvider)
-      .get('/quotations/quotations/win-loss-report/', query: winLossQuery(range.from, range.to));
+final quoteWinLossReportProvider = FutureProvider.autoDispose
+    .family<WinLossReport, ({String from, String to})>((ref, range) async {
+  final body = await ref.read(apiServiceProvider).get(
+      '/quotations/quotations/win-loss-report/',
+      query: winLossQuery(range.from, range.to));
   return WinLossReport.fromJson(body);
 });
 
@@ -93,7 +93,8 @@ class _QuoteWinLossScreenState extends ConsumerState<QuoteWinLossScreen> {
   }
 
   void _typed() {
-    if (_preset != WinLossPreset.custom) setState(() => _preset = WinLossPreset.custom);
+    if (_preset != WinLossPreset.custom)
+      setState(() => _preset = WinLossPreset.custom);
     _timer?.cancel();
     _timer = Timer(_debounce, () {
       if (!mounted) return;
@@ -166,11 +167,16 @@ class _QuoteWinLossScreenState extends ConsumerState<QuoteWinLossScreen> {
     return Container(
       color: AppColors.bgDetail,
       child: Column(children: [
-        DetailAppBar(section: 'Quotes', name: 'Win / loss report', onBack: () => context.pop()),
-        if (async.isLoading && report != null) const LinearProgressIndicator(minHeight: 2),
+        DetailAppBar(
+            section: 'Quotes',
+            name: 'Win / loss report',
+            onBack: () => context.pop()),
+        if (async.isLoading && report != null)
+          const LinearProgressIndicator(minHeight: 2),
         Expanded(
           child: RefreshIndicator(
-            onRefresh: () async => ref.invalidate(quoteWinLossReportProvider(range)),
+            onRefresh: () async =>
+                ref.invalidate(quoteWinLossReportProvider(range)),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 28.h),
@@ -192,11 +198,18 @@ class _QuoteWinLossScreenState extends ConsumerState<QuoteWinLossScreen> {
     final error = winLossRangeError(_from, _to);
     return ClozrCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Quotes created', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+        Text('Quotes created',
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
         SizedBox(height: 8.h),
         TabChipRow(children: [
           for (final p in WinLossPreset.quick)
-            TabChip(label: p.label, active: _preset == p, onTap: () => _applyPreset(p)),
+            TabChip(
+                label: p.label,
+                active: _preset == p,
+                onTap: () => _applyPreset(p)),
         ]),
         SizedBox(height: 14.h),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -206,7 +219,9 @@ class _QuoteWinLossScreenState extends ConsumerState<QuoteWinLossScreen> {
         ]),
         if (error != null) ...[
           SizedBox(height: 6.h),
-          Text(error, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+          Text(error,
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w500, color: AppColors.error)),
         ],
       ]),
     );
@@ -248,18 +263,25 @@ class _QuoteWinLossScreenState extends ConsumerState<QuoteWinLossScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       TabChipRow(children: [
         for (final g in _Grouping.values)
-          TabChip(label: g.label, active: _grouping == g, onTap: () => setState(() => _grouping = g)),
+          TabChip(
+              label: g.label,
+              active: _grouping == g,
+              onTap: () => setState(() => _grouping = g)),
       ]),
       SizedBox(height: 12.h),
       if (rows.isEmpty)
         ClozrCard(
           child: Text(
-            _grouping == _Grouping.product ? 'No catalog products on these quotes.' : 'Nothing to break down.',
+            _grouping == _Grouping.product
+                ? 'No catalog products on these quotes.'
+                : 'Nothing to break down.',
             style: AppText.body(color: AppColors.textMuted),
           ),
         )
       else
-        for (final r in rows) _GroupCard(row: r, name: r.name.isEmpty ? _grouping.emptyName : r.name),
+        for (final r in rows)
+          _GroupCard(
+              row: r, name: r.name.isEmpty ? _grouping.emptyName : r.name),
       SizedBox(height: 4.h),
       Padding(
         padding: EdgeInsets.symmetric(horizontal: 2.w),
@@ -283,16 +305,34 @@ class _SummaryCard extends StatelessWidget {
     return ClozrCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: _Figure(label: 'Win rate', value: winRateLabel(m.winRate), color: AppColors.navy, big: true)),
-          Expanded(child: _Figure(label: 'Won value', value: formatMoneyStr(m.wonValue), big: true, alignEnd: true)),
+          Expanded(
+              child: _Figure(
+                  label: 'Win rate',
+                  value: winRateLabel(m.winRate),
+                  color: AppColors.navy,
+                  big: true)),
+          Expanded(
+              child: _Figure(
+                  label: 'Won value',
+                  value: formatMoneyStr(m.wonValue),
+                  big: true,
+                  alignEnd: true)),
         ]),
         SizedBox(height: 14.h),
         const ClozrDivider(),
         SizedBox(height: 14.h),
         Row(children: [
           Expanded(child: _Figure(label: 'Quotes', value: '${m.total}')),
-          Expanded(child: _Figure(label: 'Won', value: '${m.won}', color: m.won > 0 ? AppColors.success : null)),
-          Expanded(child: _Figure(label: 'Lost', value: '${m.lost}', color: m.lost > 0 ? AppColors.error : null)),
+          Expanded(
+              child: _Figure(
+                  label: 'Won',
+                  value: '${m.won}',
+                  color: m.won > 0 ? AppColors.success : null)),
+          Expanded(
+              child: _Figure(
+                  label: 'Lost',
+                  value: '${m.lost}',
+                  color: m.lost > 0 ? AppColors.error : null)),
         ]),
         SizedBox(height: 14.h),
         Row(children: [
@@ -302,8 +342,14 @@ class _SummaryCard extends StatelessWidget {
         ]),
         SizedBox(height: 14.h),
         Row(children: [
-          Expanded(child: _Figure(label: 'Avg. time to accept', value: daysLabel(m.avgDaysToAccept))),
-          Expanded(child: _Figure(label: 'Avg. discount', value: discountLabel(m.avgDiscountPct))),
+          Expanded(
+              child: _Figure(
+                  label: 'Avg. time to accept',
+                  value: daysLabel(m.avgDaysToAccept))),
+          Expanded(
+              child: _Figure(
+                  label: 'Avg. discount',
+                  value: discountLabel(m.avgDiscountPct))),
         ]),
       ]),
     );
@@ -311,7 +357,12 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _Figure extends StatelessWidget {
-  const _Figure({required this.label, required this.value, this.color, this.big = false, this.alignEnd = false});
+  const _Figure(
+      {required this.label,
+      required this.value,
+      this.color,
+      this.big = false,
+      this.alignEnd = false});
   final String label;
   final String value;
   final Color? color;
@@ -321,10 +372,14 @@ class _Figure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment:
+          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Text(label.toUpperCase(),
-            style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+            style: AppText.custom(
+                size: 10.5,
+                weight: FontWeight.w700,
+                color: AppColors.textPlaceholder)),
         SizedBox(height: 4.h),
         FittedBox(
           fit: BoxFit.scaleDown,
@@ -332,7 +387,10 @@ class _Figure extends StatelessWidget {
             value,
             style: big
                 ? AppText.statNumber(color: color ?? AppColors.textPrimary)
-                : AppText.custom(size: 16, weight: FontWeight.w800, color: color ?? AppColors.textPrimary),
+                : AppText.custom(
+                    size: 16,
+                    weight: FontWeight.w800,
+                    color: color ?? AppColors.textPrimary),
           ),
         ),
       ],
@@ -348,14 +406,19 @@ class _GroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget stat(String label, String value, {Color? color, bool strong = false}) => Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Widget stat(String label, String value,
+            {Color? color, bool strong = false}) =>
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label, style: AppText.micro()),
             SizedBox(height: 2.h),
             Text(value,
                 style: AppText.custom(
                   size: 13.5,
-                  weight: strong || color != null ? FontWeight.w700 : FontWeight.w500,
+                  weight: strong || color != null
+                      ? FontWeight.w700
+                      : FontWeight.w500,
                   color: color ?? AppColors.textBody,
                 )),
           ]),
@@ -370,21 +433,28 @@ class _GroupCard extends StatelessWidget {
             Expanded(child: Text(name, style: AppText.bodyStrong())),
             SizedBox(width: 10.w),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(formatMoneyStr(row.wonValue), style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.navy)),
+              Text(formatMoneyStr(row.wonValue),
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: AppColors.navy)),
               Text('Won value', style: AppText.micro()),
             ]),
           ]),
           SizedBox(height: 10.h),
           Row(children: [
             stat('Quotes', '${row.total}'),
-            stat('Won', '${row.won}', color: row.won > 0 ? AppColors.success : null),
-            stat('Lost', '${row.lost}', color: row.lost > 0 ? AppColors.error : null),
+            stat('Won', '${row.won}',
+                color: row.won > 0 ? AppColors.success : null),
+            stat('Lost', '${row.lost}',
+                color: row.lost > 0 ? AppColors.error : null),
             stat('Expired', '${row.expired}'),
             stat('Open', '${row.open}'),
           ]),
           SizedBox(height: 10.h),
           Row(children: [
-            stat('Win rate', winRateLabel(row.winRate), color: AppColors.textPrimary),
+            stat('Win rate', winRateLabel(row.winRate),
+                color: AppColors.textPrimary),
             stat('Avg. time to accept', daysLabel(row.avgDaysToAccept)),
             stat('Avg. discount', discountLabel(row.avgDiscountPct)),
           ]),

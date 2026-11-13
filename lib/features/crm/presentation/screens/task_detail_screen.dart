@@ -2,6 +2,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/providers/record_presence_providers.dart';
+import '../../../approvals/domain/entities/approval.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
+import '../../../approvals/presentation/components/approval_request_note.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -23,6 +26,8 @@ import '../../../../core/widgets/keyboard_visibility.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
 import '../../../../core/widgets/status_pill.dart';
+import '../../../../core/utils/upload_rules.dart';
+import '../../../../core/widgets/file_name_dialog.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -31,6 +36,7 @@ import '../../../../core/utils/relative_time.dart';
 import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
+import '../../application/followup_detail_rules.dart' show deleteTaskMessage;
 import '../../application/record_rows.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../application/providers/crm_catalog_providers.dart';
@@ -39,6 +45,7 @@ import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/crm_task.dart';
 import '../../domain/entities/lead_file.dart';
+import '../components/closing_note.dart';
 import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
 import '../components/inline_edit_row.dart';
@@ -65,9 +72,12 @@ const _taskTypeIcons = <String, IconData>{
 };
 
 /// `GET /crm/task-settings/` — read for the reopen rule; null on failure.
-final _taskSettingsProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+final _taskSettingsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
   try {
-    final body = await ref.read(apiServiceProvider).get('/crm/task-settings/', quiet: true);
+    final body = await ref
+        .read(apiServiceProvider)
+        .get('/crm/task-settings/', quiet: true);
     return body is Map ? Map<String, dynamic>.from(body) : null;
   } on Object {
     return null;
@@ -75,7 +85,8 @@ final _taskSettingsProvider = FutureProvider.autoDispose<Map<String, dynamic>?>(
 });
 
 /// Webapp `relatedModelLabel`.
-String relatedModelLabel(String? model) => switch ((model ?? '').toLowerCase()) {
+String relatedModelLabel(String? model) =>
+    switch ((model ?? '').toLowerCase()) {
       'lead' => 'Lead',
       'customer' => 'Customer',
       'product' => 'Product',
@@ -84,7 +95,10 @@ String relatedModelLabel(String? model) => switch ((model ?? '').toLowerCase()) 
       'contact' || 'organization_contact' => 'Contact',
       'deal' => 'Deal',
       '' => 'Record',
-      final m => m.split('_').map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1)).join(' '),
+      final m => m
+          .split('_')
+          .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1))
+          .join(' '),
     };
 
 class TaskDetailScreen extends ConsumerStatefulWidget {
@@ -130,7 +144,9 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     final ctx = _notesKey.currentContext;
     if (ctx != null) {
       await Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 240), alignment: 0.05, curve: Curves.easeOut);
+          duration: const Duration(milliseconds: 240),
+          alignment: 0.05,
+          curve: Curves.easeOut);
     }
     _notesKey.currentState?.focusComposer();
   }
@@ -140,23 +156,76 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   /// is awaited: on failure the override is rolled back to its prior value and
   /// the error is surfaced; [successMessage] is toasted only after the write
   /// lands. Mock mode is unchanged (optimistic + success toast).
-  Future<void> _setStatus(String id, String status, String successMessage) async {
-    final prev = ref.read(crmTaskStatusOverrideProvider);
-    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, id: status};
+  ///
+  /// Closing may need approval (Unified Approvals): [typeCode] is the target
+  /// lane's status type and [label] its name, for the "This needs approval"
+  /// comment. A move the server holds keeps the task's status, so the
+  /// optimistic override is rolled back and the shell says it is waiting.
+  Future<void> _setStatus(String id, String status, String successMessage,
+      {String? typeCode, String? label}) async {
+    var requestNote = '';
     if (ApiConfig.apiEnabled) {
+      final note = await approvalNoteForClose(context, ref,
+          module: ApprovalModules.task,
+          objectId: id,
+          statusCode: typeCode ?? (status == 'done' ? 'completed' : null),
+          statusLabel: label ?? 'the new status');
+      if (note == null || !mounted) return;
+      requestNote = note;
+    }
+    final prev = ref.read(crmTaskStatusOverrideProvider);
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {
+      ...prev,
+      id: status
+    };
+    void rollback() {
+      final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
+      if (prev.containsKey(id)) {
+        rolled[id] = prev[id]!;
+      } else {
+        rolled.remove(id);
+      }
+      ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
+    }
+
+    if (ApiConfig.apiEnabled) {
+      var held = false;
       try {
-        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(id, status);
+        held = await ref
+            .read(crmTasksRepositoryProvider)
+            .setTaskStatusByKey(id, status, requestNote: requestNote);
       } on AppError catch (e) {
-        final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
-        if (prev.containsKey(id)) {
-          rolled[id] = prev[id]!;
-        } else {
-          rolled.remove(id);
+        rollback();
+        if (!mounted) return;
+        // The org wants a closing note first (UI/UX audit #05 / #59): the
+        // same "Add note & complete" dialog as Lead › Activity, instead of
+        // only flashing the refusal.
+        if (status == 'done' && needsClosingNote(e)) {
+          final task = ref.read(taskRowProvider(id)).valueOrNull;
+          final done = await completeWithClosingNote(context, ref,
+              taskId: id,
+              title: '${task?['title'] ?? ''}'.trim(),
+              followup: false,
+              cause: e,
+              complete: () => ref
+                  .read(crmTasksRepositoryProvider)
+                  .setTaskStatusByKey(id, 'done', requestNote: requestNote));
+          if (done && mounted) {
+            ref.invalidate(taskRowProvider(id));
+            ref.invalidate(crmTasksProvider);
+            ref.invalidate(leadTasksProvider);
+            _refreshAudit(id);
+          }
+          return;
         }
-        ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
         // Webapp: the server's own words, without the `status:` prefix.
         ref.read(apiServiceProvider).handled(e);
         ref.read(toastProvider.notifier).showError(_bare(e));
+        return;
+      }
+      if (held) {
+        rollback();
+        ref.invalidate(taskRowProvider(id));
         return;
       }
       // The info panel reads the raw record, so the optimistic override alone
@@ -193,18 +262,27 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   }
 
   /// PATCH one or more fields; due-date moves go through the reason flow.
-  Future<void> _patch(CrmTask task, Map<String, dynamic> fields, {String success = 'Task updated', String dateKey = 'due_date', String fieldLabel = 'Due date'}) async {
+  Future<void> _patch(CrmTask task, Map<String, dynamic> fields,
+      {String success = 'Task updated',
+      String dateKey = 'due_date',
+      String fieldLabel = 'Due date'}) async {
     final row = ref.read(taskRowProvider(task.id)).valueOrNull;
     final hadDate = '${row?[dateKey] ?? ''}'.isNotEmpty;
     try {
       final r = await writeWithDueDateFlow(context, ref,
-          path: ApiEndpoints.crmTask(task.id), fields: fields, hadDate: hadDate, dateKey: dateKey, fieldLabel: fieldLabel);
+          path: ApiEndpoints.crmTask(task.id),
+          fields: fields,
+          hadDate: hadDate,
+          dateKey: dateKey,
+          fieldLabel: fieldLabel);
       if (r == DueDateWrite.cancelled || !mounted) return;
-      if (r == DueDateWrite.saved) ref.read(toastProvider.notifier).show(success);
+      if (r == DueDateWrite.saved)
+        ref.read(toastProvider.notifier).show(success);
     } on AppError catch (e) {
       if (!mounted) return;
       ref.read(apiServiceProvider).handled(e);
-      ref.read(toastProvider.notifier).showError(e.statusCode == 403 && e.code == 'committed_due_date_locked'
+      ref.read(toastProvider.notifier).showError(e.statusCode == 403 &&
+              e.code == 'committed_due_date_locked'
           ? 'The committed date is locked. Only admins and Executive Leadership can change it.'
           : _bare(e));
       return;
@@ -245,8 +323,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         'due_date': row['due_date'] ?? '',
         'due_time': row['due_time'] ?? '',
         // Carry the link so the copy sits beside the original.
-        if (related is Map && related['model'] != null) 'related_to': related['model'],
-        if (related is Map && related['id'] != null) 'related_to_id': related['id'],
+        if (related is Map && related['model'] != null)
+          'related_to': related['model'],
+        if (related is Map && related['id'] != null)
+          'related_to_id': related['id'],
       });
     } on AppError catch (e) {
       toast.showError(e.message);
@@ -259,13 +339,35 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   /// Deleting is irreversible, so it asks first.
   Future<void> _confirmDelete(CrmTask task) async {
+    // The confirm names how many notes and files go with the task (webapp).
+    final notes = ref
+        .read(crmNotesProvider(CrmNotesSeed(
+            'TASK-${task.id}', () => <NoteEntry>[],
+            apiModel: 'task')))
+        .length;
+    // Loaded on demand, like the webapp, so the count is there when the dialog
+    // opens; a slow or failed fetch just falls back to the generic sentence.
+    int? files = ref.read(taskFilesProvider(task.id)).valueOrNull?.length;
+    if (files == null) {
+      try {
+        files = (await ref
+                .read(taskFilesProvider(task.id).future)
+                .timeout(const Duration(seconds: 3)))
+            .length;
+      } on Object {
+        files = null;
+      }
+      if (!mounted) return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete task?'),
-        content: Text('"${task.titleClean}" will be removed. This cannot be undone.'),
+        content: Text(deleteTaskMessage('task', notes, files)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('Delete', style: TextStyle(color: AppColors.error)),
@@ -312,7 +414,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             enabled: canCreate,
             sublabel: canCreate ? null : permissionCopy(PermVerb.create),
             onTap: () => _duplicate(task)),
-        MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
+        MenuAction(
+            icon: PhosphorIconsRegular.notePencil,
+            label: 'Add note',
+            onTap: _focusNotes),
         MenuAction(
             icon: PhosphorIconsRegular.trash,
             label: 'Delete task',
@@ -331,7 +436,9 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   /// between an optimistic tick and the refetch, and keeping it would let a
   /// local guess win over what the server just said.
   Future<void> _refresh(String id) async {
-    ref.read(crmTaskStatusOverrideProvider.notifier).update((s) => {...s}..remove(id));
+    ref
+        .read(crmTaskStatusOverrideProvider.notifier)
+        .update((s) => {...s}..remove(id));
     ref.invalidate(crmTasksProvider);
     ref.invalidate(taskRowProvider(id));
     ref.invalidate(taskFilesProvider(id));
@@ -380,7 +487,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     return async.when(
       loading: () => _stateScaffold(const DetailSkeleton()),
       error: (e, _) => _stateScaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(crmTasksProvider)),
+        ErrorState.forError(crmAppError(e),
+            onRetry: () => ref.invalidate(crmTasksProvider)),
       ),
       data: (_) => _buildTask(context, id),
     );
@@ -391,7 +499,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     if (task == null) return _stateScaffold(_notFound(context));
     // The row above comes from the loaded list, which can outlive the record:
     // ask the record endpoint, and show the webapp's not-found state on a 404.
-    final gone = ref.watch(recordGoneProvider(RecordProbe(ApiEndpoints.crmTask(task.id)))).valueOrNull ?? false;
+    final gone = ref
+            .watch(
+                recordGoneProvider(RecordProbe(ApiEndpoints.crmTask(task.id))))
+            .valueOrNull ??
+        false;
     if (gone) return _stateScaffold(_notFound(context));
 
     // The org's own lane name ("Open", "Cancelled"), not the built-in bucket
@@ -400,12 +512,15 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         task, ref.watch(taskStatusCatalogProvider).valueOrNull ?? const []);
     final assignee = MockUsers.of(task.assignee);
     final leads = ref.watch(leadsProvider).valueOrNull ?? const [];
-    final lead = task.leadId == null ? null : leads.where((l) => l.id == task.leadId).firstOrNull;
+    final lead = task.leadId == null
+        ? null
+        : leads.where((l) => l.id == task.leadId).firstOrNull;
     final done = task.status == 'done';
 
     // Notes thread (#13) — tasks start with an empty thread; the shared
     // composer stays usable regardless of the task's status.
-    final notesSeed = CrmNotesSeed('TASK-${task.id}', () => <NoteEntry>[], apiModel: 'task');
+    final notesSeed =
+        CrmNotesSeed('TASK-${task.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     // The notes composer lives inside the list below. With the keyboard up the
@@ -430,51 +545,65 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             child: AppRefresh(
               onRefresh: () => _refresh(task.id),
               child: ListView(
-              controller: _notesScrollCtrl,
-              // Dragging the page puts the keyboard away — the only other exit
-              // from the notes composer was submitting or leaving the screen.
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
-              children: [
-                _titleCard(task, meta),
-                // Webapp: SLA clocks then the pending due-date banner, under
-                // the header.
-                SizedBox(height: 14.h),
-                LeadSlaClocks(leadId: task.id, module: 'task'),
-                PendingDueDateBanner(
-                    pending: ref.watch(taskRowProvider(task.id)).valueOrNull?['pending_due_date_change'] is Map
-                        ? Map<String, dynamic>.from(ref.watch(taskRowProvider(task.id)).valueOrNull!['pending_due_date_change'] as Map)
-                        : null),
-                _relatedRecordCard(task, lead),
-                SizedBox(height: 14.h),
-                _infoCard(task, assignee),
-                SizedBox(height: 14.h),
-                _peopleCard(task),
-                SizedBox(height: 14.h),
-                _descFilesCard(task, lead),
-                SizedBox(height: 14.h),
-                NotesThread(
-                  author: ref.watch(noteAuthorProvider),
-                  key: _notesKey,
-                  notes: notes,
-                  onAddNote: (body, atts) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
-                  onAddReply: (noteId, body) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
-                  // Webapp NotesPanel (`task`): Tag, @mention from the org's
-                  // user directory, and Insert.
-                  webappToolbar: true,
-                  noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
-                  mentionables: ref.watch(taskMentionUsersProvider).valueOrNull ?? const [],
-                  onAddTypedNote: (body, atts, typeId, typeName, mentions) => ref
-                      .read(crmNotesProvider(notesSeed).notifier)
-                      .addNote(body, atts, ref.read(noteAuthorProvider),
-                          noteTypeId: typeId, noteTypeName: typeName, mentionedUserIds: mentions),
-                ),
-                SizedBox(height: 14.h),
-                _activityCard(task, meta, assignee),
-              ],
+                controller: _notesScrollCtrl,
+                // Dragging the page puts the keyboard away — the only other exit
+                // from the notes composer was submitting or leaving the screen.
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
+                children: [
+                  _titleCard(task, meta),
+                  // Webapp: SLA clocks then the pending due-date banner, under
+                  // the header.
+                  SizedBox(height: 14.h),
+                  LeadSlaClocks(leadId: task.id, module: 'task'),
+                  PendingDueDateBanner(
+                      pending: ref
+                              .watch(taskRowProvider(task.id))
+                              .valueOrNull?['pending_due_date_change'] is Map
+                          ? Map<String, dynamic>.from(ref
+                              .watch(taskRowProvider(task.id))
+                              .valueOrNull!['pending_due_date_change'] as Map)
+                          : null),
+                  ApprovalBanner(
+                      module: ApprovalModules.task, objectId: task.id),
+                  _relatedRecordCard(task, lead),
+                  SizedBox(height: 14.h),
+                  _infoCard(task, assignee),
+                  SizedBox(height: 14.h),
+                  _peopleCard(task),
+                  SizedBox(height: 14.h),
+                  _descFilesCard(task, lead),
+                  SizedBox(height: 14.h),
+                  NotesThread(
+                    author: ref.watch(noteAuthorProvider),
+                    key: _notesKey,
+                    notes: notes,
+                    onAddNote: (body, atts) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .addNote(body, atts, ref.read(noteAuthorProvider)),
+                    onAddReply: (noteId, body) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .addReply(noteId, body, ref.read(noteAuthorProvider)),
+                    // Webapp NotesPanel (`task`): Tag, @mention from the org's
+                    // user directory, and Insert.
+                    webappToolbar: true,
+                    noteTypes:
+                        ref.watch(noteTypesProvider).valueOrNull ?? const [],
+                    mentionables:
+                        ref.watch(taskMentionUsersProvider).valueOrNull ??
+                            const [],
+                    onAddTypedNote: (body, atts, typeId, typeName, mentions) =>
+                        ref.read(crmNotesProvider(notesSeed).notifier).addNote(
+                            body, atts, ref.read(noteAuthorProvider),
+                            noteTypeId: typeId,
+                            noteTypeName: typeName,
+                            mentionedUserIds: mentions),
+                  ),
+                  SizedBox(height: 14.h),
+                  _activityCard(task, meta, assignee),
+                ],
               ),
             ),
           ),
@@ -499,28 +628,53 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                 width: 46.w,
                 height: 46.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(13.r)),
-                child: Icon(_taskTypeIcons[task.type] ?? PhosphorIconsRegular.checkSquare, size: 22.sp, color: AppColors.navy),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEEF1F4),
+                    borderRadius: BorderRadius.circular(13.r)),
+                child: Icon(
+                    _taskTypeIcons[task.type] ??
+                        PhosphorIconsRegular.checkSquare,
+                    size: 22.sp,
+                    color: AppColors.navy),
               ),
               SizedBox(width: 12.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(task.title, style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3, height: 1.3)),
+                    Text(task.title,
+                        style: AppText.custom(
+                            size: 19,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3,
+                            height: 1.3)),
                     SizedBox(height: 3.h),
                     // Webapp: "<type> · <related>" — never the record's uuid.
-                    Text(_subtitle(task), style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text(_subtitle(task),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                     SizedBox(height: 5.h),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
-                        Text('Due ${task.due}', style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                        Text('Due ${task.due}',
+                            style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.textSecondary)),
                         if (task.dueNote.isNotEmpty) ...[
                           SizedBox(width: 8.w),
                           Text(task.dueNote,
-                              style: AppText.custom(size: 12, weight: FontWeight.w700, color: overdue ? AppColors.error : AppColors.warningDeep)),
+                              style: AppText.custom(
+                                  size: 12,
+                                  weight: FontWeight.w700,
+                                  color: overdue
+                                      ? AppColors.error
+                                      : AppColors.warningDeep)),
                         ],
                       ],
                     ),
@@ -550,8 +704,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   String _subtitle(CrmTask task) {
     // The list row may omit `task_type`; the record has it.
-    final recType = '${ref.watch(taskRowProvider(task.id)).valueOrNull?['task_type'] ?? ''}'.trim();
-    final type = recType.isNotEmpty ? recType : (task.type.isEmpty ? 'Task' : task.type);
+    final recType =
+        '${ref.watch(taskRowProvider(task.id)).valueOrNull?['task_type'] ?? ''}'
+            .trim();
+    final type =
+        recType.isNotEmpty ? recType : (task.type.isEmpty ? 'Task' : task.type);
     final label = '${_related(task)?['label'] ?? ''}'.trim();
     return label.isEmpty || label == 'null' ? type : '$type · $label';
   }
@@ -561,15 +718,24 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-        decoration: BoxDecoration(color: meta.color.withOpacity(0.09), borderRadius: BorderRadius.circular(9.r)),
+        decoration: BoxDecoration(
+            color: meta.color.withOpacity(0.09),
+            borderRadius: BorderRadius.circular(9.r)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 8.w, height: 8.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
+            Container(
+                width: 8.w,
+                height: 8.w,
+                decoration:
+                    BoxDecoration(color: meta.color, shape: BoxShape.circle)),
             SizedBox(width: 7.w),
-            Text(meta.label, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: meta.color)),
+            Text(meta.label,
+                style: AppText.custom(
+                    size: 12.5, weight: FontWeight.w700, color: meta.color)),
             SizedBox(width: 6.w),
-            Icon(PhosphorIconsBold.caretDown, size: 10.sp, color: AppColors.textMuted2),
+            Icon(PhosphorIconsBold.caretDown,
+                size: 10.sp, color: AppColors.textMuted2),
           ],
         ),
       ),
@@ -584,7 +750,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   /// picked from named lanes the org does not have, and "Blocked" stood in for
   /// "Cancelled".
   void _openStatusSheet(CrmTask task, StatusMeta meta) {
-    final statuses = ref.read(taskStatusCatalogProvider).valueOrNull ?? const [];
+    final statuses =
+        ref.read(taskStatusCatalogProvider).valueOrNull ?? const [];
     if (statuses.isEmpty) {
       showCrmStatusSheet(
         context: context,
@@ -604,7 +771,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       title: 'Update task status',
       options: [for (final s in statuses) s.name],
       meta: {
-        for (final s in statuses) s.name: StatusMeta(s.name, crmTaskStatusColor(s)),
+        for (final s in statuses)
+          s.name: StatusMeta(s.name, crmTaskStatusColor(s)),
       },
       current: statuses
               .where((s) => s.name.trim().toLowerCase() == currentName)
@@ -620,7 +788,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           ref.read(toastProvider.notifier).show(reopenOffHint);
           return;
         }
-        _setStatus(task.id, key, 'Status updated');
+        _setStatus(task.id, key, 'Status updated',
+            typeCode: lane.statusType, label: lane.name);
       },
     );
   }
@@ -629,10 +798,13 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   Widget _relatedRecordCard(CrmTask task, dynamic lead) {
     final r = _related(task);
     if (r == null) {
-      if (lead != null) return Padding(padding: EdgeInsets.only(top: 14.h), child: _relatedCard(lead));
+      if (lead != null)
+        return Padding(
+            padding: EdgeInsets.only(top: 14.h), child: _relatedCard(lead));
       return Padding(
         padding: EdgeInsets.only(top: 14.h),
-        child: Text('Internal task — not linked to any record.', style: AppText.caption()),
+        child: Text('Internal task — not linked to any record.',
+            style: AppText.caption()),
       );
     }
     final model = '${r['model'] ?? ''}'.toLowerCase();
@@ -655,16 +827,27 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         onTap: route == null ? null : () => context.push(route),
         child: Row(children: [
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('RELATED TO', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('RELATED TO',
+                  style: AppText.custom(
+                      size: 11,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPlaceholder,
+                      letterSpacing: 0.5)),
               SizedBox(height: 2.h),
               Text(name.isEmpty || name == 'null' ? label : name,
-                  style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               SizedBox(height: 1.h),
               Text(caption, style: AppText.caption()),
             ]),
           ),
-          if (route != null) Icon(PhosphorIconsBold.caretRight, size: 15.sp, color: AppColors.textPlaceholder),
+          if (route != null)
+            Icon(PhosphorIconsBold.caretRight,
+                size: 15.sp, color: AppColors.textPlaceholder),
         ]),
       ),
     );
@@ -679,7 +862,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     final ownerId = '${owner?['user_id'] ?? ''}';
     String nameOf(Map u) => '${u['full_name'] ?? u['username'] ?? ''}'.trim();
     final assignees = [
-      for (final a in (row['assignees'] is List ? row['assignees'] as List : const []))
+      for (final a
+          in (row['assignees'] is List ? row['assignees'] as List : const []))
         if (a is Map && a['user_id'] != null) a,
     ];
     final canEdit = hasPermission(ref, 'task', PermVerb.update);
@@ -687,12 +871,18 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       radius: 18,
       padding: EdgeInsets.all(18.r),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Owner & assignees', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+        Text('Owner & assignees',
+            style: AppText.custom(
+                size: 15,
+                weight: FontWeight.w700,
+                color: AppColors.textPrimary)),
         SizedBox(height: 10.h),
         Row(children: [
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(owner == null ? 'Unassigned' : nameOf(owner), style: AppText.bodyStrong()),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(owner == null ? 'Unassigned' : nameOf(owner),
+                  style: AppText.bodyStrong()),
               Text('Task owner', style: AppText.caption()),
             ]),
           ),
@@ -710,12 +900,19 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             for (final a in assignees)
               Chip(
                 avatar: '${a['user_id']}' == ownerId
-                    ? Icon(PhosphorIconsFill.circle, size: 8.sp, color: AppColors.navy)
+                    ? Icon(PhosphorIconsFill.circle,
+                        size: 8.sp, color: AppColors.navy)
                     : null,
                 label: Text(nameOf(a)),
                 // The owner chip has no ×: the owner is always an assignee.
                 onDeleted: canEdit && '${a['user_id']}' != ownerId
-                    ? () => _setAssignees(task, [for (final x in assignees) if (x != a) '${x['user_id']}'], 'Assignee removed')
+                    ? () => _setAssignees(
+                        task,
+                        [
+                          for (final x in assignees)
+                            if (x != a) '${x['user_id']}'
+                        ],
+                        'Assignee removed')
                     : null,
               ),
           ]),
@@ -723,7 +920,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              onPressed: () => _addAssignee(task, [for (final a in assignees) '${a['user_id']}']),
+              onPressed: () => _addAssignee(
+                  task, [for (final a in assignees) '${a['user_id']}']),
               icon: Icon(PhosphorIconsBold.plus, size: 14.sp),
               label: const Text('Add assignee'),
             ),
@@ -744,12 +942,16 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       options: users,
       selected: {if (currentOwner.isNotEmpty) currentOwner},
     );
-    if (picked == null || picked.isEmpty || picked.first == currentOwner) return;
+    if (picked == null || picked.isEmpty || picked.first == currentOwner)
+      return;
     await _patch(task, {'assigned_to': picked.first}, success: 'Owner updated');
   }
 
   Future<void> _addAssignee(CrmTask task, List<String> current) async {
-    final users = [for (final u in await _taskUsers()) if (!current.contains(u.id)) u];
+    final users = [
+      for (final u in await _taskUsers())
+        if (!current.contains(u.id)) u
+    ];
     if (!mounted) return;
     final picked = await showOptionPicker(
       context: context,
@@ -776,23 +978,36 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             width: 42.w,
             height: 42.w,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: Color(0xFFEEF1F4), shape: BoxShape.circle),
-            child: Text(lead.initials, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.navy)),
+            decoration: const BoxDecoration(
+                color: Color(0xFFEEF1F4), shape: BoxShape.circle),
+            child: Text(lead.initials,
+                style: AppText.custom(
+                    size: 14, weight: FontWeight.w700, color: AppColors.navy)),
           ),
           SizedBox(width: 13.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('RELATED TO', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
+                Text('RELATED TO',
+                    style: AppText.custom(
+                        size: 11,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPlaceholder,
+                        letterSpacing: 0.5)),
                 SizedBox(height: 2.h),
-                Text(lead.company ?? lead.name, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(lead.company ?? lead.name,
+                    style: AppText.custom(
+                        size: 15,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 1.h),
                 Text('Lead · #${lead.id}', style: AppText.caption()),
               ],
             ),
           ),
-          Icon(PhosphorIconsBold.caretRight, size: 15.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsBold.caretRight,
+              size: 15.sp, color: AppColors.textPlaceholder),
         ],
       ),
     );
@@ -816,9 +1031,15 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   /// The built-in rows, used when the org's detail layout has not loaded (and
   /// in mock mode) — the panel as it was before the layout became configurable.
-  List<(IconData, String, String)> _fallbackRows(CrmTask task, dynamic assignee) => [
+  List<(IconData, String, String)> _fallbackRows(
+          CrmTask task, dynamic assignee) =>
+      [
         (PhosphorIconsRegular.tag, 'Type', task.type),
-        (PhosphorIconsRegular.flag, 'Priority', task.priority),
+        (
+          PhosphorIconsRegular.flag,
+          'Priority',
+          StatusMeta$.priorityLabel(task.priority)
+        ),
         (PhosphorIconsRegular.calendarBlank, 'Due date', task.due),
         (PhosphorIconsRegular.userCircle, 'Assigned to', assignee.name),
         (PhosphorIconsRegular.hash, 'Task ID', task.id),
@@ -826,7 +1047,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   /// Saves one edited field of the Task information card
   /// (`PATCH /crm/tasks/{id}/`) — webapp: "Task updated".
-  Future<void> _saveField(CrmTask task, String key, Object? value, String label) async {
+  Future<void> _saveField(
+      CrmTask task, String key, Object? value, String label) async {
     if (key == 'title') {
       // Webapp: trimmed, capped at 280; blank or unchanged sends nothing.
       var t = '${value ?? ''}'.trim();
@@ -834,46 +1056,73 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       if (t.isEmpty || t == task.title) return;
       value = t;
     }
-    await _patch(task, {key: value});
+    await _patch(
+        task,
+        inlineWriteBody(
+            key, value, ref.read(taskRowProvider(task.id)).valueOrNull));
   }
 
   /// Webapp row rules: Name first; title/description/status and the people
   /// (shown in their own sections) left out; Committed due date after Due date.
-  static const _skipRows = {'title', 'description', 'status', 'assigned_to', 'assignees', 'committed_due_date'};
+  static const _skipRows = {
+    'title',
+    'description',
+    'status',
+    'assigned_to',
+    'assignees',
+    'committed_due_date'
+  };
 
-  Future<void> _pickRow(CrmTask task, String name, String label, Map<String, dynamic>? row) async {
+  Future<void> _pickRow(CrmTask task, String name, String label,
+      Map<String, dynamic>? row) async {
     if (!ensurePermission(ref, 'task', PermVerb.update)) return;
     switch (name) {
       case 'priority':
-        final opts = [const CatalogOption(id: '__none__', name: 'No priority'), ...ref.read(taskPriorityOptionsProvider)];
-        final p = await showOptionPicker(context: context, title: label, options: opts, selected: const {});
+        final opts = [
+          const CatalogOption(id: '__none__', name: 'No priority'),
+          ...ref.read(taskPriorityOptionsProvider)
+        ];
+        final p = await showOptionPicker(
+            context: context, title: label, options: opts, selected: const {});
         if (p == null || p.isEmpty) return;
-        await _patch(task, {'priority': p.first == '__none__' ? null : p.first});
+        await _patch(
+            task, {'priority': p.first == '__none__' ? null : p.first});
       case 'assigned_team':
-        final teams = await ref.read(assignableTeamsForModuleProvider('task').future);
+        final teams =
+            await ref.read(assignableTeamsForModuleProvider('task').future);
         if (!mounted) return;
         final p = await showOptionPicker(
             context: context,
             title: label,
-            options: [const CatalogOption(id: '__none__', name: 'No team'), ...teams],
+            options: [
+              const CatalogOption(id: '__none__', name: 'No team'),
+              ...teams
+            ],
             selected: const {});
         if (p == null || p.isEmpty) return;
-        await _patch(task, {'assigned_team': p.first == '__none__' ? null : p.first});
+        await _patch(
+            task, {'assigned_team': p.first == '__none__' ? null : p.first});
       case 'task_type':
-        final p = await showOptionPicker(context: context, title: label, options: ref.read(taskTypeOptionsProvider), selected: {task.type});
+        final p = await showOptionPicker(
+            context: context,
+            title: label,
+            options: ref.read(taskTypeOptionsProvider),
+            selected: {task.type});
         if (p == null || p.isEmpty || p.first == task.type) return;
         await _patch(task, {'task_type': p.first});
       case 'due_date':
       case 'committed_due_date':
         final committed = name == 'committed_due_date';
         if (committed && row?['can_change_committed_date'] != true) {
-          ref.read(toastProvider.notifier).show('Locked once set; admins and Executive Leadership can change it');
+          ref.read(toastProvider.notifier).show(
+              'Locked once set; admins and Executive Leadership can change it');
           return;
         }
         final d = await pickSheetDate(context, '${row?[name] ?? ''}');
         if (d == null || !mounted) return;
         await _patch(task, {name: sheetIsoDate(d)},
-            dateKey: name, fieldLabel: committed ? 'Committed due date' : 'Due date');
+            dateKey: name,
+            fieldLabel: committed ? 'Committed due date' : 'Due date');
     }
   }
 
@@ -888,7 +1137,13 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         rows.add((r.$1, r.$2, r.$3, null, ''));
       }
     } else {
-      rows.add((PhosphorIconsRegular.info, 'Name', task.title, schema.column('title'), 'title'));
+      rows.add((
+        PhosphorIconsRegular.info,
+        'Name',
+        task.title,
+        schema.column('title'),
+        'title'
+      ));
       var committedAdded = false;
       void addCommitted() {
         if (committedAdded) return;
@@ -896,31 +1151,52 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         final v = '${row['committed_due_date'] ?? ''}';
         final moved = rescheduleLabel(row);
         final text = v.isEmpty ? 'Not committed yet' : dueDateLabel(v);
-        rows.add((PhosphorIconsRegular.lockSimple, 'Committed due date', moved == null ? text : '$text\n$moved', null, 'committed_due_date'));
+        rows.add((
+          PhosphorIconsRegular.lockSimple,
+          'Committed due date',
+          moved == null ? text : '$text\n$moved',
+          null,
+          'committed_due_date'
+        ));
       }
+
       for (final r in recordRows(row, schema, skip: _skipRows)) {
         var value = r.value;
         if (r.name == 'duration' && value != '—') value = '$value min';
-        if (r.name == 'priority' && row['priority'] is Map) value = '${(row['priority'] as Map)['name'] ?? value}';
+        if (r.name == 'priority' && row['priority'] is Map)
+          value = StatusMeta$.priorityLabel(
+              '${(row['priority'] as Map)['name'] ?? value}');
         // The record sends the team as an id; its name rides beside it.
         if (r.name == 'assigned_team' && row['assigned_team'] != null) {
           final name = '${row['assigned_team_name'] ?? ''}'.trim();
           final team = row['assigned_team'];
-          value = name.isNotEmpty ? name : (team is Map ? '${team['name'] ?? value}' : 'Team assigned');
+          value = name.isNotEmpty
+              ? name
+              : (team is Map ? '${team['name'] ?? value}' : 'Team assigned');
         }
         rows.add((_rowIcon(r.name), r.label, value, r.column, r.name));
         if (r.name == 'due_date') addCommitted();
       }
       addCommitted();
     }
-    const pickerRows = {'priority', 'assigned_team', 'task_type', 'due_date', 'committed_due_date'};
+    const pickerRows = {
+      'priority',
+      'assigned_team',
+      'task_type',
+      'due_date',
+      'committed_due_date'
+    };
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(18.r),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Task information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Task information',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
           // Long-press a row to edit it in place; a row that cannot be edited
           // says why rather than ignoring the press.
@@ -929,15 +1205,32 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               final line = Container(
                 padding: EdgeInsets.symmetric(vertical: 9.h),
                 decoration: BoxDecoration(
-                  border: i == rows.length - 1 ? null : const Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
+                  border: i == rows.length - 1
+                      ? null
+                      : const Border(
+                          bottom: BorderSide(color: Color(0xFFF3F4F5))),
                 ),
                 child: Row(
                   children: [
-                    SizedBox(width: 20.w, child: Icon(rows[i].$1, size: 17.sp, color: AppColors.textPlaceholder)),
+                    SizedBox(
+                        width: 20.w,
+                        child: Icon(rows[i].$1,
+                            size: 17.sp, color: AppColors.textPlaceholder)),
                     SizedBox(width: 12.w),
-                    SizedBox(width: 92.w, child: Text(rows[i].$2, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted))),
+                    SizedBox(
+                        width: 92.w,
+                        child: Text(rows[i].$2,
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted))),
                     Expanded(
-                      child: Text(rows[i].$3, textAlign: TextAlign.right, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      child: Text(rows[i].$3,
+                          textAlign: TextAlign.right,
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w700,
+                              color: AppColors.textPrimary)),
                     ),
                   ],
                 ),
@@ -945,7 +1238,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               if (pickerRows.contains(rows[i].$5)) {
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onLongPress: () => _pickRow(task, rows[i].$5, rows[i].$2, row),
+                  onLongPress: () =>
+                      _pickRow(task, rows[i].$5, rows[i].$2, row),
                   child: line,
                 );
               }
@@ -953,9 +1247,13 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                 label: rows[i].$2,
                 display: rows[i].$3,
                 column: rows[i].$4,
-                rawValue: rows[i].$5 == 'title' ? task.title : row?[rows[i].$4?.name],
+                rawValue: rows[i].$5 == 'title'
+                    ? task.title
+                    : rawFieldValue(row, rows[i].$4),
                 editForm: 'Edit task',
-                onSave: (key, value) => _saveField(task, key, value, rows[i].$2),
+                canEdit: hasPermission(ref, 'task', PermVerb.update),
+                onSave: (key, value) =>
+                    _saveField(task, key, value, rows[i].$2),
                 onBlocked: (msg) => ref.read(toastProvider.notifier).show(msg),
                 child: line,
               );
@@ -977,11 +1275,19 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DetailUnderlineTabs(labels: const ['Description', 'Files'], index: _tab, onChanged: (i) => setState(() => _tab = i)),
+          DetailUnderlineTabs(
+              labels: const ['Description', 'Files'],
+              index: _tab,
+              onChanged: (i) => setState(() => _tab = i)),
           if (_tab == 0)
             Padding(
               padding: EdgeInsets.only(top: 12.h),
-              child: Text(desc, style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt).copyWith(height: 1.6)),
+              child: Text(desc,
+                  style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w500,
+                          color: AppColors.textLabelAlt)
+                      .copyWith(height: 1.6)),
             )
           else
             _filesTab(task),
@@ -1006,24 +1312,30 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               padding: EdgeInsets.symmetric(vertical: 10.h),
               child: Text('Loading files…',
                   style: AppText.custom(
-                      size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      size: 13.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder)),
             )
           else if (async.hasError && files.isEmpty)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 10.h),
               child: Text(crmAppError(async.error!).message,
                   style: AppText.custom(
-                      size: 13.5, weight: FontWeight.w500, color: AppColors.error)),
+                      size: 13.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.error)),
             )
           else if (files.isEmpty)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 10.h),
               child: Text('No files attached yet.',
                   style: AppText.custom(
-                      size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      size: 13.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder)),
             )
           else
-            for (final f in files) _fileRow(f),
+            for (final f in files) _fileRow(f, task),
           SizedBox(height: 10.h),
           GestureDetector(
             onTap: _uploading ? null : () => _uploadFiles(task),
@@ -1037,9 +1349,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(PhosphorIconsRegular.uploadSimple, size: 15.sp, color: AppColors.navy),
+                  Icon(PhosphorIconsRegular.uploadSimple,
+                      size: 15.sp, color: AppColors.navy),
                   SizedBox(width: 7.w),
-                  Text(_uploading ? 'Uploading…' : 'Upload file', style: AppText.bodyStrong()),
+                  Text(_uploading ? 'Uploading…' : 'Upload file',
+                      style: AppText.bodyStrong()),
                 ],
               ),
             ),
@@ -1051,7 +1365,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   /// One attachment. Tapping it opens the stored file — a row was previously
   /// inert, so an uploaded file could be listed but never viewed.
-  Widget _fileRow(LeadFile f) {
+  Widget _fileRow(LeadFile f, CrmTask task) {
     final uploader = MockUsers.of(f.uploadedBy).name.split(' ').first;
     final meta = [
       f.ext,
@@ -1070,8 +1384,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               height: 34.w,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                  color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(10.r)),
-              child: Icon(attachmentIcon(f.ext), size: 17.sp, color: AppColors.textSecondary),
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(10.r)),
+              child: Icon(attachmentIcon(f.ext),
+                  size: 17.sp, color: AppColors.textSecondary),
             ),
             SizedBox(width: 11.w),
             Expanded(
@@ -1082,14 +1398,23 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.custom(
-                          size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                          size: 13.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
                   Text(meta, style: AppText.caption()),
                 ],
               ),
             ),
             SizedBox(width: 8.w),
-            Icon(PhosphorIconsRegular.arrowSquareOut, size: 16.sp, color: AppColors.textPlaceholder),
+            Icon(PhosphorIconsRegular.arrowSquareOut,
+                size: 16.sp, color: AppColors.textPlaceholder),
+            IconButton(
+              tooltip: 'Remove',
+              onPressed: () => _removeFile(task, f),
+              icon: Icon(PhosphorIconsRegular.trash,
+                  size: 16.sp, color: AppColors.textMuted),
+            ),
           ],
         ),
       ),
@@ -1099,10 +1424,30 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   /// Hands one attachment to the OS viewer, reporting why if it cannot be.
   Future<void> _openFile(LeadFile f) async {
     final failure = await openAttachment(f.url);
-    if (failure != null && mounted) ref.read(toastProvider.notifier).show(failure);
+    if (failure != null && mounted)
+      ref.read(toastProvider.notifier).show(failure);
   }
 
   /// Picks files off the device and uploads each against this task.
+  /// Webapp: removes one attachment (`DELETE /crm/attachments/{id}/`).
+  Future<void> _removeFile(CrmTask task, LeadFile f) async {
+    final toast = ref.read(toastProvider.notifier);
+    if (!ApiConfig.apiEnabled) {
+      toast.show('Files are removed once the app is connected to the API.');
+      return;
+    }
+    try {
+      await ref.read(apiServiceProvider).delete(ApiEndpoints.attachment(f.id));
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) toast.showError(e.bareMessage);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(taskFilesProvider(task.id));
+    toast.show('File removed');
+  }
+
   Future<void> _uploadFiles(CrmTask task) async {
     if (_uploading) return;
     final toast = ref.read(toastProvider.notifier);
@@ -1121,11 +1466,30 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     }
     if (picked == null || !mounted) return; // cancelled
 
+    // Refuse a wrong type, an empty or an over-limit file before anything is
+    // sent — the webapp's validation and messages.
+    for (final f in picked.files) {
+      final problem = fileProblem(f.name, f.size);
+      if (problem.isNotEmpty) {
+        toast.showError(problem);
+        return;
+      }
+    }
     final files = [
       for (final f in picked.files)
         if (f.path != null) (path: f.path!, name: f.name),
     ];
     if (files.isEmpty) return;
+
+    // One file: offer its name (the extension stays) like the webapp's dialog.
+    if (files.length == 1) {
+      final typed = await showFileNameDialog(context, files.first.name);
+      if (typed == null || !mounted) return;
+      files[0] = (
+        path: files.first.path,
+        name: storedFileName(typed, files.first.name)
+      );
+    }
 
     if (!ApiConfig.apiEnabled) {
       toast.show('Files upload once the app is connected to the API.');
@@ -1166,27 +1530,52 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   /// The row styling for one kind of audit event.
   static ActivityItem _activityRow(AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created =>
-        (PhosphorIconsRegular.plusCircle, AppColors.textMuted2, AppColors.bgChipGrey),
-      AuditEventKind.statusChanged =>
-        (PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.tintBlue),
-      AuditEventKind.noteAdded =>
-        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.childAdded =>
-        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
-      AuditEventKind.deleted =>
-        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.plusCircle,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.arrowsClockwise,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.paperclip,
+          AppColors.warningDeep,
+          AppColors.tintAmber
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.bgChipGrey
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
     };
     return ActivityItem(
-        icon: icon, tone: tone, bg: bg, title: e.title, sub: e.subtitle, time: relativeTime(e.at));
+        icon: icon,
+        tone: tone,
+        bg: bg,
+        title: e.title,
+        sub: e.subtitle,
+        time: relativeTime(e.at));
   }
 
   Widget _activityCard(CrmTask task, StatusMeta meta, dynamic assignee) {
     // The task's real audit trail. It refetches off the API write tick, so an
     // edit, a status change, a note or an upload all land here without this
     // card being told about each one.
-    final entries = ref.watch(taskActivityLogProvider(task.id)).valueOrNull ?? const [];
+    final entries =
+        ref.watch(taskActivityLogProvider(task.id)).valueOrNull ?? const [];
     if (entries.isEmpty) return const SizedBox.shrink();
     final items = [for (final e in entries) _activityRow(e)];
     return ClozrCard(
@@ -1197,9 +1586,14 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.pulse, size: 16.sp, color: AppColors.textLabelAlt),
+              Icon(PhosphorIconsRegular.pulse,
+                  size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
-              Text('Activity', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Activity',
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
@@ -1230,8 +1624,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               width: 48.w,
               height: 48.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(12.r), border: Border.all(color: AppColors.borderInput)),
-              child: Icon(PhosphorIconsRegular.pencilSimple, size: 21.sp, color: AppColors.navy),
+              decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(12.r),
+                  border: Border.all(color: AppColors.borderInput)),
+              child: Icon(PhosphorIconsRegular.pencilSimple,
+                  size: 21.sp, color: AppColors.navy),
             ),
           ),
           SizedBox(width: 10.w),
@@ -1242,27 +1640,37 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                   ref.read(toastProvider.notifier).show(reopenOffHint);
                   return;
                 }
-                _setStatus(task.id, done ? 'todo' : 'done', done ? 'Task reopened' : 'Task marked complete');
+                _setStatus(task.id, done ? 'todo' : 'done',
+                    done ? 'Task reopened' : 'Task marked complete');
               },
               child: Opacity(
                 opacity: _reopenBlocked(done) ? 0.5 : 1,
                 child: Container(
-                height: 48.h,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: done ? AppColors.tintGreen : AppColors.navy,
-                  borderRadius: BorderRadius.circular(12.r),
+                  height: 48.h,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: done ? AppColors.tintGreen : AppColors.navy,
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                          done
+                              ? PhosphorIconsFill.checkCircle
+                              : PhosphorIconsBold.check,
+                          size: 17.sp,
+                          color: done ? AppColors.success : AppColors.white),
+                      SizedBox(width: 8.w),
+                      Text(done ? 'Completed · reopen' : 'Mark complete',
+                          style: AppText.custom(
+                              size: 15,
+                              weight: FontWeight.w700,
+                              color:
+                                  done ? AppColors.success : AppColors.white)),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(done ? PhosphorIconsFill.checkCircle : PhosphorIconsBold.check, size: 17.sp, color: done ? AppColors.success : AppColors.white),
-                    SizedBox(width: 8.w),
-                    Text(done ? 'Completed · reopen' : 'Mark complete',
-                        style: AppText.custom(size: 15, weight: FontWeight.w700, color: done ? AppColors.success : AppColors.white)),
-                  ],
-                ),
-              ),
               ),
             ),
           ),

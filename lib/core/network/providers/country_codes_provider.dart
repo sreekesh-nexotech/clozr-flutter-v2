@@ -19,9 +19,13 @@ final countryCodesProvider = FutureProvider<List<CountryCode>>((ref) async {
   if (!ApiConfig.apiEnabled) return _fallback;
   final api = ref.watch(apiServiceProvider);
   try {
-    final body = await api.get(ApiEndpoints.countryCodes, query: const {'page_size': 300});
-    final rows = Paginated.fromAny<CountryCode>(body, CountryCode.fromJson).results;
-    final active = rows.where((c) => c.iso2.isNotEmpty && c.dialCode.isNotEmpty).toList()
+    final body = await api
+        .get(ApiEndpoints.countryCodes, query: const {'page_size': 300});
+    final rows =
+        Paginated.fromAny<CountryCode>(body, CountryCode.fromJson).results;
+    final active = rows
+        .where((c) => c.iso2.isNotEmpty && c.dialCode.isNotEmpty)
+        .toList()
       ..sort((a, b) => a.position.compareTo(b.position));
     return active.isEmpty ? _fallback : active;
   } on Object {
@@ -33,9 +37,34 @@ final countryCodesProvider = FutureProvider<List<CountryCode>>((ref) async {
 /// before this picker existed, so a fetch failure should not change what a
 /// blank field defaults to.
 const _fallback = [
-  CountryCode(id: 'fallback-in', iso2: 'IN', name: 'India', dialCode: '+91', flag: '🇮🇳'),
-  CountryCode(id: 'fallback-us', iso2: 'US', name: 'United States', dialCode: '+1', flag: '🇺🇸'),
-  CountryCode(id: 'fallback-gb', iso2: 'GB', name: 'United Kingdom', dialCode: '+44', flag: '🇬🇧'),
-  CountryCode(id: 'fallback-ae', iso2: 'AE', name: 'United Arab Emirates', dialCode: '+971', flag: '🇦🇪'),
-  CountryCode(id: 'fallback-sg', iso2: 'SG', name: 'Singapore', dialCode: '+65', flag: '🇸🇬'),
+  CountryCode(
+      id: 'fallback-in',
+      iso2: 'IN',
+      name: 'India',
+      dialCode: '+91',
+      flag: '🇮🇳'),
+  CountryCode(
+      id: 'fallback-us',
+      iso2: 'US',
+      name: 'United States',
+      dialCode: '+1',
+      flag: '🇺🇸'),
+  CountryCode(
+      id: 'fallback-gb',
+      iso2: 'GB',
+      name: 'United Kingdom',
+      dialCode: '+44',
+      flag: '🇬🇧'),
+  CountryCode(
+      id: 'fallback-ae',
+      iso2: 'AE',
+      name: 'United Arab Emirates',
+      dialCode: '+971',
+      flag: '🇦🇪'),
+  CountryCode(
+      id: 'fallback-sg',
+      iso2: 'SG',
+      name: 'Singapore',
+      dialCode: '+65',
+      flag: '🇸🇬'),
 ];

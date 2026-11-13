@@ -19,7 +19,8 @@ import 'package:clozrapp/features/rewards/infrastructure/data_sources/remote/rew
 const _me = 'afaebf55-8bfc-4600-8fa9-c9071f077de0';
 
 List<dynamic> _rows(String name) {
-  final body = jsonDecode(File('test/fixtures/rewards/$name.json').readAsStringSync());
+  final body =
+      jsonDecode(File('test/fixtures/rewards/$name.json').readAsStringSync());
   return (body as Map<String, dynamic>)['results'] as List<dynamic>;
 }
 
@@ -28,7 +29,8 @@ List<dynamic> _rows(String name) {
 List<dynamic> _myProgress() =>
     _rows('progress').where((r) => r['participant_user'] == _me).toList();
 
-CloserTrack _track({List<dynamic>? progress}) => RewardsRemoteDataSource.mapCloserTrack(
+CloserTrack _track({List<dynamic>? progress}) =>
+    RewardsRemoteDataSource.mapCloserTrack(
       trackRows: _rows('tracks'),
       stepRows: _rows('steps'),
       milestoneRows: _rows('milestones'),

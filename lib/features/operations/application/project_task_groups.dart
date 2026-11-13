@@ -17,21 +17,34 @@ import '../infrastructure/data_sources/remote/ops_tasks_remote_ds.dart';
 ///
 /// Each returns null on success or the server's message, with the shell's raw
 /// toast withdrawn so the caller shows it once.
-Future<String?> createTaskGroup(WidgetRef ref, String projectId, String title) =>
-    _write(ref, projectId, () => ref
-        .read(apiServiceProvider)
-        .post(ApiEndpoints.taskGroups, body: {'project': projectId, 'title': title}));
+Future<String?> createTaskGroup(
+        WidgetRef ref, String projectId, String title) =>
+    _write(
+        ref,
+        projectId,
+        () => ref.read(apiServiceProvider).post(ApiEndpoints.taskGroups,
+            body: {'project': projectId, 'title': title}));
 
-Future<String?> renameTaskGroup(WidgetRef ref, String projectId, String groupId, String title) =>
-    _write(ref, projectId, () => ref
-        .read(apiServiceProvider)
-        .patch('${ApiEndpoints.taskGroups}$groupId/', body: {'title': title}));
+Future<String?> renameTaskGroup(
+        WidgetRef ref, String projectId, String groupId, String title) =>
+    _write(
+        ref,
+        projectId,
+        () => ref.read(apiServiceProvider).patch(
+            '${ApiEndpoints.taskGroups}$groupId/',
+            body: {'title': title}));
 
-Future<String?> deleteTaskGroup(WidgetRef ref, String projectId, String groupId) =>
-    _write(ref, projectId,
-        () => ref.read(apiServiceProvider).delete('${ApiEndpoints.taskGroups}$groupId/'));
+Future<String?> deleteTaskGroup(
+        WidgetRef ref, String projectId, String groupId) =>
+    _write(
+        ref,
+        projectId,
+        () => ref
+            .read(apiServiceProvider)
+            .delete('${ApiEndpoints.taskGroups}$groupId/'));
 
-Future<String?> _write(WidgetRef ref, String projectId, Future<Object?> Function() call) async {
+Future<String?> _write(
+    WidgetRef ref, String projectId, Future<Object?> Function() call) async {
   if (!ApiConfig.apiEnabled) return null;
   try {
     await call();
@@ -68,8 +81,8 @@ final linkedQuoteNumberProvider =
 /// whole story on an update ("Project Manager: — → Cijo George"); otherwise
 /// the server's summary, with any status id named from the catalogue.
 /// Refetched off the write tick. Null when it could not be read.
-final projectFeedProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>?, String>((ref, projectId) async {
+final projectFeedProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>?, String>((ref, projectId) async {
   if (!ApiConfig.apiEnabled || projectId.isEmpty) return const [];
   ref.watch(apiWriteTickProvider);
   final statusNames = {
@@ -77,11 +90,12 @@ final projectFeedProvider =
   };
   try {
     final body = await ref.watch(apiServiceProvider).get(
-      '/projects/projects/$projectId/activity/',
-      query: {'page_size': 50, 'include_archived': 'true'},
-      quiet: true,
-    );
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+          '/projects/projects/$projectId/activity/',
+          query: {'page_size': 50, 'include_archived': 'true'},
+          quiet: true,
+        );
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <AuditEntry>[];
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
@@ -90,7 +104,11 @@ final projectFeedProvider =
           ? AuditLogRemoteDataSource.formatAuditDiff(changes)
           : null;
       final base = OpsTasksRemoteDataSource.mapActivity(
-        {...row, if ('${row['summary'] ?? ''}'.trim().isEmpty) 'summary': 'Project updated'},
+        {
+          ...row,
+          if ('${row['summary'] ?? ''}'.trim().isEmpty)
+            'summary': 'Project updated'
+        },
         i,
         statusNames: statusNames,
       );

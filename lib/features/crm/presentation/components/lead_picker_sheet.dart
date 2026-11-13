@@ -64,7 +64,10 @@ class _LeadPickerSheetState extends State<_LeadPickerSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Select lead',
-              style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 17,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 12.h),
           SearchField(
             controller: _ctrl,
@@ -82,7 +85,10 @@ class _LeadPickerSheetState extends State<_LeadPickerSheet> {
                     padding: EdgeInsets.symmetric(vertical: 28.h),
                     child: Center(
                       child: Text('No matching lead',
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                          style: AppText.custom(
+                              size: 13.5,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPlaceholder)),
                     ),
                   )
                 : ListView.separated(
@@ -114,7 +120,10 @@ class _LeadPickerSheetState extends State<_LeadPickerSheet> {
                 borderRadius: BorderRadius.circular(11.r),
               ),
               child: Text(lead.initials,
-                  style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.navy)),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -124,16 +133,23 @@ class _LeadPickerSheetState extends State<_LeadPickerSheet> {
                   Text(lead.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
                   Text('${lead.company ?? '—'} · #${lead.id}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                 ],
               ),
             ),
-            Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+            Icon(PhosphorIconsBold.caretRight,
+                size: 13.sp, color: AppColors.textPlaceholder),
           ],
         ),
       ),

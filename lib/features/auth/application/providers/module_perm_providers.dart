@@ -16,7 +16,8 @@ class ModulePerm {
 
   /// Access not known yet (mock mode, a failed `/auth/me/modules/`): nothing
   /// is gated, and the server still refuses per request.
-  static const open = ModulePerm(read: true, create: true, update: true, delete: true, approve: true);
+  static const open = ModulePerm(
+      read: true, create: true, update: true, delete: true, approve: true);
 
   static const none = ModulePerm();
 
@@ -48,9 +49,14 @@ final modulePermProvider = Provider.family<ModulePerm, String>((ref, module) {
 
 /// Webapp `permissionCopy.ts` — the reason a gated control gives.
 abstract final class PermissionCopy {
-  static const create = "You don't have permission to add records here. Ask a workspace admin.";
-  static const update = "You don't have permission to edit records here. Ask a workspace admin.";
-  static const delete = "You don't have permission to delete records here. Ask a workspace admin.";
-  static const approve = "You don't have permission to approve here. Ask a workspace admin.";
-  static const generic = "You don't have permission to do this. Ask a workspace admin.";
+  static const create =
+      "You don't have permission to add records here. Ask a workspace admin.";
+  static const update =
+      "You don't have permission to edit records here. Ask a workspace admin.";
+  static const delete =
+      "You don't have permission to delete records here. Ask a workspace admin.";
+  static const approve =
+      "You don't have permission to approve here. Ask a workspace admin.";
+  static const generic =
+      "You don't have permission to do this. Ask a workspace admin.";
 }

@@ -43,16 +43,22 @@ class TicketFormRemoteDataSource {
 
   /// `GET contacts/?customer_id=` — the Contact select's options.
   Future<List<TicketPickOption>> fetchContacts(String customerId) async {
-    final body = await _api.get(ApiEndpoints.contacts, quiet: true, query: {'customer_id': customerId});
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final body = await _api.get(ApiEndpoints.contacts,
+        quiet: true, query: {'customer_id': customerId});
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <TicketPickOption>[];
     for (final r in rows) {
       final id = (r['contact_id'] ?? '').toString();
       if (id.isEmpty) continue;
-      final parts = [r['first_name'], r['last_name']].whereType<String>().where((s) => s.isNotEmpty).join(' ');
+      final parts = [r['first_name'], r['last_name']]
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
+          .join(' ');
       final name = [r['display_name'], r['full_name'], parts, r['email']]
           .whereType<String>()
-          .firstWhere((s) => s.trim().isNotEmpty, orElse: () => 'Unnamed contact');
+          .firstWhere((s) => s.trim().isNotEmpty,
+              orElse: () => 'Unnamed contact');
       out.add((id: id, name: name));
     }
     return out;
@@ -73,15 +79,19 @@ class TicketFormRemoteDataSource {
   /// `GET management/assignable-users/?module=issue` — only users who can
   /// read tickets; the save refuses anyone else (`assignee_no_module_access`).
   Future<List<TicketPickOption>> fetchAssignableUsers() async {
-    final body = await _api.get(ApiEndpoints.assignableUsers,
+    final body = await _api.getAllPages(ApiEndpoints.assignableUsers,
         quiet: true, query: {'module': 'issue', 'page_size': 200});
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <TicketPickOption>[];
     for (final r in rows) {
       final id = (r['user_id'] ?? r['id'] ?? '').toString();
       if (id.isEmpty || r['is_active'] == false) continue;
       final name = (r['full_name'] ?? '').toString().trim();
-      out.add((id: id, name: name.isNotEmpty ? name : (r['email'] ?? 'User').toString()));
+      out.add((
+        id: id,
+        name: name.isNotEmpty ? name : (r['email'] ?? 'User').toString()
+      ));
     }
     return out;
   }
@@ -90,7 +100,8 @@ class TicketFormRemoteDataSource {
   /// stays neutral: "Billable amount (₹)").
   Future<TicketBillingDefaults?> fetchBillingDefaults() async {
     try {
-      return ticketBillingDefaultsFrom(await _api.get(ApiEndpoints.issueBillingDefaults, quiet: true));
+      return ticketBillingDefaultsFrom(
+          await _api.get(ApiEndpoints.issueBillingDefaults, quiet: true));
     } on Object {
       return null;
     }

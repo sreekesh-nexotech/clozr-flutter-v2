@@ -7,7 +7,8 @@ class ProductNote extends Equatable {
   final String author;
   final String time;
   final String body;
-  const ProductNote({required this.author, required this.time, required this.body});
+  const ProductNote(
+      {required this.author, required this.time, required this.body});
 
   @override
   List<Object?> get props => [author, time, body];

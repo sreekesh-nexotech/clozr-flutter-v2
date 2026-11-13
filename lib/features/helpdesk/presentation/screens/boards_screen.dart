@@ -59,23 +59,30 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               onRefresh: _reload,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                children: [ErrorState.forSubject(e, 'the support overview', onRetry: retry)],
+                children: [
+                  ErrorState.forSubject(e, 'the support overview',
+                      onRetry: retry)
+                ],
               ),
             ),
             data: (_) => ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 120.h),
               children: [
-                _panel('SLA Watch', slaWatchInfo(hasNoSla: summary.noSla != null), [
+                _panel('SLA Watch',
+                    slaWatchInfo(hasNoSla: summary.noSla != null), [
                   _bucket('breached', 'Breached', summary.breached, red: true),
-                  _bucket('lt1h', boardDueSoonLabel, summary.dueWithin, positiveEmpty: true),
+                  _bucket('lt1h', boardDueSoonLabel, summary.dueWithin,
+                      positiveEmpty: true),
                   _bucket('today', 'Due today', summary.dueTodayBucket),
                   _bucket('ontrack', 'On track', summary.onTrack),
                   if (summary.noSla != null)
-                    _bucket('nosla', 'No SLA', summary.noSla!, countOnlyNote: noSlaCountOnlyNote),
+                    _bucket('nosla', 'No SLA', summary.noSla!,
+                        countOnlyNote: noSlaCountOnlyNote),
                 ]),
                 SizedBox(height: 14.h),
-                _panel('Workload', workloadInfo, [for (final c in summary.workload) _workloadColumn(c)]),
+                _panel('Workload', workloadInfo,
+                    [for (final c in summary.workload) _workloadColumn(c)]),
                 SizedBox(height: 14.h),
                 _panel('Pipeline', pipelineInfo, [
                   for (final lane in summary.lanes)
@@ -87,7 +94,8 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                       showAge: true,
                       onMore: () => _openTickets(
                         bucketMoreToast(lane.total, lane.name),
-                        filters: FilterValues()..['statuses'] = ChoiceValue(ids: {lane.id}),
+                        filters: FilterValues()
+                          ..['statuses'] = ChoiceValue(ids: {lane.id}),
                       ),
                     ),
                 ]),
@@ -100,7 +108,8 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   }
 
   // ── Header ──
-  Widget _header(IssueSummary s, {required bool refreshing, required bool failed}) {
+  Widget _header(IssueSummary s,
+      {required bool refreshing, required bool failed}) {
     // No figures while the board failed to load — old numbers next to an
     // error would read as current.
     String fig(int n) => failed ? '—' : '$n';
@@ -119,7 +128,11 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Helpdesk', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text('Helpdesk',
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
           SizedBox(height: 1.h),
           Text('Support Overview', style: AppText.screenTitle()),
           SizedBox(height: 6.h),
@@ -127,10 +140,17 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
             behavior: HitTestBehavior.opaque,
             onTap: refreshing ? null : _reload,
             child: Row(children: [
-              Icon(PhosphorIconsRegular.arrowsClockwise, size: 14.sp, color: AppColors.textMuted),
+              Icon(PhosphorIconsRegular.arrowsClockwise,
+                  size: 14.sp, color: AppColors.textMuted),
               SizedBox(width: 7.w),
-              Text(refreshing ? 'Refreshing…' : (failed ? 'Couldn’t refresh' : 'Up to date'),
-                  style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+              Text(
+                  refreshing
+                      ? 'Refreshing…'
+                      : (failed ? 'Couldn’t refresh' : 'Up to date'),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
             ]),
           ),
           SizedBox(height: 12.h),
@@ -148,27 +168,37 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: 4.w),
                       decoration: BoxDecoration(
-                        border: i == 0 ? null : const Border(left: BorderSide(color: AppColors.borderChip)),
+                        border: i == 0
+                            ? null
+                            : const Border(
+                                left: BorderSide(color: AppColors.borderChip)),
                       ),
                       child: Column(children: [
                         Text(stats[i].$2,
                             style: AppText.custom(
                                 size: 19,
                                 weight: FontWeight.w800,
-                                color: stats[i].$3 ? AppColors.error : AppColors.textPrimary,
+                                color: stats[i].$3
+                                    ? AppColors.error
+                                    : AppColors.textPrimary,
                                 letterSpacing: -0.4)),
                         SizedBox(height: 1.h),
-                        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Flexible(
-                            child: Text(stats[i].$1,
-                                textAlign: TextAlign.center,
-                                style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textMuted)),
-                          ),
-                          if (stats[i].$4 != null) ...[
-                            SizedBox(width: 3.w),
-                            _infoTip(stats[i].$4!, size: 11),
-                          ],
-                        ]),
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: Text(stats[i].$1,
+                                    textAlign: TextAlign.center,
+                                    style: AppText.custom(
+                                        size: 10.5,
+                                        weight: FontWeight.w600,
+                                        color: AppColors.textMuted)),
+                              ),
+                              if (stats[i].$4 != null) ...[
+                                SizedBox(width: 3.w),
+                                _infoTip(stats[i].$4!, size: 11),
+                              ],
+                            ]),
                       ]),
                     ),
                   ),
@@ -187,7 +217,8 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
         showDuration: const Duration(seconds: 4),
         child: Padding(
           padding: EdgeInsets.all(2.w),
-          child: Icon(PhosphorIconsRegular.info, size: size.sp, color: AppColors.textPlaceholder),
+          child: Icon(PhosphorIconsRegular.info,
+              size: size.sp, color: AppColors.textPlaceholder),
         ),
       );
 
@@ -205,7 +236,11 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
           Padding(
             padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 12.h),
             child: Row(children: [
-              Text(title, style: AppText.custom(size: 15.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text(title,
+                  style: AppText.custom(
+                      size: 15.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               SizedBox(width: 6.w),
               _infoTip(info),
             ]),
@@ -234,6 +269,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       total: b.total,
       cards: b.items,
       red: red,
+      breachedBucket: key == 'breached',
       positiveEmpty: positiveEmpty,
       showAvatar: true,
       showAge: false,
@@ -241,7 +277,10 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       onMore: () {
         final facet = ticketSlaFacetForBoard(key);
         _openTickets(bucketMoreToast(b.total, label),
-            filters: facet == null ? FilterValues() : (FilterValues()..['sla'] = RadioValue(id: facet, defaultId: 'any')));
+            filters: facet == null
+                ? FilterValues()
+                : (FilterValues()
+                  ..['sla'] = RadioValue(id: facet, defaultId: 'any')));
       },
     );
   }
@@ -276,6 +315,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     required VoidCallback onMore,
     String? avatar,
     bool red = false,
+    bool breachedBucket = false,
     bool amber = false,
     bool positiveEmpty = false,
     String? note,
@@ -287,7 +327,8 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
             : (AppColors.bgChipGrey, AppColors.textLabelAlt);
     final more = boardMoreLabel(total, cards.length);
     return Container(
-      decoration: BoxDecoration(color: AppColors.bgScreen, borderRadius: BorderRadius.circular(14.r)),
+      decoration: BoxDecoration(
+          color: AppColors.bgScreen, borderRadius: BorderRadius.circular(14.r)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -302,7 +343,10 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                 child: Text(label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textBody)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textBody)),
               ),
               SizedBox(width: 8.w),
               Container(
@@ -310,39 +354,57 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                 height: 20.h,
                 padding: EdgeInsets.symmetric(horizontal: 6.w),
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(99)),
-                child: Text('$total', style: AppText.custom(size: 11, weight: FontWeight.w700, color: pillFg)),
+                decoration: BoxDecoration(
+                    color: pillBg, borderRadius: BorderRadius.circular(99)),
+                child: Text('$total',
+                    style: AppText.custom(
+                        size: 11, weight: FontWeight.w700, color: pillFg)),
               ),
             ]),
           ),
           // A column the server sent as a bare count has nothing to show
           // between its header and "View in tickets →".
           if (total == 0 || note != null || cards.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.fromLTRB(10.w, 2.h, 10.w, 10.h),
-            child: total == 0
-                ? _empty(positiveEmpty)
-                : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    if (note != null)
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 4.h),
-                        child: Text(note,
-                            style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.5)),
-                      ),
-                    for (int i = 0; i < cards.length; i++) ...[
-                      if (i > 0) SizedBox(height: 8.h),
-                      _card(cards[i], showAvatar: showAvatar, showAge: showAge),
-                    ],
-                  ]),
-          ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(10.w, 2.h, 10.w, 10.h),
+              child: total == 0
+                  ? _empty(positiveEmpty)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                          if (note != null)
+                            Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 2.w, vertical: 4.h),
+                              child: Text(note,
+                                  style: AppText.custom(
+                                      size: 12,
+                                      weight: FontWeight.w500,
+                                      color: AppColors.textMuted,
+                                      height: 1.5)),
+                            ),
+                          for (int i = 0; i < cards.length; i++) ...[
+                            if (i > 0) SizedBox(height: 8.h),
+                            _card(cards[i],
+                                showAvatar: showAvatar,
+                                showAge: showAge,
+                                breachedBucket: breachedBucket),
+                          ],
+                        ]),
+            ),
           if (more != null)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onMore,
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-                decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
-                child: Text(more, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.navy)),
+                decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: AppColors.bgLight))),
+                child: Text(more,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.navy)),
               ),
             ),
         ],
@@ -355,7 +417,11 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       return Padding(
         padding: EdgeInsets.symmetric(vertical: 16.h),
         child: Center(
-          child: Text('No tickets', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          child: Text('No tickets',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ),
       );
     }
@@ -366,19 +432,26 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
           width: 34.w,
           height: 34.w,
           alignment: Alignment.center,
-          decoration: const BoxDecoration(color: AppColors.tintGreen, shape: BoxShape.circle),
-          child: Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.success),
+          decoration: const BoxDecoration(
+              color: AppColors.tintGreen, shape: BoxShape.circle),
+          child: Icon(PhosphorIconsBold.check,
+              size: 16.sp, color: AppColors.success),
         ),
         SizedBox(height: 8.h),
-        Text('Nothing breaching soon', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.success)),
+        Text('Nothing breaching soon',
+            style: AppText.custom(
+                size: 13, weight: FontWeight.w600, color: AppColors.success)),
       ]),
     );
   }
 
   /// The mini card: subject; priority dot, SLA pill, link glyph, age
   /// (Pipeline) and assignee avatar (SLA Watch). Tapping opens the ticket.
-  Widget _card(SummaryCard c, {required bool showAvatar, required bool showAge}) {
-    final pill = boardCardPill(c);
+  Widget _card(SummaryCard c,
+      {required bool showAvatar,
+      required bool showAge,
+      bool breachedBucket = false}) {
+    final pill = boardCardPill(c, inBreachedBucket: breachedBucket);
     final (bg, fg) = switch (pill.tone) {
       BoardPillTone.breached => (AppColors.tintRed, AppColors.error),
       BoardPillTone.atRisk => (AppColors.tintAmber, AppColors.warningDeep),
@@ -399,7 +472,10 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
           Text(c.subject,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+              style: AppText.custom(
+                  size: 13.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textBody)),
           SizedBox(height: 8.h),
           Row(children: [
             Tooltip(
@@ -408,7 +484,9 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               child: Container(
                 width: 8.w,
                 height: 8.w,
-                decoration: BoxDecoration(color: ticketPriorityColor(c.priority), shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                    color: ticketPriorityColor(c.priority),
+                    shape: BoxShape.circle),
               ),
             ),
             SizedBox(width: 8.w),
@@ -416,16 +494,24 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               height: 20.h,
               padding: EdgeInsets.symmetric(horizontal: 8.w),
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
-              child: Text(pill.label, style: AppText.custom(size: 11, weight: FontWeight.w700, color: fg)),
+              decoration: BoxDecoration(
+                  color: bg, borderRadius: BorderRadius.circular(99)),
+              child: Text(pill.label,
+                  style: AppText.custom(
+                      size: 11, weight: FontWeight.w700, color: fg)),
             ),
             if (c.hasLinkedTasks) ...[
               SizedBox(width: 8.w),
-              Icon(PhosphorIconsRegular.link, size: 12.sp, color: AppColors.textMuted),
+              Icon(PhosphorIconsRegular.link,
+                  size: 12.sp, color: AppColors.textMuted),
             ],
             const Spacer(),
             if (age.isNotEmpty)
-              Text(age, style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+              Text(age,
+                  style: AppText.custom(
+                      size: 11,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPlaceholder)),
             if (showAvatar) ...[
               if (age.isNotEmpty) SizedBox(width: 8.w),
               _avatar(boardInitials(c.assigneeName), 18),
@@ -440,9 +526,13 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
         width: size.w,
         height: size.w,
         alignment: Alignment.center,
-        decoration: const BoxDecoration(color: AppColors.tintNavy, shape: BoxShape.circle),
+        decoration: const BoxDecoration(
+            color: AppColors.tintNavy, shape: BoxShape.circle),
         child: Text(initials,
-            style: AppText.custom(size: size * 0.42, weight: FontWeight.w700, color: AppColors.navy)),
+            style: AppText.custom(
+                size: size * 0.42,
+                weight: FontWeight.w700,
+                color: AppColors.navy)),
       );
 
   /// Opens the Tickets list narrowed to [filters] (the board is org-wide, so
@@ -453,6 +543,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     ref.read(ticketMineProvider.notifier).state = false;
     ref.read(ticketBreachingProvider.notifier).state = false;
     ref.read(ticketStatusChipsProvider.notifier).state = const <String>{};
+    ref.read(ticketGroupProvider.notifier).state = null;
     ref.read(ticketSavedFiltersProvider.notifier).deactivate();
     ref.read(ticketSearchProvider.notifier).state = '';
     context.go(Routes.tickets);

@@ -20,9 +20,16 @@ class PlanOption {
         quoteNo: _s(j['quotation_number']),
         who: _s(j['customer_name']).isNotEmpty
             ? _s(j['customer_name'])
-            : (j['customer'] is Map ? _s((j['customer'] as Map)['name']) : _s(j['lead_name'])),
-        totalInclGst: _firstMoney([j['total_incl_gst'], j['gross_total'], j['total_amount']]),
-        amountDueInclGst: _firstMoney([j['amount_due_incl_gst'], j['balance_due_gross'], j['amount_remaining']]),
+            : (j['customer'] is Map
+                ? _s((j['customer'] as Map)['name'])
+                : _s(j['lead_name'])),
+        totalInclGst: _firstMoney(
+            [j['total_incl_gst'], j['gross_total'], j['total_amount']]),
+        amountDueInclGst: _firstMoney([
+          j['amount_due_incl_gst'],
+          j['balance_due_gross'],
+          j['amount_remaining']
+        ]),
       );
 
   /// `payment_id` (uuid).
@@ -35,10 +42,12 @@ class PlanOption {
   final double amountDueInclGst;
 
   /// "QTN-00041 · UAT Pay Even" (webapp `<quoteNo || id> · <company>`).
-  String get label => '${quoteNo.isNotEmpty ? quoteNo : id} · ${who.isNotEmpty ? who : '—'}';
+  String get label =>
+      '${quoteNo.isNotEmpty ? quoteNo : id} · ${who.isNotEmpty ? who : '—'}';
 
   /// "Due ₹11,800 of ₹11,800 (incl. GST)".
-  String get dueLine => 'Due ${rupees(amountDueInclGst)} of ${rupees(totalInclGst)} (incl. GST)';
+  String get dueLine =>
+      'Due ${rupees(amountDueInclGst)} of ${rupees(totalInclGst)} (incl. GST)';
 }
 
 /// One instalment of a plan, with its gross figures.
@@ -57,7 +66,9 @@ class PlanRecord {
 
   factory PlanRecord.fromJson(Map<String, dynamic> r) {
     final expected = apiMoney(r['amount_expected']);
-    final gross = _present(r['amount_due_gross']) ? apiMoney(r['amount_due_gross']) : expected;
+    final gross = _present(r['amount_due_gross'])
+        ? apiMoney(r['amount_due_gross'])
+        : expected;
     final status = _s(r['status']).toLowerCase();
     final summary = r['record_summary'];
     final adjustments = summary is Map ? summary['adjustments'] : null;
@@ -74,12 +85,17 @@ class PlanRecord {
       balanceDue: _present(r['balance_due'])
           ? apiMoney(r['balance_due'])
           : (status == 'paid'
-              ? (gross - apiMoney(r['amount_paid']) - apiMoney(r['tds_deducted']) - apiMoney(r['bank_charge']))
+              ? (gross -
+                      apiMoney(r['amount_paid']) -
+                      apiMoney(r['tds_deducted']) -
+                      apiMoney(r['bank_charge']))
                   .clamp(0, double.infinity)
                   .toDouble()
               : gross),
       adjustmentState: adjustments is Map ? _s(adjustments['state']) : null,
-      linkedDocumentId: _s(r['linked_document_id']).isEmpty ? null : _s(r['linked_document_id']),
+      linkedDocumentId: _s(r['linked_document_id']).isEmpty
+          ? null
+          : _s(r['linked_document_id']),
     );
   }
 
@@ -103,9 +119,11 @@ class PlanRecord {
   bool get isOpen => status != 'paid' && status != 'cancelled';
 
   /// The open balance a settle starts from.
-  double get open => openBalance(balanceDue: balanceDue, amountDueGross: amountDueGross);
+  double get open =>
+      openBalance(balanceDue: balanceDue, amountDueGross: amountDueGross);
 
-  String get title => label.isNotEmpty ? label : 'Installment $installmentNumber';
+  String get title =>
+      label.isNotEmpty ? label : 'Installment $installmentNumber';
 
   /// Webapp `settlementStateMeta(...).label`.
   String get stateLabel {
@@ -166,7 +184,9 @@ class RecordPaymentPlan {
     }
     final customer = j['customer'];
     final customerName = customer is Map
-        ? (_s(customer['name']).isNotEmpty ? _s(customer['name']) : _s(customer['company_name']))
+        ? (_s(customer['name']).isNotEmpty
+            ? _s(customer['name'])
+            : _s(customer['company_name']))
         : _s(j['customer_name']);
     return RecordPaymentPlan(
       id: _s(j['payment_id']),
@@ -176,8 +196,13 @@ class RecordPaymentPlan {
       leadName: leadName,
       hasCustomer: customer is Map || customer is String && customer.isNotEmpty,
       paymentType: _s(j['payment_type']),
-      totalInclGst: _firstMoney([j['total_incl_gst'], j['gross_total'], j['total_amount']]),
-      amountDueInclGst: _firstMoney([j['amount_due_incl_gst'], j['balance_due_gross'], j['amount_remaining']]),
+      totalInclGst: _firstMoney(
+          [j['total_incl_gst'], j['gross_total'], j['total_amount']]),
+      amountDueInclGst: _firstMoney([
+        j['amount_due_incl_gst'],
+        j['balance_due_gross'],
+        j['amount_remaining']
+      ]),
       records: rows,
     );
   }
@@ -193,15 +218,21 @@ class RecordPaymentPlan {
   final double amountDueInclGst;
   final List<PlanRecord> records;
 
-  String get who => customerName.isNotEmpty ? customerName : (leadName.isNotEmpty ? leadName : '—');
+  String get who => customerName.isNotEmpty
+      ? customerName
+      : (leadName.isNotEmpty ? leadName : '—');
 
-  List<PlanRecord> get openRecords => [for (final r in records) if (r.isOpen) r];
+  List<PlanRecord> get openRecords => [
+        for (final r in records)
+          if (r.isOpen) r
+      ];
 
   /// "QTN-00041 · UAT Pay Even · due ₹11,800 of ₹11,800 (incl. GST)".
   String get summary =>
       '${quoteNo.isNotEmpty ? quoteNo : id} · $who · due ${rupees(amountDueInclGst)} of ${rupees(totalInclGst)} (incl. GST)';
 
-  bool get needsCustomer => planNeedsCustomer(hasCustomer: hasCustomer, quotationUuid: quotationUuid);
+  bool get needsCustomer =>
+      planNeedsCustomer(hasCustomer: hasCustomer, quotationUuid: quotationUuid);
 }
 
 String _s(Object? v) => v == null ? '' : '$v'.trim();

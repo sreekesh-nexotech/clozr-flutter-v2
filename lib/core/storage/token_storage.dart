@@ -7,9 +7,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// synchronous reads on the hot request path.
 class TokenStorage {
   TokenStorage([FlutterSecureStorage? storage])
-      : _storage = storage ?? const FlutterSecureStorage(
-          aOptions: AndroidOptions(encryptedSharedPreferences: true),
-        );
+      : _storage = storage ??
+            const FlutterSecureStorage(
+              aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            );
 
   static const _accessKey = 'auth_access_token';
   static const _refreshKey = 'auth_refresh_token';
@@ -32,7 +33,8 @@ class TokenStorage {
   String? get refreshToken => _refresh;
   bool get hasSession => _refresh != null && _refresh!.isNotEmpty;
 
-  Future<void> saveTokens({required String access, required String refresh}) async {
+  Future<void> saveTokens(
+      {required String access, required String refresh}) async {
     _access = access;
     _refresh = refresh;
     _loaded = true;

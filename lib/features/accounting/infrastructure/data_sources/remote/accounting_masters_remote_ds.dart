@@ -19,7 +19,9 @@ class AccountingMastersRemoteDataSource {
   Future<TenantProfile?> tenantProfile() async {
     try {
       final res = await _api.get(ApiEndpoints.accTenantProfile);
-      return res is Map ? mapTenantProfile(Map<String, dynamic>.from(res)) : null;
+      return res is Map
+          ? mapTenantProfile(Map<String, dynamic>.from(res))
+          : null;
     } on AppError catch (e) {
       if (e.type == AppErrorType.notFound) return null;
       rethrow;
@@ -47,7 +49,10 @@ class AccountingMastersRemoteDataSource {
     final res = await _api.get(ApiEndpoints.myFeatures);
     final features = res is Map ? res['features'] : null;
     if (features is Map) {
-      return {for (final e in features.entries) if (e.value == true) '${e.key}'};
+      return {
+        for (final e in features.entries)
+          if (e.value == true) '${e.key}'
+      };
     }
     if (features is List) return {for (final f in features) '$f'};
     return const {};
@@ -73,7 +78,8 @@ class AccountingMastersRemoteDataSource {
 
   // ── Vendors ──
 
-  Future<RawPage> fetchVendorPage({String? search, bool? active, int page = 1, int pageSize = 100}) async {
+  Future<RawPage> fetchVendorPage(
+      {String? search, bool? active, int page = 1, int pageSize = 100}) async {
     final res = await _api.get(ApiEndpoints.accVendors,
         query: compact({
           'search': search,
@@ -99,7 +105,8 @@ class AccountingMastersRemoteDataSource {
     return res is Map ? mapVendor(Map<String, dynamic>.from(res)) : null;
   }
 
-  Future<void> deleteVendor(String id) => _api.delete(ApiEndpoints.accVendor(id));
+  Future<void> deleteVendor(String id) =>
+      _api.delete(ApiEndpoints.accVendor(id));
 
   // ── Tax profiles ──
 
@@ -107,16 +114,22 @@ class AccountingMastersRemoteDataSource {
   Future<PartyTaxProfile> partyTaxProfile(String kind, String id) async {
     try {
       final res = await _api.get(ApiEndpoints.accPartyTaxProfile(kind, id));
-      return res is Map ? mapPartyTaxProfile(Map<String, dynamic>.from(res)) : PartyTaxProfile.empty;
+      return res is Map
+          ? mapPartyTaxProfile(Map<String, dynamic>.from(res))
+          : PartyTaxProfile.empty;
     } on AppError catch (e) {
       if (e.type == AppErrorType.notFound) return PartyTaxProfile.empty;
       rethrow;
     }
   }
 
-  Future<PartyTaxProfile> savePartyTaxProfile(String kind, String id, Map<String, Object?> body) async {
-    final res = await _api.put(ApiEndpoints.accPartyTaxProfile(kind, id), body: compact(body));
-    return res is Map ? mapPartyTaxProfile(Map<String, dynamic>.from(res)) : PartyTaxProfile.empty;
+  Future<PartyTaxProfile> savePartyTaxProfile(
+      String kind, String id, Map<String, Object?> body) async {
+    final res = await _api.put(ApiEndpoints.accPartyTaxProfile(kind, id),
+        body: compact(body));
+    return res is Map
+        ? mapPartyTaxProfile(Map<String, dynamic>.from(res))
+        : PartyTaxProfile.empty;
   }
 
   /// Batch B2B lookup for list badges — up to 200 ids.
@@ -128,23 +141,30 @@ class AccountingMastersRemoteDataSource {
     return {
       if (rows is List)
         for (final r in rows)
-          if (r is Map && r['customer_id'] != null) '${r['customer_id']}': r['is_b2b'] == true,
+          if (r is Map && r['customer_id'] != null)
+            '${r['customer_id']}': r['is_b2b'] == true,
     };
   }
 
   Future<ProductTaxProfile> productTaxProfile(String productId) async {
     try {
       final res = await _api.get(ApiEndpoints.accProductTaxProfile(productId));
-      return res is Map ? mapProductTaxProfile(Map<String, dynamic>.from(res)) : ProductTaxProfile.empty;
+      return res is Map
+          ? mapProductTaxProfile(Map<String, dynamic>.from(res))
+          : ProductTaxProfile.empty;
     } on AppError catch (e) {
       if (e.type == AppErrorType.notFound) return ProductTaxProfile.empty;
       rethrow;
     }
   }
 
-  Future<ProductTaxProfile> saveProductTaxProfile(String productId, Map<String, Object?> body) async {
-    final res = await _api.put(ApiEndpoints.accProductTaxProfile(productId), body: body);
-    return res is Map ? mapProductTaxProfile(Map<String, dynamic>.from(res)) : ProductTaxProfile.empty;
+  Future<ProductTaxProfile> saveProductTaxProfile(
+      String productId, Map<String, Object?> body) async {
+    final res = await _api.put(ApiEndpoints.accProductTaxProfile(productId),
+        body: body);
+    return res is Map
+        ? mapProductTaxProfile(Map<String, dynamic>.from(res))
+        : ProductTaxProfile.empty;
   }
 
   // ── Bank accounts ──

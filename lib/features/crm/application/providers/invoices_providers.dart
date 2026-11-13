@@ -38,8 +38,8 @@ final invoicesProvider = FutureProvider<List<Invoice>>(
 ///
 /// `autoDispose` so a session's worth of opened invoices does not keep
 /// refetching on every write anywhere.
-final invoiceSummaryProvider =
-    FutureProvider.autoDispose.family<InvoiceSummary?, String>((ref, paymentId) {
+final invoiceSummaryProvider = FutureProvider.autoDispose
+    .family<InvoiceSummary?, String>((ref, paymentId) {
   if (paymentId.isEmpty) return Future.value(null);
   ref.watch(apiWriteTickProvider);
   return ref.watch(invoicesRepositoryProvider).getInvoiceSummary(paymentId);
@@ -90,16 +90,24 @@ final visibleInvoicesProvider = Provider<List<Invoice>>((ref) {
   final lookup = ref.watch(crmPartyLookupProvider);
 
   Iterable<Invoice> out = invoices;
+  final cust = ref.watch(payCustomerProvider);
+  if (cust.isNotEmpty) {
+    out = out.where((x) => payCustomerMatches(cust, x.custName));
+  }
   if (tab != 'all') out = out.where((x) => x.status == tab);
   if (q.isNotEmpty) {
     final matches = serverSearchMatcher(
       ref,
-      ServerSearchKey(endpoint: ApiEndpoints.payments, idFields: const ['payment_id'], query: q),
+      ServerSearchKey(
+          endpoint: ApiEndpoints.payments,
+          idFields: const ['payment_id'],
+          query: q),
     );
     // Webapp haystack: plan id, customer, quote number, customer id — plus
     // the lead name a lead-only plan is shown under.
     final leads = ref.watch(planLeadNamesProvider);
-    out = out.where((x) => matches([x.uuid],
+    out = out.where((x) => matches(
+        [x.uuid],
         ('${x.id} ${x.uuid} ${invoiceWho(x, lookup)} ${x.quoteId ?? ''} ${x.custId ?? ''} ${leads[x.uuid] ?? ''}')
             .toLowerCase()
             .contains(q)));

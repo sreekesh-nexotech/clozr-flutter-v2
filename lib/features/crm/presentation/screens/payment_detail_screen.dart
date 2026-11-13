@@ -18,7 +18,8 @@ import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../accounting/application/providers/accounting_providers.dart';
 import '../../../accounting/presentation/components/acc_widgets.dart';
-import '../../../accounting/presentation/sheets/acc_sheet_scaffold.dart' show confirmAcc;
+import '../../../accounting/presentation/sheets/acc_sheet_scaffold.dart'
+    show confirmAcc;
 import '../../../auth/application/providers/module_perm_providers.dart';
 import '../../../auth/presentation/components/permission_guard.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -28,6 +29,7 @@ import '../../application/providers/invoices_providers.dart';
 import '../../application/providers/payment_plan_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../components/finance_widgets.dart';
+import '../components/plan_notes_thread.dart';
 import '../components/payment_plan/plan_widgets.dart';
 
 /// One payment record (webapp `PaymentDetailScreen`): the amount due incl.
@@ -41,13 +43,13 @@ class PaymentDetailScreen extends ConsumerStatefulWidget {
   const PaymentDetailScreen({super.key});
 
   @override
-  ConsumerState<PaymentDetailScreen> createState() => _PaymentDetailScreenState();
+  ConsumerState<PaymentDetailScreen> createState() =>
+      _PaymentDetailScreenState();
 }
 
 class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
   /// Local-only notes — the web keeps them in page state too (no notes API
   /// for a payment record).
-  final List<NoteEntry> _notes = [];
   bool _deleting = false;
 
   void _back() {
@@ -71,12 +73,15 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
   Widget _errorState(Object e) {
     final notFound = e is AppError && e.type == AppErrorType.notFound;
     return EmptyState(
-      icon: notFound ? PhosphorIconsRegular.wallet : PhosphorIconsRegular.warning,
+      icon:
+          notFound ? PhosphorIconsRegular.wallet : PhosphorIconsRegular.warning,
       iconColor: notFound ? AppColors.textPlaceholder : AppColors.error,
       title: notFound ? 'Payment not found' : "Couldn't load this payment",
       body: notFound
           ? 'This payment may have been deleted.'
-          : (e is AppError ? e.message : 'Something went wrong. Please try again.'),
+          : (e is AppError
+              ? e.message
+              : 'Something went wrong. Please try again.'),
       ctaLabel: 'Back to payments',
       onCta: _back,
     );
@@ -86,7 +91,8 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
   Widget build(BuildContext context) {
     final id = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
     if (id.isEmpty) {
-      return _scaffold(_errorState(const AppError(type: AppErrorType.notFound, message: '')));
+      return _scaffold(_errorState(
+          const AppError(type: AppErrorType.notFound, message: '')));
     }
     final async = ref.watch(paymentRecordDetailProvider(id));
     final record = async.valueOrNull;
@@ -99,7 +105,8 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
 
   Future<void> _refresh(PlanRecord r) async {
     ref.invalidate(paymentRecordDetailProvider(r.id));
-    if (r.planId.isNotEmpty) ref.invalidate(paymentPlanDetailProvider(r.planId));
+    if (r.planId.isNotEmpty)
+      ref.invalidate(paymentPlanDetailProvider(r.planId));
     try {
       await ref.read(paymentRecordDetailProvider(r.id).future);
     } catch (_) {
@@ -128,17 +135,23 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
     }
     ref.read(toastProvider.notifier).show('Payment record deleted');
     // The server recalculates the plan's totals.
-    if (r.planId.isNotEmpty) ref.invalidate(paymentPlanDetailProvider(r.planId));
+    if (r.planId.isNotEmpty)
+      ref.invalidate(paymentPlanDetailProvider(r.planId));
     ref.invalidate(invoicesProvider);
     ref.invalidate(paymentsProvider);
     if (mounted) _back();
   }
 
   Widget _content(PlanRecord r) {
-    final plan = r.planId.isEmpty ? null : ref.watch(paymentPlanDetailProvider(r.planId)).valueOrNull;
+    final plan = r.planId.isEmpty
+        ? null
+        : ref.watch(paymentPlanDetailProvider(r.planId)).valueOrNull;
     final meta = recordStatusMeta(r);
     final canDelete = plan != null &&
-        canDeleteRecord(planType: plan.ptype, record: r, canDelete: ref.watch(modulePermProvider('payment')).delete);
+        canDeleteRecord(
+            planType: plan.ptype,
+            record: r,
+            canDelete: ref.watch(modulePermProvider('payment')).delete);
     final accounting = ref.watch(accountingActiveProvider);
 
     return Container(
@@ -150,7 +163,8 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
             name: r.displayLabel,
             onBack: () => context.pop(),
             trailing: canDelete
-                ? DetailIconAction(icon: PhosphorIconsRegular.trash, onTap: () => _delete(r))
+                ? DetailIconAction(
+                    icon: PhosphorIconsRegular.trash, onTap: () => _delete(r))
                 : null,
           ),
           Expanded(
@@ -178,16 +192,9 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
                     ),
                   ),
                   SizedBox(height: 14.h),
-                  NotesCard(
-                    notes: List.of(_notes),
-                    countLabel: '${_notes.length}',
-                    onSend: (body) => setState(() => _notes.insert(
-                        0, NoteEntry(initials: 'Y', author: 'You', time: 'Just now', body: body))),
-                  ),
-                  if (_notes.isEmpty) ...[
-                    SizedBox(height: 8.h),
-                    const Center(child: PlanHint('No notes yet — add the first one above.')),
-                  ],
+                  PlanNotesThread(
+                      quotationUuid: plan?.quotationUuid ?? '',
+                      localKey: 'PAY-${r.id}'),
                 ],
               ),
             ),
@@ -215,15 +222,29 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(r.displayLabel,
-                        style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                        style: AppText.custom(
+                            size: 17,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3)),
                     if (who.isNotEmpty || r.productName.isNotEmpty) ...[
                       SizedBox(height: 3.h),
-                      Text([if (who.isNotEmpty) who, if (r.productName.isNotEmpty) r.productName].join(' · '),
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      Text(
+                          [
+                            if (who.isNotEmpty) who,
+                            if (r.productName.isNotEmpty) r.productName
+                          ].join(' · '),
+                          style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     ],
                     SizedBox(height: 3.h),
                     Text('$plan · ${recordRowDate(r)}',
-                        style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -238,19 +259,34 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('AMOUNT DUE (INCL. GST)',
-                        style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                        style: AppText.custom(
+                            size: 10.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPlaceholder,
+                            letterSpacing: 0.4)),
                     SizedBox(height: 3.h),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(planMoney(r.amountDueInclGst),
-                          style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.navy, letterSpacing: -0.4)),
+                          style: AppText.custom(
+                              size: 21,
+                              weight: FontWeight.w800,
+                              color: AppColors.navy,
+                              letterSpacing: -0.4)),
                     ),
                     if (hint.isNotEmpty)
-                      Text(hint, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      Text(hint,
+                          style: AppText.custom(
+                              size: 11,
+                              weight: FontWeight.w500,
+                              color: AppColors.textPlaceholder)),
                     if (hasGstOnTop(r))
                       Text('As quoted ${planMoney(r.amountExpected)}',
-                          style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                          style: AppText.custom(
+                              size: 11.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -259,7 +295,11 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text('STATUS',
-                      style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                      style: AppText.custom(
+                          size: 10.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPlaceholder,
+                          letterSpacing: 0.4)),
                   SizedBox(height: 6.h),
                   StatusPill.meta(meta),
                 ],
@@ -283,7 +323,8 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
         _relChip(
           kind: 'Customer',
           name: plan.customerName.isNotEmpty ? plan.customerName : 'Customer',
-          onTap: () => context.push('${Routes.customerDetail}?id=${plan.customerId}'),
+          onTap: () =>
+              context.push('${Routes.customerDetail}?id=${plan.customerId}'),
         ),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
@@ -303,7 +344,10 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
     );
   }
 
-  Widget _relChip({required String kind, required String name, required VoidCallback onTap}) {
+  Widget _relChip(
+      {required String kind,
+      required String name,
+      required VoidCallback onTap}) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -315,20 +359,30 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
         ),
         child: Row(
           children: [
-            Icon(PhosphorIconsRegular.arrowSquareOut, size: 16.sp, color: AppColors.blueBright),
+            Icon(PhosphorIconsRegular.arrowSquareOut,
+                size: 16.sp, color: AppColors.blueBright),
             SizedBox(width: 11.w),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(kind.toUpperCase(),
-                      style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                      style: AppText.custom(
+                          size: 10.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPlaceholder,
+                          letterSpacing: 0.4)),
                   SizedBox(height: 1.h),
-                  Text(name, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(name,
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ),
-            Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+            Icon(PhosphorIconsBold.caretRight,
+                size: 13.sp, color: AppColors.textPlaceholder),
           ],
         ),
       ),
@@ -338,23 +392,42 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
   Widget _infoCard(PlanRecord r, StatusMeta meta, PlanDetail? plan) {
     final method = paymentMethodLabel(r.method);
     final rows = <(String, String)>[
-      ('Amount due (incl. GST)', '${planMoney(r.amountDueInclGst)}${amountDueHint(r).isEmpty ? '' : ' ${amountDueHint(r)}'}'),
+      (
+        'Amount due (incl. GST)',
+        '${planMoney(r.amountDueInclGst)}${amountDueHint(r).isEmpty ? '' : ' ${amountDueHint(r)}'}'
+      ),
       if (hasGstOnTop(r)) ('Amount as quoted', planMoney(r.amountExpected)),
       ('Balance due', planMoney(r.balanceDue)),
       ('Status', meta.label),
       ('Method', method.isEmpty ? '—' : method),
-      ('Installment', r.installmentNumber > 0 ? '#${r.installmentNumber}' : '—'),
+      (
+        'Installment',
+        r.installmentNumber > 0 ? '#${r.installmentNumber}' : '—'
+      ),
       ('Date', recordRowDate(r)),
-      ('Payment plan', r.quoteNumber.isNotEmpty ? r.quoteNumber : (r.planId.isNotEmpty ? r.planId : '—')),
+      (
+        'Payment plan',
+        r.quoteNumber.isNotEmpty
+            ? r.quoteNumber
+            : (r.planId.isNotEmpty ? r.planId : '—')
+      ),
       if (plan != null && plan.ownerName.isNotEmpty)
-        ('Collection owner', plan.ownerEmail.isNotEmpty ? '${plan.ownerName} · ${plan.ownerEmail}' : plan.ownerName),
+        (
+          'Collection owner',
+          plan.ownerEmail.isNotEmpty
+              ? '${plan.ownerName} · ${plan.ownerEmail}'
+              : plan.ownerName
+        ),
     ];
     return FinanceCard(
       title: 'Payment information',
       child: Column(
         children: [
           for (int i = 0; i < rows.length; i++)
-            MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+            MetaRow(
+                label: rows[i].$1,
+                value: rows[i].$2,
+                last: i == rows.length - 1),
         ],
       ),
     );
@@ -365,13 +438,22 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
     final doc = r.document;
     final receipt = r.receipt;
     String money(double v) => v > 0 ? formatMoneyStr(v) : '—';
-    final servicePeriod = r.servicePeriodStart.isNotEmpty && r.servicePeriodEnd.isNotEmpty
+    final servicePeriod = r.servicePeriodStart.isNotEmpty &&
+            r.servicePeriodEnd.isNotEmpty
         ? '${planDate(r.servicePeriodStart)} → ${planDate(r.servicePeriodEnd)}'
         : '';
-    final docStatus = const {'DRAFT': 'Draft', 'ISSUED': 'Issued', 'CANCELLED': 'Cancelled', 'VOID_DRAFT': 'Void'};
+    final docStatus = const {
+      'DRAFT': 'Draft',
+      'ISSUED': 'Issued',
+      'CANCELLED': 'Cancelled',
+      'VOID_DRAFT': 'Void'
+    };
     final rows = <(String, String)>[
       if (doc != null && doc.status == 'ISSUED')
-        ('Invoice open balance', '${formatMoneyStr(doc.openBalance)} of ${formatMoneyStr(doc.grandTotal)}'),
+        (
+          'Invoice open balance',
+          '${formatMoneyStr(doc.openBalance)} of ${formatMoneyStr(doc.grandTotal)}'
+        ),
       (
         'Receipt',
         receipt == null
@@ -381,13 +463,21 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
       ),
       if (r.amountCredited > 0) ('Credited', formatMoneyStr(r.amountCredited)),
       if (r.amountRefunded > 0)
-        ('Refunded', '${formatMoneyStr(r.amountRefunded)}${r.amountRefundNotDue > 0 ? ' · deal closed, not due again' : ''}'),
+        (
+          'Refunded',
+          '${formatMoneyStr(r.amountRefunded)}${r.amountRefundNotDue > 0 ? ' · deal closed, not due again' : ''}'
+        ),
       if (r.cancelReason.isNotEmpty) ('Cancelled', r.cancelReason),
       ('TDS deducted', money(r.tds)),
       ('Bank charge', money(r.bankCharge)),
-      if (r.gstTds > 0 || r.gstTcs > 0) ('GST TDS / TCS', '${formatMoneyStr(r.gstTds)} / ${formatMoneyStr(r.gstTcs)}'),
+      if (r.gstTds > 0 || r.gstTcs > 0)
+        (
+          'GST TDS / TCS',
+          '${formatMoneyStr(r.gstTds)} / ${formatMoneyStr(r.gstTcs)}'
+        ),
       ('Bank / gateway ref', r.gatewayRef.isNotEmpty ? r.gatewayRef : '—'),
-      if (r.treatAs.isNotEmpty) ('Treated as', treatAsLabels[r.treatAs] ?? humanizeEnum(r.treatAs)),
+      if (r.treatAs.isNotEmpty)
+        ('Treated as', treatAsLabels[r.treatAs] ?? humanizeEnum(r.treatAs)),
       if (servicePeriod.isNotEmpty) ('Service period', servicePeriod),
     ];
     return FinanceCard(
@@ -398,7 +488,10 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
           // Tax invoice: tappable when there is one.
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: doc == null ? null : () => context.push('${Routes.accDocumentDetail}?id=${doc.id}'),
+            onTap: doc == null
+                ? null
+                : () =>
+                    context.push('${Routes.accDocumentDetail}?id=${doc.id}'),
             child: MetaRow(
               label: 'Tax invoice',
               value: doc == null
@@ -408,7 +501,10 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
             ),
           ),
           for (int i = 0; i < rows.length; i++)
-            MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+            MetaRow(
+                label: rows[i].$1,
+                value: rows[i].$2,
+                last: i == rows.length - 1),
           if (r.status == 'paid') ...[
             SizedBox(height: 10.h),
             const AccInfoBanner(
@@ -427,7 +523,9 @@ class _PaymentDetailScreenState extends ConsumerState<PaymentDetailScreen> {
     final paid = r.status == 'paid';
     return [
       ActivityEntry(
-        icon: paid ? PhosphorIconsRegular.checkCircle : PhosphorIconsRegular.clock,
+        icon: paid
+            ? PhosphorIconsRegular.checkCircle
+            : PhosphorIconsRegular.clock,
         tone: paid ? AppColors.success : AppColors.warning,
         bg: paid ? AppColors.tintGreen : AppColors.tintAmber,
         title: items[0].$1,

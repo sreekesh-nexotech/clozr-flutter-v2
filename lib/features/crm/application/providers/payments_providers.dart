@@ -71,7 +71,8 @@ final paymentByIdProvider = Provider.family<Payment?, String>((ref, id) {
 /// All payments belonging to an invoice (invoice detail schedule). Reads the
 /// merged [allPaymentsProvider] (seed + session additions + "settle" overrides)
 /// so an optimistic settle shows on the schedule immediately.
-final paymentsForInvoiceProvider = Provider.family<List<Payment>, String>((ref, invId) {
+final paymentsForInvoiceProvider =
+    Provider.family<List<Payment>, String>((ref, invId) {
   final payments = ref.watch(allPaymentsProvider);
   // Matched on either key. `Invoice.id` is `quotation_number` when the source
   // quote has one and the plan's `payment_id` when it does not — and a record
@@ -138,6 +139,18 @@ Color paymentDateColor(String status) {
 /// Mode toggle on the Payments screen: 'payments' | 'invoices'. Payment plans
 /// ('invoices') is the landing tab, as on web.
 final payModeProvider = StateProvider<String>((ref) => 'invoices');
+
+/// A customer a dashboard row scoped the list to (Top 5 outstanding / Top
+/// customers): records and plans of that customer only. Held as the display
+/// name because the records and plans serializers send `customer_name` and no
+/// id (see [Payment.custName]). Counted in the filter badge and cleared with
+/// Clear filters. Empty = no scope.
+final payCustomerProvider = StateProvider<String>((ref) => '');
+
+/// Whether [custName] is the scoped customer (case- and space-insensitive).
+bool payCustomerMatches(String scope, String? custName) =>
+    scope.isEmpty ||
+    (custName ?? '').trim().toLowerCase() == scope.trim().toLowerCase();
 final payTabProvider = StateProvider<String>((ref) => 'all');
 final paySearchProvider = StateProvider<String>((ref) => '');
 final paySearchOpenProvider = StateProvider<bool>((ref) => false);
@@ -151,6 +164,10 @@ final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
   final lookup = ref.watch(crmPartyLookupProvider);
 
   Iterable<Payment> out = payments;
+  final cust = ref.watch(payCustomerProvider);
+  if (cust.isNotEmpty) {
+    out = out.where((x) => payCustomerMatches(cust, x.custName));
+  }
   // Due and Scheduled both mean backend `pending`, as the webapp asks it.
   if (tab != 'all') out = out.where((x) => paymentMatchesChip(x, tab));
   if (!filters.isEmpty) {
@@ -159,12 +176,16 @@ final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
   if (q.isNotEmpty) {
     final matches = serverSearchMatcher(
       ref,
-      ServerSearchKey(endpoint: ApiEndpoints.paymentRecords, idFields: const ['record_id'], query: q),
+      ServerSearchKey(
+          endpoint: ApiEndpoints.paymentRecords,
+          idFields: const ['record_id'],
+          query: q),
     );
     // Local haystack covers what the card shows (customer or lead, quote
     // number, label), so a match appears while the server answer is pending;
     // the server's `?search=` result is matched on `record_id`.
-    out = out.where((x) => matches([x.id],
+    out = out.where((x) => matches(
+        [x.id],
         ('${x.id} ${paymentTitle(x, lookup)} ${x.leadName ?? ''} ${x.invId ?? ''} ${x.label}')
             .toLowerCase()
             .contains(q)));
@@ -172,4 +193,5 @@ final visiblePaymentsProvider = Provider<List<Payment>>((ref) {
   return out.toList();
 });
 
-int payTabCount(List<Payment> payments, String key) => paymentChipCount(payments, key);
+int payTabCount(List<Payment> payments, String key) =>
+    paymentChipCount(payments, key);

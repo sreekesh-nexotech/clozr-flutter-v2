@@ -28,7 +28,8 @@ class ServerSearchKey {
   final Map<String, dynamic> scope;
 
   String get _scopeKey =>
-      (scope.entries.map((e) => '${e.key}=${e.value}').toList()..sort()).join('&');
+      (scope.entries.map((e) => '${e.key}=${e.value}').toList()..sort())
+          .join('&');
 
   @override
   bool operator ==(Object other) =>
@@ -39,7 +40,8 @@ class ServerSearchKey {
       other._scopeKey == _scopeKey;
 
   @override
-  int get hashCode => Object.hash(endpoint, query, idFields.join(','), _scopeKey);
+  int get hashCode =>
+      Object.hash(endpoint, query, idFields.join(','), _scopeKey);
 }
 
 /// Ids of the rows the server says match [ServerSearchKey.query], or null while
@@ -49,8 +51,8 @@ class ServerSearchKey {
 /// previous one is disposed, and only a query left alone that long hits the
 /// network. Failures resolve to null so the list falls back to its local match
 /// instead of emptying.
-final serverSearchIdsProvider =
-    FutureProvider.autoDispose.family<Set<String>?, ServerSearchKey>((ref, key) async {
+final serverSearchIdsProvider = FutureProvider.autoDispose
+    .family<Set<String>?, ServerSearchKey>((ref, key) async {
   final q = key.query.trim();
   if (q.isEmpty || !ApiConfig.apiEnabled) return null;
   var disposed = false;

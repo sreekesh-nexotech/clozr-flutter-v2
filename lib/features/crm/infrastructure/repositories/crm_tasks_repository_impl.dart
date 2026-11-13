@@ -41,7 +41,9 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
   /// Mock mode has no record endpoint — null keeps the detail panel on its
   /// built-in row set rather than showing an empty schema-driven one.
   @override
-  Future<Map<String, dynamic>?> getTaskRow(String id, {bool isFollowup = false}) async => null;
+  Future<Map<String, dynamic>?> getTaskRow(String id,
+          {bool isFollowup = false}) async =>
+      null;
 
   @override
   Future<CrmTask?> createTask(Map<String, dynamic> fields) async {
@@ -63,11 +65,15 @@ class CrmTasksRepositoryImpl implements CrmTasksRepository {
   /// Mock mode has no backend, so an edit cannot persist; null keeps the
   /// caller on its optimistic path rather than claiming a save.
   @override
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false}) async => null;
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields,
+          {bool isFollowup = false}) async =>
+      null;
 
   @override
   Future<void> deleteTask(String id, {bool isFollowup = false}) async {}
 
   @override
-  Future<void> setTaskStatusByKey(String taskId, String uiStatusKey) async {}
+  Future<bool> setTaskStatusByKey(String taskId, String uiStatusKey,
+          {String requestNote = ''}) async =>
+      false;
 }

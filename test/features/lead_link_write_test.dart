@@ -22,9 +22,11 @@ void main() {
       expect(CrmTasksRemoteDataSource.relatedTo({'title': 'x'}), isEmpty);
     });
 
-    test('drops a half-populated pair rather than letting the API reject it', () {
+    test('drops a half-populated pair rather than letting the API reject it',
+        () {
       // The contract is both-or-neither; sending one alone is a 400.
-      expect(CrmTasksRemoteDataSource.relatedTo({'related_to': 'lead'}), isEmpty);
+      expect(
+          CrmTasksRemoteDataSource.relatedTo({'related_to': 'lead'}), isEmpty);
       expect(
         CrmTasksRemoteDataSource.relatedTo({'related_to_id': leadId}),
         isEmpty,
@@ -74,8 +76,10 @@ void main() {
 
   group('isoDateOrNull', () {
     test('accepts both the ISO and the sheet display format', () {
-      expect(CrmTasksRemoteDataSource.isoDateOrNull('2026-06-24'), '2026-06-24');
-      expect(CrmTasksRemoteDataSource.isoDateOrNull('24 Jun 2026'), '2026-06-24');
+      expect(
+          CrmTasksRemoteDataSource.isoDateOrNull('2026-06-24'), '2026-06-24');
+      expect(
+          CrmTasksRemoteDataSource.isoDateOrNull('24 Jun 2026'), '2026-06-24');
     });
 
     test('an unparseable date is omitted', () {

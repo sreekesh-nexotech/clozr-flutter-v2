@@ -6,7 +6,8 @@ abstract class CustomersRepository {
   /// [filters] are `/crm/customers/` query params from the drawer, applied
   /// **server-side** — so `is not` means "not, anywhere in the org" rather than
   /// "not, among the rows we happened to load".
-  Future<List<Customer>> getCustomers({Map<String, dynamic> filters = const {}});
+  Future<List<Customer>> getCustomers(
+      {Map<String, dynamic> filters = const {}});
 
   /// Creates a customer from API-shaped form fields (`name`,
   /// `organization_name`, `email`, `phone`). Returns the created customer,
@@ -18,7 +19,8 @@ abstract class CustomersRepository {
   ///
   /// [version] (the `updated_at` last read) is sent as `If-Match`, so an edit
   /// made on a customer someone changed since is refused with 412.
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version});
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields,
+      {String? version});
 
   /// Spawns an upsell lead against this customer and moves it into the
   /// `upsell_in_progress` status. Returns the new lead's id when the response

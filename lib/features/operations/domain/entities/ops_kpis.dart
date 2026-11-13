@@ -81,8 +81,13 @@ class OpsKpis extends Equatable {
   }
 
   @override
-  List<Object?> get props =>
-      [activeProjects, projectsOverdue, tasksOverdue, avgProjectCycle, avgTaskCycle];
+  List<Object?> get props => [
+        activeProjects,
+        projectsOverdue,
+        tasksOverdue,
+        avgProjectCycle,
+        avgTaskCycle
+      ];
 }
 
 /// One row of the completed-tasks grid: a priority, and how many tasks at that

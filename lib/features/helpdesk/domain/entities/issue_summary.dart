@@ -109,7 +109,11 @@ class SlaBucket extends Equatable {
 /// One Workload column: [agentId] / [agentName] empty for the Unassigned
 /// column, which always comes first.
 class WorkloadColumn extends Equatable {
-  const WorkloadColumn({this.agentId = '', this.agentName = '', this.total = 0, this.items = const []});
+  const WorkloadColumn(
+      {this.agentId = '',
+      this.agentName = '',
+      this.total = 0,
+      this.items = const []});
 
   final String agentId;
   final String agentName;
@@ -124,7 +128,13 @@ class WorkloadColumn extends Equatable {
 
 /// One Pipeline lane — one per org status, ordered by `position`.
 class PipelineLane extends Equatable {
-  const PipelineLane({required this.id, required this.name, this.color, this.position = 0, this.total = 0, this.items = const []});
+  const PipelineLane(
+      {required this.id,
+      required this.name,
+      this.color,
+      this.position = 0,
+      this.total = 0,
+      this.items = const []});
 
   final String id;
   final String name;
@@ -275,15 +285,26 @@ class IssueSummary extends Equatable {
     final workload = body['workload'];
     final columns = <WorkloadColumn>[
       WorkloadColumn(
-        total: workload is Map && workload['unassigned'] is Map ? _int((workload['unassigned'] as Map)['total']) ?? 0 : 0,
-        items: SlaBucket.fromJson(workload is Map ? workload['unassigned'] : null).items,
+        total: workload is Map && workload['unassigned'] is Map
+            ? _int((workload['unassigned'] as Map)['total']) ?? 0
+            : 0,
+        items:
+            SlaBucket.fromJson(workload is Map ? workload['unassigned'] : null)
+                .items,
       ),
       if (workload is Map && workload['by_agent'] is List)
         for (final row in workload['by_agent'] as List)
           if (row is Map)
             WorkloadColumn(
-              agentId: row['user'] is Map ? ((row['user'] as Map)['user_id'] ?? (row['user'] as Map)['id'] ?? '').toString() : '',
-              agentName: row['user'] is Map ? ((row['user'] as Map)['name'] ?? '').toString() : '',
+              agentId: row['user'] is Map
+                  ? ((row['user'] as Map)['user_id'] ??
+                          (row['user'] as Map)['id'] ??
+                          '')
+                      .toString()
+                  : '',
+              agentName: row['user'] is Map
+                  ? ((row['user'] as Map)['name'] ?? '').toString()
+                  : '',
               total: _int(row['total']) ?? 0,
               items: SlaBucket.fromJson(row).items,
             ),
@@ -314,8 +335,8 @@ class IssueSummary extends Equatable {
       dueWithin: watchBucket('due_within'),
       dueTodayBucket: watchBucket('due_today'),
       onTrack: watchBucket('on_track'),
-      unassigned: SlaBucket.fromJson(
-          workload is Map ? workload['unassigned'] : null),
+      unassigned:
+          SlaBucket.fromJson(workload is Map ? workload['unassigned'] : null),
       byAgent: agents,
       pipeline: pipelineRows,
       noSla: noSla,

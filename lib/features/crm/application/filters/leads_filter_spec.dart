@@ -49,8 +49,18 @@ Iterable<String> leadTeamValues(Lead l) {
 }
 
 const _months = {
-  'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-  'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+  'Jan': 1,
+  'Feb': 2,
+  'Mar': 3,
+  'Apr': 4,
+  'May': 5,
+  'Jun': 6,
+  'Jul': 7,
+  'Aug': 8,
+  'Sep': 9,
+  'Oct': 10,
+  'Nov': 11,
+  'Dec': 12,
 };
 
 /// Parse a lead's `createdOn` display string ("08 Dec 2025") to a DateTime.
@@ -85,13 +95,17 @@ FilterSpec buildLeadsFilterSpec(
 }) {
   final sourceNames = sourceCatalog.isNotEmpty
       ? [for (final s in sourceCatalog) s.name]
-      : (leads.map((l) => l.source).where((s) => s.isNotEmpty).toSet().toList()..sort());
+      : (leads.map((l) => l.source).where((s) => s.isNotEmpty).toSet().toList()
+        ..sort());
   final sources = [for (final s in sourceNames) FilterOption(id: s, label: s)];
 
   final productNames = productCatalog.isNotEmpty
       ? [for (final p in productCatalog) p.name]
-      : (leads.map((l) => l.project).where((p) => p.isNotEmpty).toSet().toList()..sort());
-  final products = [for (final p in productNames) FilterOption(id: p, label: p)];
+      : (leads.map((l) => l.project).where((p) => p.isNotEmpty).toSet().toList()
+        ..sort());
+  final products = [
+    for (final p in productNames) FilterOption(id: p, label: p)
+  ];
 
   // Resolved by the same helper the tab row uses, so a Stage option and a tab
   // always mean the same thing and both match `Lead.stageKey`.
@@ -174,7 +188,15 @@ FilterSpec buildLeadsFilterSpec(
             id: 'created',
             label: 'Created',
             control: FilterControl.dateRange,
-            dateChips: ['today', 'yesterday', 'last7', 'last30', 'last60', 'last90', 'month']),
+            dateChips: [
+              'today',
+              'yesterday',
+              'last7',
+              'last30',
+              'last60',
+              'last90',
+              'month'
+            ]),
         const FilterField(
             id: 'value',
             label: 'Deal value',
@@ -218,10 +240,13 @@ bool leadMatchesFilters(Lead l, FilterValues v) {
   }
 
   if (!FilterMatch.matchAnyOf(v.choice('owners'), [l.owner])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('teams'), leadTeamValues(l))) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('teams'), leadTeamValues(l)))
+    return false;
 
-  if (!FilterMatch.matchDate(v.date('created'), parseLeadDate(l.createdOn))) return false;
-  if (!FilterMatch.matchRange(v.range('value'), l.valueNum, scale: 100000)) return false;
+  if (!FilterMatch.matchDate(v.date('created'), parseLeadDate(l.createdOn)))
+    return false;
+  if (!FilterMatch.matchRange(v.range('value'), l.valueNum, scale: 100000))
+    return false;
 
   final score = v.radio('score');
   if (score != null && score.isActive) {
@@ -264,7 +289,8 @@ final leadsFilterSpecProvider = Provider<FilterSpec>((ref) {
 });
 
 /// Applied drawer filters for the Leads list (the source of the badge count).
-final leadFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final leadFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 // Leads' saved views live in `saved_filters_providers.dart` — they persist to
 // `/crm/saved-filters/` rather than sitting in memory like the other modules'

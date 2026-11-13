@@ -1,4 +1,3 @@
-
 import '../../../../../core/config/api_config.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
@@ -13,8 +12,9 @@ import '../../../domain/entities/app_notification.dart';
 //   crm_notification_id (UUID) · type (PascalCase) · category (server-computed:
 //   crm|pmo|lms|system|billing) · notification_text · message (HTML) ·
 //   read (bool — NOT is_read) · status (unread|read|pinned|snoozed) ·
-//   created_at. The list row carries NO source-object id, so record deep-links
-//   are not derivable — only list-level targets are mapped.
+//   created_at · action ({resource, id, api_url, context} or null). Rows
+//   with an `action` open that record; older rows (`action: null`) fall back
+//   to the list-level / text-derived targets below.
 // ─────────────────────────────────────────────────────────────────────────────
 
 String? _str(Object? v) {
@@ -118,6 +118,23 @@ bool notificationUrgentForType(String type) {
 (String, String?) _targetFor(String type, String? category) {
   final t = type.toLowerCase();
   if (t.startsWith('lms')) return ('list', 'lmsMy');
+  // Unified Approvals. Waiting on the reader → Waiting for me; an outcome of
+  // the reader's own request → My requests. Legacy due-date rows land on the
+  // due-date filter.
+  if (t.startsWith('approval')) {
+    return (
+      'list',
+      t.contains('decided') || t.contains('closed')
+          ? 'approvalsMine'
+          : 'approvalsPending'
+    );
+  }
+  if (t.startsWith('duedatechange')) {
+    return (
+      'list',
+      t.contains('decided') ? 'approvalsMine' : 'approvalsDueDate'
+    );
+  }
   if (t.startsWith('payment') ||
       t.startsWith('dunning') ||
       t.startsWith('mandate') ||
@@ -127,7 +144,9 @@ bool notificationUrgentForType(String type) {
     // belongs on Billing; a customer payment belongs on the CRM Payments list.
     return ('list', category == 'billing' ? 'billing' : 'payments');
   }
-  if (t.startsWith('lead')) return ('list', 'leads');
+  if (t.startsWith('lead') || t.startsWith('stalelead')) {
+    return ('list', 'leads');
+  }
   // `NoteMention`: the mentioned note's record is looked up from its text;
   // the Leads list is the fallback (mentions are written on leads mostly).
   if (t.contains('mention')) return ('list', 'mention');
@@ -146,7 +165,8 @@ bool notificationUrgentForType(String type) {
 }
 
 /// One `/crm/notifications/` row → [AppNotification]; null when malformed.
-AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now}) {
+AppNotification? notificationFromJson(Map<String, dynamic> row,
+    {DateTime? now}) {
   final id = (row['crm_notification_id'] ?? row['pk'] ?? row['id'])?.toString();
   if (id == null || id.isEmpty) return null;
 
@@ -173,8 +193,9 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
   // The live field is `read`; `is_read` kept as a defensive alias. When both
   // are absent, fall back to the computed `status` string.
   final readFlag = row['is_read'] ?? row['read'];
-  final unread =
-      readFlag is bool ? !readFlag : _str(row['status'])?.toLowerCase() == 'unread';
+  final unread = readFlag is bool
+      ? !readFlag
+      : _str(row['status'])?.toLowerCase() == 'unread';
 
   final created = parseApiDate(row['created_at']);
   final target = _targetFor(type, _str(row['category'])?.toLowerCase());
@@ -193,6 +214,7 @@ AppNotification? notificationFromJson(Map<String, dynamic> row, {DateTime? now})
     targetId: target.$2,
     pinned: row['is_pinned'] == true,
     snoozeUntil: parseApiDate(row['snooze_until']),
+    action: NotificationAction.fromJson(row['action']),
   );
 }
 
@@ -206,12 +228,14 @@ class NotificationsRemoteDataSource {
   final ApiService _api;
 
   static const int _pageSize = ApiConfig.defaultPageSize;
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   /// [status] narrows the feed the way the webapp's segment does
   /// (`unread` / `pinned` / `snoozed`); null is "All", which the server already
   /// returns pinned-first with snoozed rows left out.
-  Future<List<Map<String, dynamic>>> fetchNotificationRows({String? status}) async {
+  Future<List<Map<String, dynamic>>> fetchNotificationRows(
+      {String? status}) async {
     final rows = <Map<String, dynamic>>[];
     // The server caches this list per URL for a while: straight after a pin,
     // snooze or read, the same query still answers with the old rows (seen on
@@ -245,26 +269,33 @@ class NotificationsRemoteDataSource {
   Future<void> markRead(String id) =>
       _api.post(ApiEndpoints.notificationMarkRead(id));
 
-  Future<void> markAllRead() => _api.post(ApiEndpoints.notificationsMarkAllRead);
+  Future<void> markAllRead() =>
+      _api.post(ApiEndpoints.notificationsMarkAllRead);
 
   Future<void> delete(String id) => _api.delete(ApiEndpoints.notification(id));
 
   Future<void> pin(String id) => _api.post(ApiEndpoints.notificationPin(id));
 
-  Future<void> unpin(String id) => _api.post(ApiEndpoints.notificationUnpin(id));
+  Future<void> unpin(String id) =>
+      _api.post(ApiEndpoints.notificationUnpin(id));
 
   Future<void> snooze(String id, DateTime until) => _api.post(
         ApiEndpoints.notificationSnooze(id),
         body: {'snooze_until': until.toUtc().toIso8601String()},
       );
 
-  Future<void> unsnooze(String id) => _api.post(ApiEndpoints.notificationUnsnooze(id));
+  Future<void> unsnooze(String id) =>
+      _api.post(ApiEndpoints.notificationUnsnooze(id));
 
   /// The bell's count, asked the way the webapp does: `status=unread`, one row,
   /// read `count`.
   Future<int> unreadCount() async {
     final body = await _api.get(ApiEndpoints.notifications,
-        query: {'status': 'unread', 'page_size': 1, '_ts': DateTime.now().millisecondsSinceEpoch},
+        query: {
+          'status': 'unread',
+          'page_size': 1,
+          '_ts': DateTime.now().millisecondsSinceEpoch
+        },
         quiet: true);
     return Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).count;
   }

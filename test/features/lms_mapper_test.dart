@@ -147,7 +147,8 @@ void main() {
       expect(e.mods, [45]);
     });
 
-    test('defensive: null pct → 0, out-of-range clamped, missing id → null', () {
+    test('defensive: null pct → 0, out-of-range clamped, missing id → null',
+        () {
       expect(
         LmsRemoteDataSource.mapEnrollmentRow({'course_id': 'c-1'})!.mods,
         [0],
@@ -155,7 +156,8 @@ void main() {
       expect(
         LmsRemoteDataSource.mapEnrollmentRow(
           {'course_id': 'c-1', 'completion_percentage': 150},
-        )!.mods,
+        )!
+            .mods,
         [100],
       );
       expect(
@@ -230,12 +232,14 @@ void main() {
     test('violet maps to the purple accent; unknown falls back to blue', () {
       expect(
         LmsRemoteDataSource.mapActivityRow(
-            {'user_name': 'X', 'description': 'y', 'color': 'violet'})!.dot,
+                {'user_name': 'X', 'description': 'y', 'color': 'violet'})!
+            .dot,
         AppColors.pending,
       );
       expect(
         LmsRemoteDataSource.mapActivityRow(
-            {'user_name': 'X', 'description': 'y', 'color': 'plaid'})!.dot,
+                {'user_name': 'X', 'description': 'y', 'color': 'plaid'})!
+            .dot,
         AppColors.blueBright,
       );
     });

@@ -12,7 +12,14 @@ const Color kIconChipBg = Color(0xFFEEF1F4);
 /// A rounded square holding a navy glyph — the leading icon on every finance
 /// card / detail header (40×40 on list rows, 46×46 in detail headers).
 class IconChip extends StatelessWidget {
-  const IconChip({super.key, required this.icon, this.size = 40, this.radius = 11, this.iconSize = 19, this.bg = kIconChipBg, this.color = AppColors.navy});
+  const IconChip(
+      {super.key,
+      required this.icon,
+      this.size = 40,
+      this.radius = 11,
+      this.iconSize = 19,
+      this.bg = kIconChipBg,
+      this.color = AppColors.navy});
   final IconData icon;
   final double size;
   final double radius;
@@ -26,7 +33,8 @@ class IconChip extends StatelessWidget {
       width: size.w,
       height: size.w,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(radius.r)),
+      decoration: BoxDecoration(
+          color: bg, borderRadius: BorderRadius.circular(radius.r)),
       child: Icon(icon, size: iconSize.sp, color: color),
     );
   }
@@ -49,7 +57,11 @@ class FinanceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title != null) ...[
-            Text(title!, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text(title!,
+                style: AppText.custom(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             SizedBox(height: 6.h),
           ],
           child,
@@ -62,7 +74,8 @@ class FinanceCard extends StatelessWidget {
 /// A label ⋯ value row with a hairline underline — the repeated meta row inside
 /// "Quote details" / "Payment details" / "Pricing" / "Details" cards.
 class MetaRow extends StatelessWidget {
-  const MetaRow({super.key, required this.label, required this.value, this.last = false});
+  const MetaRow(
+      {super.key, required this.label, required this.value, this.last = false});
   final String label;
   final String value;
   final bool last;
@@ -78,12 +91,19 @@ class MetaRow extends StatelessWidget {
             ),
       child: Row(
         children: [
-          Text(label, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text(label,
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
           SizedBox(width: 14.w),
           Expanded(
             child: Text(value,
                 textAlign: TextAlign.right,
-                style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -98,7 +118,12 @@ class ActivityEntry {
   final Color bg;
   final String title;
   final String sub;
-  const ActivityEntry({required this.icon, required this.tone, required this.bg, required this.title, required this.sub});
+  const ActivityEntry(
+      {required this.icon,
+      required this.tone,
+      required this.bg,
+      required this.title,
+      required this.sub});
 }
 
 /// The vertical activity timeline: icon chip + connecting line, title + sub.
@@ -121,12 +146,17 @@ class ActivityTimeline extends StatelessWidget {
                       width: 34.w,
                       height: 34.w,
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: entries[i].bg, shape: BoxShape.circle),
-                      child: Icon(entries[i].icon, size: 16.sp, color: entries[i].tone),
+                      decoration: BoxDecoration(
+                          color: entries[i].bg, shape: BoxShape.circle),
+                      child: Icon(entries[i].icon,
+                          size: 16.sp, color: entries[i].tone),
                     ),
                     if (i < entries.length - 1)
                       Expanded(
-                        child: Container(width: 1.5, color: AppColors.borderCardSoft, constraints: BoxConstraints(minHeight: 12.h)),
+                        child: Container(
+                            width: 1.5,
+                            color: AppColors.borderCardSoft,
+                            constraints: BoxConstraints(minHeight: 12.h)),
                       ),
                   ],
                 ),
@@ -137,9 +167,17 @@ class ActivityTimeline extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(entries[i].title, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        Text(entries[i].title,
+                            style: AppText.custom(
+                                size: 14,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
                         SizedBox(height: 2.h),
-                        Text(entries[i].sub, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                        Text(entries[i].sub,
+                            style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted2)),
                       ],
                     ),
                   ),
@@ -158,7 +196,11 @@ class NoteEntry {
   final String author;
   final String time;
   final String body;
-  const NoteEntry({required this.initials, required this.author, required this.time, required this.body});
+  const NoteEntry(
+      {required this.initials,
+      required this.author,
+      required this.time,
+      required this.body});
 }
 
 /// The "Notes" / "Internal notes" card: header, an add-note input (send fires
@@ -212,10 +254,18 @@ class _NotesCardState extends State<NotesCard> {
             children: [
               Icon(widget.icon, size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
-              Text(widget.title, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text(widget.title,
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               if (widget.countLabel != null) ...[
                 SizedBox(width: 8.w),
-                Text(widget.countLabel!, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                Text(widget.countLabel!,
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ],
             ],
           ),
@@ -234,15 +284,22 @@ class _NotesCardState extends State<NotesCard> {
                   ),
                   child: TextField(
                     controller: _ctrl,
-                    onChanged: (v) => setState(() => _hasText = v.trim().isNotEmpty),
+                    onChanged: (v) =>
+                        setState(() => _hasText = v.trim().isNotEmpty),
                     onSubmitted: (_) => _send(),
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textBody),
                     cursorColor: AppColors.blueBright,
                     decoration: InputDecoration(
                       isDense: true,
                       border: InputBorder.none,
                       hintText: 'Add a note…',
-                      hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                      hintStyle: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder),
                     ),
                   ),
                 ),
@@ -258,7 +315,8 @@ class _NotesCardState extends State<NotesCard> {
                     color: _hasText ? AppColors.navy : const Color(0xFFC7CBD3),
                     borderRadius: BorderRadius.circular(11.r),
                   ),
-                  child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 16.sp, color: AppColors.white),
+                  child: Icon(PhosphorIconsFill.paperPlaneTilt,
+                      size: 16.sp, color: AppColors.white),
                 ),
               ),
             ],
@@ -272,8 +330,13 @@ class _NotesCardState extends State<NotesCard> {
                   width: 28.w,
                   height: 28.w,
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                  child: Text(n.initials, style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                  decoration: const BoxDecoration(
+                      color: AppColors.navy, shape: BoxShape.circle),
+                  child: Text(n.initials,
+                      style: AppText.custom(
+                          size: 10,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
                 ),
                 SizedBox(width: 10.w),
                 Expanded(
@@ -284,14 +347,26 @@ class _NotesCardState extends State<NotesCard> {
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
                         children: [
-                          Text(n.author, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                          Text(n.author,
+                              style: AppText.custom(
+                                  size: 12.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary)),
                           SizedBox(width: 7.w),
-                          Text(n.time, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                          Text(n.time,
+                              style: AppText.custom(
+                                  size: 11,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textPlaceholder)),
                         ],
                       ),
                       SizedBox(height: 2.h),
                       Text(n.body,
-                          style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textSecondary, height: 1.55)),
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textSecondary,
+                              height: 1.55)),
                     ],
                   ),
                 ),

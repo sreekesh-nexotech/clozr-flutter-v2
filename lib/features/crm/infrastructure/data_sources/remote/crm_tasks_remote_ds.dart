@@ -22,7 +22,8 @@ class CrmTasksRemoteDataSource {
   List<Map<String, dynamic>>? _statusCache;
 
   /// Raw list rows (followed up to 3 pages). The repository caches these.
-  Future<List<Map<String, dynamic>>> fetchTaskRows({Map<String, dynamic> query = const {}}) =>
+  Future<List<Map<String, dynamic>>> fetchTaskRows(
+          {Map<String, dynamic> query = const {}}) =>
       _fetchRows(query: query);
 
   /// Raw rows for the tasks linked to one lead, scoped server-side with the
@@ -95,7 +96,8 @@ class CrmTasksRemoteDataSource {
     return mobile.isNotEmpty ? mobile : _schema('list', rethrowOutage: true);
   }
 
-  Future<ViewSchema> _schema(String viewType, {bool rethrowOutage = false}) async {
+  Future<ViewSchema> _schema(String viewType,
+      {bool rethrowOutage = false}) async {
     try {
       final body = await _api.get(
         ApiEndpoints.crmTaskSchema,
@@ -103,7 +105,9 @@ class CrmTasksRemoteDataSource {
       );
       return ViewSchema.fromResponse(body);
     } on AppError catch (e) {
-      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      if (rethrowOutage &&
+          (e.type == AppErrorType.network || e.type == AppErrorType.timeout))
+        rethrow;
       return ViewSchema.empty;
     } on Object {
       return ViewSchema.empty;
@@ -139,10 +143,12 @@ class CrmTasksRemoteDataSource {
   ///
   /// The record is also trimmed to the org's **detail** config, so it carries
   /// fields the list rows do not.
-  Future<Map<String, dynamic>?> fetchTaskRow(String id, {bool isFollowup = false}) async {
+  Future<Map<String, dynamic>?> fetchTaskRow(String id,
+      {bool isFollowup = false}) async {
     if (id.isEmpty) return null;
     // Webapp `getTaskDetail`: a follow-up is only found under the flag.
-    final body = await _api.get(ApiEndpoints.crmTask(id), query: {if (isFollowup) 'is_followup': 'true'});
+    final body = await _api.get(ApiEndpoints.crmTask(id),
+        query: {if (isFollowup) 'is_followup': 'true'});
     return body is Map<String, dynamic> ? body : null;
   }
 
@@ -150,9 +156,12 @@ class CrmTasksRemoteDataSource {
   ///
   /// [fields] is sent as-is: the caller built it from the org's own schema, so
   /// the key names are already the API's.
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false}) async {
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields,
+      {bool isFollowup = false}) async {
     final body = await _api.patch(
-        isFollowup ? '${ApiEndpoints.crmTask(id)}?is_followup=true' : ApiEndpoints.crmTask(id),
+        isFollowup
+            ? '${ApiEndpoints.crmTask(id)}?is_followup=true'
+            : ApiEndpoints.crmTask(id),
         body: fields);
     if (body is! Map<String, dynamic>) return null;
     try {
@@ -165,7 +174,9 @@ class CrmTasksRemoteDataSource {
   /// `DELETE /crm/tasks/{id}/` — a follow-up needs `?is_followup=true`, the
   /// plain URL answers 404 for it.
   Future<void> deleteTask(String id, {bool isFollowup = false}) =>
-      _api.delete(isFollowup ? '${ApiEndpoints.crmTask(id)}?is_followup=true' : ApiEndpoints.crmTask(id));
+      _api.delete(isFollowup
+          ? '${ApiEndpoints.crmTask(id)}?is_followup=true'
+          : ApiEndpoints.crmTask(id));
 
   /// Mapped task list (malformed rows are skipped, never fatal).
   Future<List<CrmTask>> fetchTasks() async => mapRows(await fetchTaskRows());
@@ -241,10 +252,17 @@ class CrmTasksRemoteDataSource {
 
   /// Moves a task to the org status whose mapped UI key equals [uiStatusKey]
   /// (`todo | inprogress | blocked | done`). No matching status → no-op.
-  Future<void> setTaskStatusByKey(String taskId, String uiStatusKey) async {
+  /// True when the server held the move for approval (202).
+  Future<bool> setTaskStatusByKey(String taskId, String uiStatusKey,
+      {String requestNote = ''}) async {
     final statusId = statusIdForKey(await statuses(), uiStatusKey);
-    if (statusId == null) return;
-    await _api.patch(ApiEndpoints.crmTask(taskId), body: {'status_id': statusId});
+    if (statusId == null) return false;
+    final (status, _) =
+        await _api.patchWithStatus(ApiEndpoints.crmTask(taskId), body: {
+      'status_id': statusId,
+      if (requestNote.trim().isNotEmpty) 'request_note': requestNote.trim(),
+    });
+    return status == 202;
   }
 
   /// The org's task lanes as `name` → `status_type`, for folding.
@@ -264,7 +282,10 @@ class CrmTasksRemoteDataSource {
       for (final row in await statuses()) {
         final name = _str(row['name'])?.trim().toLowerCase();
         final type = _str(row['status_type'])?.trim();
-        if (name != null && name.isNotEmpty && type != null && type.isNotEmpty) {
+        if (name != null &&
+            name.isNotEmpty &&
+            type != null &&
+            type.isNotEmpty) {
           out[name] = type;
         }
       }
@@ -336,9 +357,13 @@ class CrmTasksRemoteDataSource {
           assigned is Map ? _str(assigned['user_id']) : null),
       due: absoluteDate(due),
       // No caption on a completed or cancelled task (webapp `isTerminal`).
-      dueNote: const {'completed', 'cancelled'}.contains(
-              (statusTypes[statusLabel.toLowerCase()] ?? (statusRaw is Map ? _str(statusRaw['status_type']) : '') ?? '')
-                  .toLowerCase())
+      dueNote: const {
+        'completed',
+        'cancelled'
+      }.contains((statusTypes[statusLabel.toLowerCase()] ??
+                  (statusRaw is Map ? _str(statusRaw['status_type']) : '') ??
+                  '')
+              .toLowerCase())
           ? ''
           : dueNoteFor(due, now: now),
     );
@@ -364,8 +389,8 @@ class CrmTasksRemoteDataSource {
   static String? statusIdForKey(
       List<Map<String, dynamic>> statuses, String uiStatusKey) {
     for (final s in statuses) {
-      final key = crmTaskStatusKey(
-          name: _str(s['name']), type: _str(s['status_type']));
+      final key =
+          crmTaskStatusKey(name: _str(s['name']), type: _str(s['status_type']));
       if (key == uiStatusKey) return _str(s['crm_task_status_id']);
     }
     return null;
@@ -378,11 +403,8 @@ class CrmTasksRemoteDataSource {
     if (s.isEmpty) return null;
     DateTime? d = DateTime.tryParse(s);
     if (d == null) {
-      try {
-        d = DateFormat('d MMM yyyy').parseStrict(s);
-      } on FormatException {
-        d = null;
-      }
+      // DD/MM/YYYY (current) or "24 Jun 2026" (older builds).
+      d = parseDisplayDate(s);
     }
     return d == null ? null : DateFormat('yyyy-MM-dd').format(d);
   }

@@ -13,6 +13,7 @@ import '../../../../core/widgets/async_state_view.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../domain/entities/lead.dart';
+import '../components/report_exports_card.dart';
 
 /// Reports — sales performance charts computed live from the leads dataset:
 /// summary KPIs, a lead funnel, leads-by-status and top lead sources.
@@ -66,18 +67,21 @@ class ReportsScreen extends ConsumerWidget {
     final openPipelineNum = leads
         .where((l) => !_closed.contains(l.status))
         .fold<int>(0, (sum, l) => sum + l.valueNum);
-    final openPipeline = openPipelineNum == 0 ? '—' : formatInr(openPipelineNum);
+    final openPipeline =
+        openPipelineNum == 0 ? '—' : formatInr(openPipelineNum);
 
     final srcCounts = <String, int>{};
     for (final l in leads) {
       srcCounts[l.source] = (srcCounts[l.source] ?? 0) + 1;
     }
-    final sources = srcCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final sources = srcCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final srcMax = [1, ...srcCounts.values].reduce((a, b) => a > b ? a : b);
-    final statusMax = [1, ...StatusMeta$.leadOrder.map(countOf)].reduce((a, b) => a > b ? a : b);
+    final statusMax = [1, ...StatusMeta$.leadOrder.map(countOf)]
+        .reduce((a, b) => a > b ? a : b);
 
     return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 120.h),
       children: [
         _summaryGrid(total, won, winRate, openPipeline),
@@ -87,6 +91,8 @@ class ReportsScreen extends ConsumerWidget {
         _statusCard(countOf, statusMax),
         SizedBox(height: 16.h),
         _sourcesCard(sources, srcMax),
+        SizedBox(height: 16.h),
+        const ReportExportsCard(),
       ],
     );
   }
@@ -102,7 +108,8 @@ class ReportsScreen extends ConsumerWidget {
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.canPop() ? context.pop() : context.go(Routes.dashboard),
+            onTap: () =>
+                context.canPop() ? context.pop() : context.go(Routes.dashboard),
             child: Container(
               width: 38.w,
               height: 38.w,
@@ -112,7 +119,8 @@ class ReportsScreen extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(11.r),
                 border: Border.all(color: const Color(0xFFE6E7EA)),
               ),
-              child: Icon(PhosphorIconsBold.caretLeft, size: 17.sp, color: AppColors.textBody),
+              child: Icon(PhosphorIconsBold.caretLeft,
+                  size: 17.sp, color: AppColors.textBody),
             ),
           ),
           SizedBox(width: 12.w),
@@ -120,20 +128,36 @@ class ReportsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Reports', style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                Text('Sales performance', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text('Reports',
+                    style: AppText.custom(
+                        size: 19,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
+                Text('Sales performance',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
           Container(
             padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgChipGrey,
+                borderRadius: BorderRadius.circular(9.r)),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(PhosphorIconsRegular.calendarBlank, size: 14.sp, color: AppColors.textLabelAlt),
+                Icon(PhosphorIconsRegular.calendarBlank,
+                    size: 14.sp, color: AppColors.textLabelAlt),
                 SizedBox(width: 6.w),
-                Text('This month', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textSecondary)),
+                Text('This month',
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textSecondary)),
               ],
             ),
           ),
@@ -144,17 +168,31 @@ class ReportsScreen extends ConsumerWidget {
 
   Widget _summaryGrid(int total, int won, int winRate, String openPipeline) {
     final cards = <_KpiDef>[
-      _KpiDef('Total leads', '$total', PhosphorIconsFill.usersThree, AppColors.blueBright, AppColors.tintBlue),
-      _KpiDef('Won deals', '$won', PhosphorIconsFill.trophy, AppColors.success, AppColors.tintGreen),
-      _KpiDef('Win rate', '$winRate%', PhosphorIconsFill.target, AppColors.warning, AppColors.tintAmber),
-      _KpiDef('Open pipeline', openPipeline, PhosphorIconsFill.wallet, AppColors.navy, AppColors.tintNavy),
+      _KpiDef('Total leads', '$total', PhosphorIconsFill.usersThree,
+          AppColors.blueBright, AppColors.tintBlue),
+      _KpiDef('Won deals', '$won', PhosphorIconsFill.trophy, AppColors.success,
+          AppColors.tintGreen),
+      _KpiDef('Win rate', '$winRate%', PhosphorIconsFill.target,
+          AppColors.warning, AppColors.tintAmber),
+      _KpiDef('Open pipeline', openPipeline, PhosphorIconsFill.wallet,
+          AppColors.navy, AppColors.tintNavy),
     ];
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: Column(children: [_kpiCard(cards[0]), SizedBox(height: 12.h), _kpiCard(cards[2])])),
+        Expanded(
+            child: Column(children: [
+          _kpiCard(cards[0]),
+          SizedBox(height: 12.h),
+          _kpiCard(cards[2])
+        ])),
         SizedBox(width: 12.w),
-        Expanded(child: Column(children: [_kpiCard(cards[1]), SizedBox(height: 12.h), _kpiCard(cards[3])])),
+        Expanded(
+            child: Column(children: [
+          _kpiCard(cards[1]),
+          SizedBox(height: 12.h),
+          _kpiCard(cards[3])
+        ])),
       ],
     );
   }
@@ -170,13 +208,23 @@ class ReportsScreen extends ConsumerWidget {
             width: 30.w,
             height: 30.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: k.bg, borderRadius: BorderRadius.circular(9.r)),
+            decoration: BoxDecoration(
+                color: k.bg, borderRadius: BorderRadius.circular(9.r)),
             child: Icon(k.icon, size: 16.sp, color: k.color),
           ),
           SizedBox(height: 11.h),
-          Text(k.value, style: AppText.custom(size: 24, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
+          Text(k.value,
+              style: AppText.custom(
+                  size: 24,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.5)),
           SizedBox(height: 1.h),
-          Text(k.label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+          Text(k.label,
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textLabelAlt)),
         ],
       ),
     );
@@ -188,9 +236,17 @@ class ReportsScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Lead funnel', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Lead funnel',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
-          Text('Pipeline stages · all leads', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text('Pipeline stages · all leads',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
           SizedBox(height: 16.h),
           SizedBox(
             height: 150.h,
@@ -202,7 +258,11 @@ class ReportsScreen extends ConsumerWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text('${counts[k]}', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                        Text('${counts[k]}',
+                            style: AppText.custom(
+                                size: 12,
+                                weight: FontWeight.w700,
+                                color: AppColors.textSecondary)),
                         SizedBox(height: 6.h),
                         FractionallySizedBox(
                           widthFactor: 0.78,
@@ -214,14 +274,20 @@ class ReportsScreen extends ConsumerWidget {
                                 end: Alignment.bottomCenter,
                                 colors: [_chartTeal, _chartNavy],
                               ),
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(8.r), bottom: Radius.circular(3.r)),
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(8.r),
+                                  bottom: Radius.circular(3.r)),
                             ),
                           ),
                         ),
                         SizedBox(height: 6.h),
                         Text(_funnelLabel(k),
                             textAlign: TextAlign.center,
-                            style: AppText.custom(size: 10.5, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.15)),
+                            style: AppText.custom(
+                                size: 10.5,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted,
+                                height: 1.15)),
                       ],
                     ),
                   ),
@@ -239,11 +305,16 @@ class ReportsScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Leads by status', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Leads by status',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 15.h),
           for (int i = 0; i < StatusMeta$.leadOrder.length; i++) ...[
             if (i > 0) SizedBox(height: 13.h),
-            _statusBar(StatusMeta$.leadOrder[i], countOf(StatusMeta$.leadOrder[i]), smax),
+            _statusBar(StatusMeta$.leadOrder[i],
+                countOf(StatusMeta$.leadOrder[i]), smax),
           ],
         ],
       ),
@@ -257,10 +328,23 @@ class ReportsScreen extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
+            Container(
+                width: 9.w,
+                height: 9.w,
+                decoration:
+                    BoxDecoration(color: meta.color, shape: BoxShape.circle)),
             SizedBox(width: 7.w),
-            Expanded(child: Text(meta.label, style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textSecondary))),
-            Text('$count', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            Expanded(
+                child: Text(meta.label,
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textSecondary))),
+            Text('$count',
+                style: AppText.custom(
+                    size: 13,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
           ],
         ),
         SizedBox(height: 6.h),
@@ -275,7 +359,11 @@ class ReportsScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Top lead sources', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Top lead sources',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 15.h),
           for (int i = 0; i < sources.length; i++) ...[
             if (i > 0) SizedBox(height: 13.h),
@@ -284,8 +372,17 @@ class ReportsScreen extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Expanded(child: Text(sources[i].key, style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textSecondary))),
-                    Text('${sources[i].value}', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Expanded(
+                        child: Text(sources[i].key,
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.textSecondary))),
+                    Text('${sources[i].value}',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                   ],
                 ),
                 SizedBox(height: 6.h),
@@ -313,7 +410,8 @@ class ReportsScreen extends ConsumerWidget {
     );
   }
 
-  String _funnelLabel(String key) => key == 'quote' ? 'Quote' : StatusMeta$.lead[key]!.label;
+  String _funnelLabel(String key) =>
+      key == 'quote' ? 'Quote' : StatusMeta$.lead[key]!.label;
 }
 
 class _KpiDef {

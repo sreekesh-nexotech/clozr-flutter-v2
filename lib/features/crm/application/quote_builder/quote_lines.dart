@@ -18,7 +18,13 @@ import 'package:intl/intl.dart';
 enum ChargeType { oneTime, recurring }
 
 /// The API's billing periods, in the order the web picker lists them.
-const billingPeriods = <String>['month', 'quarter', 'half_year', 'year', 'custom_days'];
+const billingPeriods = <String>[
+  'month',
+  'quarter',
+  'half_year',
+  'year',
+  'custom_days'
+];
 
 /// Picker labels, verbatim from the web `LineChargeControl`.
 const billingPeriodLabels = <String, String>{
@@ -59,8 +65,11 @@ class LineCharge {
       LineCharge(
         chargeType: chargeType,
         billingPeriod: billingPeriod ?? this.billingPeriod,
-        billingPeriodDays: billingPeriodDays == _unset ? this.billingPeriodDays : billingPeriodDays as int?,
-        termPeriods: termPeriods == _unset ? this.termPeriods : termPeriods as int?,
+        billingPeriodDays: billingPeriodDays == _unset
+            ? this.billingPeriodDays
+            : billingPeriodDays as int?,
+        termPeriods:
+            termPeriods == _unset ? this.termPeriods : termPeriods as int?,
       );
 
   /// Reads the charge keys off a line / product / preview row.
@@ -71,7 +80,9 @@ class LineCharge {
     return LineCharge(
       chargeType: ChargeType.recurring,
       billingPeriod: period,
-      billingPeriodDays: period == 'custom_days' ? _intOrNull(row['billing_period_days']) : null,
+      billingPeriodDays: period == 'custom_days'
+          ? _intOrNull(row['billing_period_days'])
+          : null,
       termPeriods: _intOrNull(row['term_periods']),
     );
   }
@@ -81,7 +92,8 @@ class LineCharge {
       ? {
           'charge_type': 'recurring',
           'billing_period': billingPeriod,
-          'billing_period_days': billingPeriod == 'custom_days' ? billingPeriodDays : null,
+          'billing_period_days':
+              billingPeriod == 'custom_days' ? billingPeriodDays : null,
           'term_periods': termPeriods,
         }
       : {
@@ -107,7 +119,8 @@ String? chargeProblem(LineCharge? charge) {
   if (charge.billingPeriod == null) return 'Choose how often it is billed.';
   if (charge.billingPeriod == 'custom_days') {
     final d = charge.billingPeriodDays;
-    if (d == null || d < 1 || d > 366) return 'A custom period is 1 to 366 days.';
+    if (d == null || d < 1 || d > 366)
+      return 'A custom period is 1 to 366 days.';
   }
   final t = charge.termPeriods;
   if (t != null && (t < 1 || t > 120)) {
@@ -131,13 +144,17 @@ String periodLabel(String? period, int? days) {
 }
 
 /// "× 12" or "until cancelled".
-String termLabel(int? term) => term != null && term > 0 ? '× $term' : 'until cancelled';
+String termLabel(int? term) =>
+    term != null && term > 0 ? '× $term' : 'until cancelled';
 
 /// "Every month × 12" / "Every quarter, until cancelled" / "One-time".
 String chargeLabel(LineCharge? charge) {
   if (charge == null || !charge.isRecurring) return 'One-time';
-  final every = 'Every ${periodLabel(charge.billingPeriod, charge.billingPeriodDays)}';
-  return charge.termPeriods != null ? '$every × ${charge.termPeriods}' : '$every, until cancelled';
+  final every =
+      'Every ${periodLabel(charge.billingPeriod, charge.billingPeriodDays)}';
+  return charge.termPeriods != null
+      ? '$every × ${charge.termPeriods}'
+      : '$every, until cancelled';
 }
 
 // ── The form row ──────────────────────────────────────────────────────────
@@ -227,7 +244,9 @@ class QuoteFormItem {
 
   /// The row after a product is picked: priced by the server from the
   /// catalog, its own charge snapshotted by the server.
-  QuoteFormItem withProduct(String id, {required String productName, required bool package}) => QuoteFormItem(
+  QuoteFormItem withProduct(String id,
+          {required String productName, required bool package}) =>
+      QuoteFormItem(
         key: key,
         kind: kind,
         productId: id,
@@ -236,8 +255,25 @@ class QuoteFormItem {
         isPackage: package,
       );
 
+  /// The same row under a new client key (an option copied by "Add alternative").
+  QuoteFormItem cloned() => QuoteFormItem(
+        key: _nextLineKey(),
+        kind: kind,
+        productId: productId,
+        name: name,
+        qty: qty,
+        rate: rate,
+        priceTouched: priceTouched,
+        isPackage: isPackage,
+        lineDiscount: lineDiscount,
+        charge: charge,
+        hsnSac: hsnSac,
+        gstRate: gstRate,
+      );
+
   /// "Use the catalog price" — un-pins the typed price.
-  QuoteFormItem withCatalogPrice() => copyWith(rate: '', priceTouched: false, lineDiscount: '');
+  QuoteFormItem withCatalogPrice() =>
+      copyWith(rate: '', priceTouched: false, lineDiscount: '');
 }
 
 /// The server's sane upper bounds (`quote_rules.py`).
@@ -258,10 +294,12 @@ double toQty(String raw) {
 /// A typed price, cleaned of grouping commas / spaces / ₹.
 String cleanUnitPrice(String raw) => raw.replaceAll(RegExp(r'[,\s₹]'), '');
 
-bool isValidUnitPrice(String raw) => _unitPricePattern.hasMatch(cleanUnitPrice(raw));
+bool isValidUnitPrice(String raw) =>
+    _unitPricePattern.hasMatch(cleanUnitPrice(raw));
 
-bool _isNamed(QuoteFormItem it) =>
-    it.kind == LineKind.catalog ? it.productId.isNotEmpty : it.name.trim().isNotEmpty;
+bool _isNamed(QuoteFormItem it) => it.kind == LineKind.catalog
+    ? it.productId.isNotEmpty
+    : it.name.trim().isNotEmpty;
 
 /// Whether the line's own unit price is sent (vs. priced by the server).
 bool sendsOwnPrice(QuoteFormItem it) {
@@ -278,8 +316,10 @@ const gstRateSlabs = <String>['0', '0.25', '3', '5', '12', '18', '28'];
 List<String> gstRateOptions(String current) {
   final rate = current.trim();
   final n = double.tryParse(rate);
-  if (rate.isEmpty || gstRateSlabs.any((s) => double.parse(s) == n)) return [...gstRateSlabs];
-  return [...gstRateSlabs, rate]..sort((a, b) => (double.tryParse(a) ?? 0).compareTo(double.tryParse(b) ?? 0));
+  if (rate.isEmpty || gstRateSlabs.any((s) => double.parse(s) == n))
+    return [...gstRateSlabs];
+  return [...gstRateSlabs, rate]..sort(
+      (a, b) => (double.tryParse(a) ?? 0).compareTo(double.tryParse(b) ?? 0));
 }
 
 /// A free-text line's HSN/SAC or GST rate the server would refuse.
@@ -287,9 +327,11 @@ enum FreeTaxProblem { hsn, rate }
 
 FreeTaxProblem? freeLineTaxProblem(QuoteFormItem it) {
   final hsn = it.hsnSac.trim();
-  if (hsn.isNotEmpty && !_hsnSacPattern.hasMatch(hsn)) return FreeTaxProblem.hsn;
+  if (hsn.isNotEmpty && !_hsnSacPattern.hasMatch(hsn))
+    return FreeTaxProblem.hsn;
   final rate = it.gstRate.trim();
-  if (rate.isNotEmpty && (!_gstRatePattern.hasMatch(rate) || double.parse(rate) > 100)) {
+  if (rate.isNotEmpty &&
+      (!_gstRatePattern.hasMatch(rate) || double.parse(rate) > 100)) {
     return FreeTaxProblem.rate;
   }
   return null;
@@ -298,22 +340,28 @@ FreeTaxProblem? freeLineTaxProblem(QuoteFormItem it) {
 /// Why a line cannot be sent yet, or null — in the web builder's priority.
 LineProblem? lineProblem(QuoteFormItem it) {
   if (!_isNamed(it)) {
-    return it.kind == LineKind.free && cleanUnitPrice(it.rate).isNotEmpty ? LineProblem.description : null;
+    return it.kind == LineKind.free && cleanUnitPrice(it.rate).isNotEmpty
+        ? LineProblem.description
+        : null;
   }
   final qty = toQty(it.qty);
   if (qty <= 0 || qty > quantityMax) return LineProblem.qty;
   if (sendsOwnPrice(it) &&
-      (!isValidUnitPrice(it.rate) || double.parse(cleanUnitPrice(it.rate)) > unitPriceMax)) {
+      (!isValidUnitPrice(it.rate) ||
+          double.parse(cleanUnitPrice(it.rate)) > unitPriceMax)) {
     return LineProblem.price;
   }
   if (chargeProblem(it.charge) != null) return LineProblem.charge;
-  if (it.productId.isEmpty && freeLineTaxProblem(it) != null) return LineProblem.tax;
+  if (it.productId.isEmpty && freeLineTaxProblem(it) != null)
+    return LineProblem.tax;
   return null;
 }
 
 /// The lines that go to the server (named, complete).
-List<QuoteFormItem> includedLines(List<QuoteFormItem> items) =>
-    [for (final it in items) if (_isNamed(it) && lineProblem(it) == null) it];
+List<QuoteFormItem> includedLines(List<QuoteFormItem> items) => [
+      for (final it in items)
+        if (_isNamed(it) && lineProblem(it) == null) it
+    ];
 
 /// `2` → "2", `2.5` → "2.5", `0.125` → "0.125" (≤ 3 dp, like the web).
 String qtyString(double qty) {
@@ -331,10 +379,13 @@ List<Map<String, dynamic>> toLineRows(List<QuoteFormItem> items) => [
           'quantity': qtyString(toQty(it.qty)),
           if (sendsOwnPrice(it)) 'unit_price': cleanUnitPrice(it.rate),
           if (it.productId.isNotEmpty) 'product_id': it.productId,
-          if (it.lineDiscount.isNotEmpty && (double.tryParse(it.lineDiscount) ?? 0) > 0)
+          if (it.lineDiscount.isNotEmpty &&
+              (double.tryParse(it.lineDiscount) ?? 0) > 0)
             'line_discount': it.lineDiscount,
-          if (it.productId.isEmpty && it.hsnSac.trim().isNotEmpty) 'hsn_sac': it.hsnSac.trim(),
-          if (it.productId.isEmpty && it.gstRate.trim().isNotEmpty) 'rate_pct': it.gstRate.trim(),
+          if (it.productId.isEmpty && it.hsnSac.trim().isNotEmpty)
+            'hsn_sac': it.hsnSac.trim(),
+          if (it.productId.isEmpty && it.gstRate.trim().isNotEmpty)
+            'rate_pct': it.gstRate.trim(),
           if (it.charge != null) ...it.charge!.toWrite(),
         },
     ];
@@ -346,7 +397,8 @@ String formatUnitPriceInput(String exact) {
   if (!RegExp(r'^-?\d+(\.\d+)?$').hasMatch(value)) return value;
   final parts = value.split('.');
   final whole = parts[0];
-  final trimmed = parts.length > 1 ? parts[1].replaceFirst(RegExp(r'0+$'), '') : '';
+  final trimmed =
+      parts.length > 1 ? parts[1].replaceFirst(RegExp(r'0+$'), '') : '';
   if (trimmed.isEmpty) return whole;
   return '$whole.${trimmed.length == 1 ? '${trimmed}0' : trimmed}';
 }
@@ -358,7 +410,8 @@ String displayUnitPrice(String exact, double qty) {
   if (exact.isEmpty || value == null) return exact;
   final atTwo = (value * 100).roundToDouble() / 100;
   final q = qty > 0 ? qty : 1;
-  if ((value * q * 100).round() == (atTwo * q * 100).round()) return atTwo.toStringAsFixed(2);
+  if ((value * q * 100).round() == (atTwo * q * 100).round())
+    return atTwo.toStringAsFixed(2);
   return formatUnitPriceInput(cleanUnitPrice(exact));
 }
 
@@ -373,11 +426,14 @@ String groupedUnitPrice(String display) {
 /// A saved quote's lines as form rows. Every saved line keeps its stored
 /// price (touched), so a re-save never re-prices it from today's catalog.
 List<QuoteFormItem> itemsFromSavedLines(List<Map<String, dynamic>> lines) {
-  final sorted = [...lines]..sort((a, b) => (_intOrNull(a['line_no']) ?? 0).compareTo(_intOrNull(b['line_no']) ?? 0));
+  final sorted = [...lines]..sort((a, b) =>
+      (_intOrNull(a['line_no']) ?? 0).compareTo(_intOrNull(b['line_no']) ?? 0));
   return [
     for (final l in sorted)
       () {
-        final productId = _str(l['product']).isNotEmpty ? _str(l['product']) : _str(l['product_id']);
+        final productId = _str(l['product']).isNotEmpty
+            ? _str(l['product'])
+            : _str(l['product_id']);
         final discount = _str(l['line_discount']);
         final rate = l['rate_pct'];
         return QuoteFormItem(
@@ -391,7 +447,9 @@ List<QuoteFormItem> itemsFromSavedLines(List<Map<String, dynamic>> lines) {
           lineDiscount: (double.tryParse(discount) ?? 0) > 0 ? discount : '',
           charge: l.containsKey('charge_type') ? LineCharge.fromRow(l) : null,
           hsnSac: productId.isNotEmpty ? '' : _str(l['hsn_sac']),
-          gstRate: productId.isNotEmpty || rate == null ? '' : formatRate(_str(rate)),
+          gstRate: productId.isNotEmpty || rate == null
+              ? ''
+              : formatRate(_str(rate)),
         );
       }(),
   ];
@@ -403,7 +461,10 @@ String _str(Object? v) => v == null ? '' : (v is String ? v : v.toString());
 String formatRate(String raw) {
   final n = double.tryParse(raw);
   if (n == null) return raw;
-  var s = n.toStringAsFixed(4).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  var s = n
+      .toStringAsFixed(4)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
   if (s.isEmpty) s = '0';
   return s;
 }
@@ -451,12 +512,15 @@ class PreviewRowRef {
   final String packageId;
 }
 
-List<PreviewRowRef> previewRowRefs(List<QuoteFormItem> items) =>
-    [for (final it in items) PreviewRowRef(it.key, it.isPackage ? it.productId : '')];
+List<PreviewRowRef> previewRowRefs(List<QuoteFormItem> items) => [
+      for (final it in items)
+        PreviewRowRef(it.key, it.isPackage ? it.productId : '')
+    ];
 
 /// Maps the server's priced lines back onto the rows that produced them, in
 /// order. A package row owns every consecutive line exploded from it.
-Map<String, List<PricedLine>> mapPreviewLines(List<PreviewRowRef> rows, List<PricedLine> lines) {
+Map<String, List<PricedLine>> mapPreviewLines(
+    List<PreviewRowRef> rows, List<PricedLine> lines) {
   final out = <String, List<PricedLine>>{};
   var at = 0;
   for (final row in rows) {
@@ -475,10 +539,13 @@ Map<String, List<PricedLine>> mapPreviewLines(List<PreviewRowRef> rows, List<Pri
 
 /// A saved quote's own figures keyed by the rows built from it (same order) —
 /// what a read-only quote shows instead of a live preview.
-Map<String, List<PricedLine>> savedLinePricing(List<QuoteFormItem> items, List<Map<String, dynamic>> lines) {
-  final saved = [...lines]..sort((a, b) => (_intOrNull(a['line_no']) ?? 0).compareTo(_intOrNull(b['line_no']) ?? 0));
+Map<String, List<PricedLine>> savedLinePricing(
+    List<QuoteFormItem> items, List<Map<String, dynamic>> lines) {
+  final saved = [...lines]..sort((a, b) =>
+      (_intOrNull(a['line_no']) ?? 0).compareTo(_intOrNull(b['line_no']) ?? 0));
   return {
-    for (var i = 0; i < items.length && i < saved.length; i++) items[i].key: [PricedLine.fromJson(saved[i])],
+    for (var i = 0; i < items.length && i < saved.length; i++)
+      items[i].key: [PricedLine.fromJson(saved[i])],
   };
 }
 
@@ -496,21 +563,29 @@ List<QuoteFormItem> applyPriceFlip(
           if (it.isPackage) return it;
           final lines = priced[it.key];
           if (lines == null || lines.isEmpty) return it;
-          if (it.kind == LineKind.catalog && !it.priceTouched && choice == 'convert') return it;
+          if (it.kind == LineKind.catalog &&
+              !it.priceTouched &&
+              choice == 'convert') return it;
           return it.copyWith(
             rate: formatUnitPriceInput(lines.first.unitPrice),
             priceTouched: true,
-            lineDiscount: it.lineDiscount.isNotEmpty ? lines.first.lineDiscount : it.lineDiscount,
+            lineDiscount: it.lineDiscount.isNotEmpty
+                ? lines.first.lineDiscount
+                : it.lineDiscount,
           );
         }(),
     ];
 
 /// Whether flipping the tax mode needs the Convert / Keep choice.
-bool flipNeedsChoice(List<QuoteFormItem> items) => includedLines(items).any((it) => !it.isPackage);
+bool flipNeedsChoice(List<QuoteFormItem> items) =>
+    includedLines(items).any((it) => !it.isPackage);
 
 /// The charge a line bills as: its own, else what the server snapshots.
 LineCharge effectiveCharge(QuoteFormItem it, List<PricedLine>? lines) =>
-    it.charge ?? (lines != null && lines.isNotEmpty ? lines.first.charge : LineCharge.oneTime);
+    it.charge ??
+    (lines != null && lines.isNotEmpty
+        ? lines.first.charge
+        : LineCharge.oneTime);
 
 /// Today as a local `YYYY-MM-DD`.
 String localIsoDate([DateTime? now]) {

@@ -53,7 +53,9 @@ class OpsTaskFilterCodec {
       out['is_overdue'] = 'true';
     } else if (due != null && due.isActive) {
       // Any other range is the expected-end window, both ends inclusive.
-      final (from, to) = due.chip != null ? FilterMatch.chipRange(due.chip!) : (due.from, due.to);
+      final (from, to) = due.chip != null
+          ? FilterMatch.chipRange(due.chip!)
+          : (due.from, due.to);
       if (from != null) out['end_date_after'] = _day(from);
       if (to != null) out['end_date_before'] = _day(to);
     }
@@ -106,7 +108,8 @@ class OpsTaskFilterCodec {
     }
     if ('${def['is_overdue'] ?? ''}'.toLowerCase() == 'true') {
       v['due'] = const DateValue(chip: 'overdue');
-    } else if (def['end_date_after'] != null || def['end_date_before'] != null) {
+    } else if (def['end_date_after'] != null ||
+        def['end_date_before'] != null) {
       v['due'] = DateValue(
         from: DateTime.tryParse('${def['end_date_after'] ?? ''}'),
         to: DateTime.tryParse('${def['end_date_before'] ?? ''}'),
@@ -137,7 +140,8 @@ class OpsTaskFilterCodec {
         final o = toOptionId(id);
         if (o != null && o.isNotEmpty) mapped.add(o);
       }
-      if (mapped.isNotEmpty) out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
+      if (mapped.isNotEmpty)
+        out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
       return;
     }
   }
@@ -147,7 +151,9 @@ class OpsTaskFilterCodec {
     if (raw == null) return const [];
     final parts =
         raw is List ? raw.map((e) => e.toString()) : raw.toString().split(',');
-    return [for (final p in parts) p.trim()].where((s) => s.isNotEmpty).toList();
+    return [for (final p in parts) p.trim()]
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   /// A stored status id back to the option id the drawer uses — its name. Drops

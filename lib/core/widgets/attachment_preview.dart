@@ -80,7 +80,8 @@ class _AttachmentPreview extends StatelessWidget {
                 children: [
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(PhosphorIconsBold.x, size: 20.sp, color: AppColors.white),
+                    icon: Icon(PhosphorIconsBold.x,
+                        size: 20.sp, color: AppColors.white),
                   ),
                   Expanded(
                     child: Text(
@@ -88,7 +89,9 @@ class _AttachmentPreview extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.custom(
-                          size: 14, weight: FontWeight.w700, color: AppColors.white),
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.white),
                     ),
                   ),
                   // Downloading is the browser's job — the app ships no file
@@ -115,7 +118,8 @@ class _AttachmentPreview extends StatelessWidget {
                     loadingBuilder: (_, child, progress) => progress == null
                         ? child
                         : const Center(
-                            child: CircularProgressIndicator(color: AppColors.white)),
+                            child: CircularProgressIndicator(
+                                color: AppColors.white)),
                     // A dead link is said out loud, with the OS viewer still
                     // offered — the file may open where the image decoder failed.
                     errorBuilder: (_, __, ___) => Padding(
@@ -130,17 +134,19 @@ class _AttachmentPreview extends StatelessWidget {
                             "This image couldn't be loaded.",
                             textAlign: TextAlign.center,
                             style: AppText.custom(
-                                size: 13, weight: FontWeight.w600, color: AppColors.white),
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.white),
                           ),
                           SizedBox(height: 12.h),
                           if (onOpenExternally case final open?)
                             TextButton(
                               onPressed: open,
                               child: Text('Open in browser',
-                                style: AppText.custom(
-                                    size: 13,
-                                    weight: FontWeight.w700,
-                                    color: AppColors.blueBright)),
+                                  style: AppText.custom(
+                                      size: 13,
+                                      weight: FontWeight.w700,
+                                      color: AppColors.blueBright)),
                             ),
                         ],
                       ),

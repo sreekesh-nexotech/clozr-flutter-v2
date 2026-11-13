@@ -9,6 +9,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/product_display.dart';
 import '../../application/product_form.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
@@ -20,8 +21,15 @@ import 'lead_schema_form.dart';
 /// The prototype's `#35507C` info-banner text — no design token exists for it.
 const Color _bannerText = Color(0xFF35507C);
 const List<String> _unitOptions = [
-  'per sq.ft.', 'per unit', 'per seat', 'per room', 'per project',
-  'per month', 'per year', 'per package', 'per store',
+  'per sq.ft.',
+  'per unit',
+  'per seat',
+  'per room',
+  'per project',
+  'per month',
+  'per year',
+  'per package',
+  'per store',
 ];
 
 /// Opens the "Add product" / "Add package" sheet (prototype `addProduct`).
@@ -70,7 +78,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
   static const List<int> _gstOptions = [0, 5, 12, 18, 28, 40];
   static const Set<int> _deprecatedRates = {12, 28};
 
-  static String _rateLabel(int r) => _deprecatedRates.contains(r) ? '$r% (retired)' : '$r%';
+  static String _rateLabel(int r) =>
+      _deprecatedRates.contains(r) ? '$r% (retired)' : '$r%';
 
   /// `GOODS` / `SERVICE` — whether this is goods or a service for GST. Picks
   /// the HSN (goods) or SAC (services) rate ladder when it is invoiced.
@@ -88,7 +97,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     super.dispose();
   }
 
-  void _pick(String title, List<String> options, String current, ValueChanged<String> onPick) {
+  void _pick(String title, List<String> options, String current,
+      ValueChanged<String> onPick) {
     showClozrSheet<void>(
       context: context,
       builder: (ctx) => Column(
@@ -108,12 +118,14 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                       Navigator.of(ctx).pop();
                     },
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
                       child: Row(
                         children: [
                           Expanded(child: Text(o, style: AppText.bodyStrong())),
                           if (current == o)
-                            Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                            Icon(PhosphorIconsBold.check,
+                                size: 19.sp, color: AppColors.success),
                         ],
                       ),
                     ),
@@ -135,10 +147,14 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     final types = ref.read(productTypeOptionsProvider);
     if (types.isEmpty) {
       // Mock mode (or an org with no types): the built-in list, as before.
-      _pick('Category', productCategoryOrder, _cat, (v) => setState(() {
-            _cat = v;
-            _catId = null;
-          }));
+      _pick(
+          'Category',
+          productCategoryOrder,
+          _cat,
+          (v) => setState(() {
+                _cat = v;
+                _catId = null;
+              }));
       return;
     }
     const none = 'Uncategorized';
@@ -224,6 +240,15 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
       ref.read(toastProvider.notifier).show(kHsnSacHint);
       return;
     }
+    // The org's layout may carry `short_name`; the server refuses more than
+    // 60 characters, so say so before the round trip.
+    final shortError =
+        productShortNameError('${form.payload['short_name'] ?? ''}');
+    if (shortError != null) {
+      setState(() => _saving = false);
+      ref.read(toastProvider.notifier).show(shortError);
+      return;
+    }
     final payload = productCreatePayload(
       form.payload,
       name: _name.text,
@@ -240,7 +265,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     if (!mounted) return;
     ref.invalidate(productsProvider);
     Navigator.of(context).pop();
-    ref.read(toastProvider.notifier)
+    ref
+        .read(toastProvider.notifier)
         .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
   }
 
@@ -259,7 +285,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
       ref.read(toastProvider.notifier).show(kHsnSacHint);
       return;
     }
-    final price = int.tryParse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final price =
+        int.tryParse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     if (ApiConfig.apiEnabled) {
       setState(() => _saving = true);
       try {
@@ -287,8 +314,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
         if (!mounted) return;
         ref.invalidate(productsProvider);
         Navigator.of(context).pop();
-        ref.read(toastProvider.notifier)
-            .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
+        ref.read(toastProvider.notifier).show(
+            '${widget.isPackage ? 'Package' : 'Product'} added to catalog');
       } on AppError catch (e) {
         if (!mounted) return;
         setState(() => _saving = false);
@@ -318,10 +345,14 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
       active: _active,
       desc: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
     );
-    ref.read(manualProductsProvider.notifier).state = [product, ...ref.read(manualProductsProvider)];
+    ref.read(manualProductsProvider.notifier).state = [
+      product,
+      ...ref.read(manualProductsProvider)
+    ];
     _seq++;
     Navigator.of(context).pop();
-    ref.read(toastProvider.notifier)
+    ref
+        .read(toastProvider.notifier)
         .show('${widget.isPackage ? 'Package' : 'Product'} added to catalog');
   }
 
@@ -347,13 +378,18 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                   _packageChip(),
                   SizedBox(height: 13.h),
                 ],
-                _field('Product / service name', _name, 'e.g. Reception joinery', required: true),
+                _field(
+                    'Product / service name', _name, 'e.g. Reception joinery',
+                    required: true),
                 SizedBox(height: 14.h),
                 Row(
                   children: [
-                    Expanded(child: _field('SKU / code', _sku, 'e.g. JN-RECEP')),
+                    Expanded(
+                        child: _field('SKU / code', _sku, 'e.g. JN-RECEP')),
                     SizedBox(width: 9.w),
-                    Expanded(child: _field('HSN / SAC code', _hsn, 'e.g. 940360', number: true)),
+                    Expanded(
+                        child: _field('HSN / SAC code', _hsn, 'e.g. 940360',
+                            number: true)),
                   ],
                 ),
                 SizedBox(height: 14.h),
@@ -363,13 +399,18 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                     if (!widget.isPackage) ...[
                       Expanded(
                         child: _picker(
-                            'Category', _cat.isEmpty ? 'Uncategorized' : _cat, _pickCategory),
+                            'Category',
+                            _cat.isEmpty ? 'Uncategorized' : _cat,
+                            _pickCategory),
                       ),
                       SizedBox(width: 9.w),
                     ],
                     Expanded(
-                      child: _picker('Billing unit', _unit,
-                          () => _pick('Billing unit', _unitOptions, _unit, (v) => setState(() => _unit = v))),
+                      child: _picker(
+                          'Billing unit',
+                          _unit,
+                          () => _pick('Billing unit', _unitOptions, _unit,
+                              (v) => setState(() => _unit = v))),
                     ),
                   ],
                 ),
@@ -381,7 +422,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                       flex: 12,
                       child: widget.isPackage
                           ? _derivedPriceField()
-                          : _field('Price (₹)', _price, 'e.g. 320000', number: true),
+                          : _field('Price (₹)', _price, 'e.g. 320000',
+                              number: true),
                     ),
                     SizedBox(width: 9.w),
                     Expanded(
@@ -399,21 +441,26 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                                 (v) => setState(() =>
                                     _gst = int.parse(v.split('%').first))),
                             child: Container(
-                            height: 46.h,
-                            padding: EdgeInsets.symmetric(horizontal: 14.w),
-                            decoration: BoxDecoration(
-                                color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('$_gst%',
-                                    style: AppText.custom(
-                                        size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-                                Icon(PhosphorIconsBold.caretDown,
-                                    size: 14.sp, color: AppColors.textPlaceholder),
-                              ],
+                              height: 46.h,
+                              padding: EdgeInsets.symmetric(horizontal: 14.w),
+                              decoration: BoxDecoration(
+                                  color: AppColors.bgChipGrey,
+                                  borderRadius: BorderRadius.circular(11.r)),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('$_gst%',
+                                      style: AppText.custom(
+                                          size: 14,
+                                          weight: FontWeight.w600,
+                                          color: AppColors.textLabelAlt)),
+                                  Icon(PhosphorIconsBold.caretDown,
+                                      size: 14.sp,
+                                      color: AppColors.textPlaceholder),
+                                ],
+                              ),
                             ),
-                          ),
                           ),
                         ],
                       ),
@@ -425,7 +472,10 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                   _label$('Goods or service'),
                   Row(
                     children: [
-                      for (final n in const [('GOODS', 'Goods'), ('SERVICE', 'Service')]) ...[
+                      for (final n in const [
+                        ('GOODS', 'Goods'),
+                        ('SERVICE', 'Service')
+                      ]) ...[
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => setState(() => _nature = n.$1),
@@ -434,18 +484,26 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                             padding: EdgeInsets.symmetric(horizontal: 14.w),
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: _nature == n.$1 ? AppColors.blueSubtle : AppColors.white,
+                              color: _nature == n.$1
+                                  ? AppColors.blueSubtle
+                                  : AppColors.white,
                               borderRadius: BorderRadius.circular(10.r),
                               border: Border.all(
-                                color: _nature == n.$1 ? const Color(0xFFA6D1FF) : const Color(0xFFE6E7EA),
+                                color: _nature == n.$1
+                                    ? const Color(0xFFA6D1FF)
+                                    : const Color(0xFFE6E7EA),
                                 width: _nature == n.$1 ? 1.5 : 1,
                               ),
                             ),
                             child: Text(n.$2,
                                 style: AppText.custom(
                                     size: 13,
-                                    weight: _nature == n.$1 ? FontWeight.w700 : FontWeight.w500,
-                                    color: _nature == n.$1 ? AppColors.navy : AppColors.textLabelAlt)),
+                                    weight: _nature == n.$1
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: _nature == n.$1
+                                        ? AppColors.navy
+                                        : AppColors.textLabelAlt)),
                           ),
                         ),
                         SizedBox(width: 8.w),
@@ -455,28 +513,43 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                 ],
                 if (_deprecatedRates.contains(_gst)) ...[
                   SizedBox(height: 10.h),
-                  Text('$_gst% is a retired GST slab — the invoice will use the current rate for this HSN/SAC.',
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.warningDeep)),
+                  Text(
+                      '$_gst% is a retired GST slab — the invoice will use the current rate for this HSN/SAC.',
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.warningDeep)),
                 ],
                 SizedBox(height: 14.h),
                 _priceNote(),
                 SizedBox(height: 14.h),
-                _field('Description', _desc, 'What this product or service covers…', multiline: true),
+                _field('Description', _desc,
+                    'What this product or service covers…',
+                    multiline: true),
                 SizedBox(height: 14.h),
                 _label$('Status'),
                 Container(
                   padding: EdgeInsets.all(4.w),
-                  decoration:
-                      BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(12.r)),
+                  decoration: BoxDecoration(
+                      color: AppColors.bgChipGrey,
+                      borderRadius: BorderRadius.circular(12.r)),
                   child: Row(
                     children: [
                       Expanded(
-                          child: _statusSeg('Active', !_forcedInactive && _active,
-                              _forcedInactive ? null : () => setState(() => _active = true))),
+                          child: _statusSeg(
+                              'Active',
+                              !_forcedInactive && _active,
+                              _forcedInactive
+                                  ? null
+                                  : () => setState(() => _active = true))),
                       SizedBox(width: 6.w),
                       Expanded(
-                          child: _statusSeg('Inactive', _forcedInactive || !_active,
-                              _forcedInactive ? null : () => setState(() => _active = false))),
+                          child: _statusSeg(
+                              'Inactive',
+                              _forcedInactive || !_active,
+                              _forcedInactive
+                                  ? null
+                                  : () => setState(() => _active = false))),
                     ],
                   ),
                 ),
@@ -489,7 +562,9 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                     child: Text(
                         'A package starts inactive — add its components, then activate it.',
                         style: AppText.custom(
-                            size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                            size: 11.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ),
                 SizedBox(height: 6.h),
               ],
@@ -529,8 +604,9 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
                 ],
                 // Always first, always present: `product_name` is deliberately
                 // absent from the schema's form fields (§1).
-                _field('Product / service name', _name,
-                    'e.g. Reception joinery', required: true),
+                _field(
+                    'Product / service name', _name, 'e.g. Reception joinery',
+                    required: true),
                 SizedBox(height: 14.h),
                 LeadSchemaForm(
                   key: _schemaFormKey,
@@ -568,15 +644,19 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 5.h),
       decoration: BoxDecoration(
-          color: const Color(0xFFF3EAFF), borderRadius: BorderRadius.circular(8.r)),
+          color: const Color(0xFFF3EAFF),
+          borderRadius: BorderRadius.circular(8.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsFill.package, size: 13.sp, color: const Color(0xFF890DB6)),
+          Icon(PhosphorIconsFill.package,
+              size: 13.sp, color: const Color(0xFF890DB6)),
           SizedBox(width: 6.w),
           Text('Package / bundle',
               style: AppText.custom(
-                  size: 11.5, weight: FontWeight.w700, color: const Color(0xFF890DB6))),
+                  size: 11.5,
+                  weight: FontWeight.w700,
+                  color: const Color(0xFF890DB6))),
         ],
       ),
     );
@@ -588,17 +668,22 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
       decoration: BoxDecoration(
-          color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(10.r)),
+          color: AppColors.blueSubtle,
+          borderRadius: BorderRadius.circular(10.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.blueBright),
+          Icon(PhosphorIconsRegular.info,
+              size: 15.sp, color: AppColors.blueBright),
           SizedBox(width: 8.w),
           Expanded(
             child: Text(
                 "Editing a price won't change existing quotes — quotes snapshot product names and prices when generated.",
                 style: AppText.custom(
-                    size: 12, weight: FontWeight.w500, color: _bannerText, height: 1.5)),
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: _bannerText,
+                    height: 1.5)),
           ),
         ],
       ),
@@ -608,7 +693,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
   Widget _footer() {
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 24.h),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _saving ? null : _submit,
@@ -622,13 +708,17 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(PhosphorIconsBold.check, size: 15.sp, color: AppColors.white),
+              Icon(PhosphorIconsBold.check,
+                  size: 15.sp, color: AppColors.white),
               SizedBox(width: 8.w),
               Text(
                   _saving
                       ? 'Saving…'
                       : (widget.isPackage ? 'Add package' : 'Add product'),
-                  style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.white)),
             ],
           ),
         ),
@@ -651,13 +741,16 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
           padding: EdgeInsets.symmetric(horizontal: 14.w),
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
-              color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+              color: AppColors.bgChipGrey,
+              borderRadius: BorderRadius.circular(11.r)),
           child: Row(
             children: [
               Expanded(
                 child: Text('From components',
                     style: AppText.custom(
-                        size: 14, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                        size: 14,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ),
               Icon(PhosphorIconsRegular.lockSimple,
                   size: 14.sp, color: AppColors.textPlaceholder),
@@ -708,9 +801,12 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
               children: [
                 Expanded(
                   child: Text(value,
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body()),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.body()),
                 ),
-                Icon(PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsBold.caretDown,
+                    size: 12.sp, color: AppColors.textPlaceholder),
               ],
             ),
           ),
@@ -727,7 +823,8 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
         _label$(label, required: required),
         Container(
           constraints: BoxConstraints(minHeight: multiline ? 84.h : 44.h),
-          padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: multiline ? 10.h : 0),
+          padding: EdgeInsets.symmetric(
+              horizontal: 13.w, vertical: multiline ? 10.h : 0),
           alignment: multiline ? Alignment.topLeft : Alignment.centerLeft,
           decoration: BoxDecoration(
             color: AppColors.white,
@@ -737,7 +834,9 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
           child: TextField(
             controller: c,
             keyboardType: number ? TextInputType.number : TextInputType.text,
-            inputFormatters: number ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))] : null,
+            inputFormatters: number
+                ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))]
+                : null,
             minLines: multiline ? 3 : 1,
             maxLines: multiline ? 5 : 1,
             style: AppText.body(),
@@ -759,9 +858,16 @@ class _AddProductSheetState extends ConsumerState<_AddProductSheet> {
         child: Row(
           children: [
             Text(text,
-                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
             if (required)
-              Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+              Text(' *',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: AppColors.error)),
           ],
         ),
       );

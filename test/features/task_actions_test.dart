@@ -47,7 +47,8 @@ class _Adapter implements HttpClientAdapter {
 }
 
 ApiService _api(_Adapter a) {
-  final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))..httpClientAdapter = a;
+  final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
+    ..httpClientAdapter = a;
   return ApiService(tokens: TokenStorage(), dio: dio);
 }
 
@@ -74,15 +75,22 @@ void main() {
       expect(req.data, {'description': 'probe', 'duration': 45});
     });
 
-    test('status writes to status_id; every other field writes by its own name', () {
+    test('status writes to status_id; every other field writes by its own name',
+        () {
       // Verified live: `status` is read-only on the serializer, so a write to it
       // returns 200 and stores nothing. `priority`, `assigned_to`,
       // `assigned_team` and `assignees` all store under their plain names.
-      expect(LeadsRemoteDataSource.writeKeyFor(_col('status', 'foreignkey')), 'status_id');
-      expect(LeadsRemoteDataSource.writeKeyFor(_col('priority', 'foreignkey')), 'priority');
-      expect(LeadsRemoteDataSource.writeKeyFor(_col('assigned_to', 'foreignkey')), 'assigned_to');
-      expect(LeadsRemoteDataSource.writeKeyFor(_col('assignees', 'manytomany')), 'assignees');
-      expect(LeadsRemoteDataSource.writeKeyFor(_col('duration', 'integer')), 'duration');
+      expect(LeadsRemoteDataSource.writeKeyFor(_col('status', 'foreignkey')),
+          'status_id');
+      expect(LeadsRemoteDataSource.writeKeyFor(_col('priority', 'foreignkey')),
+          'priority');
+      expect(
+          LeadsRemoteDataSource.writeKeyFor(_col('assigned_to', 'foreignkey')),
+          'assigned_to');
+      expect(LeadsRemoteDataSource.writeKeyFor(_col('assignees', 'manytomany')),
+          'assignees');
+      expect(LeadsRemoteDataSource.writeKeyFor(_col('duration', 'integer')),
+          'duration');
     });
   });
 
@@ -120,8 +128,10 @@ void main() {
     });
 
     test('a half-populated link is dropped rather than sent and rejected', () {
-      expect(CrmTasksRemoteDataSource.relatedTo(const {'related_to': 'lead'}), isEmpty);
-      expect(CrmTasksRemoteDataSource.relatedTo(const {'related_to_id': 'L9'}), isEmpty);
+      expect(CrmTasksRemoteDataSource.relatedTo(const {'related_to': 'lead'}),
+          isEmpty);
+      expect(CrmTasksRemoteDataSource.relatedTo(const {'related_to_id': 'L9'}),
+          isEmpty);
     });
   });
 
@@ -187,7 +197,8 @@ void main() {
         },
       });
 
-      final schema = await CrmTasksRemoteDataSource(_api(a)).fetchTaskDetailSchema();
+      final schema =
+          await CrmTasksRemoteDataSource(_api(a)).fetchTaskDetailSchema();
 
       expect(a.requests.single.path, '/crm/tasks/schema/');
       expect(a.requests.single.queryParameters['view_type'], 'detail');
@@ -246,10 +257,13 @@ void _statusVocabularyTests() {
 
   group('task status vocabulary', () {
     test('a lane keeps its own name, not the bucket it folds into', () {
-      expect(crmTaskStatusMeta(task(status: 'todo', statusName: 'Open'), org).label,
+      expect(
+          crmTaskStatusMeta(task(status: 'todo', statusName: 'Open'), org)
+              .label,
           'Open');
       expect(
-          crmTaskStatusMeta(task(status: 'done', statusName: 'Completed'), org).label,
+          crmTaskStatusMeta(task(status: 'done', statusName: 'Completed'), org)
+              .label,
           'Completed');
     });
 
@@ -258,7 +272,8 @@ void _statusVocabularyTests() {
       // label says something else entirely about why the task stopped.
       expect(crmTaskStatusKey(name: 'Cancelled', type: 'cancelled'), 'blocked');
       expect(
-          crmTaskStatusMeta(task(status: 'blocked', statusName: 'Cancelled'), org)
+          crmTaskStatusMeta(
+                  task(status: 'blocked', statusName: 'Cancelled'), org)
               .label,
           'Cancelled');
     });
@@ -269,7 +284,8 @@ void _statusVocabularyTests() {
 
     test('a lane dropped from the catalog still shows its stored name', () {
       expect(
-          crmTaskStatusMeta(task(status: 'todo', statusName: 'Triage'), org).label,
+          crmTaskStatusMeta(task(status: 'todo', statusName: 'Triage'), org)
+              .label,
           'Triage');
     });
   });

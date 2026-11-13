@@ -78,7 +78,9 @@ final customerCallLogsProvider = FutureProvider.autoDispose
 final customerFilesProvider = FutureProvider.autoDispose
     .family<List<LeadFile>, String>((ref, customerId) {
   if (customerId.isEmpty) return Future.value(const <LeadFile>[]);
-  return ref.watch(attachmentsRepositoryProvider).getFiles('customer', customerId);
+  return ref
+      .watch(attachmentsRepositoryProvider)
+      .getFiles('customer', customerId);
 });
 
 // ── Payments ──
@@ -106,8 +108,8 @@ final customerLeadsProvider = FutureProvider.autoDispose
     .family<List<Lead>, String>((ref, customerId) async {
   if (customerId.isEmpty) return const [];
   return ref.watch(leadsRepositoryProvider).getLeads(
-        filters: {'parent_customer': customerId},
-      );
+    filters: {'parent_customer': customerId},
+  );
 });
 
 // ── Audit trail ──
@@ -142,8 +144,8 @@ final customerStatusCatalogProvider =
 
 /// Synchronous view — empty while in flight, in mock mode, and on failure, which
 /// the status control reads as "fall back to the built-in vocabulary".
-final customerStatusesProvider = Provider<List<CustomerStatus>>((ref) =>
-    ref.watch(customerStatusCatalogProvider).valueOrNull ?? const []);
+final customerStatusesProvider = Provider<List<CustomerStatus>>(
+    (ref) => ref.watch(customerStatusCatalogProvider).valueOrNull ?? const []);
 
 // ── Owner override ──
 

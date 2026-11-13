@@ -9,7 +9,9 @@ import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_text_styles.dart';
 import '../../features/auth/application/providers/auth_providers.dart';
 import '../../features/messages/application/providers/messages_providers.dart';
+import '../../features/messages/application/whatsapp_gate.dart';
 import '../../features/notifications/application/providers/notifications_providers.dart';
+import '../../features/onboarding/presentation/tour_anchor.dart';
 import '../../features/shell/application/providers/shell_providers.dart';
 
 /// The brand header row shared by every list/home screen: tappable logo block
@@ -66,11 +68,17 @@ class AppHeaderBar extends ConsumerWidget {
               // The drawer affordance. It reads as the tap target for the whole
               // block, so it stays even though the lockup beside it also
               // carries the brand mark.
-              Container(
-                width: 40.w,
-                height: 40.w,
-                decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-                child: Icon(PhosphorIconsFill.squaresFour, size: 20.sp, color: AppColors.white),
+              TourAnchor(
+                id: TourAnchors.apps,
+                child: Container(
+                  width: 40.w,
+                  height: 40.w,
+                  decoration: BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.circular(12.r)),
+                  child: Icon(PhosphorIconsFill.squaresFour,
+                      size: 20.sp, color: AppColors.white),
+                ),
               ),
               SizedBox(width: 11.w),
               Column(
@@ -105,17 +113,26 @@ class AppHeaderBar extends ConsumerWidget {
         Row(
           children: [
             if (inbox) ...[
-              _iconButton(
-                icon: PhosphorIconsRegular.chatsCircle,
-                onTap: () => context.push(Routes.messages),
-                badge: unreadChats > 0 ? '$unreadChats' : null,
+              TourAnchor(
+                id: TourAnchors.messages,
+                child: _iconButton(
+                  icon: PhosphorIconsRegular.chatsCircle,
+                  onTap: () async {
+                    if (!await ensureWhatsappConnected(ref)) return;
+                    if (context.mounted) context.push(Routes.messages);
+                  },
+                  badge: unreadChats > 0 ? '$unreadChats' : null,
+                ),
               ),
               SizedBox(width: 10.w),
             ],
-            _iconButton(
-              icon: PhosphorIconsRegular.bell,
-              onTap: () => context.push(Routes.notifications),
-              dot: unreadNotifs,
+            TourAnchor(
+              id: TourAnchors.notifications,
+              child: _iconButton(
+                icon: PhosphorIconsRegular.bell,
+                onTap: () => context.push(Routes.notifications),
+                dot: unreadNotifs,
+              ),
             ),
           ],
         ),
@@ -158,7 +175,10 @@ class AppHeaderBar extends ConsumerWidget {
                     border: Border.all(color: AppColors.white, width: 2),
                   ),
                   child: Text(badge,
-                      style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                      style: AppText.custom(
+                          size: 10,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
                 ),
               ),
             if (dot)
@@ -193,7 +213,12 @@ class ScreenTitleRow extends StatelessWidget {
     this.hasSearchQuery = false,
     this.filterCount = 0,
     this.trailing,
+    this.tourArea,
   });
+
+  /// Product tours: when set, the search and filter buttons become the
+  /// targets `<tourArea>.search` and `<tourArea>.filters`.
+  final String? tourArea;
 
   final String title;
   final VoidCallback? onSearch;
@@ -210,22 +235,36 @@ class ScreenTitleRow extends StatelessWidget {
         Expanded(child: Text(title, style: AppText.screenTitle())),
         if (trailing != null) trailing!,
         if (onSearch != null)
-          _action(
-            icon: PhosphorIconsRegular.magnifyingGlass,
-            onTap: onSearch!,
-            dot: hasSearchQuery,
+          _anchored(
+            'search',
+            _action(
+              icon: PhosphorIconsRegular.magnifyingGlass,
+              onTap: onSearch!,
+              dot: hasSearchQuery,
+            ),
           ),
         if (onFilter != null)
-          _action(
-            icon: PhosphorIconsRegular.slidersHorizontal,
-            onTap: onFilter!,
-            badge: filterCount > 0 ? '$filterCount' : null,
+          _anchored(
+            'filters',
+            _action(
+              icon: PhosphorIconsRegular.slidersHorizontal,
+              onTap: onFilter!,
+              badge: filterCount > 0 ? '$filterCount' : null,
+            ),
           ),
       ],
     );
   }
 
-  Widget _action({required IconData icon, required VoidCallback onTap, bool dot = false, String? badge}) {
+  Widget _anchored(String what, Widget child) => tourArea == null
+      ? child
+      : TourAnchor(id: '$tourArea.$what', child: child);
+
+  Widget _action(
+      {required IconData icon,
+      required VoidCallback onTap,
+      bool dot = false,
+      String? badge}) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -266,7 +305,10 @@ class ScreenTitleRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8.r),
                   ),
                   child: Text(badge,
-                      style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                      style: AppText.custom(
+                          size: 10,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
                 ),
               ),
           ],

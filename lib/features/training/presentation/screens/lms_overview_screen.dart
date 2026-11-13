@@ -7,6 +7,7 @@ import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../application/providers/lms_providers.dart';
@@ -17,13 +18,45 @@ import '../components/lms_course_card.dart';
 import '../components/lms_footer.dart';
 import '../components/lms_header.dart';
 
-/// Training Overview — stat tiles, top courses, recent activity and the
-/// new-course CTA.
-class LmsOverviewScreen extends ConsumerWidget {
+/// Webapp `TrainingDashboardScreen`: the "Overview" heading, four KPI tiles
+/// from `/lms/dashboard/stats/`, every course with a role filter, recent
+/// activity and the New course action.
+class LmsOverviewScreen extends ConsumerStatefulWidget {
   const LmsOverviewScreen({super.key});
 
+  @override
+  ConsumerState<LmsOverviewScreen> createState() => _LmsOverviewScreenState();
+}
+
+class _LmsOverviewScreenState extends ConsumerState<LmsOverviewScreen> {
+  /// The All Courses role filter — 'all' or a role name. Client-side only.
+  String _aud = 'all';
+
+  @override
+  void initState() {
+    super.initState();
+    // Figures are cached for the session, so a course published on the web
+    // since the last visit would read stale — reload every time the screen
+    // opens (after the first frame: invalidating inside initState crashes).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) reloadLms(ref);
+    });
+  }
+
+  /// Pull-to-refresh: stats, courses, learner records and the activity feed.
+  Future<void> _refresh() async {
+    ref.invalidate(lmsStatsProvider);
+    await settle([
+      ref.read(lmsStatsProvider.future),
+      ref.read(lmsCoursesControllerProvider.notifier).reload(),
+      ref.read(lmsRecordsControllerProvider.notifier).reload(),
+      ref.read(lmsActivityControllerProvider.notifier).reload(),
+    ]);
+  }
+
   void _openCourse(BuildContext context, Course c) {
-    if (c.isPublished) {
+    // Published or platform → detail; a tenant draft → the editor.
+    if (c.isPublished || c.isGlobal) {
       context.push('${Routes.lmsCourseDetail}?id=${c.id}');
     } else {
       context.push('${Routes.lmsBuilder}?id=${c.id}');
@@ -31,7 +64,7 @@ class LmsOverviewScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final courses = ref.watch(lmsCoursesProvider);
     final records = ref.watch(lmsRecordsProvider);
     final activity = ref.watch(lmsActivityProvider);
@@ -45,96 +78,187 @@ class LmsOverviewScreen extends ConsumerWidget {
     // derived ones. Counting locally under-reports on both ends: courses only
     // count the page that loaded, and learners come from an admin-only endpoint
     // that answers 403 — and therefore zero — for everyone else.
-    final server = ref.watch(lmsStatsProvider).valueOrNull;
+    final statsAsync = ref.watch(lmsStatsProvider);
+    final server = statsAsync.valueOrNull;
+    String dash(String v) => statsAsync.isLoading ? '—' : v;
     final learners = records.where((r) => r.rid != 'me').length;
     final allEntries = [for (final r in records) ...r.courses];
     final avgAll = allEntries.isEmpty
         ? 0
-        : (allEntries.map(LmsLogic.pct).reduce((a, b) => a + b) / allEntries.length).round();
+        : (allEntries.map(LmsLogic.pct).reduce((a, b) => a + b) /
+                allEntries.length)
+            .round();
 
     final totalCourses = server?.totalCourses ?? courses.length;
     final totalLearners = server?.totalLearners ?? learners;
     final avgCompletion = server?.avgCompletion ?? avgAll;
 
-    final stats = <(IconData, String, String)>[
-      (PhosphorIconsFill.bookOpenText, totalCourses.toString().padLeft(2, '0'), 'Total Courses'),
-      (PhosphorIconsFill.student, totalLearners.toString().padLeft(2, '0'), 'Total Learners'),
-      (PhosphorIconsFill.chartLineUp, '$avgCompletion%', 'Avg. completion'),
+    final published =
+        server?.publishedCourses ?? courses.where((c) => c.isPublished).length;
+    final drafts =
+        server?.draftCourses ?? courses.where((c) => !c.isPublished).length;
+
+    final stats = <(IconData, String, String, String)>[
+      (
+        PhosphorIconsFill.bookOpenText,
+        // No zero-padding: "4", not "04" (UI/UX audit #50).
+        dash(totalCourses.toString()),
+        'Total Courses',
+        '$published published · $drafts draft'
+      ),
+      (
+        PhosphorIconsFill.student,
+        dash('$totalLearners'),
+        'Total Learners',
+        'Across all roles & teams'
+      ),
+      (
+        PhosphorIconsFill.chartLineUp,
+        dash('$avgCompletion%'),
+        'Avg. completion',
+        'Across published courses'
+      ),
+      (
+        PhosphorIconsFill.clock,
+        dash('${(server?.timeInvestedHours ?? 0).round()}'),
+        'Total Time Invested',
+        'Across all modules in hours'
+      ),
     ];
 
-    final topCourses = [...courses]
-      ..sort((a, b) => a.status == b.status ? 0 : (a.isPublished ? -1 : 1));
-    final top3 = topCourses.take(3).toList();
+    // Webapp audience filter: "All roles" + every role the courses use, sorted.
+    final roles = <String>{for (final c in courses) ...c.roleNames}.toList()
+      ..sort();
+    final aud = roles.contains(_aud) ? _aud : 'all';
+    final rows = [
+      for (final c in courses)
+        if (aud == 'all' || c.roleNames.contains(aud)) c,
+    ];
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
           LmsHeader(
-            onBack: () => context.canPop() ? context.pop() : context.go(Routes.dashboard),
+            onBack: () =>
+                context.canPop() ? context.pop() : context.go(Routes.dashboard),
             leading: Container(
               width: 38.w,
               height: 38.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(PhosphorIconsFill.graduationCap, size: 20.sp, color: AppColors.navy),
+              decoration: BoxDecoration(
+                  color: AppColors.tintNavy,
+                  borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsFill.graduationCap,
+                  size: 20.sp, color: AppColors.navy),
             ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Training',
-                    style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4, height: 1.1)),
-                Text('Overview of courses, learners & activity',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-              ],
-            ),
+            title: Text('Training Dashboard',
+                style: AppText.custom(
+                    size: 20,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.4)),
           ),
           Expanded(
-            child: status.loading
+            // Skeleton only for the first load: a reload over data already on
+            // screen (pull-to-refresh, reopening) keeps the figures visible.
+            child: status.loading && courses.isEmpty
                 ? const ListSkeleton()
                 : status.error != null
-                    ? ErrorState.forError(status.error!, onRetry: () => reloadLms(ref))
-                    : ListView(
-              padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
-              children: [
-                Row(
-                  children: [
-                    for (int i = 0; i < stats.length; i++) ...[
-                      if (i > 0) SizedBox(width: 10.w),
-                      Expanded(child: _statTile(stats[i])),
-                    ],
-                  ],
-                ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(2.w, 20.h, 2.w, 11.h),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('All Courses', style: AppText.sectionTitle()),
-                      GestureDetector(
-                        onTap: () => context.go(Routes.lmsCourses),
-                        child: Text('View all Courses',
-                            style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
-                      ),
-                    ],
-                  ),
-                ),
-                for (int i = 0; i < top3.length; i++) ...[
-                  if (i > 0) SizedBox(height: 11.h),
-                  LmsCourseCard.from(
-                    course: top3[i],
-                    records: records,
-                    onTap: () => _openCourse(context, top3[i]),
-                    onEdit: () => context.push('${Routes.lmsBuilder}?id=${top3[i].id}'),
-                  ),
-                ],
-                SizedBox(height: 16.h),
-                _activityCard(activity),
-              ],
-            ),
+                    ? ErrorState.forError(status.error!,
+                        onRetry: () => reloadLms(ref))
+                    : AppRefresh(
+                        onRefresh: _refresh,
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
+                          children: [
+                            Text('Overview',
+                                style: AppText.custom(
+                                    size: 20,
+                                    weight: FontWeight.w800,
+                                    color: AppColors.textPrimary)),
+                            SizedBox(height: 3.h),
+                            Text(
+                                'Overview of all courses, learner progress, and training activity.',
+                                style: AppText.custom(
+                                    size: 13,
+                                    weight: FontWeight.w500,
+                                    color: AppColors.textMuted)),
+                            SizedBox(height: 14.h),
+                            for (int i = 0; i < stats.length; i += 2) ...[
+                              if (i > 0) SizedBox(height: 10.h),
+                              IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(child: _statTile(stats[i])),
+                                    SizedBox(width: 10.w),
+                                    Expanded(child: _statTile(stats[i + 1])),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            Padding(
+                              padding:
+                                  EdgeInsets.fromLTRB(2.w, 20.h, 2.w, 11.h),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('All Courses',
+                                      style: AppText.sectionTitle()),
+                                  _roleFilter(roles, aud),
+                                ],
+                              ),
+                            ),
+                            if (rows.isEmpty)
+                              Padding(
+                                padding: EdgeInsets.symmetric(vertical: 18.h),
+                                child: Text('No courses yet',
+                                    textAlign: TextAlign.center,
+                                    style: AppText.custom(
+                                        size: 13,
+                                        weight: FontWeight.w500,
+                                        color: AppColors.textMuted)),
+                              ),
+                            for (int i = 0; i < rows.length; i++) ...[
+                              if (i > 0) SizedBox(height: 11.h),
+                              LmsCourseCard.from(
+                                course: rows[i],
+                                records: records,
+                                onTap: () => _openCourse(context, rows[i]),
+                                onEdit: () => context.push(
+                                    '${Routes.lmsBuilder}?id=${rows[i].id}'),
+                              ),
+                            ],
+                            // Webapp: "View all Courses" opens My Trainings.
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => context.push(Routes.lmsMy),
+                              child: Padding(
+                                padding:
+                                    EdgeInsets.fromLTRB(2.w, 12.h, 2.w, 2.h),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text('View all Courses',
+                                        style: AppText.custom(
+                                            size: 13,
+                                            weight: FontWeight.w600,
+                                            color: AppColors.navy)),
+                                    SizedBox(width: 6.w),
+                                    Icon(PhosphorIconsBold.arrowRight,
+                                        size: 14.sp, color: AppColors.navy),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 16.h),
+                            _activityCard(activity),
+                          ],
+                        )),
           ),
           LmsFooter(
             child: LmsCtaButton(
@@ -148,7 +272,40 @@ class LmsOverviewScreen extends ConsumerWidget {
     );
   }
 
-  Widget _statTile((IconData, String, String) t) {
+  Widget _roleFilter(List<String> roles, String aud) {
+    return PopupMenuButton<String>(
+      initialValue: aud,
+      onSelected: (v) => setState(() => _aud = v),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'all', child: Text('All roles')),
+        for (final r in roles) PopupMenuItem(value: r, child: Text(r)),
+      ],
+      child: Container(
+        height: 34.h,
+        padding: EdgeInsets.symmetric(horizontal: 11.w),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          border: Border.all(color: AppColors.borderInput),
+          borderRadius: BorderRadius.circular(9.r),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(aud == 'all' ? 'All roles' : aud,
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPrimary)),
+            SizedBox(width: 6.w),
+            Icon(PhosphorIconsBold.caretDown,
+                size: 12.sp, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statTile((IconData, String, String, String) t) {
     return ClozrCard(
       radius: 14,
       padding: EdgeInsets.all(12.r),
@@ -162,7 +319,9 @@ class LmsOverviewScreen extends ConsumerWidget {
                 width: 30.w,
                 height: 30.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(9.r)),
+                decoration: BoxDecoration(
+                    color: AppColors.tintNavy,
+                    borderRadius: BorderRadius.circular(9.r)),
                 child: Icon(t.$1, size: 15.sp, color: AppColors.navy),
               ),
               Flexible(
@@ -170,13 +329,28 @@ class LmsOverviewScreen extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
-                    style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+                    style: AppText.custom(
+                        size: 19,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.4)),
               ),
             ],
           ),
           SizedBox(height: 10.h),
           Text(t.$3,
-              style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textMuted2, height: 1.25)),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                  height: 1.25)),
+          SizedBox(height: 2.h),
+          Text(t.$4,
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted2,
+                  height: 1.25)),
         ],
       ),
     );
@@ -192,8 +366,20 @@ class LmsOverviewScreen extends ConsumerWidget {
           Padding(
             padding: EdgeInsets.only(bottom: 4.h),
             child: Text('Recent Activity',
-                style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
           ),
+          if (activity.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 20.h),
+              child: Text('No recent activity',
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder)),
+            ),
           for (final a in activity)
             Container(
               padding: EdgeInsets.symmetric(vertical: 9.h),
@@ -207,7 +393,8 @@ class LmsOverviewScreen extends ConsumerWidget {
                     width: 8.w,
                     height: 8.w,
                     margin: EdgeInsets.only(top: 6.h),
-                    decoration: BoxDecoration(color: a.dot, shape: BoxShape.circle),
+                    decoration:
+                        BoxDecoration(color: a.dot, shape: BoxShape.circle),
                   ),
                   SizedBox(width: 10.w),
                   Expanded(
@@ -216,11 +403,18 @@ class LmsOverviewScreen extends ConsumerWidget {
                       children: [
                         Text.rich(
                           TextSpan(
-                            style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textBodyMuted, height: 1.4),
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w500,
+                                color: AppColors.textBodyMuted,
+                                height: 1.4),
                             children: [
                               TextSpan(
                                 text: '${a.who} ',
-                                style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary),
+                                style: AppText.custom(
+                                    size: 13,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textPrimary),
                               ),
                               TextSpan(text: a.what),
                             ],
@@ -228,7 +422,10 @@ class LmsOverviewScreen extends ConsumerWidget {
                         ),
                         SizedBox(height: 2.h),
                         Text(a.time,
-                            style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                            style: AppText.custom(
+                                size: 11.5,
+                                weight: FontWeight.w500,
+                                color: AppColors.textPlaceholder)),
                       ],
                     ),
                   ),

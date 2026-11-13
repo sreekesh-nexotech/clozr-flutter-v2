@@ -9,7 +9,11 @@ const kReportedForClient = 'client';
 const kReportedForInternal = 'self';
 
 /// The webapp's three channels, as `(code, label)`.
-const kTicketChannels = [('phone', 'Phone'), ('email', 'Email'), ('whatsapp', 'WhatsApp')];
+const kTicketChannels = [
+  ('phone', 'Phone'),
+  ('email', 'Email'),
+  ('whatsapp', 'WhatsApp')
+];
 
 /// What a ticket gets when nothing sets a priority — the model's own default.
 const kDefaultTicketPriority = 'Medium';
@@ -21,7 +25,8 @@ const kTicketCustomerRequired =
     'Pick a customer — SLA is not applied to a ticket without one. For an internal ticket, set Reported for to Internal.';
 
 /// Mirrors the server's `_validate_billing`.
-const kBillableNeedsBasis = 'A billable ticket needs a billable amount or a billable product.';
+const kBillableNeedsBasis =
+    'A billable ticket needs a billable amount or a billable product.';
 
 /// Client-side checks before anything is sent (webapp `validateIssueInput`).
 List<String> validateTicketInput({
@@ -34,10 +39,12 @@ List<String> validateTicketInput({
 }) {
   final errors = <String>[];
   if (subject.trim().isEmpty) errors.add(kTicketSubjectRequired);
-  if ((customerId == null || customerId.isEmpty) && reportedFor != kReportedForInternal) {
+  if ((customerId == null || customerId.isEmpty) &&
+      reportedFor != kReportedForInternal) {
     errors.add(kTicketCustomerRequired);
   }
-  if (billable && !hasAmount && !hasBillableProduct) errors.add(kBillableNeedsBasis);
+  if (billable && !hasAmount && !hasBillableProduct)
+    errors.add(kBillableNeedsBasis);
   return errors;
 }
 
@@ -45,7 +52,9 @@ List<String> validateTicketInput({
 /// category has none (or nothing is picked).
 String? categoryDefaultPriority(List<CatalogOption> types, String? typeId) {
   if (typeId == null || typeId.isEmpty) return null;
-  final raw = types.where((t) => t.id == typeId).firstOrNull?.defaultPriority?.trim() ?? '';
+  final raw =
+      types.where((t) => t.id == typeId).firstOrNull?.defaultPriority?.trim() ??
+          '';
   for (final p in const ['Critical', 'High', 'Medium', 'Low']) {
     if (p.toLowerCase() == raw.toLowerCase()) return p;
   }
@@ -75,7 +84,8 @@ String? priorityHint({
   if (pickedByUser) return null;
   final def = categoryDefaultPriority(types, typeId);
   if (def == null || def != priority) return null;
-  final name = types.where((t) => t.id == typeId).firstOrNull?.name ?? 'this category';
+  final name =
+      types.where((t) => t.id == typeId).firstOrNull?.name ?? 'this category';
   return 'Default for $name';
 }
 
@@ -90,7 +100,10 @@ String? customerPickerNotice({
 }) {
   if (forbidden) return "You don't have permission to view customers.";
   if (failed) return "Couldn't load customers. Try again.";
-  if (loading) return query.trim().isNotEmpty ? 'Searching customers…' : 'Loading customers…';
+  if (loading)
+    return query.trim().isNotEmpty
+        ? 'Searching customers…'
+        : 'Loading customers…';
   return null;
 }
 
@@ -127,7 +140,11 @@ typedef CustomerSla = ({num value, String unit});
 /// non-negative size AND a unit.
 CustomerSla? customerSlaFrom(Map<String, dynamic> json) {
   final raw = json['sla_value'];
-  final value = raw is num ? raw : (raw is String && raw.trim().isNotEmpty ? num.tryParse(raw.trim()) : null);
+  final value = raw is num
+      ? raw
+      : (raw is String && raw.trim().isNotEmpty
+          ? num.tryParse(raw.trim())
+          : null);
   final unit = (json['sla_unit'] ?? '').toString().trim().toLowerCase();
   if (value == null || value < 0 || unit.isEmpty) return null;
   return (value: value, unit: unit);
@@ -138,7 +155,9 @@ String formatSlaTarget(num? value, String? unit) {
   final u = (unit ?? '').trim().toLowerCase();
   if (value == null || u.isEmpty) return 'No SLA';
   final singular = u.endsWith('s') ? u.substring(0, u.length - 1) : u;
-  final shown = value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+  final shown = value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
   return '$shown ${value == 1 ? singular : '${singular}s'}';
 }
 
@@ -150,7 +169,20 @@ DateTime slaDeadlineFrom(DateTime start, CustomerSla sla) {
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 /// "Tue 21 Oct, 07:45" (year added only when it differs from [now]'s).
 String formatResolveBy(DateTime deadline, DateTime now) {
@@ -163,7 +195,8 @@ String formatResolveBy(DateTime deadline, DateTime now) {
 /// The SLA box: an optional bold [headline] over the [detail] line.
 typedef SlaPreview = ({String? headline, String detail});
 
-const kSlaFollowsCustomer = "Follows the selected customer's configured SLA. Not editable per ticket.";
+const kSlaFollowsCustomer =
+    "Follows the selected customer's configured SLA. Not editable per ticket.";
 
 /// A "Resolve by" line appears only for a NEW ticket whose picked customer's
 /// SLA could be read. Editing states the recalculation rule instead.
@@ -179,9 +212,17 @@ SlaPreview slaPreviewCopy({
   final hasCustomer = customerId != null && customerId.isNotEmpty;
   if (isEditing) {
     if (!customerChanged) return (headline: null, detail: kSlaFollowsCustomer);
-    if (resolved) return (headline: null, detail: 'A resolved ticket keeps the SLA it was resolved under.');
+    if (resolved)
+      return (
+        headline: null,
+        detail: 'A resolved ticket keeps the SLA it was resolved under.'
+      );
     if (!hasCustomer) {
-      return (headline: null, detail: 'Saving without a customer removes the SLA — the ticket will have no deadline.');
+      return (
+        headline: null,
+        detail:
+            'Saving without a customer removes the SLA — the ticket will have no deadline.'
+      );
     }
     return (
       headline: 'SLA recalculated on save',
@@ -192,13 +233,19 @@ SlaPreview slaPreviewCopy({
   }
   if (!hasCustomer) {
     return internal
-        ? (headline: null, detail: 'No SLA applies — an internal ticket without a customer has no deadline.')
+        ? (
+            headline: null,
+            detail:
+                'No SLA applies — an internal ticket without a customer has no deadline.'
+          )
         : (headline: null, detail: kSlaFollowsCustomer);
   }
   if (customerSla == null) return (headline: null, detail: kSlaFollowsCustomer);
   return (
-    headline: 'Resolve by ${formatResolveBy(slaDeadlineFrom(now, customerSla), now)}',
-    detail: '${formatSlaTarget(customerSla.value, customerSla.unit)} customer SLA, counted from when the ticket is created. Not editable per ticket.',
+    headline:
+        'Resolve by ${formatResolveBy(slaDeadlineFrom(now, customerSla), now)}',
+    detail:
+        '${formatSlaTarget(customerSla.value, customerSla.unit)} customer SLA, counted from when the ticket is created. Not editable per ticket.',
   );
 }
 
@@ -206,7 +253,11 @@ SlaPreview slaPreviewCopy({
 
 /// `GET issues/billing-defaults/`: the tenant's GST basis for the amount and
 /// the default SAC / rate an amount-only ticket is invoiced under.
-typedef TicketBillingDefaults = ({bool inclusive, String? defaultSac, num? defaultGstRatePct});
+typedef TicketBillingDefaults = ({
+  bool inclusive,
+  String? defaultSac,
+  num? defaultGstRatePct
+});
 
 TicketBillingDefaults? ticketBillingDefaultsFrom(Object? json) {
   if (json is! Map) return null;
@@ -217,29 +268,37 @@ TicketBillingDefaults? ticketBillingDefaultsFrom(Object? json) {
   return (
     inclusive: basis == 'INCLUSIVE',
     defaultSac: sac.isEmpty ? null : sac,
-    defaultGstRatePct: rate is num ? rate : (rate is String ? num.tryParse(rate) : null),
+    defaultGstRatePct:
+        rate is num ? rate : (rate is String ? num.tryParse(rate) : null),
   );
 }
 
 /// "Billable amount (₹, excl. GST)" — the neutral label while the basis is unknown.
-String billableAmountLabel(TicketBillingDefaults? d) =>
-    d == null ? 'Billable amount (₹)' : 'Billable amount (₹, ${d.inclusive ? 'incl.' : 'excl.'} GST)';
+String billableAmountLabel(TicketBillingDefaults? d) => d == null
+    ? 'Billable amount (₹)'
+    : 'Billable amount (₹, ${d.inclusive ? 'incl.' : 'excl.'} GST)';
 
 /// The amount's hint: what it becomes on the invoice.
-String billableAmountHint(TicketBillingDefaults? d, {required bool hasProduct}) {
+String billableAmountHint(TicketBillingDefaults? d,
+    {required bool hasProduct}) {
   const base = 'An amount, a product, or both.';
   if (d == null) return base;
-  final gst = d.inclusive ? 'GST is included in this amount' : 'GST is added on top of this amount';
+  final gst = d.inclusive
+      ? 'GST is included in this amount'
+      : 'GST is added on top of this amount';
   if (hasProduct) return '$base $gst.';
   if (d.defaultSac != null) {
-    final rate = d.defaultGstRatePct != null ? ' at ${d.defaultGstRatePct}% GST' : '';
+    final rate =
+        d.defaultGstRatePct != null ? ' at ${d.defaultGstRatePct}% GST' : '';
     return '$base Invoiced under SAC ${d.defaultSac}$rate; $gst.';
   }
   return '$base $gst. No default SAC for ticket charges yet — set one in Settings → Accounting, or pick a billable product.';
 }
 
 /// The server's billing-basis refusal — shown inline, like the client check.
-bool isBillableBasisRefusal({Map<String, List<String>>? fieldErrors, required String message}) {
+bool isBillableBasisRefusal(
+    {Map<String, List<String>>? fieldErrors, required String message}) {
   if (fieldErrors?.containsKey('billable') ?? false) return true;
-  return RegExp(r'billable.*(amount|product)', caseSensitive: false).hasMatch(message);
+  return RegExp(r'billable.*(amount|product)', caseSensitive: false)
+      .hasMatch(message);
 }

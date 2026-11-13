@@ -49,8 +49,8 @@ void main() {
     });
 
     test('a single-word name sends no surname rather than an empty one', () {
-      final out =
-          LeadsRemoteDataSource.withCreateNameParts(const {'lead_name': 'Ishaan'});
+      final out = LeadsRemoteDataSource.withCreateNameParts(
+          const {'lead_name': 'Ishaan'});
 
       expect(out['first_name'], 'Ishaan');
       expect(out.containsKey('last_name'), isFalse);
@@ -98,7 +98,8 @@ void main() {
       final adapter = _Adapter();
       final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
         ..httpClientAdapter = adapter;
-      final ds = LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+      final ds =
+          LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
 
       await ds.createLead(const {
         'lead_name': 'Schema Probe Lead',
@@ -119,7 +120,8 @@ void main() {
       final adapter = _Adapter();
       final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
         ..httpClientAdapter = adapter;
-      final ds = LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+      final ds =
+          LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
 
       await ds.createLead(const {
         'lead_name': 'Ishaan',

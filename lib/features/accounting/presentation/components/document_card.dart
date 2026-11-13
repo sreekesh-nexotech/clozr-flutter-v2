@@ -16,20 +16,29 @@ import 'acc_widgets.dart';
 
 /// The icon for where a document came from.
 IconData documentSourceIcon(AccDocument d) => switch (d.sourceType) {
-      'PLAN_RECORD' || 'PERIODIC' || 'MILESTONE' => PhosphorIconsRegular.calendarCheck,
+      'PLAN_RECORD' ||
+      'PERIODIC' ||
+      'MILESTONE' =>
+        PhosphorIconsRegular.calendarCheck,
       'TICKET' => PhosphorIconsRegular.ticket,
       'EXPENSE_FORM' => PhosphorIconsRegular.shoppingCart,
-      _ => d.docType == 'CREDIT_NOTE' ? PhosphorIconsRegular.arrowUUpLeft : PhosphorIconsRegular.receipt,
+      _ => d.docType == 'CREDIT_NOTE'
+          ? PhosphorIconsRegular.arrowUUpLeft
+          : PhosphorIconsRegular.receipt,
     };
 
 /// The party a document is with, by name where the app knows it. Document rows
 /// carry ids only (§12.5); the snapshot has the name once issued.
 String documentPartyName(WidgetRef ref, AccDocument d) {
   if (d.isInward) {
-    return ref.watch(vendorNameProvider)(d.vendorId) ?? _snapshotName(d) ?? 'Vendor';
+    return ref.watch(vendorNameProvider)(d.vendorId) ??
+        _snapshotName(d) ??
+        'Vendor';
   }
   final party = ref.watch(crmPartyLookupProvider)(custId: d.customerId);
-  return party?.name ?? _snapshotName(d) ?? (d.customerId == null ? 'No customer yet' : 'Customer');
+  return party?.name ??
+      _snapshotName(d) ??
+      (d.customerId == null ? 'No customer yet' : 'Customer');
 }
 
 String? _snapshotName(AccDocument d) {
@@ -65,17 +74,25 @@ class DocumentCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(d.isInward && (d.vendorInvoiceNo ?? '').isNotEmpty
+                    Text(
+                        d.isInward && (d.vendorInvoiceNo ?? '').isNotEmpty
                             ? '${d.displayNumber} · ${d.vendorInvoiceNo}'
                             : d.displayNumber,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 3.h),
-                    Text('${documentPartyName(ref, d)} · ${formatApiDay(d.documentDate)}',
+                    Text(
+                        '${documentPartyName(ref, d)} · ${formatApiDay(d.documentDate)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -86,7 +103,10 @@ class DocumentCard extends ConsumerWidget {
                   DocStatusPill(d.status),
                   SizedBox(height: 5.h),
                   Text(formatMoneyStr(d.grandTotal),
-                      style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ],
@@ -96,15 +116,23 @@ class DocumentCard extends ConsumerWidget {
             children: [
               Expanded(
                 child: Text(
-                  d.isDraft ? '${label(docTypeLabels, d.docType)} · estimated' : label(docTypeLabels, d.docType),
+                  d.isDraft
+                      ? '${label(docTypeLabels, d.docType)} · estimated'
+                      : label(docTypeLabels, d.docType),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted),
                 ),
               ),
               if (d.isIssued && !moneyIsZero(open)) ...[
                 Text('Open ${formatMoneyStr(open)}',
-                    style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.error)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: AppColors.error)),
                 SizedBox(width: 8.w),
               ],
               if (d.isIssued) PaymentStatePill(d.paymentState),

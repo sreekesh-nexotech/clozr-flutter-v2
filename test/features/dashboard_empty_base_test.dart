@@ -11,7 +11,8 @@ void main() {
   group('DashboardData.empty()', () {
     final empty = DashboardData.empty();
 
-    test('KPI cards keep chrome but zero the data (no sparkline, no trend)', () {
+    test('KPI cards keep chrome but zero the data (no sparkline, no trend)',
+        () {
       expect(empty.adminKpis, hasLength(4));
       final k = empty.adminKpis[0];
       expect(k.value, '0');
@@ -19,7 +20,8 @@ void main() {
       expect(k.progress, isNull);
       expect(k.trend, '');
       // Design-token chrome is preserved.
-      expect(k.route, Routes.leads);
+      // The pipeline card opens the open pipeline (not converted, not lost).
+      expect(k.route, '${Routes.leads}?pipeline=open');
       expect(k.label, 'Sales pipeline');
       // Fixed units survive so a mapped percentage still shows '%'.
       expect(empty.crmKpis[1].unit, '%');

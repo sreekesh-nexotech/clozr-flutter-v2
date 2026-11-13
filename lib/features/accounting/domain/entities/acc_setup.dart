@@ -55,12 +55,17 @@ class TenantProfile extends Equatable {
   final String? activatedAt;
 
   @override
-  List<Object?> get props => [activationStatus, entityType, stateCode, ledgerStartDate];
+  List<Object?> get props =>
+      [activationStatus, entityType, stateCode, ledgerStartDate];
 }
 
 /// One effective-dated tenant attribute (GSTIN, registration, TDS deductor…).
 class TenantAttribute extends Equatable {
-  const TenantAttribute({required this.attribute, this.value, this.effectiveFrom, this.effectiveTo});
+  const TenantAttribute(
+      {required this.attribute,
+      this.value,
+      this.effectiveFrom,
+      this.effectiveTo});
 
   final String attribute;
   final Object? value;
@@ -75,7 +80,13 @@ class TenantAttribute extends Equatable {
   String get display {
     final v = value;
     if (v is Map) {
-      for (final k in const ['gstin', 'status', 'type', 'value', 'state_code']) {
+      for (final k in const [
+        'gstin',
+        'status',
+        'type',
+        'value',
+        'state_code'
+      ]) {
         if (v.containsKey(k)) return _scalar(v[k]);
       }
       return v.values.map(_scalar).join(', ');
@@ -106,7 +117,8 @@ class GateResult extends Equatable {
 
 /// `GET setup/gates/`.
 class GatesReport extends Equatable {
-  const GatesReport({this.gates = const [], this.canActivate = false, this.activationStatus});
+  const GatesReport(
+      {this.gates = const [], this.canActivate = false, this.activationStatus});
 
   final List<GateResult> gates;
   final bool canActivate;

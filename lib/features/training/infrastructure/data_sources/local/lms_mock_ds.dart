@@ -30,10 +30,30 @@ class LmsMockDataSource {
           desc:
               'This course introduces the core concepts of Customer Relationship Management (CRM) and how teams use CRM systems to manage leads, track customer interactions, and organize sales workflows. By the end you will understand how CRM platforms help sales, marketing and support teams work more efficiently.',
           modules: const [
-            CourseModule(id: 'm1', title: 'Core CRM workflows', dur: '12 min', video: true, res: ['CRM Workflow Guide.pdf']),
-            CourseModule(id: 'm2', title: 'Sales pipeline stages', dur: '9 min', video: true, res: []),
-            CourseModule(id: 'm3', title: 'Follow-ups & tasks', dur: '11 min', video: true, res: ['Follow-up Playbook.pdf']),
-            CourseModule(id: 'm4', title: 'Quotes & payments', dur: '14 min', video: true, res: []),
+            CourseModule(
+                id: 'm1',
+                title: 'Core CRM workflows',
+                dur: '12 min',
+                video: true,
+                res: ['CRM Workflow Guide.pdf']),
+            CourseModule(
+                id: 'm2',
+                title: 'Sales pipeline stages',
+                dur: '9 min',
+                video: true,
+                res: []),
+            CourseModule(
+                id: 'm3',
+                title: 'Follow-ups & tasks',
+                dur: '11 min',
+                video: true,
+                res: ['Follow-up Playbook.pdf']),
+            CourseModule(
+                id: 'm4',
+                title: 'Quotes & payments',
+                dur: '14 min',
+                video: true,
+                res: []),
           ],
         ),
         Course(
@@ -52,9 +72,24 @@ class LmsMockDataSource {
           desc:
               'Master the pipeline end-to-end — qualification frameworks, quoting discipline and negotiation habits that close deals faster.',
           modules: const [
-            CourseModule(id: 'm1', title: 'Qualifying leads', dur: '10 min', video: true, res: []),
-            CourseModule(id: 'm2', title: 'Building winning quotes', dur: '13 min', video: true, res: ['Quote Checklist.pdf']),
-            CourseModule(id: 'm3', title: 'Negotiation & closing', dur: '15 min', video: true, res: []),
+            CourseModule(
+                id: 'm1',
+                title: 'Qualifying leads',
+                dur: '10 min',
+                video: true,
+                res: []),
+            CourseModule(
+                id: 'm2',
+                title: 'Building winning quotes',
+                dur: '13 min',
+                video: true,
+                res: ['Quote Checklist.pdf']),
+            CourseModule(
+                id: 'm3',
+                title: 'Negotiation & closing',
+                dur: '15 min',
+                video: true,
+                res: []),
           ],
         ),
         Course(
@@ -73,10 +108,30 @@ class LmsMockDataSource {
           desc:
               'Plan, schedule and deliver interior fit-out projects — scoping, task breakdown, dependencies and handover discipline.',
           modules: const [
-            CourseModule(id: 'm1', title: 'Project setup & scoping', dur: '11 min', video: true, res: ['Scoping Template.pdf']),
-            CourseModule(id: 'm2', title: 'Tasks & dependencies', dur: '9 min', video: true, res: []),
-            CourseModule(id: 'm3', title: 'Tracking progress', dur: '8 min', video: true, res: []),
-            CourseModule(id: 'm4', title: 'Handover & closure', dur: '10 min', video: true, res: []),
+            CourseModule(
+                id: 'm1',
+                title: 'Project setup & scoping',
+                dur: '11 min',
+                video: true,
+                res: ['Scoping Template.pdf']),
+            CourseModule(
+                id: 'm2',
+                title: 'Tasks & dependencies',
+                dur: '9 min',
+                video: true,
+                res: []),
+            CourseModule(
+                id: 'm3',
+                title: 'Tracking progress',
+                dur: '8 min',
+                video: true,
+                res: []),
+            CourseModule(
+                id: 'm4',
+                title: 'Handover & closure',
+                dur: '10 min',
+                video: true,
+                res: []),
           ],
         ),
         Course(
@@ -95,9 +150,24 @@ class LmsMockDataSource {
           desc:
               'Configure roles, visibility scopes and workspace settings safely — who sees what, and why.',
           modules: const [
-            CourseModule(id: 'm1', title: 'Roles & visibility scopes', dur: '9 min', video: true, res: ['Roles Matrix.pdf']),
-            CourseModule(id: 'm2', title: 'Teams & hierarchy', dur: '7 min', video: true, res: []),
-            CourseModule(id: 'm3', title: 'Workspace settings', dur: '8 min', video: true, res: []),
+            CourseModule(
+                id: 'm1',
+                title: 'Roles & visibility scopes',
+                dur: '9 min',
+                video: true,
+                res: ['Roles Matrix.pdf']),
+            CourseModule(
+                id: 'm2',
+                title: 'Teams & hierarchy',
+                dur: '7 min',
+                video: true,
+                res: []),
+            CourseModule(
+                id: 'm3',
+                title: 'Workspace settings',
+                dur: '8 min',
+                video: true,
+                res: []),
           ],
         ),
         Course(
@@ -116,8 +186,18 @@ class LmsMockDataSource {
           desc:
               'Respond, resolve and stay inside SLA — triage rules, priority handling and escalation paths.',
           modules: const [
-            CourseModule(id: 'm1', title: 'Ticket triage basics', dur: '8 min', video: true, res: []),
-            CourseModule(id: 'm2', title: 'SLA timers & breaches', dur: '10 min', video: false, res: []),
+            CourseModule(
+                id: 'm1',
+                title: 'Ticket triage basics',
+                dur: '8 min',
+                video: true,
+                res: []),
+            CourseModule(
+                id: 'm2',
+                title: 'SLA timers & breaches',
+                dur: '10 min',
+                video: false,
+                res: []),
           ],
         ),
         Course(
@@ -136,8 +216,18 @@ class LmsMockDataSource {
           desc:
               'Mandatory site conduct — PPE, tool handling and incident reporting for everyone visiting active sites.',
           modules: const [
-            CourseModule(id: 'm1', title: 'PPE & site conduct', dur: '9 min', video: true, res: ['Site Safety Card.pdf']),
-            CourseModule(id: 'm2', title: 'Incident reporting', dur: '6 min', video: true, res: []),
+            CourseModule(
+                id: 'm1',
+                title: 'PPE & site conduct',
+                dur: '9 min',
+                video: true,
+                res: ['Site Safety Card.pdf']),
+            CourseModule(
+                id: 'm2',
+                title: 'Incident reporting',
+                dur: '6 min',
+                video: true,
+                res: []),
           ],
         ),
       ];
@@ -182,10 +272,30 @@ class LmsMockDataSource {
       ];
 
   List<LmsActivity> fetchActivity() => const [
-        LmsActivity(dot: AppColors.success, who: 'Arjun Nair', what: 'completed CRM Fundamentals', time: '2 hours ago'),
-        LmsActivity(dot: AppColors.warning, who: 'Rahul Krishnan', what: 'resumed Sales Pipeline Mastery', time: '4 hours ago'),
-        LmsActivity(dot: AppColors.blueBright, who: 'Sneha Thomas', what: 'started Project Management Basics', time: '4 hours ago'),
-        LmsActivity(dot: AppColors.success, who: 'Sneha Thomas', what: 'completed all modules in Admin & Permissions', time: '5 hours ago'),
-        LmsActivity(dot: AppColors.error, who: 'Fariz Ahmed', what: 'went overdue on Project Management Basics', time: '6 hours ago'),
+        LmsActivity(
+            dot: AppColors.success,
+            who: 'Arjun Nair',
+            what: 'completed CRM Fundamentals',
+            time: '2 hours ago'),
+        LmsActivity(
+            dot: AppColors.warning,
+            who: 'Rahul Krishnan',
+            what: 'resumed Sales Pipeline Mastery',
+            time: '4 hours ago'),
+        LmsActivity(
+            dot: AppColors.blueBright,
+            who: 'Sneha Thomas',
+            what: 'started Project Management Basics',
+            time: '4 hours ago'),
+        LmsActivity(
+            dot: AppColors.success,
+            who: 'Sneha Thomas',
+            what: 'completed all modules in Admin & Permissions',
+            time: '5 hours ago'),
+        LmsActivity(
+            dot: AppColors.error,
+            who: 'Fariz Ahmed',
+            what: 'went overdue on Project Management Basics',
+            time: '6 hours ago'),
       ];
 }

@@ -24,7 +24,8 @@ bool showCustomerAccountingPanel({
 
 /// The customer's accounting card, below the notes as on the webapp.
 class CustomerAccountingPanel extends ConsumerWidget {
-  const CustomerAccountingPanel({super.key, required this.customerId, required this.customerName});
+  const CustomerAccountingPanel(
+      {super.key, required this.customerId, required this.customerName});
 
   final String customerId;
   final String customerName;
@@ -47,19 +48,28 @@ class CustomerAccountingPanel extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Accounting', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text('Accounting',
+                style: AppText.custom(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             CustomerAccountingTab(customerId: customerId),
             if (canSetup) ...[
               SizedBox(height: 12.h),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => showPartyTaxProfileSheet(context, kind: 'customer', partyId: customerId, title: customerName),
+                onTap: () => showPartyTaxProfileSheet(context,
+                    kind: 'customer', partyId: customerId, title: customerName),
                 child: Row(
                   children: [
-                    Icon(PhosphorIconsRegular.identificationCard, size: 16.sp, color: AppColors.blueBright),
+                    Icon(PhosphorIconsRegular.identificationCard,
+                        size: 16.sp, color: AppColors.blueBright),
                     SizedBox(width: 6.w),
                     Text('Tax profile',
-                        style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.blueBright)),
                   ],
                 ),
               ),

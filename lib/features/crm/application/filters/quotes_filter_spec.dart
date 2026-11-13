@@ -16,8 +16,18 @@ import '../providers/quotes_providers.dart';
 /// a `sent` quote past its validity date evaluates as Expired.
 
 const _months = {
-  'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-  'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+  'Jan': 1,
+  'Feb': 2,
+  'Mar': 3,
+  'Apr': 4,
+  'May': 5,
+  'Jun': 6,
+  'Jul': 7,
+  'Aug': 8,
+  'Sep': 9,
+  'Oct': 10,
+  'Nov': 11,
+  'Dec': 12,
 };
 
 /// Parse a CRM display date ("15 Jul 2026") to a DateTime; "—"/blank → null.
@@ -71,7 +81,8 @@ FilterSpec buildQuotesFilterSpec(
   // documented list param, `?status=<name>`.
   final statuses = statusCatalog.isNotEmpty
       ? [
-          for (final s in statusCatalog) FilterOption(id: s.name, label: s.name),
+          for (final s in statusCatalog)
+            FilterOption(id: s.name, label: s.name),
           // Expired is derived client-side from `valid_until`, never stored, so
           // it is not in the catalog — added unless the org defines its own.
           if (!statusCatalog
@@ -138,12 +149,27 @@ FilterSpec buildQuotesFilterSpec(
             id: 'created',
             label: 'Created',
             control: FilterControl.dateRange,
-            dateChips: ['today', 'yesterday', 'last7', 'last30', 'last60', 'last90', 'month']),
+            dateChips: [
+              'today',
+              'yesterday',
+              'last7',
+              'last30',
+              'last60',
+              'last90',
+              'month'
+            ]),
         const FilterField(
             id: 'validUntil',
             label: 'Valid until',
             control: FilterControl.dateRange,
-            dateChips: ['today', 'tomorrow', 'next7', 'next30', 'next60', 'next90']),
+            dateChips: [
+              'today',
+              'tomorrow',
+              'next7',
+              'next30',
+              'next60',
+              'next90'
+            ]),
       ]),
     ],
   );
@@ -172,15 +198,20 @@ List<String> quoteStatusValues(Quote q) {
 
 /// Evaluate a quote against applied filter values.
 bool quoteMatchesFilters(Quote q, FilterValues v, CrmPartyLookup lookup) {
-  if (!FilterMatch.matchAnyOf(v.choice('status'), quoteStatusValues(q))) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('status'), quoteStatusValues(q)))
+    return false;
   if (!FilterMatch.matchAnyOf(v.choice('owner'), [q.owner])) return false;
   final company = quoteCompany(q, lookup);
-  if (!FilterMatch.matchAnyOf(v.choice('company'), company == null ? const [] : [company])) {
+  if (!FilterMatch.matchAnyOf(
+      v.choice('company'), company == null ? const [] : [company])) {
     return false;
   }
-  if (!FilterMatch.matchRange(v.range('value'), q.amountNum, scale: 100000)) return false;
-  if (!FilterMatch.matchDate(v.date('created'), parseQuoteDate(q.issued))) return false;
-  if (!FilterMatch.matchDate(v.date('validUntil'), parseQuoteDate(q.valid))) return false;
+  if (!FilterMatch.matchRange(v.range('value'), q.amountNum, scale: 100000))
+    return false;
+  if (!FilterMatch.matchDate(v.date('created'), parseQuoteDate(q.issued)))
+    return false;
+  if (!FilterMatch.matchDate(v.date('validUntil'), parseQuoteDate(q.valid)))
+    return false;
   return true;
 }
 
@@ -198,8 +229,10 @@ final quotesFilterSpecProvider = Provider<FilterSpec>((ref) {
 });
 
 /// Applied drawer filters for the Quotes list (source of the badge count).
-final quoteFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final quoteFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Quotes list (bookmark chips).
 final quoteSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());

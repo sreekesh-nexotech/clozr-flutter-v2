@@ -33,7 +33,7 @@ String? _pk(Object? v) {
 }
 
 String _clockLabel(DateTime? time) =>
-    time == null ? '' : DateFormat('h:mm a').format(time.toLocal());
+    time == null ? '' : DateFormat('HH:mm').format(time.toLocal());
 
 /// The composer's 24h-window label from `is_window_open`/`window_expires_at`.
 ///
@@ -136,7 +136,8 @@ ChatMessage? chatMessageFromJson(Map<String, dynamic> row) {
     tpl: type == 'template' || _str(row['template_name']) != null,
     // Never populated on a fresh optimistic send — only a fetched row carries
     // this (`whatsapp.md` §5: outbound rows store `media_id`, never `media_url`).
-    mediaId: (type == 'image' || type == 'document') ? _str(row['media_id']) : null,
+    mediaId:
+        (type == 'image' || type == 'document') ? _str(row['media_id']) : null,
   );
 }
 
@@ -167,7 +168,9 @@ ChatMedia? chatMediaFromJson(Map<String, dynamic> row, {DateTime? now}) {
   final name = _str(row['caption']) ??
       _str(row['file_name']) ??
       (url != null ? _fileNameOf(url) : null) ??
-      (type.isEmpty ? 'Attachment' : '${type[0].toUpperCase()}${type.substring(1)}');
+      (type.isEmpty
+          ? 'Attachment'
+          : '${type[0].toUpperCase()}${type.substring(1)}');
 
   final kind = mime.isNotEmpty
       ? mime.split('/').last.toUpperCase()
@@ -176,7 +179,9 @@ ChatMedia? chatMediaFromJson(Map<String, dynamic> row, {DateTime? now}) {
   return ChatMedia(
     kind: mediaKind(type, mime),
     name: name,
-    meta: [kind, relativeTime(sent, now: now)].where((s) => s.isNotEmpty).join(' · '),
+    meta: [kind, relativeTime(sent, now: now)]
+        .where((s) => s.isNotEmpty)
+        .join(' · '),
     mediaId: mediaId,
   );
 }
@@ -198,9 +203,11 @@ String mediaKind(String type, String mime) {
   final m = mime.toLowerCase();
   if (type == 'image' || m.startsWith('image/')) return 'image';
   if (type == 'video' || m.startsWith('video/')) return 'video';
-  if (type == 'audio' || type == 'voice' || m.startsWith('audio/')) return 'audio';
+  if (type == 'audio' || type == 'voice' || m.startsWith('audio/'))
+    return 'audio';
   if (m.contains('pdf')) return 'pdf';
-  if (m.contains('sheet') || m.contains('excel') || m.contains('csv')) return 'sheet';
+  if (m.contains('sheet') || m.contains('excel') || m.contains('csv'))
+    return 'sheet';
   if (m.contains('word') || m.contains('document')) return 'doc';
   return 'file';
 }
@@ -213,7 +220,8 @@ String mediaKind(String type, String mime) {
 List<ChatLink> chatLinksFromJson(Map<String, dynamic> row, {DateTime? now}) {
   final body = _str(row['body']) ?? _str(row['text']);
   if (body == null) return const [];
-  final sent = relativeTime(parseApiDate(row['timestamp'] ?? row['created_at']), now: now);
+  final sent = relativeTime(parseApiDate(row['timestamp'] ?? row['created_at']),
+      now: now);
 
   final out = <ChatLink>[];
   for (final match in _urlPattern.allMatches(body)) {
@@ -301,7 +309,8 @@ class MessagesRemoteDataSource {
   final Map<String, _TemplateMeta> _templateMeta = {};
 
   static const int _pageSize = ApiConfig.defaultPageSize;
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   // ── Conversations ──
 
@@ -346,7 +355,8 @@ class MessagesRemoteDataSource {
     if (cached != null && cached.accountId != null && cached.phone.isNotEmpty) {
       return cached;
     }
-    final body = await _api.get(ApiEndpoints.whatsappConversation(conversationId));
+    final body =
+        await _api.get(ApiEndpoints.whatsappConversation(conversationId));
     if (body is Map<String, dynamic>) _rememberMeta(conversationId, body);
     return _conversationMeta[conversationId];
   }
@@ -413,7 +423,10 @@ class MessagesRemoteDataSource {
       'body': text,
     });
     return ChatMessage(
-        mine: true, text: text, time: _clockLabel(DateTime.now()), status: 'sent');
+        mine: true,
+        text: text,
+        time: _clockLabel(DateTime.now()),
+        status: 'sent');
   }
 
   Future<ChatMessage?> sendTemplate(
@@ -460,7 +473,10 @@ class MessagesRemoteDataSource {
     });
     await _api.postForm(ApiEndpoints.whatsappSendImage, form);
     return ChatMessage(
-        mine: true, text: filename, time: _clockLabel(DateTime.now()), status: 'sent');
+        mine: true,
+        text: filename,
+        time: _clockLabel(DateTime.now()),
+        status: 'sent');
   }
 
   /// `POST /whatsapp/send/document/` (multipart). `document` is a plain
@@ -485,14 +501,18 @@ class MessagesRemoteDataSource {
     });
     await _api.postForm(ApiEndpoints.whatsappSendDocument, form);
     return ChatMessage(
-        mine: true, text: filename, time: _clockLabel(DateTime.now()), status: 'sent');
+        mine: true,
+        text: filename,
+        time: _clockLabel(DateTime.now()),
+        status: 'sent');
   }
 
   /// `GET /whatsapp/media/<media_id>/` (whatsapp.md §5). 404 means no message
   /// in this org carries that id; 502 means Meta refused the fetch (usually
   /// media older than 30 days, which Meta purges) — both surface as [AppError]
   /// through the normal request path, not a special case here.
-  Future<(List<int> bytes, String? contentType)> fetchMediaBytes(String mediaId) =>
+  Future<(List<int> bytes, String? contentType)> fetchMediaBytes(
+          String mediaId) =>
       _api.getBytes(ApiEndpoints.whatsappMedia(mediaId));
 
   // ── Templates ──

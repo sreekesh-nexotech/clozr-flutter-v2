@@ -55,7 +55,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     // Contextual add: the bottom-nav `+` opens the Invite member sheet here.
     registerAdd(
       ref,
-      AddAction(label: 'Invite member', run: (ctx) => showInviteMemberSheet(ctx)),
+      AddAction(
+          label: 'Invite member', run: (ctx) => showInviteMemberSheet(ctx)),
     );
 
     final membersAsync = ref.watch(membersProvider);
@@ -84,7 +85,9 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 PeopleIconAction(
                   icon: PhosphorIconsRegular.magnifyingGlass,
                   dot: query.isNotEmpty,
-                  onTap: () => ref.read(memberSearchOpenProvider.notifier).state = !searchOpen,
+                  onTap: () => ref
+                      .read(memberSearchOpenProvider.notifier)
+                      .state = !searchOpen,
                 ),
                 PeopleIconAction(
                   icon: PhosphorIconsRegular.slidersHorizontal,
@@ -104,7 +107,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search name, email, team…',
-                onChanged: (v) => ref.read(memberSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(memberSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(memberSearchProvider.notifier).state = '';
@@ -121,7 +125,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                     TabChip(
                       label: k == 'all' ? 'All (${all.length})' : k,
                       active: role == k,
-                      onTap: () => ref.read(memberRoleProvider.notifier).state = k,
+                      onTap: () =>
+                          ref.read(memberRoleProvider.notifier).state = k,
                     ),
                 ],
               ),
@@ -145,7 +150,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                         EmptyState(
                           icon: PhosphorIconsRegular.users,
                           title: 'No members found',
-                          body: 'Try a different role, clear filters, or invite a new member.',
+                          body:
+                              'Try a different role, clear filters, or invite a new member.',
                         ),
                       ],
                     )
@@ -158,7 +164,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                         final m = visible[i];
                         return MemberCard(
                           member: m,
-                          onTap: () => context.push('${Routes.memberDetail}?id=${m.id}'),
+                          onTap: () =>
+                              context.push('${Routes.memberDetail}?id=${m.id}'),
                         );
                       },
                     );
@@ -192,9 +199,11 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((m) => memberMatchesFilters(m, draft)).length,
+      previewCount: (draft) =>
+          base.where((m) => memberMatchesFilters(m, draft)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(memberSavedViewsProvider).views.map((v) => v.name).toSet(),
+      existingViewNames:
+          ref.read(memberSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(memberSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');
@@ -235,7 +244,9 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.views.where((v) => v.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     ref.read(memberSavedViewsProvider.notifier).apply(id);

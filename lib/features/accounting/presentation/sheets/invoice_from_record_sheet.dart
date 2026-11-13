@@ -28,21 +28,25 @@ Future<AccDocument?> showInvoiceFromRecordSheet(
 }) =>
     showClozrSheet<AccDocument>(
       context: context,
-      builder: (_) => _InvoiceFromRecordSheet(recordId: recordId, customerId: customerId, dueDate: dueDate),
+      builder: (_) => _InvoiceFromRecordSheet(
+          recordId: recordId, customerId: customerId, dueDate: dueDate),
     );
 
 class _InvoiceFromRecordSheet extends ConsumerStatefulWidget {
-  const _InvoiceFromRecordSheet({required this.recordId, this.customerId, this.dueDate});
+  const _InvoiceFromRecordSheet(
+      {required this.recordId, this.customerId, this.dueDate});
 
   final String recordId;
   final String? customerId;
   final DateTime? dueDate;
 
   @override
-  ConsumerState<_InvoiceFromRecordSheet> createState() => _InvoiceFromRecordSheetState();
+  ConsumerState<_InvoiceFromRecordSheet> createState() =>
+      _InvoiceFromRecordSheetState();
 }
 
-class _InvoiceFromRecordSheetState extends ConsumerState<_InvoiceFromRecordSheet> {
+class _InvoiceFromRecordSheetState
+    extends ConsumerState<_InvoiceFromRecordSheet> {
   late DateTime _date = DateTime.now();
   DateTime? _supplyDate;
   bool _busy = false;
@@ -58,11 +62,13 @@ class _InvoiceFromRecordSheetState extends ConsumerState<_InvoiceFromRecordSheet
     try {
       // Re-checked at submit, not just at open: the daily sweep may have
       // created one in between.
-      final existing = await ref.read(
-          draftsForPaymentRecordProvider((recordId: widget.recordId, customerId: widget.customerId)).future);
+      final existing = await ref.read(draftsForPaymentRecordProvider(
+          (recordId: widget.recordId, customerId: widget.customerId)).future);
       if (existing.isNotEmpty) {
         if (!mounted) return;
-        ref.read(toastProvider.notifier).show('A draft already exists — opening it');
+        ref
+            .read(toastProvider.notifier)
+            .show('A draft already exists — opening it');
         Navigator.of(context).pop(existing.first);
         return;
       }
@@ -86,25 +92,37 @@ class _InvoiceFromRecordSheetState extends ConsumerState<_InvoiceFromRecordSheet
 
   @override
   Widget build(BuildContext context) {
-    final drafts = ref.watch(draftsForPaymentRecordProvider((recordId: widget.recordId, customerId: widget.customerId)));
+    final drafts = ref.watch(draftsForPaymentRecordProvider(
+        (recordId: widget.recordId, customerId: widget.customerId)));
     final existing = drafts.valueOrNull ?? const <AccDocument>[];
     return AccSheetScaffold(
       title: 'Issue invoice',
       submitLabel: existing.isNotEmpty ? 'Open draft' : 'Create draft',
-      submitIcon: existing.isNotEmpty ? PhosphorIconsBold.arrowRight : PhosphorIconsBold.plus,
+      submitIcon: existing.isNotEmpty
+          ? PhosphorIconsBold.arrowRight
+          : PhosphorIconsBold.plus,
       busyLabel: 'Creating…',
       busy: _busy || drafts.isLoading,
       error: _error,
-      onSubmit: existing.isNotEmpty ? () => Navigator.of(context).pop(existing.first) : _create,
+      onSubmit: existing.isNotEmpty
+          ? () => Navigator.of(context).pop(existing.first)
+          : _create,
       children: [
         if (existing.isNotEmpty)
           AccInfoBanner(
             'This instalment already has a draft invoice${existing.first.documentDate == null ? '' : ' dated ${formatApiDay(existing.first.documentDate)}'}. Open it to preview and issue.',
           )
         else ...[
-          AccDateBox(label: 'Invoice date', required: true, value: _date, showIstHint: true,
+          AccDateBox(
+              label: 'Invoice date',
+              required: true,
+              value: _date,
+              showIstHint: true,
               onChanged: (d) => setState(() => _date = d ?? _date)),
-          AccDateBox(label: 'Supply date', value: _supplyDate, clearable: true,
+          AccDateBox(
+              label: 'Supply date',
+              value: _supplyDate,
+              clearable: true,
               onChanged: (d) => setState(() => _supplyDate = d)),
           const AccInfoBanner(
             'A draft is created from this instalment with the quote\'s items. Preview the tax and issue it from the draft.',

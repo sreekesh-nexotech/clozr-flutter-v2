@@ -33,14 +33,16 @@ class ToastController extends StateNotifier<ToastMessage?> {
   ToastController() : super(null);
   Timer? _timer;
 
-  void show(String message) => _show(ToastMessage(message), AppConstants.toastDuration);
+  void show(String message) =>
+      _show(ToastMessage(message), AppConstants.toastDuration);
 
   /// A neutral pointer ("Tickets list — 3 breached tickets").
-  void showInfo(String message) => _show(ToastMessage(message, isInfo: true), AppConstants.toastDuration);
+  void showInfo(String message) =>
+      _show(ToastMessage(message, isInfo: true), AppConstants.toastDuration);
 
   /// A failure the user has to read: server refusals, validation, write errors.
-  void showError(String message) =>
-      _show(ToastMessage(message, isError: true), AppConstants.toastErrorDuration);
+  void showError(String message) => _show(
+      ToastMessage(message, isError: true), AppConstants.toastErrorDuration);
 
   void _show(ToastMessage message, Duration duration) {
     _timer?.cancel();

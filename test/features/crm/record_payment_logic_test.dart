@@ -37,13 +37,17 @@ void main() {
     });
 
     test('0 and negative are invalid', () {
-      expect(validateSettleAmount(raw: '0', balance: 6000).error, 'Enter a valid amount');
-      expect(validateSettleAmount(raw: '-5', balance: 6000).error, 'Enter a valid amount');
-      expect(validateSettleAmount(raw: 'abc', balance: 6000).error, 'Enter a valid amount');
+      expect(validateSettleAmount(raw: '0', balance: 6000).error,
+          'Enter a valid amount');
+      expect(validateSettleAmount(raw: '-5', balance: 6000).error,
+          'Enter a valid amount');
+      expect(validateSettleAmount(raw: 'abc', balance: 6000).error,
+          'Enter a valid amount');
     });
 
     test('cash sent = owed − deductions', () {
-      final r = validateSettleAmount(raw: '', balance: 10000, tds: 1000, bankCharge: 50);
+      final r = validateSettleAmount(
+          raw: '', balance: 10000, tds: 1000, bankCharge: 50);
       expect(r.amountPaid, 8950);
       expect(r.owed, 10000);
     });
@@ -54,7 +58,8 @@ void main() {
     });
 
     test('live note', () {
-      expect(deductionsNote(1000, 50), 'Settles as cash received + ₹1,000 TDS + ₹50 bank charge.');
+      expect(deductionsNote(1000, 50),
+          'Settles as cash received + ₹1,000 TDS + ₹50 bank charge.');
       expect(deductionsNote(0, 0), isNull);
       expect(deductionInput('-5'), 0);
       expect(deductionInput('1,000'), 1000);
@@ -65,18 +70,21 @@ void main() {
     expect(validateAdhocAmount(''), 'Enter a valid amount');
     expect(validateAdhocAmount('0'), 'Enter a valid amount');
     expect(validateAdhocAmount('2500'), isNull);
-    expect(validateAdhocAmount('100', tds: 100), 'Deductions cannot cover the whole amount');
+    expect(validateAdhocAmount('100', tds: 100),
+        'Deductions cannot cover the whole amount');
   });
 
   test('payment date cannot be in the future (CRM-PY-015)', () {
     final today = DateTime(2026, 10, 24, 15);
     expect(paymentDateError(DateTime(2026, 10, 24, 23), today), isNull);
     expect(paymentDateError(DateTime(2026, 10, 1), today), isNull);
-    expect(paymentDateError(DateTime(2026, 10, 25), today), 'The payment date cannot be in the future.');
+    expect(paymentDateError(DateTime(2026, 10, 25), today),
+        'The payment date cannot be in the future.');
   });
 
   test('methods match the webapp, Bank transfer first (CRM-PY-016)', () {
-    expect([for (final m in recordPayMethods) m.label], ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque', 'Auto-debit']);
+    expect([for (final m in recordPayMethods) m.label],
+        ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque', 'Auto-debit']);
     expect(defaultPayMethodCode, 'bank_transfer');
     expect(recordPayMethods.last.code, 'auto_debit');
   });
@@ -87,19 +95,23 @@ void main() {
       expect(adhocAllowedFor('installment_even'), isFalse);
       expect(adhocAllowedFor('lumpsum'), isFalse);
       expect(adhocAllowedFor(null), isFalse);
-      expect(effectiveMode(RecordMode.adhoc, 'installment_even'), RecordMode.settle);
-      expect(effectiveMode(RecordMode.adhoc, 'installment_custom'), RecordMode.adhoc);
+      expect(effectiveMode(RecordMode.adhoc, 'installment_even'),
+          RecordMode.settle);
+      expect(effectiveMode(RecordMode.adhoc, 'installment_custom'),
+          RecordMode.adhoc);
     });
 
     test('all-settled copy', () {
-      expect(allSettledCopy('installment_even'), 'All installments on this plan are settled.');
+      expect(allSettledCopy('installment_even'),
+          'All installments on this plan are settled.');
       expect(allSettledCopy('installment_custom'),
           'All installments on this plan are settled. Switch to Ad-hoc to log an extra payment.');
     });
   });
 
   group('request bodies', () {
-    test('settle: PATCH status paid with the incl-GST cash (CRM-PY-013 / 033)', () {
+    test('settle: PATCH status paid with the incl-GST cash (CRM-PY-013 / 033)',
+        () {
       final body = buildSettleBody(
         amountPaid: 3933,
         paidDate: DateTime(2026, 10, 24),
@@ -151,9 +163,24 @@ void main() {
 
   group('lead conversion (CRM-PY-023)', () {
     const statuses = [
-      {'lead_status_id': 'new', 'name': 'New', 'is_won': false, 'is_type_pick': true},
-      {'lead_status_id': 'won2', 'name': 'Closed', 'is_won': true, 'is_type_pick': false},
-      {'lead_status_id': 'won', 'name': 'Won', 'is_won': true, 'is_type_pick': true},
+      {
+        'lead_status_id': 'new',
+        'name': 'New',
+        'is_won': false,
+        'is_type_pick': true
+      },
+      {
+        'lead_status_id': 'won2',
+        'name': 'Closed',
+        'is_won': true,
+        'is_type_pick': false
+      },
+      {
+        'lead_status_id': 'won',
+        'name': 'Won',
+        'is_won': true,
+        'is_type_pick': true
+      },
     ];
 
     test('needs a customer only on a lead-only quote', () {
@@ -164,17 +191,31 @@ void main() {
 
     test('server refusal is recognised', () {
       expect(isCustomerRequiredFailure(code: 'CUSTOMER_REQUIRED'), isTrue);
-      expect(isCustomerRequiredFailure(message: 'Convert the lead to a customer first.'), isTrue);
+      expect(
+          isCustomerRequiredFailure(
+              message: 'Convert the lead to a customer first.'),
+          isTrue);
       expect(isCustomerRequiredFailure(message: 'Nope'), isFalse);
     });
 
     test('won pick prefers the type pick', () {
       expect(pickWonStatus(statuses), (id: 'won', name: 'Won'));
-      expect(pickWonStatus(const [{'lead_status_id': 'a', 'name': 'A', 'is_won': false}]), isNull);
+      expect(
+          pickWonStatus(const [
+            {'lead_status_id': 'a', 'name': 'A', 'is_won': false}
+          ]),
+          isNull);
     });
 
     test('a New lead asks to mark Won', () {
-      final s = quoteLeadStateFrom('L', const {'status': 'New', 'is_converted': false, 'pending_conversion': null}, statuses);
+      final s = quoteLeadStateFrom(
+          'L',
+          const {
+            'status': 'New',
+            'is_converted': false,
+            'pending_conversion': null
+          },
+          statuses);
       expect(s.isWon, isFalse);
       expect(convertStepFor(s), ConvertStep.confirmMarkWon);
       expect(markWonPromptCopy(s.wonStatusName!),
@@ -184,15 +225,28 @@ void main() {
     test('a Won lead converts; converted records; pending waits', () {
       final won = quoteLeadStateFrom('L', const {'status': 'Closed'}, statuses);
       expect(convertStepFor(won), ConvertStep.convert);
-      expect(convertStepFor(quoteLeadStateFrom('L', const {'status': 'Won', 'is_converted': true}, statuses)),
+      expect(
+          convertStepFor(quoteLeadStateFrom(
+              'L', const {'status': 'Won', 'is_converted': true}, statuses)),
           ConvertStep.recordNow);
-      expect(convertStepFor(quoteLeadStateFrom('L', const {'status': 'New', 'pending_conversion': {'approval_id': 'x'}}, statuses)),
+      expect(
+          convertStepFor(quoteLeadStateFrom(
+              'L',
+              const {
+                'status': 'New',
+                'pending_conversion': {'approval_id': 'x'}
+              },
+              statuses)),
           ConvertStep.alreadyPending);
-      expect(convertStepFor(quoteLeadStateFrom('L', const {'status': 'New'}, const [])), ConvertStep.noWonStatus);
+      expect(
+          convertStepFor(
+              quoteLeadStateFrom('L', const {'status': 'New'}, const [])),
+          ConvertStep.noWonStatus);
     });
 
     test('toast copy', () {
-      expect(leadConvertedToast('Acme'), 'Lead converted — customer Acme created');
+      expect(
+          leadConvertedToast('Acme'), 'Lead converted — customer Acme created');
       expect(leadConvertedToast(null), 'Lead converted to a customer');
     });
   });
@@ -233,14 +287,20 @@ void main() {
           'status': 'pending',
           'lead_name': 'UAT Pay Even',
         },
-        {'record_id': 'r3', 'installment_number': 3, 'status': 'paid', 'amount_expected': '3333.90'},
+        {
+          'record_id': 'r3',
+          'installment_number': 3,
+          'status': 'paid',
+          'amount_expected': '3333.90'
+        },
       ],
     });
 
     test('summary and lead-only detection', () {
       expect(plan.needsCustomer, isTrue);
       expect(plan.who, 'UAT Pay Even');
-      expect(plan.summary, 'QTN-00041 · UAT Pay Even · due ₹11,800 of ₹11,800 (incl. GST)');
+      expect(plan.summary,
+          'QTN-00041 · UAT Pay Even · due ₹11,800 of ₹11,800 (incl. GST)');
       expect([for (final r in plan.openRecords) r.id], ['r1', 'r2']);
     });
 

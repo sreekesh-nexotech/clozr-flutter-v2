@@ -15,19 +15,26 @@ class InfoBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 11.h),
-      decoration: BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: AppColors.blueSubtle,
+          borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: EdgeInsets.only(top: 1.h),
-            child: Icon(PhosphorIconsRegular.info, size: 16.sp, color: AppColors.blueBright),
+            child: Icon(PhosphorIconsRegular.info,
+                size: 16.sp, color: AppColors.blueBright),
           ),
           SizedBox(width: 9.w),
           Expanded(
             child: Text.rich(
               TextSpan(
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: const Color(0xFF35507C), height: 1.5),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: const Color(0xFF35507C),
+                    height: 1.5),
                 children: spans,
               ),
             ),

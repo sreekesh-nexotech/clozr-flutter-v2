@@ -2,9 +2,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../auth/application/providers/auth_providers.dart';
+import '../../../operations/application/providers/ops_dashboard_providers.dart'
+    show opsPeriodQueryProvider;
 import '../../domain/entities/help_dashboard.dart';
 import '../../domain/entities/help_kpis.dart';
 import '../../infrastructure/data_sources/remote/help_dashboard_remote_ds.dart';
+
+/// Whether the server's `scope=own` figures are really the signed-in user's.
+///
+/// For a staff (`is_staff`) account they are not: `dashboard-issue/*` answers
+/// `scope=own` with the whole org's tickets (4 / 16 open tickets for admins
+/// with none assigned, a donut of 3 breached beside a card of 1). Home is "my
+/// tickets", so for those accounts the server's own-scope KPIs, mix and grid
+/// are left out and the cards fall back to the user's own ticket list.
+Future<bool> serverOwnScopeIsPersonal(Ref ref) async {
+  final access = await ref.watch(moduleAccessProvider.future);
+  return access?.isStaff != true;
+}
+
+/// The Period the Helpdesk home asks the server for — the same selection the
+/// Dashboard tabs and Operations Home use (`dashPeriodProvider` +
+/// `dashCustomRangeProvider`), as `period` / `from` / `to` query values.
+final helpPeriodQueryProvider =
+    Provider<({String period, String? from, String? to})>(
+        (ref) => ref.watch(opsPeriodQueryProvider));
 
 /// The Helpdesk KPI figures behind the home cards, scoped to the signed-in
 /// user.
@@ -15,7 +37,10 @@ import '../../infrastructure/data_sources/remote/help_dashboard_remote_ds.dart';
 /// the ticket list — so the grid never depends on this call succeeding.
 final helpKpisProvider = FutureProvider<HelpKpis?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
-  return HelpDashboardRemoteDataSource(ref.watch(apiServiceProvider)).fetchKpis();
+  if (!await serverOwnScopeIsPersonal(ref)) return null;
+  final p = ref.watch(helpPeriodQueryProvider);
+  return HelpDashboardRemoteDataSource(ref.watch(apiServiceProvider))
+      .fetchKpis(period: p.period, from: p.from, to: p.to);
 });
 
 /// §3 — the SLA Status and Priority Mix donuts.
@@ -24,14 +49,18 @@ final helpKpisProvider = FutureProvider<HelpKpis?>((ref) async {
 /// tickets instead", the same contract as [helpKpisProvider].
 final helpSlaMixProvider = FutureProvider<SlaPriorityMix?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
+  if (!await serverOwnScopeIsPersonal(ref)) return null;
+  final p = ref.watch(helpPeriodQueryProvider);
   return HelpDashboardRemoteDataSource(ref.watch(apiServiceProvider))
-      .fetchSlaPriorityMix();
+      .fetchSlaPriorityMix(period: p.period, from: p.from, to: p.to);
 });
 
 /// §9 — the Tickets Resolved grid, priority × before/after due.
 final helpCompletedGridProvider =
     FutureProvider<List<CompletedGridRow>?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
+  if (!await serverOwnScopeIsPersonal(ref)) return null;
+  final p = ref.watch(helpPeriodQueryProvider);
   return HelpDashboardRemoteDataSource(ref.watch(apiServiceProvider))
-      .fetchCompletedGrid();
+      .fetchCompletedGrid(period: p.period, from: p.from, to: p.to);
 });

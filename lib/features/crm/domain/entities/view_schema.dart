@@ -114,8 +114,7 @@ class ViewColumn extends Equatable {
       // `field_info` is only present for serializer fields, so its presence is
       // the same signal as the flag; either one is enough.
       inFields: row['in_fields'] == true || info is Map,
-      relatedModel:
-          info is Map ? (info['related_model'] ?? '').toString() : '',
+      relatedModel: info is Map ? (info['related_model'] ?? '').toString() : '',
       // Looked for in `field_info` first, then in the schema's top-level
       // `fields` map — the documented example puts them there
       // (`fields.status.choices`), and the two are not guaranteed to be the
@@ -193,8 +192,19 @@ class ViewColumn extends Equatable {
       isCustom ? name.substring(name.indexOf('.') + 1) : name;
 
   @override
-  List<Object?> get props =>
-      [name, label, order, type, isCustom, isFixed, inFields, relatedModel, choices, isRequired, customType];
+  List<Object?> get props => [
+        name,
+        label,
+        order,
+        type,
+        isCustom,
+        isFixed,
+        inFields,
+        relatedModel,
+        choices,
+        isRequired,
+        customType
+      ];
 }
 
 /// The org's Leads list layout: which columns to render, in which order, under
@@ -221,13 +231,11 @@ class ViewSchema extends Equatable {
 
   /// Whether [name] is a visible column. An empty schema answers **true** for
   /// everything: with no layout to honour, nothing should be hidden.
-  bool shows(String name) =>
-      isEmpty || columns.any((c) => c.name == name);
+  bool shows(String name) => isEmpty || columns.any((c) => c.name == name);
 
   /// Whether any of [names] is visible — for card slots fed by more than one
   /// field (the sub-title reads `products`, else `lead_source`).
-  bool showsAny(Iterable<String> names) =>
-      isEmpty || names.any(shows);
+  bool showsAny(Iterable<String> names) => isEmpty || names.any(shows);
 
   /// Parses a `/schema/` response. Hidden columns are dropped here — a settings
   /// panel needs them to render toggles, a screen never does.
@@ -259,8 +267,10 @@ class ViewSchema extends Equatable {
   /// Narrower than [columns]: a layout mixes editable fields with display-only
   /// ones (`lead_value`, `lead_score`, `created_at`), and putting a box around
   /// a display-only field produces a form that accepts input the API discards.
-  List<ViewColumn> get editableColumns =>
-      [for (final c in columns) if (c.isEditable) c];
+  List<ViewColumn> get editableColumns => [
+        for (final c in columns)
+          if (c.isEditable) c
+      ];
 
   /// [editableColumns] plus the org's custom fields, for a form that writes
   /// them as `custom_fields: {<slug>: value}`.

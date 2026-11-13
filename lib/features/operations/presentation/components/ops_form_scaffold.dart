@@ -34,7 +34,8 @@ class OpsFormScaffold extends StatelessWidget {
           Container(
             padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+              border:
+                  Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
             ),
             child: Row(
               children: [
@@ -43,10 +44,16 @@ class OpsFormScaffold extends StatelessWidget {
                   onTap: onClose,
                   child: Padding(
                     padding: EdgeInsets.only(right: 12.w),
-                    child: Icon(PhosphorIconsBold.x, size: 20.sp, color: AppColors.textPrimary),
+                    child: Icon(PhosphorIconsBold.x,
+                        size: 20.sp, color: AppColors.textPrimary),
                   ),
                 ),
-                Text(title, style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                Text(title,
+                    style: AppText.custom(
+                        size: 20,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
               ],
             ),
           ),
@@ -74,9 +81,14 @@ class OpsFormScaffold extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(PhosphorIconsBold.plus, size: 15.sp, color: AppColors.white),
+                    Icon(PhosphorIconsBold.plus,
+                        size: 15.sp, color: AppColors.white),
                     SizedBox(width: 8.w),
-                    Text(ctaLabel, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                    Text(ctaLabel,
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.white)),
                   ],
                 ),
               ),
@@ -99,7 +111,11 @@ class OpsSectionLabel extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.fromLTRB(2.w, first ? 8.h : 22.h, 2.w, 12.h),
       child: Text(text.toUpperCase(),
-          style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)),
+          style: AppText.custom(
+              size: 12,
+              weight: FontWeight.w700,
+              color: AppColors.textMuted,
+              letterSpacing: 0.5)),
     );
   }
 }
@@ -133,7 +149,8 @@ class OpsEditScaffold extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 14.h),
             decoration: const BoxDecoration(
               color: AppColors.white,
-              border: Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
+              border:
+                  Border(bottom: BorderSide(color: AppColors.borderCardSoft)),
             ),
             child: Row(
               children: [
@@ -149,7 +166,8 @@ class OpsEditScaffold extends StatelessWidget {
                       borderRadius: BorderRadius.circular(11.r),
                       border: Border.all(color: const Color(0xFFE6E7EA)),
                     ),
-                    child: Icon(PhosphorIconsBold.caretLeft, size: 17.sp, color: AppColors.textBody),
+                    child: Icon(PhosphorIconsBold.caretLeft,
+                        size: 17.sp, color: AppColors.textBody),
                   ),
                 ),
                 SizedBox(width: 12.w),
@@ -157,8 +175,17 @@ class OpsEditScaffold extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                      Text(subtitle, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      Text(title,
+                          style: AppText.custom(
+                              size: 19,
+                              weight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                              letterSpacing: -0.3)),
+                      Text(subtitle,
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     ],
                   ),
                 ),
@@ -190,7 +217,11 @@ class OpsEditScaffold extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12.r),
                       border: Border.all(color: const Color(0xFFE6E7EA)),
                     ),
-                    child: Text('Cancel', style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                    child: Text('Cancel',
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w600,
+                            color: AppColors.textLabelAlt)),
                   ),
                 ),
                 SizedBox(width: 10.w),
@@ -203,14 +234,24 @@ class OpsEditScaffold extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: AppColors.navy,
                         borderRadius: BorderRadius.circular(12.r),
-                        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.22), blurRadius: 18, offset: const Offset(0, 8))],
+                        boxShadow: [
+                          BoxShadow(
+                              color: AppColors.navy.withOpacity(0.22),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8))
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
+                          Icon(PhosphorIconsBold.check,
+                              size: 16.sp, color: AppColors.white),
                           SizedBox(width: 8.w),
-                          Text('Save changes', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                          Text('Save changes',
+                              style: AppText.custom(
+                                  size: 15,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.white)),
                         ],
                       ),
                     ),
@@ -232,11 +273,20 @@ Future<bool> confirmDiscard(BuildContext context) async {
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
-      title: Text('Discard changes?', style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
-      content: Text('Your edits will be lost.', style: AppText.body(color: AppColors.textMuted)),
+      title: Text('Discard changes?',
+          style: AppText.custom(
+              size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+      content: Text('Your edits will be lost.',
+          style: AppText.body(color: AppColors.textMuted)),
       actions: [
-        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text('Keep editing', style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
-        TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text('Discard', style: AppText.bodyStrong(color: AppColors.error))),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Keep editing',
+                style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Discard',
+                style: AppText.bodyStrong(color: AppColors.error))),
       ],
     ),
   );
@@ -244,7 +294,8 @@ Future<bool> confirmDiscard(BuildContext context) async {
 }
 
 /// Convenience: pops the route when the user confirms discarding.
-Future<void> handleEditClose(BuildContext context, {required bool dirty}) async {
+Future<void> handleEditClose(BuildContext context,
+    {required bool dirty}) async {
   if (!dirty) {
     context.pop();
     return;

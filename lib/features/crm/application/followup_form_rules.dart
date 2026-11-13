@@ -8,6 +8,8 @@
 /// layout schema — so neither is this one.
 library;
 
+import '../../../core/utils/relative_time.dart';
+
 // ── Reminder (follow-ups only) ──
 
 /// Webapp `REMINDER_OPTIONS` — the server's `Task.ReminderChoice`.
@@ -20,13 +22,16 @@ const followupReminderOptions = <(String, String)>[
   ('2days', '2 days before'),
 ];
 
-bool isReminderChoice(String value) => followupReminderOptions.any((o) => o.$1 == value);
+bool isReminderChoice(String value) =>
+    followupReminderOptions.any((o) => o.$1 == value);
 
 /// The label a reminder value shows as; "No reminder" when blank / unknown.
 String reminderLabel(String value) =>
-    followupReminderOptions.where((o) => o.$1 == value).firstOrNull?.$2 ?? 'No reminder';
+    followupReminderOptions.where((o) => o.$1 == value).firstOrNull?.$2 ??
+    'No reminder';
 
-const reminderNeedsDueDateMessage = 'A due date is required when setting a reminder.';
+const reminderNeedsDueDateMessage =
+    'A due date is required when setting a reminder.';
 
 // ── Field limits and wording ──
 
@@ -52,10 +57,23 @@ DateTime followupDueDateMax([DateTime? today]) {
   return DateTime(t.year + 5, t.month, t.day);
 }
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
-/// `08-Dec-2025` — the webapp's `displayDay` / `fmtCalendarDay`.
-String followupDayLabel(DateTime d) => '${d.day.toString().padLeft(2, '0')}-${_months[d.month - 1]}-${d.year}';
+/// `8 Dec 2025` — the app-wide date style (UI/UX audit #07).
+String followupDayLabel(DateTime d) => fmtDay(d); // DD/MM/YYYY (C17)
 
 /// `2026-06-24` — the form the API stores.
 String isoDay(DateTime d) =>
@@ -82,13 +100,16 @@ bool isPastDueDate(DateTime? due, {DateTime? today}) =>
 // ── Meeting window ──
 
 /// Webapp `isMeetingType`: a meeting type opens the meeting fields by default.
-bool isMeetingType(String type) => RegExp('meet', caseSensitive: false).hasMatch(type);
+bool isMeetingType(String type) =>
+    RegExp('meet', caseSensitive: false).hasMatch(type);
 
 const meetingOrderMessage = 'Meeting end cannot be before the meeting start.';
 
 /// Webapp `meetingWindowError`: the meeting cannot end before it starts.
 String? meetingWindowError(DateTime? from, DateTime? to) =>
-    from != null && to != null && to.isBefore(from) ? meetingOrderMessage : null;
+    from != null && to != null && to.isBefore(from)
+        ? meetingOrderMessage
+        : null;
 
 // ── Custom fields (CF-01) ──
 
@@ -177,9 +198,13 @@ class TaskCustomFieldDef {
 
 /// Webapp `customFieldsForKind`: the fields of one record kind (`all` + the
 /// kind's own), in the admin's display order.
-List<TaskCustomFieldDef> customFieldsForKind(List<TaskCustomFieldDef> defs, {required bool isFollowup}) {
+List<TaskCustomFieldDef> customFieldsForKind(List<TaskCustomFieldDef> defs,
+    {required bool isFollowup}) {
   final kind = isFollowup ? 'followup' : 'task';
-  final out = [for (final d in defs) if (d.appliesTo == 'all' || d.appliesTo == kind) d];
+  final out = [
+    for (final d in defs)
+      if (d.appliesTo == 'all' || d.appliesTo == kind) d
+  ];
   out.sort((a, b) => a.order.compareTo(b.order));
   return out;
 }
@@ -216,24 +241,36 @@ bool _validIsoDay(String s) {
         for (final v in draft)
           if (def.choices.contains(v)) '$v',
     ];
-    if (picked.isEmpty) return (value: null, error: def.required ? customRequiredMessage : null);
+    if (picked.isEmpty)
+      return (value: null, error: def.required ? customRequiredMessage : null);
     return (value: picked, error: null);
   }
   final text = draft is String ? draft.trim() : '';
-  if (text.isEmpty) return (value: null, error: def.required ? customRequiredMessage : null);
+  if (text.isEmpty)
+    return (value: null, error: def.required ? customRequiredMessage : null);
   switch (def.type) {
     case 'number':
     case 'decimal':
       final n = num.tryParse(text);
-      return n != null && n.isFinite ? (value: n, error: null) : (value: null, error: 'Must be a numeric value.');
+      return n != null && n.isFinite
+          ? (value: n, error: null)
+          : (value: null, error: 'Must be a numeric value.');
     case 'date':
-      return _validIsoDay(text) ? (value: text, error: null) : (value: null, error: 'Must be a date (YYYY-MM-DD).');
+      return _validIsoDay(text)
+          ? (value: text, error: null)
+          : (value: null, error: 'Must be a date (YYYY-MM-DD).');
     case 'datetime':
-      return _dateTimeRe.hasMatch(text) ? (value: text, error: null) : (value: null, error: 'Must be a date and time.');
+      return _dateTimeRe.hasMatch(text)
+          ? (value: text, error: null)
+          : (value: null, error: 'Must be a date and time.');
     case 'dropdown':
-      return def.choices.contains(text) ? (value: text, error: null) : (value: null, error: 'Pick one of the options.');
+      return def.choices.contains(text)
+          ? (value: text, error: null)
+          : (value: null, error: 'Pick one of the options.');
     case 'email':
-      return _emailRe.hasMatch(text) ? (value: text, error: null) : (value: null, error: 'Must be a valid email address.');
+      return _emailRe.hasMatch(text)
+          ? (value: text, error: null)
+          : (value: null, error: 'Must be a valid email address.');
     case 'url':
       return _urlRe.hasMatch(text)
           ? (value: text, error: null)
@@ -321,20 +358,23 @@ class FollowupDraft {
 
 /// Webapp `canSave`: a title and a type (and the custom fields known, which the
 /// sheet checks itself).
-bool followupCanSave(FollowupDraft d) => d.title.trim().isNotEmpty && d.type.isNotEmpty;
+bool followupCanSave(FollowupDraft d) =>
+    d.title.trim().isNotEmpty && d.type.isNotEmpty;
 
 /// The webapp's save-time checks, keyed `dueDate` / `reminder` / `meetingTo` /
 /// `custom_fields.<name>`. Empty = good to go (subject to the overdue confirm).
-Map<String, String> followupFormErrors(FollowupDraft d, List<TaskCustomFieldDef> customDefs,
-    Map<String, Object?> customDrafts,
+Map<String, String> followupFormErrors(FollowupDraft d,
+    List<TaskCustomFieldDef> customDefs, Map<String, Object?> customDrafts,
     {DateTime? today}) {
   final found = <String, String>{};
   final due = followupDueDateError(d.dueDate, today: today);
   if (due != null) found['dueDate'] = due;
-  if (d.reminder.isNotEmpty && d.dueDate == null) found['reminder'] = reminderNeedsDueDateMessage;
+  if (d.reminder.isNotEmpty && d.dueDate == null)
+    found['reminder'] = reminderNeedsDueDateMessage;
   final meeting = meetingWindowError(d.meetingFrom, d.meetingTo);
   if (meeting != null) found['meetingTo'] = meeting;
-  for (final e in collectCustomFields(customDefs, customDrafts).errors.entries) {
+  for (final e
+      in collectCustomFields(customDefs, customDrafts).errors.entries) {
     found[customErrorKey(e.key)] = e.value;
   }
   return found;
@@ -344,7 +384,8 @@ Map<String, String> followupFormErrors(FollowupDraft d, List<TaskCustomFieldDef>
 /// Blank optionals are left out (the server applies its defaults); the due
 /// time and the reminder only ride with a due date; `assignees` only when the
 /// set (primary + extras) holds more than one user, exactly as the webapp does.
-Map<String, dynamic> buildFollowupCreateBody(FollowupDraft d, Map<String, Object> customValues) {
+Map<String, dynamic> buildFollowupCreateBody(
+    FollowupDraft d, Map<String, Object> customValues) {
   final due = d.dueDate;
   final primary = d.assignedTo;
   final assignees = [if (primary.isNotEmpty) primary, ...d.extraAssignees];
@@ -366,10 +407,14 @@ Map<String, dynamic> buildFollowupCreateBody(FollowupDraft d, Map<String, Object
       'related_to': d.relatedTo,
       'related_to_id': d.relatedToId,
     },
-    if (due != null && isReminderChoice(d.reminder)) 'reminder_choice': d.reminder,
-    if (d.meetingFrom != null) 'meeting_from': d.meetingFrom!.toUtc().toIso8601String(),
-    if (d.meetingTo != null) 'meeting_to': d.meetingTo!.toUtc().toIso8601String(),
+    if (due != null && isReminderChoice(d.reminder))
+      'reminder_choice': d.reminder,
+    if (d.meetingFrom != null)
+      'meeting_from': d.meetingFrom!.toUtc().toIso8601String(),
+    if (d.meetingTo != null)
+      'meeting_to': d.meetingTo!.toUtc().toIso8601String(),
     if (location.isNotEmpty) 'location': location,
-    if (customValues.isNotEmpty) 'custom_fields': Map<String, Object>.of(customValues),
+    if (customValues.isNotEmpty)
+      'custom_fields': Map<String, Object>.of(customValues),
   };
 }

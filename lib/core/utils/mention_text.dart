@@ -37,7 +37,8 @@ List<MentionSegment> tokenizeMentions(String text, List<MentionUser> users) {
         }
       }
       if (hit != null) {
-        if (i > plainFrom) out.add((text: text.substring(plainFrom, i), id: null));
+        if (i > plainFrom)
+          out.add((text: text.substring(plainFrom, i), id: null));
         final end = i + 1 + hit.name.length;
         out.add((text: text.substring(i, end), id: hit.id));
         i = end;
@@ -47,7 +48,8 @@ List<MentionSegment> tokenizeMentions(String text, List<MentionUser> users) {
     }
     i += 1;
   }
-  if (plainFrom < text.length) out.add((text: text.substring(plainFrom), id: null));
+  if (plainFrom < text.length)
+    out.add((text: text.substring(plainFrom), id: null));
   return out;
 }
 
@@ -64,13 +66,17 @@ List<String> mentionedIdsIn(String text, List<MentionUser> users) {
 /// a word (so `a@b.com` doesn't trigger) and the query can't cross a line
 /// break. Once a known name is complete and typing has moved past it, the
 /// query is over — unless a longer name still continues it.
-({int start, String query})? activeMentionAt(String text, int caret, List<MentionUser> users) {
+({int start, String query})? activeMentionAt(
+    String text, int caret, List<MentionUser> users) {
   if (caret < 0 || caret > text.length) return null;
   final before = text.substring(0, caret);
   final at = before.lastIndexOf('@');
   if (at < 0 || _isWordChar(text, at - 1)) return null;
   final query = before.substring(at + 1);
-  if (query.length > _maxQuery || query.contains('\n') || query.contains('@') || query.startsWith(' ')) {
+  if (query.length > _maxQuery ||
+      query.contains('\n') ||
+      query.contains('@') ||
+      query.startsWith(' ')) {
     return null;
   }
   final q = query.toLowerCase();
@@ -78,19 +84,22 @@ List<String> mentionedIdsIn(String text, List<MentionUser> users) {
     final l = u.name.toLowerCase();
     return q.length > l.length && q.startsWith(l) && !_isWordChar(q, l.length);
   });
-  if (completed && !users.any((u) => u.name.toLowerCase().startsWith(q))) return null;
+  if (completed && !users.any((u) => u.name.toLowerCase().startsWith(q)))
+    return null;
   return (start: at, query: query);
 }
 
 /// Users whose name matches [query] — name-start matches first.
-List<MentionUser> filterMentionCandidates(List<MentionUser> users, String query, {int limit = 8}) {
+List<MentionUser> filterMentionCandidates(List<MentionUser> users, String query,
+    {int limit = 8}) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return users.take(limit).toList();
   final starts = <MentionUser>[];
   final contains = <MentionUser>[];
   for (final u in users) {
     final label = u.name.toLowerCase();
-    if (label.startsWith(q) || label.split(RegExp(r'\s+')).any((w) => w.startsWith(q))) {
+    if (label.startsWith(q) ||
+        label.split(RegExp(r'\s+')).any((w) => w.startsWith(q))) {
       starts.add(u);
     } else if (label.contains(q)) {
       contains.add(u);
@@ -101,10 +110,13 @@ List<MentionUser> filterMentionCandidates(List<MentionUser> users, String query,
 
 /// Replaces the `@query` at [start, caret) with `@name ` — returns the new
 /// text and caret.
-({String text, int caret}) insertMention(String text, int start, int caret, String name) {
+({String text, int caret}) insertMention(
+    String text, int start, int caret, String name) {
   final token = '@$name ';
   final rest = text.substring(caret);
-  final next = text.substring(0, start) + token + (rest.startsWith(' ') ? rest.substring(1) : rest);
+  final next = text.substring(0, start) +
+      token +
+      (rest.startsWith(' ') ? rest.substring(1) : rest);
   return (text: next, caret: start + token.length);
 }
 
@@ -114,7 +126,10 @@ List<MentionUser> filterMentionCandidates(List<MentionUser> users, String query,
   final pos = caret.clamp(0, text.length);
   final lead = pos > 0 && !RegExp(r'\s').hasMatch(text[pos - 1]) ? ' ' : '';
   final token = '$lead@$name ';
-  return (text: text.substring(0, pos) + token + text.substring(pos), caret: pos + token.length);
+  return (
+    text: text.substring(0, pos) + token + text.substring(pos),
+    caret: pos + token.length
+  );
 }
 
 /// Removes every `@name` token for [id] (and one trailing space) from [text].

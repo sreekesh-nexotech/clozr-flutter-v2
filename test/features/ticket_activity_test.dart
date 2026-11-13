@@ -16,8 +16,8 @@ Map<String, dynamic> _row({
       'audit_log_id': 'a1',
       'event_type': event,
       'summary': summary,
-      'actor': actor ??
-          {'user_id': 'u1', 'name': 'Admin Acme', 'is_system': false},
+      'actor':
+          actor ?? {'user_id': 'u1', 'name': 'Admin Acme', 'is_system': false},
       'timestamp': '2026-08-13T07:13:43Z',
     };
 
@@ -25,7 +25,9 @@ void main() {
   group('the server writes the sentence', () {
     test('the summary is the row title, attributed to the actor', () {
       final e = TicketsRemoteDataSource.activityFromJson(
-        _row(event: 'field_changed', summary: 'Assignee changed to Pooja Chopra'),
+        _row(
+            event: 'field_changed',
+            summary: 'Assignee changed to Pooja Chopra'),
       )!;
 
       expect(e.title, 'Assignee changed to Pooja Chopra');
@@ -50,13 +52,15 @@ void main() {
       expect(
         TicketsRemoteDataSource.activityFromJson(
           _row(event: 'reopened', summary: 'Ticket reopened'),
-        )!.kind,
+        )!
+            .kind,
         AuditEventKind.statusChanged,
       );
       expect(
         TicketsRemoteDataSource.activityFromJson(
           _row(event: 'reply_sent', summary: 'Reply sent'),
-        )!.kind,
+        )!
+            .kind,
         AuditEventKind.noteAdded,
       );
     });
@@ -67,7 +71,8 @@ void main() {
       // Live example: "Status changed to f164d805-…" — the server does not
       // resolve the id, so the card would show a raw uuid to the user.
       final e = TicketsRemoteDataSource.activityFromJson(
-        _row(event: 'field_changed', summary: 'Status changed to f164d805-c961'),
+        _row(
+            event: 'field_changed', summary: 'Status changed to f164d805-c961'),
         names: {'f164d805-c961': 'Open'},
       )!;
 

@@ -29,7 +29,8 @@ Future<PartyTaxProfile?> showPartyTaxProfileSheet(
 }) =>
     showClozrSheet<PartyTaxProfile>(
       context: context,
-      builder: (_) => _PartyTaxProfileSheet(kind: kind, partyId: partyId, title: title),
+      builder: (_) =>
+          _PartyTaxProfileSheet(kind: kind, partyId: partyId, title: title),
     );
 
 const _gstinChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -39,7 +40,8 @@ const _gstinChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 /// before the round trip.
 bool gstinValid(String gstin) {
   final g = gstin.toUpperCase();
-  if (!RegExp(r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$').hasMatch(g)) return false;
+  if (!RegExp(r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$').hasMatch(g))
+    return false;
   var sum = 0;
   for (var i = 0; i < 14; i++) {
     final product = _gstinChars.indexOf(g[i]) * (i.isOdd ? 2 : 1);
@@ -50,7 +52,8 @@ bool gstinValid(String gstin) {
 }
 
 class _PartyTaxProfileSheet extends ConsumerWidget {
-  const _PartyTaxProfileSheet({required this.kind, required this.partyId, this.title});
+  const _PartyTaxProfileSheet(
+      {required this.kind, required this.partyId, this.title});
   final String kind;
   final String partyId;
   final String? title;
@@ -61,23 +64,35 @@ class _PartyTaxProfileSheet extends ConsumerWidget {
     return async.when(
       loading: () => SizedBox(
         height: 180.h,
-        child: const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)),
+        child: const Center(
+            child: CircularProgressIndicator(
+                strokeWidth: 2.4, color: AppColors.navy)),
       ),
       error: (e, _) => Padding(
         padding: EdgeInsets.fromLTRB(18.w, 8.h, 18.w, 28.h),
         child: ConflictBanner(
-          error: e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load the tax profile.'),
+          error: e is AppError
+              ? e
+              : const AppError(
+                  type: AppErrorType.unknown,
+                  message: 'Could not load the tax profile.'),
           actionLabel: 'Try again',
-          onAction: () => ref.invalidate(partyTaxProfileProvider((kind: kind, id: partyId))),
+          onAction: () => ref
+              .invalidate(partyTaxProfileProvider((kind: kind, id: partyId))),
         ),
       ),
-      data: (p) => _Form(kind: kind, partyId: partyId, title: title, profile: p),
+      data: (p) =>
+          _Form(kind: kind, partyId: partyId, title: title, profile: p),
     );
   }
 }
 
 class _Form extends ConsumerStatefulWidget {
-  const _Form({required this.kind, required this.partyId, required this.profile, this.title});
+  const _Form(
+      {required this.kind,
+      required this.partyId,
+      required this.profile,
+      this.title});
   final String kind;
   final String partyId;
   final String? title;
@@ -101,7 +116,8 @@ class _FormState extends ConsumerState<_Form> {
   bool _busy = false;
   AppError? _error;
 
-  bool get _needsGstin => const {'REGISTERED', 'COMPOSITION', 'SEZ', 'GOVERNMENT'}.contains(_reg);
+  bool get _needsGstin =>
+      const {'REGISTERED', 'COMPOSITION', 'SEZ', 'GOVERNMENT'}.contains(_reg);
 
   @override
   void dispose() {
@@ -117,7 +133,8 @@ class _FormState extends ConsumerState<_Form> {
       return;
     }
     if (gstin.isNotEmpty && !gstinValid(gstin)) {
-      setState(() => _gstinError = 'This GSTIN is not valid — check for a typo');
+      setState(
+          () => _gstinError = 'This GSTIN is not valid — check for a typo');
       return;
     }
     setState(() {
@@ -126,7 +143,9 @@ class _FormState extends ConsumerState<_Form> {
       _gstinError = null;
     });
     try {
-      final saved = await ref.read(accountingRepositoryProvider).savePartyTaxProfile(widget.kind, widget.partyId, {
+      final saved = await ref
+          .read(accountingRepositoryProvider)
+          .savePartyTaxProfile(widget.kind, widget.partyId, {
         'registration_type': _reg,
         'gstin': gstin,
         'state_code': _state,
@@ -137,7 +156,8 @@ class _FormState extends ConsumerState<_Form> {
         'tds_nature_default': _tdsNature,
         'effective_from': isoDay(_from),
       });
-      ref.invalidate(partyTaxProfileProvider((kind: widget.kind, id: widget.partyId)));
+      ref.invalidate(
+          partyTaxProfileProvider((kind: widget.kind, id: widget.partyId)));
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
       ref.read(toastProvider.notifier).show('Tax profile saved');
@@ -186,7 +206,8 @@ class _FormState extends ConsumerState<_Form> {
         hint: 'Select state…',
         icon: PhosphorIconsRegular.mapPin,
         onTap: () async {
-          final code = await pickGstState(context, ref, selected: _state, title: 'State');
+          final code = await pickGstState(context, ref,
+              selected: _state, title: 'State');
           if (code != null) setState(() => _state = code);
         },
       ),
@@ -207,7 +228,9 @@ class _FormState extends ConsumerState<_Form> {
         onSelected: (v) => setState(() => _entityKind = v),
       ),
       AccCheckRow(
-        label: widget.kind == 'vendor' ? 'TDS applies to payments' : 'Deducts TDS from our invoices',
+        label: widget.kind == 'vendor'
+            ? 'TDS applies to payments'
+            : 'Deducts TDS from our invoices',
         value: _tds,
         onChanged: (v) => setState(() => _tds = v),
       ),
@@ -221,8 +244,14 @@ class _FormState extends ConsumerState<_Form> {
             if (n != null) setState(() => _tdsNature = n);
           },
         ),
-      AccCheckRow(label: 'Body corporate', value: _bodyCorporate, onChanged: (v) => setState(() => _bodyCorporate = v)),
-      AccDateBox(label: 'Effective from', value: _from, onChanged: (d) => setState(() => _from = d ?? _from)),
+      AccCheckRow(
+          label: 'Body corporate',
+          value: _bodyCorporate,
+          onChanged: (v) => setState(() => _bodyCorporate = v)),
+      AccDateBox(
+          label: 'Effective from',
+          value: _from,
+          onChanged: (d) => setState(() => _from = d ?? _from)),
     ];
     return AccSheetScaffold(
       title: widget.title ?? 'Tax profile',
@@ -235,13 +264,24 @@ class _FormState extends ConsumerState<_Form> {
       onSubmit: _save,
       children: [
         if (!canEdit)
-          const AccInfoBanner('Only people with accounting setup rights can change tax profiles.',
+          const AccInfoBanner(
+              'Only people with accounting setup rights can change tax profiles.',
               icon: PhosphorIconsRegular.lock),
         if (!widget.profile.exists && canEdit)
-          const AccInfoBanner('No tax profile yet — treated as unregistered with no GSTIN until one is saved.'),
-        if (canEdit) ...fields else IgnorePointer(child: Opacity(opacity: 0.7, child: Column(children: [
-          for (int i = 0; i < fields.length; i++) ...[if (i > 0) SizedBox(height: 13.h), fields[i]],
-        ]))),
+          const AccInfoBanner(
+              'No tax profile yet — treated as unregistered with no GSTIN until one is saved.'),
+        if (canEdit)
+          ...fields
+        else
+          IgnorePointer(
+              child: Opacity(
+                  opacity: 0.7,
+                  child: Column(children: [
+                    for (int i = 0; i < fields.length; i++) ...[
+                      if (i > 0) SizedBox(height: 13.h),
+                      fields[i]
+                    ],
+                  ]))),
       ],
     );
   }

@@ -1,3 +1,4 @@
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../data/api/user_directory.dart';
@@ -74,7 +75,9 @@ Map<String, dynamic> ticketDrawerParams(
   }
   // Priority: the API's own words ("Urgent" is the old display fold).
   final pri = values.choice('pri');
-  put('priority', pri, [for (final p in pri?.ids ?? const <String>{}) p == 'Urgent' ? 'Critical' : p]);
+  put('priority', pri, [
+    for (final p in pri?.ids ?? const <String>{}) p == 'Urgent' ? 'Critical' : p
+  ]);
   // Assignees: the drawer deals in mapped ids ('me'); the API needs the uuid.
   final assignees = values.choice('assignees');
   put('assigned_to', assignees, [
@@ -82,10 +85,14 @@ Map<String, dynamic> ticketDrawerParams(
       if (UserDirectory.realUserId(id) case final real?) real,
   ]);
   // Category / Product / Project / Customer: option ids are the uuids.
-  put('issue_type', values.choice('cats'), values.choice('cats')?.ids ?? const {});
-  put('product', values.choice('products'), values.choice('products')?.ids ?? const {});
-  put('project', values.choice('projects'), values.choice('projects')?.ids ?? const {});
-  put('customer', values.choice('companies'), values.choice('companies')?.ids ?? const {});
+  put('issue_type', values.choice('cats'),
+      values.choice('cats')?.ids ?? const {});
+  put('product', values.choice('products'),
+      values.choice('products')?.ids ?? const {});
+  put('project', values.choice('projects'),
+      values.choice('projects')?.ids ?? const {});
+  put('customer', values.choice('companies'),
+      values.choice('companies')?.ids ?? const {});
 
   // SLA: only the stored flag maps; the clock-based options do not.
   if (values.radio('sla')?.id == 'breached') out['sla_breached'] = 'true';
@@ -99,7 +106,8 @@ Map<String, dynamic> ticketDrawerParams(
 /// The `issue_status_id`s a set of status chips stands for. Chips hold the
 /// org's ids once the catalog has loaded; a folded built-in key (set from
 /// another screen, or before the catalog lands) resolves through it.
-List<String> ticketChipStatusIds(Set<String> chips, List<CatalogOption> catalog) {
+List<String> ticketChipStatusIds(
+    Set<String> chips, List<CatalogOption> catalog) {
   final known = {for (final s in catalog) s.id};
   return <String>{
     for (final c in chips)
@@ -126,6 +134,12 @@ Map<String, dynamic> ticketFilterParamsFor({
   FilterValues? drawer,
   String? savedFilterId,
   bool forCounts = false,
+  // "Open tickets" from a dashboard card: hide the resolved statuses on the
+  // org-wide list too, the way My Tickets does.
+  bool openOnly = false,
+  // Extra server params a dashboard link scoped the list with (a created
+  // window: `created_at_after` / `_before`). Not a drawer facet.
+  Map<String, String> extra = const {},
 }) {
   if (!ApiConfig.apiEnabled) return const {};
   final q = search.trim();
@@ -133,15 +147,22 @@ Map<String, dynamic> ticketFilterParamsFor({
     return {'saved_filter_id': savedFilterId, if (q.isNotEmpty) 'search': q};
   }
   final chipIds = ticketChipStatusIds(statusChips, catalog);
-  final resolvedIds = [for (final s in catalog) if (s.isClosed) s.id];
+  final resolvedIds = [
+    for (final s in catalog)
+      if (s.isClosed) s.id
+  ];
   return {
     if (mine) 'assigned_to_me': 'true',
     if (breach) 'sla_breached': 'true',
+    ...extra,
     if (q.isNotEmpty) 'search': q,
     // The drawer before the chips, so a picked chip narrows on top of it.
     if (drawer != null) ...ticketDrawerParams(drawer, catalog),
     if (!forCounts && chipIds.isNotEmpty) 'status__in': chipIds.join(','),
-    if (!forCounts && chipIds.isEmpty && mine && resolvedIds.isNotEmpty)
+    // `openOnly` holds for the counts and under a chip too, so the header's
+    // All reads what the card counted and Resolved reads 0.
+    if (((!forCounts && chipIds.isEmpty && mine) || openOnly) &&
+        resolvedIds.isNotEmpty)
       'status__not': resolvedIds.join(','),
   };
 }
@@ -163,5 +184,26 @@ Map<String, int> foldTicketCounts(
     final key = ticketStatusKey(s.name);
     out[key] = (out[key] ?? 0) + n;
   }
+  return out;
+}
+
+/// Under a dashboard "Open tickets" scope the chips must read what the card
+/// counted — but `/status-counts/` ignores `status__not` (it renders a stable
+/// chip row), so the resolved statuses are folded out here: each reads 0 and
+/// All is the rest.
+Map<String, int> hideResolvedCounts(
+    Map<String, int> counts, List<CatalogOption> catalog) {
+  if (counts.isEmpty) return counts;
+  final out = Map<String, int>.from(counts);
+  var removed = 0;
+  for (final s in catalog) {
+    if (!s.isClosed) continue;
+    removed += counts[s.id] ?? 0;
+    out[s.id] = 0;
+    out[ticketStatusKey(s.name)] = 0;
+  }
+  out['resolved'] = 0;
+  out[StatusGroups.countKey('resolved')] = 0;
+  out['all'] = ((counts['all'] ?? 0) - removed).clamp(0, 1 << 30);
   return out;
 }

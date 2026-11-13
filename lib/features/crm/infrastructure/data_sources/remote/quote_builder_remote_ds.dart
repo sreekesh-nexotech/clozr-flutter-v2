@@ -19,15 +19,23 @@ class QuoteBuilderRemoteDataSource {
 
   static List<Map<String, dynamic>> _rows(Object? body) {
     final raw = body is Map ? body['results'] : body;
-    return raw is List ? [for (final r in raw) if (r is Map) Map<String, dynamic>.from(r)] : const [];
+    return raw is List
+        ? [
+            for (final r in raw)
+              if (r is Map) Map<String, dynamic>.from(r)
+          ]
+        : const [];
   }
 
-  static String _s(Object? v) => v == null ? '' : (v is String ? v : v.toString());
+  static String _s(Object? v) =>
+      v == null ? '' : (v is String ? v : v.toString());
 
   /// `GET /quotations/quotations/{id}/`.
   Future<SavedQuote> fetchQuote(String id) async {
     final body = await _api.get(ApiEndpoints.quotation(id));
-    if (body is! Map) throw const AppError(type: AppErrorType.unknown, message: 'Could not load the quote.');
+    if (body is! Map)
+      throw const AppError(
+          type: AppErrorType.unknown, message: 'Could not load the quote.');
     return SavedQuote.fromJson(Map<String, dynamic>.from(body));
   }
 
@@ -35,7 +43,8 @@ class QuoteBuilderRemoteDataSource {
   /// invoice / receipt layouts) and `is_active=true` keeps retired ones out.
   Future<List<QuoteTemplateOption>> templates() async {
     final body = await _api.get(ApiEndpoints.quotationTemplates,
-        query: {'family': 'quote', 'is_active': 'true', 'page_size': 100}, quiet: true);
+        query: {'family': 'quote', 'is_active': 'true', 'page_size': 100},
+        quiet: true);
     return [
       for (final r in _rows(body))
         if (_s(r['template_id'] ?? r['id']).isNotEmpty)
@@ -45,39 +54,63 @@ class QuoteBuilderRemoteDataSource {
             isDefault: r['is_default'] == true,
             isActive: r['is_active'] != false,
             category: _s(r['category']),
+            quoteType: _s(r['quote_type']),
+            maxOptions: r['features'] is Map &&
+                    (r['features'] as Map)['max_options'] is num
+                ? ((r['features'] as Map)['max_options'] as num)
+                    .toInt()
+                    .clamp(1, 3)
+                : 3,
           ),
     ];
   }
 
   /// The template's own `field_definitions`.
   Future<List<TemplateField>> templateFields(String templateId) async {
-    final body = await _api.get('${ApiEndpoints.quotationTemplates}$templateId/', quiet: true);
-    return templateFieldsFromDetail(body is Map ? Map<String, dynamic>.from(body) : null);
+    final body = await _api
+        .get('${ApiEndpoints.quotationTemplates}$templateId/', quiet: true);
+    return templateFieldsFromDetail(
+        body is Map ? Map<String, dynamic>.from(body) : null);
   }
 
   /// The Item Quote layout config (headings, section defaults). A template
   /// with nothing to configure reads as an empty config.
   Future<TemplateLayoutConfig> templateConfig(String templateId) async {
-    final body = await _api.get('${ApiEndpoints.quotationTemplates}$templateId/config/', quiet: true);
-    return body is Map ? TemplateLayoutConfig.fromJson(Map<String, dynamic>.from(body)) : const TemplateLayoutConfig();
+    final body = await _api.get(
+        '${ApiEndpoints.quotationTemplates}$templateId/config/',
+        quiet: true);
+    return body is Map
+        ? TemplateLayoutConfig.fromJson(Map<String, dynamic>.from(body))
+        : const TemplateLayoutConfig();
   }
 
   /// The "Quote details" fields for this template and party / quote.
-  Future<List<SpotInputField>> spotInputs(String templateId, {String? leadId, String? customerId, String? quotationId}) async {
-    final body = await _api.get('${ApiEndpoints.quotationTemplates}$templateId/spot-inputs/', query: {
-      if (leadId != null && leadId.isNotEmpty) 'lead': leadId,
-      if (customerId != null && customerId.isNotEmpty) 'customer': customerId,
-      if (quotationId != null && quotationId.isNotEmpty) 'quotation': quotationId,
-    }, quiet: true);
+  Future<List<SpotInputField>> spotInputs(String templateId,
+      {String? leadId, String? customerId, String? quotationId}) async {
+    final body = await _api.get(
+        '${ApiEndpoints.quotationTemplates}$templateId/spot-inputs/',
+        query: {
+          if (leadId != null && leadId.isNotEmpty) 'lead': leadId,
+          if (customerId != null && customerId.isNotEmpty)
+            'customer': customerId,
+          if (quotationId != null && quotationId.isNotEmpty)
+            'quotation': quotationId,
+        },
+        quiet: true);
     final fields = body is Map ? body['fields'] : null;
     return fields is List
-        ? [for (final f in fields) if (f is Map) SpotInputField.fromJson(Map<String, dynamic>.from(f))]
+        ? [
+            for (final f in fields)
+              if (f is Map)
+                SpotInputField.fromJson(Map<String, dynamic>.from(f))
+          ]
         : const [];
   }
 
   /// The active clause library.
   Future<List<LibraryClause>> clauseLibrary() async {
-    final body = await _api.get(_clauses, query: {'is_active': 'true', 'page_size': 100}, quiet: true);
+    final body = await _api.get(_clauses,
+        query: {'is_active': 'true', 'page_size': 100}, quiet: true);
     final rows = _rows(body);
     return [
       for (var i = 0; i < rows.length; i++) LibraryClause.fromJson(rows[i], i),
@@ -101,9 +134,11 @@ class QuoteBuilderRemoteDataSource {
   /// The org's default **active** quote status, sent on create (never a
   /// deactivated default — the server refuses that).
   Future<String?> defaultStatusId() async {
-    final body = await _api.get(ApiEndpoints.quotationStatuses, query: {'page_size': 100}, quiet: true);
+    final body = await _api.get(ApiEndpoints.quotationStatuses,
+        query: {'page_size': 100}, quiet: true);
     for (final r in _rows(body)) {
-      if (r['is_default'] == true && r['is_active'] != false) return _s(r['quotation_status_id']);
+      if (r['is_default'] == true && r['is_active'] != false)
+        return _s(r['quotation_status_id']);
     }
     return null;
   }
@@ -111,7 +146,8 @@ class QuoteBuilderRemoteDataSource {
   /// `POST quotations/preview-tax/` — nothing is saved.
   Future<TaxPreview> previewTax(Map<String, dynamic> body) async {
     final res = await _api.post(_previewTax, body: body);
-    return TaxPreview.fromJson(res is Map ? Map<String, dynamic>.from(res) : const {});
+    return TaxPreview.fromJson(
+        res is Map ? Map<String, dynamic>.from(res) : const {});
   }
 
   /// Unconverted leads matching [search] (server-side search, first 20). Rows
@@ -123,12 +159,22 @@ class QuoteBuilderRemoteDataSource {
       'is_converted': 'false',
       if (search.trim().isNotEmpty) 'search': search.trim(),
     });
-    return [for (final r in _rows(body)) if (r['is_converted'] != true) leadOption(r)];
+    return [
+      for (final r in _rows(body))
+        if (r['is_converted'] != true) leadOption(r)
+    ];
   }
 
   static PartyOption leadOption(Map<String, dynamic> r) {
     var label = '';
-    for (final k in const ['lead_name', 'name', 'company', 'company_name', 'title', 'full_name']) {
+    for (final k in const [
+      'lead_name',
+      'name',
+      'company',
+      'company_name',
+      'title',
+      'full_name'
+    ]) {
       if (_s(r[k]).trim().isNotEmpty) {
         label = _s(r[k]);
         break;
@@ -137,7 +183,8 @@ class QuoteBuilderRemoteDataSource {
     final id = _s(r['lead_id'] ?? r['id']);
     return PartyOption(
       id: id,
-      label: '${label.isEmpty ? id : label}${r['is_upsell'] == true ? ' · upsell' : ''}',
+      label:
+          '${label.isEmpty ? id : label}${r['is_upsell'] == true ? ' · upsell' : ''}',
       sub: _s(r['reference']),
     );
   }
@@ -153,20 +200,32 @@ class QuoteBuilderRemoteDataSource {
 
   static PartyOption customerOption(Map<String, dynamic> r) {
     var label = '';
-    for (final k in const ['name', 'customer_name', 'company', 'company_name', 'contact_name', 'email']) {
+    for (final k in const [
+      'name',
+      'customer_name',
+      'company',
+      'company_name',
+      'contact_name',
+      'email'
+    ]) {
       if (_s(r[k]).trim().isNotEmpty) {
         label = _s(r[k]);
         break;
       }
     }
     final id = _s(r['customer_id'] ?? r['id']);
-    return PartyOption(id: id, label: label.isEmpty ? id : label, sub: _s(r['reference']));
+    return PartyOption(
+        id: id, label: label.isEmpty ? id : label, sub: _s(r['reference']));
   }
 
   /// The label of a preset lead / customer (`?lead=` / `?customer=`).
   Future<PartyOption?> partyById(QuoteFor kind, String id) async {
     try {
-      final body = await _api.get(kind == QuoteFor.lead ? ApiEndpoints.lead(id) : ApiEndpoints.customer(id), quiet: true);
+      final body = await _api.get(
+          kind == QuoteFor.lead
+              ? ApiEndpoints.lead(id)
+              : ApiEndpoints.customer(id),
+          quiet: true);
       if (body is! Map) return null;
       final row = Map<String, dynamic>.from(body);
       return kind == QuoteFor.lead ? leadOption(row) : customerOption(row);
@@ -177,7 +236,8 @@ class QuoteBuilderRemoteDataSource {
 
   /// Rate-master codes matching [q] (≥ 2 characters).
   Future<List<HsnCode>> hsnSearch(String q) async {
-    final body = await _api.get(_hsnSearch, query: {'q': q, 'limit': 20}, quiet: true);
+    final body =
+        await _api.get(_hsnSearch, query: {'q': q, 'limit': 20}, quiet: true);
     return [
       for (final r in _rows(body))
         HsnCode(
@@ -188,9 +248,13 @@ class QuoteBuilderRemoteDataSource {
           defaultVariantKey: _s(r['default_variant_key']),
           needsVariantChoice: r['needs_variant_choice'] == true,
           rates: [
-            for (final v in (r['rates'] is List ? r['rates'] as List : const []))
+            for (final v
+                in (r['rates'] is List ? r['rates'] as List : const []))
               if (v is Map && _s(v['variant_key']).isNotEmpty)
-                HsnRate(variantKey: _s(v['variant_key']), ratePct: _s(v['rate_pct']), condition: _s(v['description'])),
+                HsnRate(
+                    variantKey: _s(v['variant_key']),
+                    ratePct: _s(v['rate_pct']),
+                    condition: _s(v['description'])),
           ],
         ),
     ];
@@ -201,13 +265,62 @@ class QuoteBuilderRemoteDataSource {
     return res is Map ? Map<String, dynamic>.from(res) : const {};
   }
 
-  Future<Map<String, dynamic>> update(String id, Map<String, dynamic> body) async {
+  /// `POST quotations/option-groups/` — a new alternative-options group.
+  Future<Map<String, dynamic>> createGroup(Map<String, dynamic> body) async {
+    final res = await _api.post('/quotations/option-groups/', body: body);
+    return res is Map ? Map<String, dynamic>.from(res) : const {};
+  }
+
+  /// `GET quotations/option-groups/{id}/` — the group with every option.
+  Future<OptionGroupData> fetchGroup(String id) async {
+    final res = await _api.get('/quotations/option-groups/$id/');
+    final m = res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{};
+    return OptionGroupData(
+      id: _s(m['option_group_id']),
+      primaryQuotationId: _s(m['primary_quotation_id']),
+      state: _s(m['state']),
+      options: [
+        for (final o
+            in (m['options'] is List ? m['options'] as List : const []))
+          if (o is Map) SavedQuote.fromJson(Map<String, dynamic>.from(o)),
+      ],
+    );
+  }
+
+  /// `PATCH quotations/option-groups/{id}/` — shared fields once + options.
+  Future<Map<String, dynamic>> updateGroup(
+      String id, Map<String, dynamic> body) async {
+    final res = await _api.patch('/quotations/option-groups/$id/', body: body);
+    return res is Map ? Map<String, dynamic>.from(res) : const {};
+  }
+
+  Future<Map<String, dynamic>> update(
+      String id, Map<String, dynamic> body) async {
     final res = await _api.patch(ApiEndpoints.quotation(id), body: body);
     return res is Map ? Map<String, dynamic>.from(res) : const {};
   }
 }
 
 /// A row of the template picker.
+/// An alternative-options group as the builder needs it.
+class OptionGroupData {
+  const OptionGroupData({
+    required this.id,
+    required this.primaryQuotationId,
+    required this.state,
+    required this.options,
+  });
+
+  final String id;
+  final String primaryQuotationId;
+
+  /// `draft` | `sent` | `accepted` …
+  final String state;
+
+  /// Every option, A → C (full quotes, lines included).
+  final List<SavedQuote> options;
+}
+
 class QuoteTemplateOption {
   const QuoteTemplateOption({
     required this.id,
@@ -215,10 +328,24 @@ class QuoteTemplateOption {
     this.isDefault = false,
     this.isActive = true,
     this.category = '',
+    this.quoteType = '',
+    this.maxOptions = 3,
   });
 
   final String id;
   final String name;
+
+  /// `item` | `options` … — an `options` template builds a group of alternatives.
+  final String quoteType;
+
+  /// `features.max_options` — how many alternatives an `options` template allows.
+  final int maxOptions;
+
+  bool get buildsGroup => quoteType == 'options';
+
+  /// The picker's label: the webapp appends " · alternative options".
+  String get label =>
+      quoteType == 'options' ? '$name · alternative options' : name;
   final bool isDefault;
   final bool isActive;
 
@@ -254,7 +381,8 @@ class PartyOption {
 }
 
 class HsnRate {
-  const HsnRate({required this.variantKey, required this.ratePct, this.condition = ''});
+  const HsnRate(
+      {required this.variantKey, required this.ratePct, this.condition = ''});
   final String variantKey;
   final String ratePct;
   final String condition;

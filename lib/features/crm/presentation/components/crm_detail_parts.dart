@@ -43,12 +43,17 @@ class ActivityTimeline extends StatelessWidget {
                       width: 34.w,
                       height: 34.w,
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: items[i].bg, shape: BoxShape.circle),
-                      child: Icon(items[i].icon, size: 16.sp, color: items[i].tone),
+                      decoration: BoxDecoration(
+                          color: items[i].bg, shape: BoxShape.circle),
+                      child: Icon(items[i].icon,
+                          size: 16.sp, color: items[i].tone),
                     ),
                     if (i < items.length - 1)
                       Expanded(
-                        child: Container(width: 1.5.w, color: AppColors.borderCardSoft, constraints: BoxConstraints(minHeight: 12.h)),
+                        child: Container(
+                            width: 1.5.w,
+                            color: AppColors.borderCardSoft,
+                            constraints: BoxConstraints(minHeight: 12.h)),
                       ),
                   ],
                 ),
@@ -59,9 +64,17 @@ class ActivityTimeline extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(items[i].title, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        Text(items[i].title,
+                            style: AppText.custom(
+                                size: 14,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
                         SizedBox(height: 2.h),
-                        Text(items[i].sub, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                        Text(items[i].sub,
+                            style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted2)),
                         if (items[i].time.isNotEmpty) ...[
                           SizedBox(height: 3.h),
                           Text(items[i].time, style: AppText.micro()),
@@ -81,7 +94,11 @@ class ActivityTimeline extends StatelessWidget {
 /// Underline tab strip used inside detail activity cards (Tasks / Call log / …).
 /// Active tab: navy 700 label with a 2.5px navy underline.
 class DetailUnderlineTabs extends StatelessWidget {
-  const DetailUnderlineTabs({super.key, required this.labels, required this.index, required this.onChanged});
+  const DetailUnderlineTabs(
+      {super.key,
+      required this.labels,
+      required this.index,
+      required this.onChanged});
   final List<String> labels;
   final int index;
   final ValueChanged<int> onChanged;
@@ -90,7 +107,8 @@ class DetailUnderlineTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE6E7EA), width: 1.5)),
+        border:
+            Border(bottom: BorderSide(color: Color(0xFFE6E7EA), width: 1.5)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -117,7 +135,9 @@ class DetailUnderlineTabs extends StatelessWidget {
                     style: AppText.custom(
                       size: 14,
                       weight: index == i ? FontWeight.w700 : FontWeight.w500,
-                      color: index == i ? AppColors.navy : AppColors.textPlaceholder,
+                      color: index == i
+                          ? AppColors.navy
+                          : AppColors.textPlaceholder,
                     ),
                   ),
                 ),
@@ -132,7 +152,8 @@ class DetailUnderlineTabs extends StatelessWidget {
 
 /// A label → value row with a bottom hairline, used in the "information" cards.
 class DetailInfoRow extends StatelessWidget {
-  const DetailInfoRow({super.key, required this.label, required this.value, this.last = false});
+  const DetailInfoRow(
+      {super.key, required this.label, required this.value, this.last = false});
   final String label;
   final String value;
   final bool last;
@@ -142,17 +163,26 @@ class DetailInfoRow extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 10.h),
       decoration: BoxDecoration(
-        border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text(label,
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
           SizedBox(width: 14.w),
           Expanded(
             child: Text(value,
                 textAlign: TextAlign.right,
-                style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
           ),
         ],
       ),
@@ -162,7 +192,12 @@ class DetailInfoRow extends StatelessWidget {
 
 /// The centered "empty tab" placeholder used inside detail activity cards.
 class DetailTabEmpty extends StatelessWidget {
-  const DetailTabEmpty({super.key, required this.icon, required this.title, required this.body, this.cta});
+  const DetailTabEmpty(
+      {super.key,
+      required this.icon,
+      required this.title,
+      required this.body,
+      this.cta});
   final IconData icon;
   final String title;
   final String body;
@@ -178,17 +213,28 @@ class DetailTabEmpty extends StatelessWidget {
             width: 56.w,
             height: 56.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(16.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgChipGrey,
+                borderRadius: BorderRadius.circular(16.r)),
             child: Icon(icon, size: 26.sp, color: AppColors.textPlaceholder),
           ),
           SizedBox(height: 14.h),
-          Text(title, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary), textAlign: TextAlign.center),
+          Text(title,
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary),
+              textAlign: TextAlign.center),
           SizedBox(height: 5.h),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 220.w),
             child: Text(body,
                 textAlign: TextAlign.center,
-                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.5)),
+                style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)
+                    .copyWith(height: 1.5)),
           ),
           if (cta != null) ...[SizedBox(height: 16.h), cta!],
         ],

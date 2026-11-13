@@ -39,9 +39,27 @@ class TicketByReference extends NotificationLink {
   final String reference;
 }
 
+/// An Operations task, by its subject (`PmoTask*` events).
+class OpsTaskByTitle extends NotificationLink {
+  const OpsTaskByTitle(this.title);
+  final String title;
+}
+
+/// An Operations project, by its name (`Project*` events).
+class ProjectByName extends NotificationLink {
+  const ProjectByName(this.name);
+  final String name;
+}
+
 final _ticketRef = RegExp(r'\bTKT-\d+\b');
 final _quoteNo = RegExp(r'\bQTN-\d+(?:-R\d+)?\b');
-final _leadQuoted = RegExp(r'\blead\s*"([^"]+)"', caseSensitive: false);
+// Double or single quotes: `Lead "Ravi" status changed` and
+// `Lead 'Ravi' has had no activity for 30 days` (StaleLeadAlert).
+final _leadQuoted =
+    RegExp(r"""\blead\s*(?:"([^"]+)"|'([^']+)')""", caseSensitive: false);
+// `You have been assigned a task: X`, `Task status changed to Pending
+// Review: X`, `...manager of project: X` - the record follows the first colon.
+final _afterFirstColon = RegExp(r':\s*(.+)$', dotAll: true);
 final _leadAfterColon = RegExp(r'\blead:\s*(.+?)\s*\.?$', caseSensitive: false);
 final _mention = RegExp(r'mentioned you:\s*(.+)$', dotAll: true);
 
@@ -64,9 +82,17 @@ NotificationLink? notificationLinkFor(String type, String text) {
     final m = _quoteNo.firstMatch(s);
     return m == null ? null : QuoteByNumber(m.group(0)!);
   }
-  if (t.startsWith('lead')) {
+  if (t.startsWith('pmotask') || t.startsWith('project')) {
+    final name = _afterFirstColon.firstMatch(s)?.group(1)?.trim() ?? '';
+    if (name.isEmpty) return null;
+    return t.startsWith('pmotask') ? OpsTaskByTitle(name) : ProjectByName(name);
+  }
+  if (t.startsWith('lead') || t.startsWith('stalelead')) {
     final quoted = _leadQuoted.allMatches(s).toList();
-    if (quoted.isNotEmpty) return LeadByName(quoted.last.group(1)!.trim());
+    if (quoted.isNotEmpty) {
+      final m = quoted.last;
+      return LeadByName((m.group(1) ?? m.group(2))!.trim());
+    }
     final m = _leadAfterColon.firstMatch(s);
     final name = m?.group(1)?.trim() ?? '';
     return name.isEmpty ? null : LeadByName(name);
@@ -88,7 +114,11 @@ NotificationLink? notificationLinkFor(String type, String text) {
 /// notification text is the content as typed; the stored copy may carry
 /// mention markup or surrounding whitespace, so compare loosely.
 bool noteMatchesMention(String content, String quoted) {
-  String norm(String v) => v.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+  String norm(String v) => v
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim()
+      .toLowerCase();
   final a = norm(content);
   final b = norm(quoted);
   return a.isNotEmpty && (a == b || a.endsWith(b) || b.endsWith(a));

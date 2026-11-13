@@ -61,13 +61,17 @@ void main() {
       final adapter = _Adapter({
         'count': 2,
         'next': null,
-        'results': [_user(_meUuid, 'Admin Acme'), _user(_otherUuid, 'Karan Desai')],
+        'results': [
+          _user(_meUuid, 'Admin Acme'),
+          _user(_otherUuid, 'Karan Desai')
+        ],
       });
 
       final users = await _dsWith(adapter).fetchAssignableUsers(_leadId);
 
       // Eligibility is per record — `/management/users/` would be the wrong list.
-      expect(adapter.requests.single.path, '/crm/leads/$_leadId/assignable-users/');
+      expect(adapter.requests.single.path,
+          '/crm/leads/$_leadId/assignable-users/');
       expect(users.map((u) => u.name).toList(), ['Admin Acme', 'Karan Desai']);
       // Ids stay the raw uuids: they are what the PATCH sends.
       expect(users.map((u) => u.id).toList(), [_meUuid, _otherUuid]);
@@ -83,7 +87,8 @@ void main() {
       expect(UserDirectory.mapUserId(_meUuid), 'me');
     });
 
-    test('a row without an id or a name is skipped, never a blank option', () async {
+    test('a row without an id or a name is skipped, never a blank option',
+        () async {
       final adapter = _Adapter({
         'results': [
           _user(_otherUuid, 'Karan Desai'),

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyDFuqxcY4XZffkcSY_uYsS5mJ5im_-qMfI</string>
+	<key>GCM_SENDER_ID</key>
+	<string>267679337763</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.nexotech.clozrapp</string>
+	<key>PROJECT_ID</key>
+	<string>nexocrm-bb56a</string>
+	<key>STORAGE_BUCKET</key>
+	<string>nexocrm-bb56a.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:267679337763:ios:6d85ffce913169d8f21096</string>
+</dict>
+</plist>

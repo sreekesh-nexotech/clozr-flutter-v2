@@ -28,7 +28,8 @@ void main() {
     });
 
     test('bylines the author the server recorded', () {
-      expect(OpsCommentsRemoteDataSource.noteFromComment(row()).author, 'Admin Acme');
+      expect(OpsCommentsRemoteDataSource.noteFromComment(row()).author,
+          'Admin Acme');
     });
 
     test('an unnamed author is "Unknown", never blank', () {

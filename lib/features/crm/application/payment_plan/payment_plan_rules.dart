@@ -17,7 +17,7 @@ String planMoney(num? n) => webMoney(n);
 String planDate(String? iso) {
   if (iso == null || iso.trim().isEmpty) return '';
   final d = DateTime.tryParse(iso.trim());
-  return d == null ? '' : DateFormat('d MMM yyyy').format(d);
+  return d == null ? '' : DateFormat('dd/MM/yyyy').format(d);
 }
 
 // ── Labels ──
@@ -61,7 +61,8 @@ String planTypeLabel(String ptype) {
 String paymentMethodLabel(String method) {
   final k = method.trim();
   if (k.isEmpty || k == '—') return '';
-  return _methodLabels[k.toLowerCase()] ?? (k.contains('_') || k == k.toUpperCase() ? humanizeEnum(k) : k);
+  return _methodLabels[k.toLowerCase()] ??
+      (k.contains('_') || k == k.toUpperCase() ? humanizeEnum(k) : k);
 }
 
 /// The header's type label: "Recurring" / "One-time part" / the plan type.
@@ -77,13 +78,15 @@ String planHeaderType(PlanDetail p) {
 /// The FE plan status: `unpaid | partial | completed` — the server's own
 /// status first, then the settled balance.
 String planStatusKey(PlanDetail p) {
-  if (p.status == 'completed' || (p.total > 0 && p.balance <= 0)) return 'completed';
+  if (p.status == 'completed' || (p.total > 0 && p.balance <= 0))
+    return 'completed';
   if (p.paid <= 0 && p.balance >= p.total) return 'unpaid';
   return 'partial';
 }
 
 /// Records fully settled (`settlement_state == paid`), not merely status=paid.
-int settledCount(PlanDetail p) => p.records.where((r) => r.settlementState == 'paid').length;
+int settledCount(PlanDetail p) =>
+    p.records.where((r) => r.settlementState == 'paid').length;
 
 /// Records on the plan, falling back to `num_installments`.
 int recordCount(PlanDetail p) =>
@@ -143,7 +146,8 @@ String recordRowDate(PlanRecord r) {
 }
 
 /// Whether the incl.-GST figure differs from the stored (as-quoted) amount.
-bool hasGstOnTop(PlanRecord r) => (r.amountDueInclGst - r.amountExpected).abs() >= 0.005;
+bool hasGstOnTop(PlanRecord r) =>
+    (r.amountDueInclGst - r.amountExpected).abs() >= 0.005;
 
 /// Where a row's figure comes from.
 String amountDueHint(PlanRecord r) => switch (r.amountDueBasis) {
@@ -154,12 +158,18 @@ String amountDueHint(PlanRecord r) => switch (r.amountDueBasis) {
     };
 
 /// "As quoted ₹20,999.67" when it differs from the main figure, else ''.
-String quotedAmountNote(PlanRecord r) => hasGstOnTop(r) ? 'As quoted ${planMoney(r.amountExpected)}' : '';
+String quotedAmountNote(PlanRecord r) =>
+    hasGstOnTop(r) ? 'As quoted ${planMoney(r.amountExpected)}' : '';
 
 /// Credit-note / refund lines on a plan or record ('' list when none).
-List<String> adjustmentLines({required double credited, required double refunded, double refundNotDue = 0}) => [
+List<String> adjustmentLines(
+        {required double credited,
+        required double refunded,
+        double refundNotDue = 0}) =>
+    [
       if (credited >= 0.005) 'Credited ${planMoney(credited)}',
-      if (refunded >= 0.005) 'Refunded ${planMoney(refunded)}${refundNotDue >= 0.005 ? ' · deal closed, not due again' : ''}',
+      if (refunded >= 0.005)
+        'Refunded ${planMoney(refunded)}${refundNotDue >= 0.005 ? ' · deal closed, not due again' : ''}',
     ];
 
 // ── KPIs ──
@@ -190,10 +200,17 @@ List<PlanKpi> planKpis(PlanDetail p, {required bool accountingActive}) {
           'default',
           '${sub.periodLabel.isNotEmpty ? 'Every ${sub.periodLabel}' : 'Every period'}'
               '${(sub.amountPerPeriodInclGst - sub.amountPerPeriod).abs() >= 0.005 ? ' · as quoted ${planMoney(sub.amountPerPeriod)}' : ''}')
-      : PlanKpi('Total (incl. GST)', p.totalInclGst, 'default', _asQuoted(p.totalInclGst, p.total));
-  final due = PlanKpi('Amount due (incl. GST)', p.amountDueInclGst, 'navy',
-      sub != null ? _periods(sub.periodsOpen, 'open') : _asQuoted(p.amountDueInclGst, p.balance));
-  if (!accountingActive) return [total, PlanKpi('Paid', p.paid, 'success'), due];
+      : PlanKpi('Total (incl. GST)', p.totalInclGst, 'default',
+          _asQuoted(p.totalInclGst, p.total));
+  final due = PlanKpi(
+      'Amount due (incl. GST)',
+      p.amountDueInclGst,
+      'navy',
+      sub != null
+          ? _periods(sub.periodsOpen, 'open')
+          : _asQuoted(p.amountDueInclGst, p.balance));
+  if (!accountingActive)
+    return [total, PlanKpi('Paid', p.paid, 'success'), due];
   return [
     total,
     PlanKpi('Advance received', p.advanceReceived, 'success'),
@@ -215,7 +232,10 @@ bool canSettleRecord(PlanRecord r, {required bool canRecord}) =>
 
 /// Delete a record (PY-011): only on a milestone-type plan, never a paid or
 /// invoiced (document-linked) record, and only with payment delete.
-bool canDeleteRecord({required String planType, required PlanRecord record, required bool canDelete}) =>
+bool canDeleteRecord(
+        {required String planType,
+        required PlanRecord record,
+        required bool canDelete}) =>
     canDelete &&
     planType == 'installment_custom' &&
     record.status != 'paid' &&
@@ -229,10 +249,14 @@ const int defaultPeriodDays = 30;
 
 /// The "Instalments" card shows only while the server says the schedule can
 /// still change (nothing paid or invoiced), and never on a subscription.
-bool canChooseInstalments(PlanDetail p) => p.scheduleEditable && p.ptype != 'subscription';
+bool canChooseInstalments(PlanDetail p) =>
+    p.scheduleEditable && p.ptype != 'subscription';
 
 class ScheduleDraft {
-  const ScheduleDraft({required this.count, required this.periodDays, required this.firstDueDate});
+  const ScheduleDraft(
+      {required this.count,
+      required this.periodDays,
+      required this.firstDueDate});
   final String count;
   final String periodDays;
 
@@ -242,7 +266,10 @@ class ScheduleDraft {
 
 /// The plan's current split, else 3 instalments, 30 days apart.
 ScheduleDraft initialScheduleDraft(PlanDetail p) {
-  final dues = p.records.where((r) => r.status != 'cancelled' && r.dueDate.isNotEmpty).map((r) => r.dueDate).toList()
+  final dues = p.records
+      .where((r) => r.status != 'cancelled' && r.dueDate.isNotEmpty)
+      .map((r) => r.dueDate)
+      .toList()
     ..sort();
   final n = p.numInstallments;
   final d = p.billingPeriodDays;
@@ -262,9 +289,11 @@ int? _whole(String raw) {
 Map<String, String> validateScheduleDraft(ScheduleDraft d) {
   final out = <String, String>{};
   final c = _whole(d.count);
-  if (c == null || c < 1 || c > maxInstalments) out['count'] = 'Enter 1 to $maxInstalments instalments.';
+  if (c == null || c < 1 || c > maxInstalments)
+    out['count'] = 'Enter 1 to $maxInstalments instalments.';
   final days = _whole(d.periodDays);
-  if (days == null || days < 1 || days > maxPeriodDays) out['periodDays'] = 'Enter 1 to $maxPeriodDays days.';
+  if (days == null || days < 1 || days > maxPeriodDays)
+    out['periodDays'] = 'Enter 1 to $maxPeriodDays days.';
   return out;
 }
 
@@ -305,7 +334,8 @@ String scheduleSavedToast(PlanDetail saved) => saved.ptype == 'lumpsum'
 const int milestoneLabelMax = 120;
 
 /// A milestone-based plan that is still open.
-bool canAddMilestones(PlanDetail p) => p.ptype == 'installment_custom' && !p.isCancelled;
+bool canAddMilestones(PlanDetail p) =>
+    p.ptype == 'installment_custom' && !p.isCancelled;
 
 /// The total the "%" mode applies to: the quote's total incl. GST, else the plan's.
 double milestoneBaseTotal(PlanDetail p) {
@@ -321,7 +351,8 @@ double? _parseAmount(String raw) {
 
 /// The amount incl. GST a draft stands for (a % → its share of [base], 2 dp);
 /// null when not a positive number (or a % over 100).
-double? milestoneAmount({required bool percent, required String amount, required double base}) {
+double? milestoneAmount(
+    {required bool percent, required String amount, required double base}) {
   final n = _parseAmount(amount);
   if (n == null || n <= 0) return null;
   if (percent) {
@@ -347,9 +378,12 @@ Map<String, String> validateMilestone({
     out['label'] = 'Keep it under $milestoneLabelMax characters.';
   }
   if (milestoneAmount(percent: percent, amount: amount, base: base) == null) {
-    out['amount'] = percent ? 'Enter a percentage between 0 and 100.' : 'Enter an amount greater than 0.';
+    out['amount'] = percent
+        ? 'Enter a percentage between 0 and 100.'
+        : 'Enter an amount greater than 0.';
   }
-  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(dueDate)) out['dueDate'] = 'Pick the date this milestone falls due.';
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(dueDate))
+    out['dueDate'] = 'Pick the date this milestone falls due.';
   return out;
 }
 
@@ -366,7 +400,8 @@ String milestoneAmountNote({
   if (a != null && percent) parts.add('${planMoney(a)} incl. GST');
   if (unscheduled != null && unscheduled > 0.005) {
     if (a != null && a - unscheduled > 0.005) {
-      parts.add('${planMoney(a - unscheduled)} more than the ${planMoney(unscheduled)} not yet scheduled');
+      parts.add(
+          '${planMoney(a - unscheduled)} more than the ${planMoney(unscheduled)} not yet scheduled');
     } else {
       parts.add('${planMoney(unscheduled)} of the quote not yet scheduled');
     }
@@ -397,7 +432,8 @@ Map<String, dynamic> milestoneBody({
   };
 }
 
-String milestoneAddedToast(double amount) => 'Milestone added — ${planMoney(amount)} due, follow-up created';
+String milestoneAddedToast(double amount) =>
+    'Milestone added — ${planMoney(amount)} due, follow-up created';
 
 const String noMilestonesText =
     'No milestones yet. Add each milestone with its amount and due date; it is then scheduled and followed up.';
@@ -418,10 +454,13 @@ String stopRecurringBody(String dateLabel) =>
 
 /// The progress line under the recurring header.
 String recurringProgressText(PlanRecurring r) {
-  final base = '${r.periodsPaid} of ${r.periodsElapsed} period${r.periodsElapsed == 1 ? '' : 's'} '
+  final base =
+      '${r.periodsPaid} of ${r.periodsElapsed} period${r.periodsElapsed == 1 ? '' : 's'} '
       'due so far paid (${r.progressPct}%).';
-  if (r.stopFrom.isNotEmpty) return '$base Recurring billing stops from ${planDate(r.stopFrom)}.';
-  if (r.generationEnded) return '$base Every period of the term has been scheduled.';
+  if (r.stopFrom.isNotEmpty)
+    return '$base Recurring billing stops from ${planDate(r.stopFrom)}.';
+  if (r.generationEnded)
+    return '$base Every period of the term has been scheduled.';
   return base;
 }
 
@@ -432,14 +471,18 @@ String recurringProgressText(PlanRecurring r) {
   final recurringSide = p.chargeScope == 'recurring';
   final other = recurringSide ? s.oneTimePlanId : s.recurringPlanId;
   if (other.isEmpty || other == p.id) return null;
-  return (other, recurringSide ? 'Open the one-time plan' : 'Open the recurring schedule');
+  return (
+    other,
+    recurringSide ? 'Open the one-time plan' : 'Open the recurring schedule'
+  );
 }
 
 // ── Needs attention (PY-032) ──
 
 const String customerRequired = 'CUSTOMER_REQUIRED';
 const String milestonesRequired = 'MILESTONES_REQUIRED';
-const String customerRequiredMessage = 'This quote has no customer yet. Convert the lead to a customer first.';
+const String customerRequiredMessage =
+    'This quote has no customer yet. Convert the lead to a customer first.';
 
 /// The items the banner shows: the server's `needs_attention`, as on web
 /// (InvoiceDetailScreen reads `invoice.needsAttention` and derives nothing).
@@ -448,7 +491,9 @@ List<PlanAttention> effectiveNeedsAttention(PlanDetail p) => p.needsAttention;
 
 /// The banner's line: the message (or a default), plus " · N instalment(s) blocked".
 String attentionText(PlanAttention a) {
-  final msg = a.message.isNotEmpty ? a.message : (a.code == customerRequired ? customerRequiredMessage : a.code);
+  final msg = a.message.isNotEmpty
+      ? a.message
+      : (a.code == customerRequired ? customerRequiredMessage : a.code);
   final n = a.recordIds.length;
   return n > 0 ? '$msg · $n instalment${n == 1 ? '' : 's'} blocked' : msg;
 }
@@ -456,18 +501,25 @@ String attentionText(PlanAttention a) {
 /// Whether a row carries the "Blocked: customer required" tag.
 bool isBlockedForCustomer(PlanRecord r, List<PlanAttention> attention) =>
     r.invoiceBlockedReason == customerRequired ||
-    attention.any((a) => a.code == customerRequired && a.recordIds.contains(r.id));
+    attention
+        .any((a) => a.code == customerRequired && a.recordIds.contains(r.id));
 
 // ── Record detail (PY-035) ──
 
-const Map<String, String> treatAsLabels = {'ADVANCE': 'Advance', 'CUSTOMER_CREDIT': 'Customer credit'};
+const Map<String, String> treatAsLabels = {
+  'ADVANCE': 'Advance',
+  'CUSTOMER_CREDIT': 'Customer credit'
+};
 
 /// The record detail's synthetic activity: (title, sub).
 List<(String, String)> recordActivity(PlanRecord r) {
   final paid = r.status == 'paid';
   final plan = r.quoteNumber.isNotEmpty ? r.quoteNumber : r.planId;
   return [
-    (paid ? 'Payment received' : 'Payment ${recordPillLabel(r).toLowerCase()}', recordRowDate(r)),
+    (
+      paid ? 'Payment received' : 'Payment ${recordPillLabel(r).toLowerCase()}',
+      recordRowDate(r)
+    ),
     ('Payment plan $plan created', 'System · On creation'),
   ];
 }

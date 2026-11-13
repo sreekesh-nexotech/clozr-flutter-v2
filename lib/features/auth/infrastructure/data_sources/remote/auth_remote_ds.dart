@@ -103,8 +103,9 @@ class AuthRemoteDataSource {
       accessToken: access,
       refreshToken: refresh,
       user: SessionUser.fromJson(_asMap(map['user'])),
-      backupCodes:
-          (map['backup_codes'] as List? ?? const []).whereType<String>().toList(),
+      backupCodes: (map['backup_codes'] as List? ?? const [])
+          .whereType<String>()
+          .toList(),
       backupCodesRemaining: (map['backup_codes_remaining'] as num?)?.toInt(),
     );
   }

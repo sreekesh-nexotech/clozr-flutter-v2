@@ -51,12 +51,20 @@ Future<void> showPurchaseAddMenu(BuildContext context) => showActionMenu(
 class AccPurchasesScreen extends ConsumerWidget {
   const AccPurchasesScreen({super.key});
 
-  static const _tabs = {'all': 'All', 'ISSUED': 'Posted', 'CANCELLED': 'Cancelled'};
+  static const _tabs = {
+    'all': 'All',
+    'ISSUED': 'Posted',
+    'CANCELLED': 'Cancelled'
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canCreate = ref.watch(accPermProvider('acc_purchase')).create;
-    registerAdd(ref, canCreate ? AddAction(label: 'Record purchase', run: showPurchaseAddMenu) : null);
+    registerAdd(
+        ref,
+        canCreate
+            ? AddAction(label: 'Record purchase', run: showPurchaseAddMenu)
+            : null);
     final tab = ref.watch(_purchaseTabProvider);
     return Column(
       children: [
@@ -75,9 +83,14 @@ class AccPurchasesScreen extends ConsumerWidget {
                   padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 8.h),
                   child: Row(
                     children: [
-                      Icon(PhosphorIconsRegular.storefront, size: 18.sp, color: AppColors.textSecondary),
+                      Icon(PhosphorIconsRegular.storefront,
+                          size: 18.sp, color: AppColors.textSecondary),
                       SizedBox(width: 5.w),
-                      Text('Vendors', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                      Text('Vendors',
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w700,
+                              color: AppColors.textSecondary)),
                     ],
                   ),
                 ),
@@ -92,7 +105,8 @@ class AccPurchasesScreen extends ConsumerWidget {
                     TabChip(
                       label: e.value,
                       active: tab == e.key,
-                      onTap: () => ref.read(_purchaseTabProvider.notifier).state = e.key,
+                      onTap: () =>
+                          ref.read(_purchaseTabProvider.notifier).state = e.key,
                     ),
                 ],
               ),
@@ -100,13 +114,16 @@ class AccPurchasesScreen extends ConsumerWidget {
             SizedBox(height: 14.h),
           ],
         ),
-        Expanded(child: AccountingGate(child: _list(context, ref, tab, canCreate))),
+        Expanded(
+            child: AccountingGate(child: _list(context, ref, tab, canCreate))),
       ],
     );
   }
 
-  Widget _list(BuildContext context, WidgetRef ref, String tab, bool canCreate) {
-    final q = DocQuery(docType: 'VENDOR_BILL', status: tab == 'all' ? null : tab);
+  Widget _list(
+      BuildContext context, WidgetRef ref, String tab, bool canCreate) {
+    final q =
+        DocQuery(docType: 'VENDOR_BILL', status: tab == 'all' ? null : tab);
     final state = ref.watch(docListProvider(q));
     final ctrl = ref.read(docListProvider(q).notifier);
 
@@ -139,7 +156,8 @@ class AccPurchasesScreen extends ConsumerWidget {
       onRefresh: ctrl.refresh,
       child: NotificationListener<ScrollNotification>(
         onNotification: (n) {
-          if (n.metrics.pixels > n.metrics.maxScrollExtent - 400) ctrl.loadMore();
+          if (n.metrics.pixels > n.metrics.maxScrollExtent - 400)
+            ctrl.loadMore();
           return false;
         },
         child: ListView.separated(
@@ -155,7 +173,8 @@ class AccPurchasesScreen extends ConsumerWidget {
                   child: SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, color: AppColors.navy),
                   ),
                 ),
               );
@@ -163,7 +182,8 @@ class AccPurchasesScreen extends ConsumerWidget {
             final d = state.items[i];
             return DocumentCard(
               document: d,
-              onTap: () => context.push('${Routes.accDocumentDetail}?id=${d.id}'),
+              onTap: () =>
+                  context.push('${Routes.accDocumentDetail}?id=${d.id}'),
             );
           },
         ),

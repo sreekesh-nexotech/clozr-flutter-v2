@@ -37,5 +37,6 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
   Future<void> setSnoozed(String id, DateTime? until) async {}
 
   @override
-  Future<int> unreadCount() async => _local.fetch().where((n) => n.unread).length;
+  Future<int> unreadCount() async =>
+      _local.fetch().where((n) => n.unread).length;
 }

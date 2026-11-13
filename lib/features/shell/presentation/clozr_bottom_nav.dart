@@ -10,6 +10,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../auth/application/providers/auth_providers.dart';
 import '../../auth/domain/entities/module_access.dart';
 import '../../auth/presentation/components/permission_guard.dart';
+import '../../onboarding/presentation/tour_anchor.dart';
 import '../application/providers/contextual_add_provider.dart';
 import '../domain/nav_catalog.dart';
 
@@ -28,7 +29,8 @@ class _NavItem {
   final IconData fill;
   final String path;
   final double width;
-  const _NavItem(this.key, this.label, this.regular, this.fill, this.path, this.width);
+  const _NavItem(
+      this.key, this.label, this.regular, this.fill, this.path, this.width);
 }
 
 /// The frosted-glass bottom navigation. Its item set switches by [NavContext]
@@ -47,17 +49,23 @@ class ClozrBottomNav extends ConsumerWidget {
         // each is offered only to a role that can open it.
         bool canOps(String m) => access == null || access.can(m);
         return [
-          _NavItem('home', 'Home', PhosphorIconsRegular.house, PhosphorIconsFill.house, Routes.opsHome, 46),
+          _NavItem('home', 'Home', PhosphorIconsRegular.house,
+              PhosphorIconsFill.house, Routes.opsHome, 46),
           if (canOps('project'))
-            _NavItem('projects', 'Projects', PhosphorIconsRegular.briefcase, PhosphorIconsFill.briefcase, Routes.opsProjects, 54),
+            _NavItem('projects', 'Projects', PhosphorIconsRegular.briefcase,
+                PhosphorIconsFill.briefcase, Routes.opsProjects, 54),
           if (canOps('project_task'))
-            _NavItem('tasks', 'Tasks', PhosphorIconsRegular.listChecks, PhosphorIconsFill.listChecks, Routes.opsTasks, 46),
+            _NavItem('tasks', 'Tasks', PhosphorIconsRegular.listChecks,
+                PhosphorIconsFill.listChecks, Routes.opsTasks, 46),
         ];
       case NavContext.help:
         return [
-          _NavItem('home', 'Home', PhosphorIconsRegular.house, PhosphorIconsFill.house, Routes.helpHome, 46),
-          _NavItem('tickets', 'Tickets', PhosphorIconsRegular.ticket, PhosphorIconsFill.ticket, Routes.tickets, 46),
-          _NavItem('boards', 'Boards', PhosphorIconsRegular.kanban, PhosphorIconsFill.kanban, Routes.helpBoards, 46),
+          _NavItem('home', 'Home', PhosphorIconsRegular.house,
+              PhosphorIconsFill.house, Routes.helpHome, 46),
+          _NavItem('tickets', 'Tickets', PhosphorIconsRegular.ticket,
+              PhosphorIconsFill.ticket, Routes.tickets, 46),
+          _NavItem('boards', 'Boards', PhosphorIconsRegular.kanban,
+              PhosphorIconsFill.kanban, Routes.helpBoards, 46),
         ];
       case NavContext.dash:
         // Gated on the same module keys as the drawer, so a role without the
@@ -65,34 +73,56 @@ class ClozrBottomNav extends ConsumerWidget {
         final tabs = visibleDashboardTabs(access);
         return [
           if (tabs.contains('business'))
-            _NavItem('business', 'Business', PhosphorIconsRegular.chartPieSlice, PhosphorIconsFill.chartPieSlice, Routes.dashboard, 64),
+            _NavItem('business', 'Business', PhosphorIconsRegular.chartPieSlice,
+                PhosphorIconsFill.chartPieSlice, Routes.dashboard, 64),
           if (tabs.contains('crm'))
-            _NavItem('crm', 'CRM', PhosphorIconsRegular.usersThree, PhosphorIconsFill.usersThree, '${Routes.dashboard}?tab=crm', 64),
+            _NavItem(
+                'crm',
+                'CRM',
+                PhosphorIconsRegular.usersThree,
+                PhosphorIconsFill.usersThree,
+                '${Routes.dashboard}?tab=crm',
+                64),
           if (tabs.contains('ops'))
-            _NavItem('ops', 'Operations', PhosphorIconsRegular.briefcase, PhosphorIconsFill.briefcase, '${Routes.dashboard}?tab=ops', 64),
+            _NavItem('ops', 'Operations', PhosphorIconsRegular.briefcase,
+                PhosphorIconsFill.briefcase, '${Routes.dashboard}?tab=ops', 64),
           if (tabs.contains('help'))
-            _NavItem('help', 'Helpdesk', PhosphorIconsRegular.headset, PhosphorIconsFill.headset, '${Routes.dashboard}?tab=help', 64),
+            _NavItem('help', 'Helpdesk', PhosphorIconsRegular.headset,
+                PhosphorIconsFill.headset, '${Routes.dashboard}?tab=help', 64),
         ];
       case NavContext.acc:
         // Each tab only for a role that can read its area — the same module
         // keys that gate the drawer's Accounting children.
         bool can(String m) => access == null || access.can(m);
         return [
-          _NavItem('acchome', 'Home', PhosphorIconsRegular.house, PhosphorIconsFill.house, Routes.accHome, 46),
+          _NavItem('acchome', 'Home', PhosphorIconsRegular.house,
+              PhosphorIconsFill.house, Routes.accHome, 46),
           if (can('acc_document'))
-            _NavItem('accinvoices', 'Invoices', PhosphorIconsRegular.receipt, PhosphorIconsFill.receipt, Routes.accInvoices, 54),
+            _NavItem('accinvoices', 'Invoices', PhosphorIconsRegular.receipt,
+                PhosphorIconsFill.receipt, Routes.accInvoices, 54),
           if (can('acc_purchase'))
-            _NavItem('accpurchases', 'Purchases', PhosphorIconsRegular.shoppingCart, PhosphorIconsFill.shoppingCart, Routes.accPurchases, 60),
+            _NavItem(
+                'accpurchases',
+                'Purchases',
+                PhosphorIconsRegular.shoppingCart,
+                PhosphorIconsFill.shoppingCart,
+                Routes.accPurchases,
+                60),
           if (can('acc_settlement'))
-            _NavItem('accmoney', 'Money', PhosphorIconsRegular.wallet, PhosphorIconsFill.wallet, Routes.accMoney, 46),
+            _NavItem('accmoney', 'Money', PhosphorIconsRegular.wallet,
+                PhosphorIconsFill.wallet, Routes.accMoney, 46),
         ];
       case NavContext.crm:
       case NavContext.none:
         return [
-          _NavItem('home', 'Home', PhosphorIconsRegular.house, PhosphorIconsFill.house, Routes.home, 46),
-          _NavItem('leads', 'Leads', PhosphorIconsRegular.users, PhosphorIconsFill.users, Routes.leads, 46),
-          _NavItem('followups', 'Follow-ups', PhosphorIconsRegular.clock, PhosphorIconsFill.clock, Routes.followups, 54),
-          _NavItem('tasks', 'Tasks', PhosphorIconsRegular.listDashes, PhosphorIconsFill.listDashes, Routes.tasks, 46),
+          _NavItem('home', 'Home', PhosphorIconsRegular.house,
+              PhosphorIconsFill.house, Routes.home, 46),
+          _NavItem('leads', 'Leads', PhosphorIconsRegular.users,
+              PhosphorIconsFill.users, Routes.leads, 46),
+          _NavItem('followups', 'Follow-ups', PhosphorIconsRegular.clock,
+              PhosphorIconsFill.clock, Routes.followups, 54),
+          _NavItem('tasks', 'Tasks', PhosphorIconsRegular.listDashes,
+              PhosphorIconsFill.listDashes, Routes.tasks, 46),
         ];
     }
   }
@@ -135,12 +165,16 @@ class ClozrBottomNav extends ConsumerWidget {
     }
     switch (it.key) {
       case 'home':
-        return path == Routes.home || path == Routes.opsHome || path == Routes.helpHome;
+        return path == Routes.home ||
+            path == Routes.opsHome ||
+            path == Routes.helpHome;
       case 'leads':
         return path.startsWith('/leads');
       case 'followups':
         return path.startsWith('/followups');
       case 'tasks':
+        // The Operations bar reuses the 'tasks' key for its own list.
+        if (_ctx == NavContext.ops) return path.startsWith(Routes.opsTasks);
         return path == Routes.tasks || path == Routes.taskDetail;
       case 'projects':
         return path.startsWith('/ops/projects');
@@ -151,7 +185,8 @@ class ClozrBottomNav extends ConsumerWidget {
       case 'acchome':
         return path == Routes.accHome;
       case 'accinvoices':
-        return path.startsWith('/acc/invoices') || path.startsWith('/acc/documents');
+        return path.startsWith('/acc/invoices') ||
+            path.startsWith('/acc/documents');
       case 'accpurchases':
         return path.startsWith('/acc/purchases');
       case 'accmoney':
@@ -234,7 +269,10 @@ class ClozrBottomNav extends ConsumerWidget {
                     const Color(0xFFF9FAFB).withOpacity(0),
                     const Color(0xFFF9FAFB).withOpacity(0.72),
                   ],
-                  stops: [0.0, (fade / (stripHeight - pillTop)).clamp(0.0, 1.0)],
+                  stops: [
+                    0.0,
+                    (fade / (stripHeight - pillTop)).clamp(0.0, 1.0)
+                  ],
                 ),
               ),
             ),
@@ -242,33 +280,44 @@ class ClozrBottomNav extends ConsumerWidget {
 
           // Floating frosted pill — sits above the gesture inset.
           Padding(
-            padding: EdgeInsets.only(top: pillTop, left: 14.w, right: 14.w, bottom: safeBottom),
+            padding: EdgeInsets.only(
+                top: pillTop, left: 14.w, right: 14.w, bottom: safeBottom),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14.r),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 52, sigmaY: 52),
-                child: Container(
-                  height: 64.h,
-                  padding: EdgeInsets.symmetric(horizontal: 14.w),
-                  decoration: BoxDecoration(
-                    color: AppColors.white.withOpacity(0.66),
-                    borderRadius: BorderRadius.circular(14.r),
-                    border: Border.all(
-                        color: const Color(0xFFD2D4DA).withOpacity(0.5), width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF101828).withOpacity(0.08),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      for (final it in _items(access)) _tab(context, it),
-                      if (_hasAdd) _addButton(context, ref),
-                    ],
+                child: TourAnchor(
+                  id: TourAnchors.tabs,
+                  child: Container(
+                    height: 64.h,
+                    padding: EdgeInsets.symmetric(horizontal: 14.w),
+                    decoration: BoxDecoration(
+                      color: AppColors.white.withOpacity(0.66),
+                      borderRadius: BorderRadius.circular(14.r),
+                      border: Border.all(
+                          color: const Color(0xFFD2D4DA).withOpacity(0.5),
+                          width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF101828).withOpacity(0.08),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        for (final it in _items(access))
+                          TourAnchor(
+                              id: TourAnchors.tab(it.key),
+                              child: _tab(context, it)),
+                        if (_hasAdd)
+                          TourAnchor(
+                              id: TourAnchors.add,
+                              child: _addButton(context, ref)),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -286,7 +335,8 @@ class ClozrBottomNav extends ConsumerWidget {
       behavior: HitTestBehavior.opaque,
       onTap: () {
         HapticFeedback.selectionClick();
-        if (location.split('?').first != it.path.split('?').first || _ctx == NavContext.dash) {
+        if (location.split('?').first != it.path.split('?').first ||
+            _ctx == NavContext.dash) {
           context.go(it.path);
         }
       },
@@ -334,15 +384,24 @@ class ClozrBottomNav extends ConsumerWidget {
         HapticFeedback.mediumImpact();
         // Prefer the current screen's registered add action (#14); otherwise
         // fall back to a location-aware route.
-        final action = ref.read(contextualAddProvider);
+        var action = ref.read(contextualAddProvider);
+        // An action registered by a screen that is no longer on show is stale.
+        final here = location.split('?').first;
+        if (action != null &&
+            action.routePath != null &&
+            action.routePath != here) {
+          action = null;
+        }
         if (action != null) {
           final module = action.module;
-          if (module != null && !ensurePermission(ref, module, PermVerb.create)) return;
+          if (module != null && !ensurePermission(ref, module, PermVerb.create))
+            return;
           action.run(context);
         } else {
           final path = _fallbackAddPath;
           final module = _fallbackAddModule(path);
-          if (module != null && !ensurePermission(ref, module, PermVerb.create)) return;
+          if (module != null && !ensurePermission(ref, module, PermVerb.create))
+            return;
           context.push(path);
         }
       },
@@ -360,7 +419,8 @@ class ClozrBottomNav extends ConsumerWidget {
             ),
           ],
         ),
-        child: Icon(PhosphorIconsBold.plus, size: 21.sp, color: AppColors.white),
+        child:
+            Icon(PhosphorIconsBold.plus, size: 21.sp, color: AppColors.white),
       ),
     );
   }

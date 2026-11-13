@@ -65,7 +65,9 @@ class LmsCtaButton extends StatelessWidget {
               Icon(icon, size: 16.sp, color: AppColors.white),
               SizedBox(width: 8.w),
             ],
-            Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+            Text(label,
+                style: AppText.custom(
+                    size: 15, weight: FontWeight.w700, color: AppColors.white)),
           ],
         ),
       ),
@@ -106,7 +108,11 @@ class LmsGhostButton extends StatelessWidget {
               Icon(icon, size: 16.sp, color: AppColors.textSecondary),
               SizedBox(width: 7.w),
             ],
-            Text(label, style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+            Text(label,
+                style: AppText.custom(
+                    size: 14.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textSecondary)),
           ],
         ),
       ),

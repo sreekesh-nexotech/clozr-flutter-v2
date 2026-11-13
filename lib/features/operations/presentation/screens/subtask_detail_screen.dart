@@ -57,7 +57,8 @@ class SubtaskDetailScreen extends ConsumerWidget {
                   return const EmptyState(
                     icon: PhosphorIconsRegular.listChecks,
                     title: 'Subtask not found',
-                    body: 'This subtask may have been removed, or its task is no longer available.',
+                    body:
+                        'This subtask may have been removed, or its task is no longer available.',
                   );
                 }
                 final s = subtasks[index];
@@ -77,15 +78,23 @@ class SubtaskDetailScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(s.title,
-                              style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                              style: AppText.custom(
+                                  size: 18,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.3)),
                           SizedBox(height: 4.h),
                           Text('Subtask of ${task.subject}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+                              style: AppText.custom(
+                                  size: 12.5,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textMuted)),
                           SizedBox(height: 16.h),
                           _doneToggle(context, ref, taskId, index, s.done),
-                          ClozrDivider(margin: EdgeInsets.symmetric(vertical: 16.h)),
+                          ClozrDivider(
+                              margin: EdgeInsets.symmetric(vertical: 16.h)),
                           _metaRow(
                             icon: PhosphorIconsRegular.user,
                             label: 'Assignee',
@@ -104,11 +113,21 @@ class SubtaskDetailScreen extends ConsumerWidget {
                                         width: 26.w,
                                         height: 26.w,
                                         alignment: Alignment.center,
-                                        decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                                        child: Text(assignee.initials, style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                                        decoration: const BoxDecoration(
+                                            color: AppColors.navy,
+                                            shape: BoxShape.circle),
+                                        child: Text(assignee.initials,
+                                            style: AppText.custom(
+                                                size: 9,
+                                                weight: FontWeight.w700,
+                                                color: AppColors.white)),
                                       ),
                                       SizedBox(width: 8.w),
-                                      Text(assignee.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                                      Text(assignee.name,
+                                          style: AppText.custom(
+                                              size: 14,
+                                              weight: FontWeight.w700,
+                                              color: AppColors.textPrimary)),
                                     ],
                                   ),
                           ),
@@ -120,7 +139,9 @@ class SubtaskDetailScreen extends ConsumerWidget {
                                 style: AppText.custom(
                                     size: 14,
                                     weight: FontWeight.w700,
-                                    color: s.due.isEmpty ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                                    color: s.due.isEmpty
+                                        ? AppColors.textPlaceholder
+                                        : AppColors.textPrimary)),
                           ),
                         ],
                       ),
@@ -130,8 +151,12 @@ class SubtaskDetailScreen extends ConsumerWidget {
                     NotesThread(
                       author: ref.watch(noteAuthorProvider),
                       notes: ref.watch(subtaskNotesProvider(notesKey)),
-                      onAddNote: (body, atts) => ref.read(subtaskNotesProvider(notesKey).notifier).addNote(body, atts),
-                      onAddReply: (noteId, body) => ref.read(subtaskNotesProvider(notesKey).notifier).addReply(noteId, body),
+                      onAddNote: (body, atts) => ref
+                          .read(subtaskNotesProvider(notesKey).notifier)
+                          .addNote(body, atts),
+                      onAddReply: (noteId, body) => ref
+                          .read(subtaskNotesProvider(notesKey).notifier)
+                          .addReply(noteId, body),
                     ),
                   ],
                 );
@@ -177,11 +202,13 @@ class SubtaskDetailScreen extends ConsumerWidget {
   /// the two surfaces cannot disagree. A refusal (the parent's completion gate)
   /// surfaces as the server's own message.
   Future<void> _toggle(WidgetRef ref, String taskId, int index) async {
-    final err = await ref.read(opsSubtasksProvider(taskId).notifier).toggle(index);
+    final err =
+        await ref.read(opsSubtasksProvider(taskId).notifier).toggle(index);
     if (err != null) ref.read(toastProvider.notifier).showError(err);
   }
 
-  Widget _doneToggle(BuildContext context, WidgetRef ref, String taskId, int index, bool done) {
+  Widget _doneToggle(BuildContext context, WidgetRef ref, String taskId,
+      int index, bool done) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _toggle(ref, taskId, index),
@@ -191,7 +218,9 @@ class SubtaskDetailScreen extends ConsumerWidget {
         decoration: BoxDecoration(
           color: done ? AppColors.tintGreen : AppColors.white,
           borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: done ? AppColors.success : const Color(0xFFE6E7EA), width: 1.5),
+          border: Border.all(
+              color: done ? AppColors.success : const Color(0xFFE6E7EA),
+              width: 1.5),
         ),
         child: Row(
           children: [
@@ -202,29 +231,42 @@ class SubtaskDetailScreen extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: done ? AppColors.success : AppColors.white,
                 borderRadius: BorderRadius.circular(7.r),
-                border: done ? null : Border.all(color: const Color(0xFFC9CCD2), width: 1.5),
+                border: done
+                    ? null
+                    : Border.all(color: const Color(0xFFC9CCD2), width: 1.5),
               ),
-              child: Icon(PhosphorIconsBold.check, size: 13.sp, color: done ? AppColors.white : Colors.transparent),
+              child: Icon(PhosphorIconsBold.check,
+                  size: 13.sp,
+                  color: done ? AppColors.white : Colors.transparent),
             ),
             SizedBox(width: 11.w),
             Text(done ? 'Completed' : 'Mark complete',
-                style: AppText.custom(size: 14, weight: FontWeight.w700, color: done ? AppColors.success : AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: done ? AppColors.success : AppColors.textPrimary)),
           ],
         ),
       ),
     );
   }
 
-  Widget _metaRow({required IconData icon, required String label, required Widget child}) {
+  Widget _metaRow(
+      {required IconData icon, required String label, required Widget child}) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 8.h),
       child: Row(
         children: [
           Icon(icon, size: 16.sp, color: AppColors.textPlaceholder),
           SizedBox(width: 9.w),
-          Text(label, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text(label,
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
           const Spacer(),
-          Flexible(child: Align(alignment: Alignment.centerRight, child: child)),
+          Flexible(
+              child: Align(alignment: Alignment.centerRight, child: child)),
         ],
       ),
     );
@@ -243,25 +285,36 @@ class SubtaskDetailScreen extends ConsumerWidget {
               width: 34.w,
               height: 34.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(10.r)),
-              child: Icon(PhosphorIconsRegular.listChecks, size: 17.sp, color: AppColors.navy),
+              decoration: BoxDecoration(
+                  color: AppColors.tintNavy,
+                  borderRadius: BorderRadius.circular(10.r)),
+              child: Icon(PhosphorIconsRegular.listChecks,
+                  size: 17.sp, color: AppColors.navy),
             ),
             SizedBox(width: 11.w),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Part of', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  Text('Part of',
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                   SizedBox(height: 1.h),
                   Text(parentSubject,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ),
             SizedBox(width: 8.w),
-            Icon(PhosphorIconsRegular.caretRight, size: 15.sp, color: AppColors.textPlaceholder),
+            Icon(PhosphorIconsRegular.caretRight,
+                size: 15.sp, color: AppColors.textPlaceholder),
           ],
         ),
       ),

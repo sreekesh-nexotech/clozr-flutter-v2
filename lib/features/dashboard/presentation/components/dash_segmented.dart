@@ -23,7 +23,8 @@ class DashSegmented extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(2.r),
-      decoration: BoxDecoration(color: DashColors.chipGrey, borderRadius: BorderRadius.circular(9.r)),
+      decoration: BoxDecoration(
+          color: DashColors.chipGrey, borderRadius: BorderRadius.circular(9.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -34,7 +35,8 @@ class DashSegmented extends StatelessWidget {
                 duration: const Duration(milliseconds: 150),
                 padding: EdgeInsets.symmetric(horizontal: 11.w, vertical: 5.h),
                 decoration: BoxDecoration(
-                  color: selectedIndex == i ? AppColors.navy : Colors.transparent,
+                  color:
+                      selectedIndex == i ? AppColors.navy : Colors.transparent,
                   borderRadius: BorderRadius.circular(7.r),
                 ),
                 child: Text(
@@ -42,7 +44,9 @@ class DashSegmented extends StatelessWidget {
                   style: AppText.custom(
                     size: 12,
                     weight: FontWeight.w700,
-                    color: selectedIndex == i ? AppColors.white : DashColors.textMid,
+                    color: selectedIndex == i
+                        ? AppColors.white
+                        : DashColors.textMid,
                   ),
                 ),
               ),

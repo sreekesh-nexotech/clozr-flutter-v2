@@ -49,7 +49,8 @@ Followup _fu({
 
 List<String> _typeOptions({List<CatalogOption> catalog = const []}) {
   final spec = buildFollowupsFilterSpec(typeCatalog: catalog);
-  final field = spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'types');
+  final field =
+      spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'types');
   return [for (final o in field.options) o.id];
 }
 
@@ -58,7 +59,8 @@ FilterValues _v(Map<String, FilterValue> m) => FilterValues(m);
 void main() {
   group('the drawer offers the org’s types', () {
     test('uses the catalog when it has loaded, by name', () {
-      expect(_typeOptions(catalog: _orgTypes), ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site Visit']);
+      expect(_typeOptions(catalog: _orgTypes),
+          ['Call', 'Email', 'Meeting', 'WhatsApp', 'Site Visit']);
     });
 
     test('no longer offers a type this org does not have', () {
@@ -72,22 +74,54 @@ void main() {
 
   group('matching (mock mode — the API filters server-side)', () {
     test('the org type filters its rows', () {
-      expect(followupMatchesFilters(_fu(kind: 'Site Visit'), _v({'types': ChoiceValue(ids: {'Site Visit'})})), isTrue);
-      expect(followupMatchesFilters(_fu(kind: 'Call'), _v({'types': ChoiceValue(ids: {'Site Visit'})})), isFalse);
+      expect(
+          followupMatchesFilters(
+              _fu(kind: 'Site Visit'),
+              _v({
+                'types': ChoiceValue(ids: {'Site Visit'})
+              })),
+          isTrue);
+      expect(
+          followupMatchesFilters(
+              _fu(kind: 'Call'),
+              _v({
+                'types': ChoiceValue(ids: {'Site Visit'})
+              })),
+          isFalse);
     });
 
     test('priority matches the folded label the drawer offers', () {
       final spec = buildFollowupsFilterSpec(priorityCatalog: _orgPriorities);
-      final ids = spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'priorities').options.map((o) => o.id);
+      final ids = spec.sections
+          .expand((s) => s.fields)
+          .firstWhere((f) => f.id == 'priorities')
+          .options
+          .map((o) => o.id);
       expect(ids, contains('High'));
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), _v({'priorities': ChoiceValue(ids: {'High'})})), isTrue);
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), _v({'priorities': ChoiceValue(ids: {'High'})})), isFalse);
+      expect(
+          followupMatchesFilters(
+              _fu(kind: 'Call', priority: 'high'),
+              _v({
+                'priorities': ChoiceValue(ids: {'High'})
+              })),
+          isTrue);
+      expect(
+          followupMatchesFilters(
+              _fu(kind: 'Call', priority: 'low'),
+              _v({
+                'priorities': ChoiceValue(ids: {'High'})
+              })),
+          isFalse);
     });
 
     test('"is not" on priority excludes the chosen ones', () {
-      final v = _v({'priorities': ChoiceValue(ids: {'High'}, isNot: true)});
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), v), isFalse);
-      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), v), isTrue);
+      final v = _v({
+        'priorities': ChoiceValue(ids: {'High'}, isNot: true)
+      });
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'high'), v),
+          isFalse);
+      expect(followupMatchesFilters(_fu(kind: 'Call', priority: 'low'), v),
+          isTrue);
     });
   });
 

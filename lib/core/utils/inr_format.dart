@@ -19,10 +19,35 @@ String formatInr(num? amount) {
         : rounded.toStringAsFixed(1);
   }
 
+  // From a thousand crore the number would be a bare six-digit run
+  // ("₹120000Cr"): group it the Indian way ("₹1,20,000Cr") so it stays legible.
+  if (abs >= 10000000000) {
+    return '$sign₹${NumberFormat.decimalPattern('en_IN').format((abs / 10000000).round())}Cr';
+  }
   if (abs >= 10000000) return '$sign₹${trim(abs / 10000000)}Cr';
   if (abs >= 100000) return '$sign₹${trim(abs / 100000)}L';
   if (abs >= 1000) return '$sign₹${trim(abs / 1000)}K';
   return '$sign₹${_grouped.format(abs)}';
+}
+
+/// Full rupee amount with Indian digit grouping, as the webapp's list cells show
+/// it: `₹3,01,785.69`, `₹1,000` (paise only when there are any).
+String formatInrFull(num? amount) {
+  if (amount == null) return '—';
+  final v = amount.toDouble();
+  final whole = (v * 100).roundToDouble() % 100 == 0;
+  return NumberFormat.currency(
+          locale: 'en_IN', symbol: '₹', decimalDigits: whole ? 0 : 2)
+      .format(v);
+}
+
+/// Exact rupee amount, always with paise: `₹5,999.00`, `₹7,078.82` — product
+/// and package prices, so the header, Pricing and lists show one value
+/// (UI/UX audit #45).
+String formatInrExact(num? amount) {
+  if (amount == null) return '—';
+  return NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2)
+      .format(amount.toDouble());
 }
 
 /// Formats a line quantity for display: `1.0` reads "1", `2.5` reads "2.5".

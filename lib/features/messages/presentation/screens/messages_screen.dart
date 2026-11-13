@@ -53,33 +53,38 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
                 : state.error != null
                     ? ErrorState.forError(
                         state.error!,
-                        onRetry: () => ref.read(conversationsProvider.notifier).reload(),
+                        onRetry: () =>
+                            ref.read(conversationsProvider.notifier).reload(),
                       )
                     : rows.isEmpty
                         ? ListView(
-                    children: const [
-                      EmptyState(
-                        icon: PhosphorIconsRegular.chatsCircle,
-                        title: 'No conversations found',
-                        body: 'Try a different search, or start a chat from any lead.',
-                      ),
-                    ],
-                  )
+                            children: const [
+                              EmptyState(
+                                icon: PhosphorIconsRegular.chatsCircle,
+                                title: 'No conversations found',
+                                body:
+                                    'Try a different search, or start a chat from any lead.',
+                              ),
+                            ],
+                          )
                         : ListView.separated(
-                    padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 28.h),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => SizedBox(height: 10.h),
-                    itemBuilder: (context, i) {
-                      final c = rows[i];
-                      return ConversationRow(
-                        conversation: c,
-                        onTap: () {
-                          ref.read(conversationsProvider.notifier).markRead(c.id);
-                          context.push('${Routes.chat}?id=${c.id}');
-                        },
-                      );
-                    },
-                  ),
+                            padding:
+                                EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 28.h),
+                            itemCount: rows.length,
+                            separatorBuilder: (_, __) => SizedBox(height: 10.h),
+                            itemBuilder: (context, i) {
+                              final c = rows[i];
+                              return ConversationRow(
+                                conversation: c,
+                                onTap: () {
+                                  ref
+                                      .read(conversationsProvider.notifier)
+                                      .markRead(c.id);
+                                  context.push('${Routes.chat}?id=${c.id}');
+                                },
+                              );
+                            },
+                          ),
           ),
         ],
       ),
@@ -91,7 +96,8 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 0),
       decoration: const BoxDecoration(
         color: AppColors.white,
-        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
+        border: Border(
+            bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
       ),
       child: Column(
         children: [
@@ -99,22 +105,31 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
             children: [
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => context.canPop() ? context.pop() : context.go(Routes.home),
+                onTap: () =>
+                    context.canPop() ? context.pop() : context.go(Routes.home),
                 child: Padding(
                   padding: EdgeInsets.only(right: 4.w),
-                  child: Icon(PhosphorIconsBold.caretLeft, size: 22.sp, color: AppColors.textPrimary),
+                  child: Icon(PhosphorIconsBold.caretLeft,
+                      size: 22.sp, color: AppColors.textPrimary),
                 ),
               ),
               Container(
                 width: 38.w,
                 height: 38.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(11.r)),
-                child: Icon(PhosphorIconsFill.chatsCircle, size: 20.sp, color: AppColors.success),
+                decoration: BoxDecoration(
+                    color: AppColors.tintGreen,
+                    borderRadius: BorderRadius.circular(11.r)),
+                child: Icon(PhosphorIconsFill.chatsCircle,
+                    size: 20.sp, color: AppColors.success),
               ),
               SizedBox(width: 10.w),
               Text('Messages',
-                  style: AppText.custom(size: 22, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+                  style: AppText.custom(
+                      size: 22,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.4)),
             ],
           ),
           SizedBox(height: 14.h),
@@ -128,20 +143,28 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
             ),
             child: Row(
               children: [
-                Icon(PhosphorIconsRegular.magnifyingGlass, size: 18.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsRegular.magnifyingGlass,
+                    size: 18.sp, color: AppColors.textPlaceholder),
                 SizedBox(width: 10.w),
                 Expanded(
                   child: TextField(
                     controller: _searchCtrl,
-                    onChanged: (v) => ref.read(chatSearchProvider.notifier).state = v,
-                    style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
+                    onChanged: (v) =>
+                        ref.read(chatSearchProvider.notifier).state = v,
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w500,
+                        color: AppColors.textBody),
                     cursorColor: AppColors.navy,
                     decoration: InputDecoration(
                       isDense: true,
                       contentPadding: EdgeInsets.zero,
                       border: InputBorder.none,
                       hintText: 'Search conversations…',
-                      hintStyle: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                      hintStyle: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder),
                     ),
                   ),
                 ),

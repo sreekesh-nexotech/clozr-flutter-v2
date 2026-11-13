@@ -242,13 +242,24 @@ class AppError implements Exception {
   static Map<String, dynamic>? _extractExtra(Object? body) {
     if (body is! Map) return null;
     final out = <String, dynamic>{};
-    for (final key in const ['rule', 'next', 'next_action', 'cause', 'current_updated_at', 'modified_by', 'reasons', 'open_task_count', 'error_codes']) {
+    for (final key in const [
+      'rule',
+      'next',
+      'next_action',
+      'cause',
+      'current_updated_at',
+      'modified_by',
+      'reasons',
+      'open_task_count',
+      'error_codes'
+    ]) {
       final v = body[key];
       if (v != null) out[key] = v;
     }
     // A lead create refused by the org's duplicate rule.
     final errors = body['errors'];
-    if (errors is Map && errors['duplicate'] is Map) out['duplicate'] = errors['duplicate'];
+    if (errors is Map && errors['duplicate'] is Map)
+      out['duplicate'] = errors['duplicate'];
     return out.isEmpty ? null : out;
   }
 
@@ -265,8 +276,16 @@ class AppError implements Exception {
       // and `_extractMessage` consults field errors as a last resort, so a 409
       // without a `detail` would have shown the user "rule: R7".
       if (const {
-        'detail', 'error', 'message', 'code', 'error_codes',
-        'cause', 'rule', 'next', 'next_action', 'hint',
+        'detail',
+        'error',
+        'message',
+        'code',
+        'error_codes',
+        'cause',
+        'rule',
+        'next',
+        'next_action',
+        'hint',
       }.contains(key)) {
         continue;
       }
@@ -281,7 +300,9 @@ class AppError implements Exception {
         // `custom_fields.<slug>`, which is the schema's own column name.
         for (final sub in v.entries) {
           final sv = sub.value;
-          final msgs = sv is List ? sv.whereType<String>().toList() : [if (sv is String) sv];
+          final msgs = sv is List
+              ? sv.whereType<String>().toList()
+              : [if (sv is String) sv];
           if (msgs.isNotEmpty) out['$key.${sub.key}'] = msgs;
         }
       }

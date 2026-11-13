@@ -225,10 +225,12 @@ class AccDocument extends Equatable {
   bool get canCreditNote =>
       isIssued &&
       !isInward &&
-      const {'TAX_INVOICE', 'BILL_OF_SUPPLY', 'EXPORT_INVOICE'}.contains(docType);
+      const {'TAX_INVOICE', 'BILL_OF_SUPPLY', 'EXPORT_INVOICE'}
+          .contains(docType);
 
   @override
-  List<Object?> get props => [id, status, number, grandTotal, openBalance, paymentState];
+  List<Object?> get props =>
+      [id, status, number, grandTotal, openBalance, paymentState];
 }
 
 /// `POST documents/{id}/preview-tax/` — what the document would be if issued
@@ -256,7 +258,8 @@ class TaxPreview extends Equatable {
   final List<DocWarning> warnings;
 
   @override
-  List<Object?> get props => [supply, transactionClass, lines, totals, warnings];
+  List<Object?> get props =>
+      [supply, transactionClass, lines, totals, warnings];
 }
 
 class TaxPreviewLine extends Equatable {
@@ -321,7 +324,8 @@ class RateVariant extends Equatable {
 
 /// A page of documents.
 class AccDocumentPage {
-  const AccDocumentPage({required this.results, this.count = 0, this.hasMore = false});
+  const AccDocumentPage(
+      {required this.results, this.count = 0, this.hasMore = false});
 
   final List<AccDocument> results;
   final int count;

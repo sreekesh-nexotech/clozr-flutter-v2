@@ -58,8 +58,14 @@ class PeopleIconAction extends StatelessWidget {
                   height: 16.w,
                   padding: EdgeInsets.symmetric(horizontal: 4.w),
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.blueBright, borderRadius: BorderRadius.circular(8.r)),
-                  child: Text(badge!, style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                  decoration: BoxDecoration(
+                      color: AppColors.blueBright,
+                      borderRadius: BorderRadius.circular(8.r)),
+                  child: Text(badge!,
+                      style: AppText.custom(
+                          size: 10,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
                 ),
               ),
           ],
@@ -88,8 +94,10 @@ class PeopleCreateButton extends StatelessWidget {
           height: 38.w,
           margin: EdgeInsets.only(left: 4.w),
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
-          child: Icon(PhosphorIconsBold.plus, size: 18.sp, color: AppColors.white),
+          decoration: BoxDecoration(
+              color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
+          child:
+              Icon(PhosphorIconsBold.plus, size: 18.sp, color: AppColors.white),
         ),
       );
     }
@@ -99,13 +107,18 @@ class PeopleCreateButton extends StatelessWidget {
       child: Container(
         height: 38.h,
         padding: EdgeInsets.symmetric(horizontal: 14.w),
-        decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
+        decoration: BoxDecoration(
+            color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(PhosphorIconsBold.plus, size: 13.sp, color: AppColors.white),
             SizedBox(width: 6.w),
-            Text(label!, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.white)),
+            Text(label!,
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.white)),
           ],
         ),
       ),

@@ -14,7 +14,8 @@ void main() {
       expect(normalizeGstin('   '), isNull);
     });
     test('hint copy', () {
-      expect(gstinHint, "15 characters; its first two digits are the billing state's GST code.");
+      expect(gstinHint,
+          "15 characters; its first two digits are the billing state's GST code.");
     });
   });
 
@@ -66,30 +67,52 @@ void main() {
     test('untouched block against a record without the columns is empty', () {
       final row = <String, dynamic>{'name': 'X', 'gstin': null, 'address': ''};
       final values = addressValuesFromRow(row);
-      expect(customerAddressPatch(values, row, sameAsBilling: deliveryMatchesBilling(row)), isEmpty);
+      expect(
+          customerAddressPatch(values, row,
+              sameAsBilling: deliveryMatchesBilling(row)),
+          isEmpty);
     });
 
     test('changed and cleared values only; cleared goes as null', () {
-      final row = <String, dynamic>{'billing_city': 'Kochi', 'gstin': '32ABCDE1234F1Z5'};
-      final values = {...addressValuesFromRow(row), 'billing_city': '', 'billing_pincode': '682001'};
+      final row = <String, dynamic>{
+        'billing_city': 'Kochi',
+        'gstin': '32ABCDE1234F1Z5'
+      };
+      final values = {
+        ...addressValuesFromRow(row),
+        'billing_city': '',
+        'billing_pincode': '682001'
+      };
       final patch = customerAddressPatch(values, row, sameAsBilling: false);
       expect(patch, {'billing_city': null, 'billing_pincode': '682001'});
     });
 
     test('same-as-billing seeds from the record', () {
       expect(deliveryMatchesBilling(null), isTrue);
-      expect(deliveryMatchesBilling({'billing_city': 'Kochi', 'delivery_city': 'Kochi'}), isTrue);
-      expect(deliveryMatchesBilling({'billing_city': 'Kochi', 'delivery_city': 'Thrissur'}), isFalse);
+      expect(
+          deliveryMatchesBilling(
+              {'billing_city': 'Kochi', 'delivery_city': 'Kochi'}),
+          isTrue);
+      expect(
+          deliveryMatchesBilling(
+              {'billing_city': 'Kochi', 'delivery_city': 'Thrissur'}),
+          isFalse);
     });
   });
 
   group('error routing', () {
-    test('address keys land on their input; delivery folds onto billing when same', () {
+    test(
+        'address keys land on their input; delivery folds onto billing when same',
+        () {
       expect(addressErrorField('gstin', sameAsBilling: true), 'gstin');
-      expect(addressErrorField('billing_pincode', sameAsBilling: false), 'billing_pincode');
-      expect(addressErrorField('delivery_pincode', sameAsBilling: true), 'billing_pincode');
-      expect(addressErrorField('delivery_pincode', sameAsBilling: false), 'delivery_pincode');
-      expect(addressErrorField('address', sameAsBilling: true), 'billing_address_line1');
+      expect(addressErrorField('billing_pincode', sameAsBilling: false),
+          'billing_pincode');
+      expect(addressErrorField('delivery_pincode', sameAsBilling: true),
+          'billing_pincode');
+      expect(addressErrorField('delivery_pincode', sameAsBilling: false),
+          'delivery_pincode');
+      expect(addressErrorField('address', sameAsBilling: true),
+          'billing_address_line1');
       expect(addressErrorField('email', sameAsBilling: true), isNull);
     });
 
@@ -100,7 +123,10 @@ void main() {
           'email': ['Enter a valid email address.', 'x'],
           'phone': [],
         }),
-        {'name': 'A customer with this name already exists.', 'email': 'Enter a valid email address.'},
+        {
+          'name': 'A customer with this name already exists.',
+          'email': 'Enter a valid email address.'
+        },
       );
     });
 
@@ -128,7 +154,11 @@ void main() {
         'match_keys': ['email', 'phone'],
         'matched': {
           'customers': [
-            {'customer_id': 'c1', 'name': 'Manoj Nair', 'email': 'manoj.nair@example.com'},
+            {
+              'customer_id': 'c1',
+              'name': 'Manoj Nair',
+              'email': 'manoj.nair@example.com'
+            },
           ],
           'leads': [
             {'lead_id': 'l1', 'lead_name': 'Manoj', 'email': 'None'},

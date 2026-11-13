@@ -42,7 +42,11 @@ class DashAreaTrend extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             for (final l in trend.axisLabels)
-              Text(l, style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              Text(l,
+                  style: AppText.custom(
+                      size: 10.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
           ],
         ),
       ],
@@ -64,7 +68,8 @@ class _TrendPainter extends CustomPainter {
     _draw(canvas, size, trend.seriesB, colorB, fillB);
   }
 
-  void _draw(Canvas canvas, Size size, List<double> values, Color color, double fill) {
+  void _draw(
+      Canvas canvas, Size size, List<double> values, Color color, double fill) {
     if (values.length < 2) return;
     final w = size.width, h = size.height;
     const topPad = 8.0, botPad = 8.0;
@@ -115,7 +120,8 @@ class _TrendPainter extends CustomPainter {
 
 /// A small legend swatch (line + label) for the trend charts.
 class DashTrendLegend extends StatelessWidget {
-  const DashTrendLegend({super.key, required this.color, required this.label, this.dot = false});
+  const DashTrendLegend(
+      {super.key, required this.color, required this.label, this.dot = false});
   final Color color;
   final String label;
   final bool dot;
@@ -126,14 +132,22 @@ class DashTrendLegend extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         dot
-            ? Container(width: 8.w, height: 8.w, decoration: BoxDecoration(color: color, shape: BoxShape.circle))
+            ? Container(
+                width: 8.w,
+                height: 8.w,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle))
             : Container(
                 width: 14.w,
                 height: 3.h,
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2.r)),
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(2.r)),
               ),
         SizedBox(width: dot ? 5.w : 6.w),
-        Text(label, style: AppText.custom(size: dot ? 11 : 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+        Text(label,
+            style: AppText.custom(
+                size: dot ? 11 : 12,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
       ],
     );
   }

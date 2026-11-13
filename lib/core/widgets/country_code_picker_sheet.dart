@@ -17,18 +17,21 @@ Future<CountryCode?> showCountryCodePicker({
 }) {
   return showClozrSheet<CountryCode>(
     context: context,
-    builder: (_) => _CountryCodePickerSheet(countries: countries, selectedIso2: selectedIso2),
+    builder: (_) => _CountryCodePickerSheet(
+        countries: countries, selectedIso2: selectedIso2),
   );
 }
 
 class _CountryCodePickerSheet extends StatefulWidget {
-  const _CountryCodePickerSheet({required this.countries, required this.selectedIso2});
+  const _CountryCodePickerSheet(
+      {required this.countries, required this.selectedIso2});
 
   final List<CountryCode> countries;
   final String selectedIso2;
 
   @override
-  State<_CountryCodePickerSheet> createState() => _CountryCodePickerSheetState();
+  State<_CountryCodePickerSheet> createState() =>
+      _CountryCodePickerSheetState();
 }
 
 class _CountryCodePickerSheetState extends State<_CountryCodePickerSheet> {
@@ -56,7 +59,8 @@ class _CountryCodePickerSheetState extends State<_CountryCodePickerSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Country code', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Country code', onClose: () => Navigator.of(context).pop()),
         Padding(
           padding: EdgeInsets.fromLTRB(18.w, 4.h, 18.w, 10.h),
           child: Container(
@@ -69,7 +73,8 @@ class _CountryCodePickerSheetState extends State<_CountryCodePickerSheet> {
             ),
             child: Row(
               children: [
-                Icon(PhosphorIconsRegular.magnifyingGlass, size: 16.sp, color: AppColors.textMuted),
+                Icon(PhosphorIconsRegular.magnifyingGlass,
+                    size: 16.sp, color: AppColors.textMuted),
                 SizedBox(width: 8.w),
                 Expanded(
                   child: TextField(
@@ -95,7 +100,10 @@ class _CountryCodePickerSheetState extends State<_CountryCodePickerSheet> {
             child: Text(
               'No country matches "${_search.trim()}".',
               textAlign: TextAlign.center,
-              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)
+              style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)
                   .copyWith(height: 1.5),
             ),
           )
@@ -112,22 +120,28 @@ class _CountryCodePickerSheetState extends State<_CountryCodePickerSheet> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).pop(c),
                   child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                    padding:
+                        EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
                     child: Row(
                       children: [
                         Text(c.flag, style: TextStyle(fontSize: 18.sp)),
                         SizedBox(width: 12.w),
                         Expanded(
                           child: Text(c.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong()),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.bodyStrong()),
                         ),
                         SizedBox(width: 8.w),
                         Text(c.dialCode,
                             style: AppText.custom(
-                                size: 13, weight: FontWeight.w600, color: AppColors.textMuted)),
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.textMuted)),
                         if (selected) ...[
                           SizedBox(width: 10.w),
-                          Icon(PhosphorIconsBold.check, size: 17.sp, color: AppColors.success),
+                          Icon(PhosphorIconsBold.check,
+                              size: 17.sp, color: AppColors.success),
                         ],
                       ],
                     ),

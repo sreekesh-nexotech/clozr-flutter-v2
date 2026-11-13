@@ -40,15 +40,26 @@ const List<String> kBuiltinTaskTypes = [
 const List<String> kBuiltinTaskPriorities = ['Urgent', 'High', 'Medium', 'Low'];
 
 const _months = {
-  'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-  'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+  'Jan': 1,
+  'Feb': 2,
+  'Mar': 3,
+  'Apr': 4,
+  'May': 5,
+  'Jun': 6,
+  'Jul': 7,
+  'Aug': 8,
+  'Sep': 9,
+  'Oct': 10,
+  'Nov': 11,
+  'Dec': 12,
 };
 
 /// Parse a CRM date display string ("16 Jun 2026", "24 Jun 2026 · 10:00",
 /// "No due date") to a DateTime, or null when there is no parseable date.
 DateTime? parseCrmDate(String s) {
   final trimmed = s.trim();
-  if (trimmed.isEmpty || trimmed.toLowerCase().startsWith('no due')) return null;
+  if (trimmed.isEmpty || trimmed.toLowerCase().startsWith('no due'))
+    return null;
   final datePart = trimmed.split('·').first.trim();
   final parts = datePart.split(RegExp(r'\s+'));
   if (parts.length != 3) return null;
@@ -122,7 +133,10 @@ FilterSpec buildTasksFilterSpec({
               searchable: true,
               isNotToggle: true,
               placeholder: 'Search status…',
-              options: [for (final s in statusCatalog) FilterOption(id: s.id, label: s.name, dot: s.color)]),
+              options: [
+                for (final s in statusCatalog)
+                  FilterOption(id: s.id, label: s.name, dot: s.color)
+              ]),
         ]),
       FilterSection(title: 'Task type', fields: [
         FilterField(
@@ -149,14 +163,25 @@ FilterSpec buildTasksFilterSpec({
               searchable: true,
               isNotToggle: true,
               placeholder: 'Search team…',
-              options: [for (final t in teamCatalog) FilterOption(id: t.id, label: t.name)]),
+              options: [
+                for (final t in teamCatalog)
+                  FilterOption(id: t.id, label: t.name)
+              ]),
         ]),
       FilterSection(title: 'Due date', fields: [
         const FilterField(
             id: 'due',
             label: 'Due date',
             control: FilterControl.dateRange,
-            dateChips: ['overdue', 'today', 'tomorrow', 'next7', 'next30', 'next60', 'next90']),
+            dateChips: [
+              'overdue',
+              'today',
+              'tomorrow',
+              'next7',
+              'next30',
+              'next60',
+              'next90'
+            ]),
       ]),
     ],
   );
@@ -201,12 +226,15 @@ class TaskFilterCodec {
           for (final c in priorities)
             if (priorityKey(c.name) == label || c.id == label) c.id,
       ];
-      if (ids.isNotEmpty) out['priority${p.isNot ? '__not' : '__in'}'] = ids.join(',');
+      if (ids.isNotEmpty)
+        out['priority${p.isNot ? '__not' : '__in'}'] = ids.join(',');
     }
     final t = v.choice('teams');
-    if (t != null && t.ids.isNotEmpty) out['assigned_team${t.isNot ? '__not' : '__in'}'] = t.ids.join(',');
+    if (t != null && t.ids.isNotEmpty)
+      out['assigned_team${t.isNot ? '__not' : '__in'}'] = t.ids.join(',');
     final ty = v.choice('types');
-    if (ty != null && ty.ids.isNotEmpty) out['task_type__in'] = ty.ids.join(',');
+    if (ty != null && ty.ids.isNotEmpty)
+      out['task_type__in'] = ty.ids.join(',');
     final due = v.date('due');
     if (due != null && due.isActive) {
       if (due.from != null || due.to != null) {
@@ -222,7 +250,8 @@ class TaskFilterCodec {
             : due.chip == 'tomorrow'
                 ? 1
                 : int.tryParse(due.chip!.replaceFirst('next', '')) ?? 0;
-        final after = due.chip == 'tomorrow' ? today.add(const Duration(days: 1)) : today;
+        final after =
+            due.chip == 'tomorrow' ? today.add(const Duration(days: 1)) : today;
         out['due_date_after'] = _ymd(after);
         out['due_date_before'] = _ymd(today.add(Duration(days: n)));
       }
@@ -256,7 +285,9 @@ class TaskFilterCodec {
     for (final isNot in [false, true]) {
       final sfx = isNot ? '__not' : '__in';
       final a = ids(def['assigned_to$sfx']);
-      if (a.isNotEmpty) v['assignees'] = ChoiceValue(ids: {for (final i in a) _assigneeOptionId(i, spec)}, isNot: isNot);
+      if (a.isNotEmpty)
+        v['assignees'] = ChoiceValue(
+            ids: {for (final i in a) _assigneeOptionId(i, spec)}, isNot: isNot);
       final p = ids(def['priority$sfx']);
       if (p.isNotEmpty) {
         v['priorities'] = ChoiceValue(ids: {
@@ -285,7 +316,8 @@ class TaskFilterCodec {
     } else {
       final after = DateTime.tryParse('${def['due_date_after'] ?? ''}');
       final before = DateTime.tryParse('${def['due_date_before'] ?? ''}');
-      if (after != null || before != null) v['due'] = DateValue(from: after, to: before);
+      if (after != null || before != null)
+        v['due'] = DateValue(from: after, to: before);
     }
     return v;
   }
@@ -293,9 +325,11 @@ class TaskFilterCodec {
 
 /// Evaluate a task against applied filter values.
 bool crmTaskMatchesFilters(CrmTask t, FilterValues v) {
-  if (!FilterMatch.matchAnyOf(v.choice('assignees'), [t.assignee])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('assignees'), [t.assignee]))
+    return false;
   if (!FilterMatch.matchAnyOf(v.choice('types'), [t.type])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('priorities'), [t.priority])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('priorities'), [t.priority]))
+    return false;
   if (!FilterMatch.matchDate(v.date('due'), parseCrmDate(t.due))) return false;
   return true;
 }
@@ -309,19 +343,26 @@ final crmTasksFilterSpecProvider = Provider<FilterSpec>(
     typeCatalog: ref.watch(taskTypeOptionsProvider),
     priorityCatalog: ref.watch(taskPriorityOptionsProvider),
     statusCatalog: ref.watch(taskStatusOptionsProvider),
-    teamCatalog: ref.watch(assignableTeamsForModuleProvider('task')).valueOrNull ?? const [],
-    assignableUsers: ref.watch(assignableUsersForModuleProvider('task')).valueOrNull ?? const [],
+    teamCatalog:
+        ref.watch(assignableTeamsForModuleProvider('task')).valueOrNull ??
+            const [],
+    assignableUsers:
+        ref.watch(assignableUsersForModuleProvider('task')).valueOrNull ??
+            const [],
   ),
 );
 
-final taskFilterCodecProvider = Provider<TaskFilterCodec>((ref) => TaskFilterCodec(
-      statuses: ref.watch(taskStatusOptionsProvider),
-      priorities: ref.watch(taskPriorityOptionsProvider),
-    ));
+final taskFilterCodecProvider =
+    Provider<TaskFilterCodec>((ref) => TaskFilterCodec(
+          statuses: ref.watch(taskStatusOptionsProvider),
+          priorities: ref.watch(taskPriorityOptionsProvider),
+        ));
 
 /// Saved views on the Tasks list, backed by `/crm/saved-filters/?module=task`.
-final taskSavedFiltersProvider = StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
-  (ref) => SavedFiltersController(module: 'task', remote: ref.watch(savedFiltersRemoteProvider)),
+final taskSavedFiltersProvider =
+    StateNotifierProvider<SavedFiltersController, SavedFiltersState>(
+  (ref) => SavedFiltersController(
+      module: 'task', remote: ref.watch(savedFiltersRemoteProvider)),
 );
 
 /// Applied drawer filters for the Tasks list (the source of the badge count).
@@ -333,4 +374,5 @@ final crmTaskFiltersProvider = StateProvider<FilterValues>((ref) {
 
 /// Saved views for the Tasks list (bookmark chips).
 final crmTaskSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());

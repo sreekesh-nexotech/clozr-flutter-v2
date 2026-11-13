@@ -133,6 +133,7 @@ Set<String> toggleQuoteChip(Set<String> current, String key) {
       ? ({...current}..remove(key))
       : {...current, key};
 }
+
 final quoteSearchProvider = StateProvider<String>((ref) => '');
 final quoteSearchOpenProvider = StateProvider<bool>((ref) => false);
 
@@ -152,9 +153,11 @@ final visibleQuotesProvider = Provider<List<Quote>>((ref) {
   // Like the webapp, a Status picked in the drawer overrides the chips.
   final drawerStatus = filters.choice('status');
   if (chips.isNotEmpty && !(drawerStatus?.isActive ?? false)) {
-    out = out.where((x) => chips.any((c) => quoteInTab(x, c, tabKeys: tabKeys)));
+    out =
+        out.where((x) => chips.any((c) => quoteInTab(x, c, tabKeys: tabKeys)));
   }
-  if (!filters.isEmpty) out = out.where((x) => quoteMatchesFilters(x, filters, lookup));
+  if (!filters.isEmpty)
+    out = out.where((x) => quoteMatchesFilters(x, filters, lookup));
   if (q.isNotEmpty) {
     // Searches the title too — it is what the card shows whenever the org's
     // layout hides the party, so searching for it has to find the row.
@@ -167,8 +170,11 @@ final visibleQuotesProvider = Provider<List<Quote>>((ref) {
         query: q,
       ),
     );
-    out = out.where((x) => matches([x.uuid, x.id],
-        ('${x.id} ${quoteWho(x, lookup)} ${x.title ?? ''}').toLowerCase().contains(q)));
+    out = out.where((x) => matches(
+        [x.uuid, x.id],
+        ('${x.id} ${quoteWho(x, lookup)} ${x.title ?? ''}')
+            .toLowerCase()
+            .contains(q)));
   }
   final list = out.toList();
   if (sort.isNotEmpty) {
@@ -229,12 +235,11 @@ final quoteTabKeysProvider = Provider<Set<String>>((ref) {
   return {for (final s in statuses) s.name.trim().toLowerCase()};
 });
 
-
 /// The lead's quotes **as the API sends them** — the webapp's Quotes tab reads
 /// `taxable_total`, `grand_total`, `created_at` and the status colour, which
 /// the mapped [Quote] does not keep. Same call the webapp makes.
-final leadQuoteRowsProvider =
-    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, leadId) async {
+final leadQuoteRowsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, leadId) async {
   if (leadId.isEmpty || !ApiConfig.apiEnabled) return const [];
   final body = await ref.read(apiServiceProvider).get(
     ApiEndpoints.quotations,

@@ -48,7 +48,7 @@ class Followup extends Equatable {
   /// a completed or cancelled follow-up.
   final String dueNote;
 
-    /// The row exactly as the API sent it.
+  /// The row exactly as the API sent it.
   ///
   /// The typed fields cover the card's fixed frame; this is what makes the rest
   /// dynamic — a column the org adds to its layout is read from here by name,

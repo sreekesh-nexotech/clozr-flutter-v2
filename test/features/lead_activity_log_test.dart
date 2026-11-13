@@ -63,7 +63,11 @@ void main() {
     test('a note rolled up onto the lead reads as "Created note"', () {
       final e = AuditLogRemoteDataSource.mapEntry(
         _row(id: 'a2', changes: {
-          'related_change': {'type': 'Note', 'action': 'create', 'record_id': 'n1'},
+          'related_change': {
+            'type': 'Note',
+            'action': 'create',
+            'record_id': 'n1'
+          },
         }),
       )!;
 
@@ -80,7 +84,7 @@ void main() {
       )!;
 
       expect(e.kind, AuditEventKind.childAdded);
-      expect(e.title, 'Created Attachment');
+      expect(e.title, 'Uploaded file');
     });
   });
 
@@ -88,7 +92,9 @@ void main() {
     test('an id-only field names the field instead of printing the id', () {
       final e = AuditLogRemoteDataSource.mapEntry(
         _row(id: 'a4', changes: {
-          'request_body': {'lead_owner': '0d49d620-1b84-4f0c-a049-4301e7816235'},
+          'request_body': {
+            'lead_owner': '0d49d620-1b84-4f0c-a049-4301e7816235'
+          },
         }),
       )!;
 
@@ -113,21 +119,41 @@ void main() {
         _row(id: 'a4c', changes: {
           'request_body': {'status_id': 'x'},
           'diff': [
-            {'field': 'status', 'label': 'Status', 'old': 'Contacted', 'new': 'Qualified'},
-            {'field': 'lead_score', 'label': 'Lead score', 'old': 10, 'new': 20},
-            {'field': 'assignees', 'label': 'Assignees', 'added': ['Asha'], 'removed': []},
+            {
+              'field': 'status',
+              'label': 'Status',
+              'old': 'Contacted',
+              'new': 'Qualified'
+            },
+            {
+              'field': 'lead_score',
+              'label': 'Lead score',
+              'old': 10,
+              'new': 20
+            },
+            {
+              'field': 'assignees',
+              'label': 'Assignees',
+              'added': ['Asha'],
+              'removed': []
+            },
           ],
         }),
       )!;
 
       expect(e.title, 'Updated lead');
-      expect(e.subtitle, 'Status: Contacted → Qualified; Assignees: +Asha · by Admin Acme');
+      expect(e.subtitle,
+          'Status: Contacted → Qualified; Assignees: +Asha · by Admin Acme');
     });
 
     test('several fields are counted, then listed', () {
       final e = AuditLogRemoteDataSource.mapEntry(
         _row(id: 'a5', changes: {
-          'request_body': {'email': 'a@b.c', 'mobile_no': '+91', 'website': 'x'},
+          'request_body': {
+            'email': 'a@b.c',
+            'mobile_no': '+91',
+            'website': 'x'
+          },
         }),
       )!;
 
@@ -138,14 +164,16 @@ void main() {
 
   group('create / delete', () {
     test('a create row is the "Lead created" entry', () {
-      final e = AuditLogRemoteDataSource.mapEntry(_row(id: 'a6', action: 'create'))!;
+      final e =
+          AuditLogRemoteDataSource.mapEntry(_row(id: 'a6', action: 'create'))!;
 
       expect(e.kind, AuditEventKind.created);
       expect(e.title, 'Lead created');
     });
 
     test('a delete row is marked as such', () {
-      final e = AuditLogRemoteDataSource.mapEntry(_row(id: 'a7', action: 'delete'))!;
+      final e =
+          AuditLogRemoteDataSource.mapEntry(_row(id: 'a7', action: 'delete'))!;
 
       expect(e.kind, AuditEventKind.deleted);
     });
@@ -187,7 +215,8 @@ void main() {
     });
 
     test('the timestamp is parsed for relative display', () {
-      final e = AuditLogRemoteDataSource.mapEntry(_row(id: 'a1', action: 'create'))!;
+      final e =
+          AuditLogRemoteDataSource.mapEntry(_row(id: 'a1', action: 'create'))!;
 
       expect(e.at, isNotNull);
       expect(e.at!.year, 2026);
@@ -221,13 +250,23 @@ void main() {
     });
 
     test('lifecycle events read as status moves', () {
-      expect(map({'issue_event': {'type': 'reopened'}}).title, 'Ticket reopened');
-      expect(map({'issue_event': {'type': 'resolved'}}).kind,
+      expect(
+          map({
+            'issue_event': {'type': 'reopened'}
+          }).title,
+          'Ticket reopened');
+      expect(
+          map({
+            'issue_event': {'type': 'resolved'}
+          }).kind,
           AuditEventKind.statusChanged);
     });
 
     test('an unknown event is humanised rather than swallowed', () {
-      expect(map({'issue_event': {'type': 'merged_into_parent'}}).title,
+      expect(
+          map({
+            'issue_event': {'type': 'merged_into_parent'}
+          }).title,
           'Merged into parent');
     });
   });
@@ -242,14 +281,19 @@ void main() {
 
       // Every feed used to say "Lead created", a quote's and a ticket's too.
       expect(
-          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Ticket')!.title,
+          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Ticket')!
+              .title,
           'Ticket created');
       expect(
-          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Quote')!.title,
+          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Quote')!
+              .title,
           'Quote created');
-      expect(AuditLogRemoteDataSource.mapEntry(createRow())!.title, 'Lead created');
+      expect(AuditLogRemoteDataSource.mapEntry(createRow())!.title,
+          'Lead created');
       expect(
-          AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Customer')!.title,
+          AuditLogRemoteDataSource.mapEntry(createRow(),
+                  recordLabel: 'Customer')!
+              .title,
           'Customer created');
     });
 
@@ -263,11 +307,18 @@ void main() {
             },
           };
 
-      expect(AuditLogRemoteDataSource.mapEntry(row('create'), recordLabel: 'Task')!.title,
+      expect(
+          AuditLogRemoteDataSource.mapEntry(row('create'), recordLabel: 'Task')!
+              .title,
           'Created task');
-      expect(AuditLogRemoteDataSource.mapEntry(row('create'), recordLabel: 'Follow-up')!.title,
+      expect(
+          AuditLogRemoteDataSource.mapEntry(row('create'),
+                  recordLabel: 'Follow-up')!
+              .title,
           'Created follow-up');
-      expect(AuditLogRemoteDataSource.mapEntry(row('update'), recordLabel: 'Task')!.title,
+      expect(
+          AuditLogRemoteDataSource.mapEntry(row('update'), recordLabel: 'Task')!
+              .title,
           'Updated task');
     });
   });

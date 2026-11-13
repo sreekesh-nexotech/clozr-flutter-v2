@@ -2,6 +2,10 @@
 connectivity_plus=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/connectivity_plus-6.1.5/
 emoji_picker_flutter=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/emoji_picker_flutter-4.4.0/
 file_picker=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
+firebase_core=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/firebase_core-3.15.2/
+firebase_core_web=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/firebase_core_web-2.24.1/
+firebase_messaging=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/firebase_messaging-15.2.10/
+firebase_messaging_web=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/firebase_messaging_web-3.10.10/
 flutter_plugin_android_lifecycle=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.26/
 flutter_secure_storage=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/flutter_secure_storage-9.2.4/
 flutter_secure_storage_linux=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/flutter_secure_storage_linux-1.2.3/
@@ -36,3 +40,6 @@ url_launcher_linux=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/url_launcher_
 url_launcher_macos=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/url_launcher_macos-3.2.2/
 url_launcher_web=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/url_launcher_web-2.3.3/
 url_launcher_windows=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.4/
+webview_flutter=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/webview_flutter-4.10.0/
+webview_flutter_android=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/webview_flutter_android-4.3.2/
+webview_flutter_wkwebview=/Users/neerajapradeep/.pub-cache/hosted/pub.dev/webview_flutter_wkwebview-3.22.0/

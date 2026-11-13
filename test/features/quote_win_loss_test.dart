@@ -8,33 +8,72 @@ void main() {
     'date_from': '2026-07-27',
     'date_to': '2026-10-24',
     'summary': {
-      'total': 13, 'won': 6, 'lost': 1, 'expired': 0, 'open': 6,
-      'win_rate': '85.71', 'avg_days_to_accept': '0.03', 'avg_discount_pct': '0.00', 'won_value': '1056483.00',
+      'total': 13,
+      'won': 6,
+      'lost': 1,
+      'expired': 0,
+      'open': 6,
+      'win_rate': '85.71',
+      'avg_days_to_accept': '0.03',
+      'avg_discount_pct': '0.00',
+      'won_value': '1056483.00',
     },
     'by_owner': [
       {
-        'owner_id': '8d8593b8', 'owner_name': 'Ashish Nexotech',
-        'total': 13, 'won': 6, 'lost': 1, 'expired': 0, 'open': 6,
-        'win_rate': '85.71', 'avg_days_to_accept': '0.03', 'avg_discount_pct': '0.00', 'won_value': '1056483.00',
+        'owner_id': '8d8593b8',
+        'owner_name': 'Ashish Nexotech',
+        'total': 13,
+        'won': 6,
+        'lost': 1,
+        'expired': 0,
+        'open': 6,
+        'win_rate': '85.71',
+        'avg_days_to_accept': '0.03',
+        'avg_discount_pct': '0.00',
+        'won_value': '1056483.00',
       },
       {
-        'owner_id': null, 'owner_name': null,
-        'total': 2, 'won': 0, 'lost': 0, 'expired': 0, 'open': 2,
-        'win_rate': null, 'avg_days_to_accept': null, 'avg_discount_pct': null, 'won_value': null,
+        'owner_id': null,
+        'owner_name': null,
+        'total': 2,
+        'won': 0,
+        'lost': 0,
+        'expired': 0,
+        'open': 2,
+        'win_rate': null,
+        'avg_days_to_accept': null,
+        'avg_discount_pct': null,
+        'won_value': null,
       },
     ],
     'by_product': [
       {
-        'product_id': 'd8da656a', 'product_name': 'App Developent',
-        'total': 3, 'won': 0, 'lost': 0, 'expired': 0, 'open': 3,
-        'win_rate': null, 'avg_days_to_accept': null, 'avg_discount_pct': '0.00', 'won_value': '0.00',
+        'product_id': 'd8da656a',
+        'product_name': 'App Developent',
+        'total': 3,
+        'won': 0,
+        'lost': 0,
+        'expired': 0,
+        'open': 3,
+        'win_rate': null,
+        'avg_days_to_accept': null,
+        'avg_discount_pct': '0.00',
+        'won_value': '0.00',
       },
     ],
     'by_source': [
       {
-        'source_id': '7fce9e23', 'source_name': 'Social Media',
-        'total': 4, 'won': 3, 'lost': 1, 'expired': 0, 'open': 0,
-        'win_rate': '75.00', 'avg_days_to_accept': '0.00', 'avg_discount_pct': '0.00', 'won_value': '409994.00',
+        'source_id': '7fce9e23',
+        'source_name': 'Social Media',
+        'total': 4,
+        'won': 3,
+        'lost': 1,
+        'expired': 0,
+        'open': 0,
+        'win_rate': '75.00',
+        'avg_days_to_accept': '0.00',
+        'avg_discount_pct': '0.00',
+        'won_value': '409994.00',
       },
     ],
   };
@@ -65,7 +104,9 @@ void main() {
       expect(r.bySource.single.wonValue, '409994.00');
     });
 
-    test('the unassigned bucket gets a blank name, a stable key and safe defaults', () {
+    test(
+        'the unassigned bucket gets a blank name, a stable key and safe defaults',
+        () {
       final row = WinLossReport.fromJson(body).byOwner[1];
       expect(row.name, '');
       expect(row.key, 'none-1');
@@ -75,7 +116,11 @@ void main() {
     });
 
     test('open-ended range and missing lists', () {
-      final r = WinLossReport.fromJson({'date_from': null, 'date_to': null, 'summary': {'total': 0}});
+      final r = WinLossReport.fromJson({
+        'date_from': null,
+        'date_to': null,
+        'summary': {'total': 0}
+      });
       expect(r.dateFrom, '');
       expect(r.dateTo, '');
       expect(r.summary.total, 0);
@@ -86,7 +131,9 @@ void main() {
     });
 
     test('numeric decimals are carried as strings', () {
-      final r = WinLossReport.fromJson({'summary': {'win_rate': 50, 'won_value': 1200.5}});
+      final r = WinLossReport.fromJson({
+        'summary': {'win_rate': 50, 'won_value': 1200.5}
+      });
       expect(r.summary.winRate, '50');
       expect(r.summary.wonValue, '1200.5');
     });
@@ -100,13 +147,17 @@ void main() {
     final today = DateTime(2026, 10, 24);
 
     test('Last 30 / 90 days include today', () {
-      expect(winLossPresetRange(WinLossPreset.last30, today), (from: '2026-09-25', to: '2026-10-24'));
-      expect(winLossPresetRange(WinLossPreset.last90, today), (from: '2026-07-27', to: '2026-10-24'));
+      expect(winLossPresetRange(WinLossPreset.last30, today),
+          (from: '2026-09-25', to: '2026-10-24'));
+      expect(winLossPresetRange(WinLossPreset.last90, today),
+          (from: '2026-07-27', to: '2026-10-24'));
     });
 
     test('This year and All time', () {
-      expect(winLossPresetRange(WinLossPreset.thisYear, today), (from: '2026-01-01', to: '2026-10-24'));
-      expect(winLossPresetRange(WinLossPreset.allTime, today), (from: '', to: ''));
+      expect(winLossPresetRange(WinLossPreset.thisYear, today),
+          (from: '2026-01-01', to: '2026-10-24'));
+      expect(
+          winLossPresetRange(WinLossPreset.allTime, today), (from: '', to: ''));
     });
 
     test('labels and order match the webapp', () {
@@ -117,7 +168,8 @@ void main() {
     test('query sends only the non-blank bounds', () {
       expect(winLossQuery('', ''), isEmpty);
       expect(winLossQuery('2026-01-01', ''), {'date_from': '2026-01-01'});
-      expect(winLossQuery('2026-01-01', '2026-02-01'), {'date_from': '2026-01-01', 'date_to': '2026-02-01'});
+      expect(winLossQuery('2026-01-01', '2026-02-01'),
+          {'date_from': '2026-01-01', 'date_to': '2026-02-01'});
     });
   });
 
@@ -131,13 +183,15 @@ void main() {
     });
 
     test('from after to', () {
-      expect(winLossRangeError('2026-10-10', '2026-01-01'), 'The start date must be on or before the end date.');
+      expect(winLossRangeError('2026-10-10', '2026-01-01'),
+          'The start date must be on or before the end date.');
     });
 
     test('malformed or impossible dates', () {
       expect(winLossRangeError('2026-1-1', ''), 'Use a valid date.');
       expect(winLossRangeError('', '24/10/2026'), 'Use a valid date.');
-      expect(winLossRangeError('2026-02-31', '2026-03-01'), 'Use a valid date.');
+      expect(
+          winLossRangeError('2026-02-31', '2026-03-01'), 'Use a valid date.');
       expect(winLossRangeError('2026-13-01', ''), 'Use a valid date.');
       // An invalid date wins over the ordering check.
       expect(winLossRangeError('2027-01-01', '2026-1-1'), 'Use a valid date.');

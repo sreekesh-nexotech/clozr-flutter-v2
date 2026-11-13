@@ -8,22 +8,56 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../application/providers/dashboard_providers.dart';
 import '../../domain/entities/dash_colors.dart';
 
-const _presets = ['This month', 'Last month', 'This quarter', 'Year to date', 'Last 30 days', 'Last 90 days'];
-const _monthsFull = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
+const _presets = [
+  'This month',
+  'Last month',
+  'This quarter',
+  'Year to date',
+  'Last 30 days',
+  'Last 90 days'
 ];
-const _monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _monthsFull = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
+const _monthsShort = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 /// The dashboard period picker sheet: a 2-column preset grid, a "Custom range"
 /// expander with From/To + a month calendar, and an Apply button that commits
 /// the label to [dashPeriodProvider].
-Future<void> showDashPeriodPicker(BuildContext context, WidgetRef ref, String current) {
+Future<void> showDashPeriodPicker(
+    BuildContext context, WidgetRef ref, String current) {
   return showClozrSheet<void>(
     context: context,
     builder: (ctx) => _PeriodPickerBody(
       current: _presets.contains(current) ? current : 'This month',
-      onApply: (label) {
+      onApply: (label, range) {
+        // The range first: the label change is what triggers the reload, and
+        // that reload must already see the dates (or their absence).
+        ref.read(dashCustomRangeProvider.notifier).state = range;
         ref.read(dashPeriodProvider.notifier).state = label;
         Navigator.of(ctx).pop();
       },
@@ -33,9 +67,10 @@ Future<void> showDashPeriodPicker(BuildContext context, WidgetRef ref, String cu
 }
 
 class _PeriodPickerBody extends StatefulWidget {
-  const _PeriodPickerBody({required this.current, required this.onApply, required this.onClose});
+  const _PeriodPickerBody(
+      {required this.current, required this.onApply, required this.onClose});
   final String current;
-  final ValueChanged<String> onApply;
+  final void Function(String label, DateTimeRange? range) onApply;
   final VoidCallback onClose;
 
   @override
@@ -47,10 +82,20 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
   bool _custom = false;
   DateTime? _from;
   DateTime? _to;
-  int _calY = 2026;
-  int _calM = 5; // June
+  late int _calY = DateTime.now().year;
+  late int _calM = DateTime.now().month - 1; // 0-based, opens on this month
+  bool _needStart = false;
+
+  /// Today at midnight — nothing after it can be picked (the dashboards have
+  /// no future data, and the server would only answer with empty figures).
+  DateTime get _today {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
 
   void _pickDay(DateTime d) {
+    if (d.isAfter(_today)) return;
+    _needStart = false;
     setState(() {
       if (_from == null || _to != null || d.isBefore(_from!)) {
         _from = d;
@@ -64,11 +109,18 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
   String _fmt(DateTime d) => '${d.day} ${_monthsShort[d.month - 1]}';
 
   void _apply() {
-    if (_custom && _from != null) {
-      final label = _to != null ? '${_fmt(_from!)} – ${_fmt(_to!)}' : _fmt(_from!);
-      widget.onApply(label);
+    if (_custom) {
+      // A custom range needs a start. Falling through to the highlighted
+      // preset here would apply a period the user never chose.
+      if (_from == null) {
+        setState(() => _needStart = true);
+        return;
+      }
+      // One tapped day is a one-day range (the server wants both bounds).
+      final range = DateTimeRange(start: _from!, end: _to ?? _from!);
+      widget.onApply(dashCustomLabel(range), range);
     } else {
-      widget.onApply(_preset);
+      widget.onApply(_preset, null);
     }
   }
 
@@ -83,14 +135,21 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Period', style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Period',
+                  style: AppText.custom(
+                      size: 17,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               GestureDetector(
                 onTap: widget.onClose,
                 child: Container(
                   width: 32.w,
                   height: 32.w,
-                  decoration: BoxDecoration(color: DashColors.chipGrey, borderRadius: BorderRadius.circular(9.r)),
-                  child: Icon(PhosphorIconsBold.x, size: 15.sp, color: AppColors.textLabelAlt),
+                  decoration: BoxDecoration(
+                      color: DashColors.chipGrey,
+                      borderRadius: BorderRadius.circular(9.r)),
+                  child: Icon(PhosphorIconsBold.x,
+                      size: 15.sp, color: AppColors.textLabelAlt),
                 ),
               ),
             ],
@@ -123,9 +182,18 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
                   decoration: BoxDecoration(
                     color: AppColors.navy,
                     borderRadius: BorderRadius.circular(13.r),
-                    boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 8))],
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.navy.withOpacity(0.25),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8))
+                    ],
                   ),
-                  child: Text('Apply', style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.white)),
+                  child: Text('Apply',
+                      style: AppText.custom(
+                          size: 14.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
                 ),
               ),
             ],
@@ -146,7 +214,9 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
                 Expanded(child: _presetCell(_presets[r])),
                 SizedBox(width: 18.w),
                 Expanded(
-                  child: (r + 1) < _presets.length ? _presetCell(_presets[r + 1]) : const SizedBox(),
+                  child: (r + 1) < _presets.length
+                      ? _presetCell(_presets[r + 1])
+                      : const SizedBox(),
                 ),
               ],
             ),
@@ -159,15 +229,22 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
     final on = _preset == label && !_custom;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() {
-        _preset = label;
-        _custom = false;
-      }),
+      // A preset applies on tap (UI/UX audit #35); only a custom range still
+      // needs Apply, since it takes two dates.
+      onTap: () {
+        setState(() {
+          _preset = label;
+          _custom = false;
+        });
+        widget.onApply(label, null);
+      },
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: 10.h),
         child: Text(label,
             style: AppText.custom(
-                size: 14, weight: on ? FontWeight.w800 : FontWeight.w500, color: on ? AppColors.textPrimary : AppColors.textMuted)),
+                size: 14,
+                weight: on ? FontWeight.w800 : FontWeight.w500,
+                color: on ? AppColors.textPrimary : AppColors.textMuted)),
       ),
     );
   }
@@ -186,12 +263,22 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
         ),
         child: Row(
           children: [
-            Icon(PhosphorIconsRegular.calendarBlank, size: 16.sp, color: AppColors.textSecondary),
+            Icon(PhosphorIconsRegular.calendarBlank,
+                size: 16.sp, color: AppColors.textSecondary),
             SizedBox(width: 10.w),
             Expanded(
-              child: Text('Custom range', style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textBody)),
+              child: Text('Custom range',
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w600,
+                      color: AppColors.textBody)),
             ),
-            Icon(_custom ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: DashColors.textMid),
+            Icon(
+                _custom
+                    ? PhosphorIconsBold.caretUp
+                    : PhosphorIconsBold.caretDown,
+                size: 12.sp,
+                color: DashColors.textMid),
           ],
         ),
       ),
@@ -210,6 +297,12 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
             Expanded(child: _dateField('To', _to)),
           ],
         ),
+        if (_needStart) ...[
+          SizedBox(height: 8.h),
+          Text('Pick a start date to apply a custom range.',
+              style: AppText.custom(
+                  size: 12, weight: FontWeight.w600, color: AppColors.error)),
+        ],
         SizedBox(height: 12.h),
         _calendar(),
       ],
@@ -220,7 +313,9 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppText.custom(size: 12, weight: FontWeight.w600, color: DashColors.textMid)),
+        Text(label,
+            style: AppText.custom(
+                size: 12, weight: FontWeight.w600, color: DashColors.textMid)),
         SizedBox(height: 5.h),
         Container(
           height: 42.h,
@@ -235,10 +330,15 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
               Expanded(
                 child: Text(value == null ? 'Select' : _fmt(value),
                     style: AppText.custom(
-                        size: 13.5, weight: value == null ? FontWeight.w500 : FontWeight.w700,
-                        color: value == null ? AppColors.textPlaceholder : AppColors.textBody)),
+                        size: 13.5,
+                        weight:
+                            value == null ? FontWeight.w500 : FontWeight.w700,
+                        color: value == null
+                            ? AppColors.textPlaceholder
+                            : AppColors.textBody)),
               ),
-              Icon(PhosphorIconsRegular.calendarBlank, size: 14.sp, color: AppColors.textPlaceholder),
+              Icon(PhosphorIconsRegular.calendarBlank,
+                  size: 14.sp, color: AppColors.textPlaceholder),
             ],
           ),
         ),
@@ -247,7 +347,8 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
   }
 
   Widget _calendar() {
-    final firstWeekday = DateTime(_calY, _calM + 1, 1).weekday % 7; // 0 = Sunday
+    final firstWeekday =
+        DateTime(_calY, _calM + 1, 1).weekday % 7; // 0 = Sunday
     final nDays = DateTime(_calY, _calM + 2, 0).day;
     const dows = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     final cells = <Widget>[];
@@ -256,9 +357,11 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
     }
     for (int day = 1; day <= nDays; day++) {
       final d = DateTime(_calY, _calM + 1, day);
+      final future = d.isAfter(_today);
       final isFrom = _from != null && _sameDay(d, _from!);
       final isTo = _to != null && _sameDay(d, _to!);
-      final inRange = _from != null && _to != null && d.isAfter(_from!) && d.isBefore(_to!);
+      final inRange =
+          _from != null && _to != null && d.isAfter(_from!) && d.isBefore(_to!);
       cells.add(GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _pickDay(d),
@@ -278,7 +381,11 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
               style: AppText.custom(
                   size: 12.5,
                   weight: (isFrom || isTo) ? FontWeight.w800 : FontWeight.w600,
-                  color: (isFrom || isTo) ? AppColors.white : AppColors.textBody)),
+                  color: (isFrom || isTo)
+                      ? AppColors.white
+                      : future
+                          ? AppColors.textPlaceholder.withOpacity(0.55)
+                          : AppColors.textBody)),
         ),
       ));
     }
@@ -305,10 +412,14 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
                     _calM--;
                   }
                 }),
-                child: Icon(PhosphorIconsBold.caretLeft, size: 14.sp, color: AppColors.textSecondary),
+                child: Icon(PhosphorIconsBold.caretLeft,
+                    size: 14.sp, color: AppColors.textSecondary),
               ),
               Text('${_monthsFull[_calM]} $_calY',
-                  style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
               GestureDetector(
                 onTap: () => setState(() {
                   if (_calM == 11) {
@@ -318,7 +429,8 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
                     _calM++;
                   }
                 }),
-                child: Icon(PhosphorIconsBold.caretRight, size: 14.sp, color: AppColors.textSecondary),
+                child: Icon(PhosphorIconsBold.caretRight,
+                    size: 14.sp, color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -328,7 +440,11 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
               for (final d in dows)
                 Expanded(
                   child: Center(
-                    child: Text(d, style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+                    child: Text(d,
+                        style: AppText.custom(
+                            size: 11,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPlaceholder)),
                   ),
                 ),
             ],
@@ -345,5 +461,6 @@ class _PeriodPickerBodyState extends State<_PeriodPickerBody> {
     );
   }
 
-  bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }

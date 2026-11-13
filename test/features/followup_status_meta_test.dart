@@ -37,7 +37,8 @@ Followup _fu({String statusName = '', String status = 'due'}) => Followup(
 void main() {
   group('the pill shows the org’s own status', () {
     test('a named status renders that name, not a built-in bucket', () {
-      final meta = followupStatusMeta(_fu(statusName: 'In Progress'), _statuses);
+      final meta =
+          followupStatusMeta(_fu(statusName: 'In Progress'), _statuses);
 
       expect(meta.label, 'In Progress');
       // "Upcoming" is what the card used to show for this row.
@@ -49,11 +50,13 @@ void main() {
       // to read as Upcoming.
       expect(followupStatusMeta(_fu(statusName: 'Cancelled'), _statuses).label,
           'Cancelled');
-      expect(followupStatusMeta(_fu(statusName: 'Open'), _statuses).label, 'Open');
+      expect(
+          followupStatusMeta(_fu(statusName: 'Open'), _statuses).label, 'Open');
     });
 
     test('matching is case-insensitive on the name', () {
-      expect(followupStatusMeta(_fu(statusName: 'in progress'), _statuses).label,
+      expect(
+          followupStatusMeta(_fu(statusName: 'in progress'), _statuses).label,
           'In Progress');
     });
   });
@@ -61,7 +64,8 @@ void main() {
   group('falling back', () {
     test('a row with no status name keeps the built-in bucket', () {
       // Mock mode, or a follow-up the org never set a status on.
-      expect(followupStatusMeta(_fu(status: 'done'), const []).label, isNotEmpty);
+      expect(
+          followupStatusMeta(_fu(status: 'done'), const []).label, isNotEmpty);
       expect(followupStatusMeta(_fu(status: 'done'), const []).label, 'Done');
     });
 
@@ -69,7 +73,8 @@ void main() {
         () {
       // Catalog still loading, or the status was removed since this row was
       // written — the org's own word beats inventing one.
-      final meta = followupStatusMeta(_fu(statusName: 'Awaiting Client'), const []);
+      final meta =
+          followupStatusMeta(_fu(statusName: 'Awaiting Client'), const []);
 
       expect(meta.label, 'Awaiting Client');
     });

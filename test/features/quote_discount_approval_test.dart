@@ -17,14 +17,17 @@ void main() {
     test('pending blocks send and accept', () {
       final q = {'approval_status': 'PENDING'};
       expect(isSendBlockedByApproval(q), isTrue);
-      expect(markSentBlockedReason(q), 'Waiting for discount approval — it can be marked as sent once approved');
-      expect(acceptBlockedByApprovalReason(q), 'The discount needs approval before this quote can be accepted.');
+      expect(markSentBlockedReason(q),
+          'Waiting for discount approval — it can be marked as sent once approved');
+      expect(acceptBlockedByApprovalReason(q),
+          'The discount needs approval before this quote can be accepted.');
       expect(approvalChipLabel(q), 'PENDING APPROVAL');
     });
 
     test('rejected blocks send', () {
       final q = {'approval_status': 'REJECTED'};
-      expect(markSentBlockedReason(q), 'The discount was not approved — reduce it before marking the quote as sent');
+      expect(markSentBlockedReason(q),
+          'The discount was not approved — reduce it before marking the quote as sent');
       expect(approvalChipLabel(q), 'APPROVAL REJECTED');
     });
 
@@ -43,15 +46,22 @@ void main() {
     test('server acceptance_block wins', () {
       final q = {
         'approval_status': 'PENDING',
-        'acceptance_block': {'code': 'QUOTE_NOT_SENT', 'detail': 'Mark this quote as Sent before accepting it.'},
+        'acceptance_block': {
+          'code': 'QUOTE_NOT_SENT',
+          'detail': 'Mark this quote as Sent before accepting it.'
+        },
       };
-      expect(acceptBlockedReason(q), 'Mark this quote as Sent before accepting it.');
-      expect(acceptBlockedReason({'approval_status': 'PENDING'}), kAcceptNeedsApproval);
+      expect(acceptBlockedReason(q),
+          'Mark this quote as Sent before accepting it.');
+      expect(acceptBlockedReason({'approval_status': 'PENDING'}),
+          kAcceptNeedsApproval);
     });
   });
 
   group('DiscountApproval', () {
-    Map<String, dynamic> row({String status = 'pending', bool canDecide = true}) => {
+    Map<String, dynamic> row(
+            {String status = 'pending', bool canDecide = true}) =>
+        {
           'approval_id': 'a1',
           'quotation': 'uuid-1',
           'quotation_number': 'QTN-00031',
@@ -60,8 +70,14 @@ void main() {
           'discount_pct': '20.00',
           'limit_pct': '10.00',
           'review_comment': status == 'pending' ? null : 'Keep it within 10%',
-          'requested_by': {'user_id': 'u1', 'full_name': 'Neeraja Pradeep', 'email': 'n@x'},
-          'reviewed_by': status == 'pending' ? null : {'full_name': '', 'email': 'cijo.g@nexotech.cc'},
+          'requested_by': {
+            'user_id': 'u1',
+            'full_name': 'Neeraja Pradeep',
+            'email': 'n@x'
+          },
+          'reviewed_by': status == 'pending'
+              ? null
+              : {'full_name': '', 'email': 'cijo.g@nexotech.cc'},
           'requested_at': '2026-10-20T10:00:00Z',
           'can_decide': canDecide,
         };
@@ -93,13 +109,15 @@ void main() {
       });
       expect(page.count, 3);
       expect(decidableCount(page.rows), 2);
-      expect(discountApprovalsLabel(2), 'Discount approvals — 2 waiting for you');
+      expect(
+          discountApprovalsLabel(2), 'Discount approvals — 2 waiting for you');
       expect(discountApprovalsLabel(0), 'Discount approvals');
       expect(discountApprovalPage(null).rows, isEmpty);
     });
 
     test('empty states', () {
-      expect(discountApprovalsEmpty('pending').title, 'Nothing waiting for approval');
+      expect(discountApprovalsEmpty('pending').title,
+          'Nothing waiting for approval');
       expect(discountApprovalsEmpty('pending').body,
           'Quotes whose discount is above the creator’s limit show up here until someone up the reporting line decides.');
       expect(discountApprovalsEmpty('approved').title, 'No approved requests');
@@ -107,9 +125,13 @@ void main() {
     });
 
     test('decision dialog copy', () {
-      expect(discountDecisionBody(approve: true, discountPct: '20.00', limitPct: '10.00'),
+      expect(
+          discountDecisionBody(
+              approve: true, discountPct: '20.00', limitPct: '10.00'),
           ' has a 20% discount, above the requester’s 10% limit. Once approved it can be marked as sent.');
-      expect(discountDecisionBody(approve: false, discountPct: '20.00', limitPct: null),
+      expect(
+          discountDecisionBody(
+              approve: false, discountPct: '20.00', limitPct: null),
           ' has a 20% discount. It stays blocked from being sent until the discount is reduced.');
     });
   });
@@ -135,7 +157,8 @@ void main() {
       expect(f.body(date),
           ' 20% discount is above the 10% limit — requested by Neeraja Pradeep on 20 Oct 2026. It can’t be marked as sent until it’s approved.');
       expect(f.canDecide, isFalse);
-      final latest = DiscountApproval.fromJson({'approval_id': 'a1', 'status': 'pending', 'can_decide': true});
+      final latest = DiscountApproval.fromJson(
+          {'approval_id': 'a1', 'status': 'pending', 'can_decide': true});
       expect(DiscountBannerFacts.from(q, latest)!.canDecide, isTrue);
     });
 
@@ -148,15 +171,20 @@ void main() {
         'reviewed_by': {'full_name': 'Cijo G'},
         'can_decide': true,
       });
-      final f = DiscountBannerFacts.from({'approval_status': 'REJECTED', 'discount_pct': '20.00'}, latest)!;
+      final f = DiscountBannerFacts.from(
+          {'approval_status': 'REJECTED', 'discount_pct': '20.00'}, latest)!;
       expect(f.title, 'Discount approval rejected.');
-      expect(f.body(date), ' The 20% discount was not approved by Cijo G — “Keep it within 10%”. Reduce the discount to send this quote.');
+      expect(f.body(date),
+          ' The 20% discount was not approved by Cijo G — “Keep it within 10%”. Reduce the discount to send this quote.');
       expect(f.canDecide, isFalse);
     });
 
     test('no banner when approved / not required', () {
-      expect(DiscountBannerFacts.from({'approval_status': 'APPROVED'}, null), isNull);
-      expect(DiscountBannerFacts.from({'approval_status': 'NOT_REQUIRED'}, null), isNull);
+      expect(DiscountBannerFacts.from({'approval_status': 'APPROVED'}, null),
+          isNull);
+      expect(
+          DiscountBannerFacts.from({'approval_status': 'NOT_REQUIRED'}, null),
+          isNull);
     });
   });
 }

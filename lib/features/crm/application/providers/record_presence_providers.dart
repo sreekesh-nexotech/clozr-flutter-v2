@@ -34,7 +34,9 @@ final recordGoneProvider =
     FutureProvider.autoDispose.family<bool, RecordProbe>((ref, probe) async {
   if (!ApiConfig.apiEnabled || probe.path.isEmpty) return false;
   try {
-    await ref.read(apiServiceProvider).get(probe.path, query: probe.query, quiet: true);
+    await ref
+        .read(apiServiceProvider)
+        .get(probe.path, query: probe.query, quiet: true);
     return false;
   } on AppError catch (e) {
     return e.type == AppErrorType.notFound;

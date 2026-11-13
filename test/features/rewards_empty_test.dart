@@ -51,7 +51,9 @@ void main() {
     test('non-derivable fields stay empty; goals still come from the rows', () {
       final data = RewardsRemoteDataSource.mapRewards(
         base: RewardsData.empty(),
-        progressRows: [progressRow(achieved: true, lastSwept: '2026-07-08T02:15:00Z')],
+        progressRows: [
+          progressRow(achieved: true, lastSwept: '2026-07-08T02:15:00Z')
+        ],
         now: now,
       );
       // Not derivable from the milestone endpoints → must stay empty (no mock).
@@ -65,7 +67,8 @@ void main() {
       expect(data.lastUpdated, isNotEmpty); // from last_swept_at
     });
 
-    test('zero rows against an empty base is completely empty (no mock seed)', () {
+    test('zero rows against an empty base is completely empty (no mock seed)',
+        () {
       final data = RewardsRemoteDataSource.mapRewards(
         base: RewardsData.empty(),
         progressRows: const [],

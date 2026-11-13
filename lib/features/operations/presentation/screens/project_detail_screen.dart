@@ -1,5 +1,12 @@
+import '../../../crm/presentation/components/closing_note.dart';
+import '../../../crm/application/attachment_cascade.dart';
+import '../../../crm/application/providers/attachments_providers.dart';
+import '../../../crm/infrastructure/data_sources/remote/attachments_remote_ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../approvals/domain/entities/approval.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
+import '../../../approvals/presentation/components/approval_request_note.dart';
 import '../../../../data/api/roster.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +18,8 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/file_name_dialog.dart';
+import '../../../../core/utils/upload_rules.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/detail_app_bar.dart';
@@ -31,9 +40,15 @@ import '../../../auth/presentation/components/permission_guard.dart';
 // than keeping a second, local-only implementation.
 import '../../../crm/application/providers/crm_notes_providers.dart';
 import '../../../crm/domain/entities/audit_entry.dart' hide AuditEntry;
-import '../../../crm/domain/entities/audit_entry.dart' as crm_audit show AuditEntry;
+import '../../../crm/domain/entities/audit_entry.dart' as crm_audit
+    show AuditEntry;
+import '../../application/ops_task_write_fields.dart';
+import '../../../crm/presentation/components/due_date_change.dart';
+import '../../application/project_write_fields.dart' show apiDate;
 import '../../application/providers/ops_tasks_providers.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../application/providers/project_form_providers.dart';
+import '../components/ops_hold_edit_row.dart';
 import '../../domain/entities/ops_task.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -44,6 +59,7 @@ import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/project.dart';
 import '../components/ops_detail_widgets.dart';
 import '../components/project_close.dart';
+import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/network_providers.dart';
 import '../components/ops_widgets.dart';
 import '../../application/project_task_groups.dart';
@@ -56,7 +72,8 @@ class ProjectDetailScreen extends ConsumerStatefulWidget {
   const ProjectDetailScreen({super.key});
 
   @override
-  ConsumerState<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
+  ConsumerState<ProjectDetailScreen> createState() =>
+      _ProjectDetailScreenState();
 }
 
 class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
@@ -127,13 +144,15 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                 AppErrorType.notFound => ErrorState(
                     icon: PhosphorIconsFill.magnifyingGlass,
                     title: 'Not found',
-                    body: 'We couldn’t find this project. It may have been deleted or moved.',
+                    body:
+                        'We couldn’t find this project. It may have been deleted or moved.',
                     onRetry: retry,
                   ),
                 AppErrorType.forbidden => ErrorState(
                     icon: PhosphorIconsFill.lock,
                     title: 'You don’t have access to this',
-                    body: 'Your account isn’t permitted to view this project. Ask a workspace admin if you think that’s wrong.',
+                    body:
+                        'Your account isn’t permitted to view this project. Ask a workspace admin if you think that’s wrong.',
                     onRetry: retry,
                   ),
                 _ => ErrorState.forError(e, onRetry: retry),
@@ -144,7 +163,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                   return const EmptyState(
                     icon: PhosphorIconsRegular.folderOpen,
                     title: 'Project not found',
-                    body: 'This project may have been removed, or you may not have access to it.',
+                    body:
+                        'This project may have been removed, or you may not have access to it.',
                   );
                 }
                 final status = _status ?? project.status;
@@ -156,12 +176,14 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                   statusName: _status == null ? project.statusName : '',
                   statuses: ref.watch(projectStatusOptionsProvider),
                 );
-                final priColor = StatusMeta$.projectPriority[project.pri] ?? AppColors.textMuted;
+                final priColor = StatusMeta$.projectPriority[project.pri] ??
+                    AppColors.textMuted;
                 final mgr = MockUsers.of(project.manager);
                 // Webapp: a status with `is_closed` is closed — the bar reads
                 // "Closed" and the project is never overdue.
                 final closed = _isClosed(project, status);
-                final overdue = !closed && (project.isOverdue ?? isProjectOverdue(project));
+                final overdue =
+                    !closed && (project.isOverdue ?? isProjectOverdue(project));
                 final locked = closed;
                 // The scoped fetch once it lands; the org-wide list filtered
                 // down until then, so the tab paints immediately.
@@ -175,13 +197,20 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                   padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 40.h),
                   children: [
                     _summaryCard(project, meta, priColor, mgr, overdue, closed),
-                    if (locked) ...[SizedBox(height: 14.h), _lockBanner(project, meta)],
+                    ApprovalBanner(
+                        module: ApprovalModules.project, objectId: project.id),
+                    if (locked) ...[
+                      SizedBox(height: 14.h),
+                      _lockBanner(project, meta)
+                    ],
                     SizedBox(height: 14.h),
                     _tabsCard(project, meta, projTasks, locked, overdue,
-                        tasksError: tasksFailed ? projectTasksAsync.error : null),
+                        tasksError:
+                            tasksFailed ? projectTasksAsync.error : null),
                     // Billed, collected, costs and margin from the ledger —
                     // only while accounting is active and reports are readable.
-                    if (ref.watch(accountingActiveProvider) && ref.watch(accPermProvider('acc_report')).read) ...[
+                    if (ref.watch(accountingActiveProvider) &&
+                        ref.watch(accPermProvider('acc_report')).read) ...[
                       SizedBox(height: 14.h),
                       ProjectFinancialsCard(projectId: project.id),
                     ],
@@ -241,16 +270,19 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   /// The project's status is a closed one — the org catalogue's `is_closed`,
   /// or the built-in completed / cancelled buckets when it has not loaded.
   bool _isClosed(Project p, String statusKey) {
-    if (_status != null) return statusKey == 'completed' || statusKey == 'cancelled';
+    if (_status != null)
+      return statusKey == 'completed' || statusKey == 'cancelled';
     final name = p.statusName.trim().toLowerCase();
     final hit = ref
         .read(projectStatusOptionsProvider)
         .where((s) => s.id == p.statusId || s.name.trim().toLowerCase() == name)
         .firstOrNull;
-    return hit?.isClosed ?? (statusKey == 'completed' || statusKey == 'cancelled');
+    return hit?.isClosed ??
+        (statusKey == 'completed' || statusKey == 'cancelled');
   }
 
-  Widget _summaryCard(Project p, StatusMeta meta, Color priColor, AppUser mgr, bool overdue, bool closed) {
+  Widget _summaryCard(Project p, StatusMeta meta, Color priColor, AppUser mgr,
+      bool overdue, bool closed) {
     // Webapp header sub-line: "PRJ-code · Type · Customer" (or "Internal project").
     final subtitle = [
       p.code,
@@ -271,20 +303,39 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(p.name, style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    Text(p.name,
+                        style: AppText.custom(
+                            size: 18,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3)),
                     SizedBox(height: 3.h),
                     if (subtitle.isNotEmpty)
-                      Text(subtitle, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      Text(subtitle,
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     if (p.isArchived) ...[
                       SizedBox(height: 6.h),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                        decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(999)),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 8.w, vertical: 3.h),
+                        decoration: BoxDecoration(
+                            color: AppColors.bgChipGrey,
+                            borderRadius: BorderRadius.circular(999)),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(PhosphorIconsRegular.archive, size: 12.sp, color: AppColors.textMuted),
+                          Icon(PhosphorIconsRegular.archive,
+                              size: 12.sp, color: AppColors.textMuted),
                           SizedBox(width: 5.w),
-                          Text(archivedOn.trim().isEmpty ? 'Archived' : 'Archived · $archivedOn',
-                              style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textMuted)),
+                          Text(
+                              archivedOn.trim().isEmpty
+                                  ? 'Archived'
+                                  : 'Archived · $archivedOn',
+                              style: AppText.custom(
+                                  size: 11,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textMuted)),
                         ]),
                       ),
                     ],
@@ -295,7 +346,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  GestureDetector(onTap: _openStatusSheet, child: StatusPill.meta(meta)),
+                  GestureDetector(
+                      onTap: _openStatusSheet, child: StatusPill.meta(meta)),
                   SizedBox(height: 5.h),
                   StatusPill(label: p.pri, color: priColor),
                 ],
@@ -307,41 +359,53 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             Row(children: [
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 4.h),
-                decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(8.r)),
+                decoration: BoxDecoration(
+                    color: AppColors.tintGreen,
+                    borderRadius: BorderRadius.circular(8.r)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(PhosphorIconsFill.checkCircle, size: 13.sp, color: AppColors.success),
+                  Icon(PhosphorIconsFill.checkCircle,
+                      size: 13.sp, color: AppColors.success),
                   SizedBox(width: 5.w),
-                  Text('Closed', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.success)),
+                  Text('Closed',
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w700,
+                          color: AppColors.success)),
                 ]),
               ),
             ])
           else
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            // Webapp: on a Manual project the progress is set right here.
-            onTap: _canSetProgress(p) ? () => _editProgress(p) : null,
-            child: Row(
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4.r),
-                  child: LinearProgressIndicator(
-                    value: p.progress / 100,
-                    minHeight: 8.h,
-                    backgroundColor: const Color(0xFFEEF1F4),
-                    valueColor: AlwaysStoppedAnimation(meta.color),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // Webapp: on a Manual project the progress is set right here.
+              onTap: _canSetProgress(p) ? () => _editProgress(p) : null,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4.r),
+                      child: LinearProgressIndicator(
+                        value: p.progress / 100,
+                        minHeight: 8.h,
+                        backgroundColor: const Color(0xFFEEF1F4),
+                        valueColor: AlwaysStoppedAnimation(meta.color),
+                      ),
+                    ),
                   ),
-                ),
+                  SizedBox(width: 10.w),
+                  Text('${p.progress}%',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
+                  if (_canSetProgress(p)) ...[
+                    SizedBox(width: 6.w),
+                    Icon(PhosphorIconsRegular.pencilSimple,
+                        size: 13.sp, color: AppColors.textMuted),
+                  ],
+                ],
               ),
-              SizedBox(width: 10.w),
-              Text('${p.progress}%', style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
-              if (_canSetProgress(p)) ...[
-                SizedBox(width: 6.w),
-                Icon(PhosphorIconsRegular.pencilSimple, size: 13.sp, color: AppColors.textMuted),
-              ],
-            ],
-          ),
-          ),
+            ),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
           Row(
             children: [
@@ -349,17 +413,32 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                 width: 34.w,
                 height: 34.w,
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                child: Text(p.manager.trim().isEmpty ? '—' : mgr.initials, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.white)),
+                decoration: const BoxDecoration(
+                    color: AppColors.navy, shape: BoxShape.circle),
+                child: Text(p.manager.trim().isEmpty ? '—' : mgr.initials,
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.white)),
               ),
               SizedBox(width: 11.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(p.manager.trim().isEmpty ? '—' : mgr.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(p.manager.trim().isEmpty ? '—' : mgr.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
-                    Text('Project manager', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text('Project manager',
+                        style: AppText.custom(
+                            size: 11.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -368,23 +447,36 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           SizedBox(height: 12.h),
           Row(
             children: [
-              Icon(PhosphorIconsRegular.calendarBlank, size: 15.sp, color: AppColors.textPlaceholder),
+              Icon(PhosphorIconsRegular.calendarBlank,
+                  size: 15.sp, color: AppColors.textPlaceholder),
               SizedBox(width: 7.w),
               Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: '${p.start.trim().isEmpty ? '—' : p.start} – '),
-                  // Webapp "Expected end": red when the server says overdue.
-                  TextSpan(
-                      text: p.end.trim().isEmpty ? '—' : p.end,
-                      style: overdue ? const TextStyle(color: AppColors.error) : null),
-                ]),
-                style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                  TextSpan(children: [
+                    TextSpan(
+                        text: '${p.start.trim().isEmpty ? '—' : p.start} – '),
+                    // Webapp "Expected end": red when the server says overdue.
+                    TextSpan(
+                        text: p.end.trim().isEmpty ? '—' : p.end,
+                        style: overdue
+                            ? const TextStyle(color: AppColors.error)
+                            : null),
+                  ]),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
               if (overdue) ...[
                 const Spacer(),
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                  decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(7.r)),
-                  child: Text('Overdue', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.error)),
+                  decoration: BoxDecoration(
+                      color: AppColors.tintRed,
+                      borderRadius: BorderRadius.circular(7.r)),
+                  child: Text('Overdue',
+                      style: AppText.custom(
+                          size: 11,
+                          weight: FontWeight.w700,
+                          color: AppColors.error)),
                 ),
               ],
             ],
@@ -395,7 +487,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   }
 
   Widget _lockBanner(Project p, StatusMeta meta) {
-    final completed = !(p.statusName.toLowerCase().contains('cancel') || (_status ?? p.status) == 'cancelled');
+    final completed = !(p.statusName.toLowerCase().contains('cancel') ||
+        (_status ?? p.status) == 'cancelled');
     final statusLabel = meta.label.toLowerCase();
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
@@ -406,19 +499,32 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(completed ? PhosphorIconsFill.sealCheck : PhosphorIconsFill.prohibit,
-              size: 18.sp, color: completed ? AppColors.success : AppColors.textMuted2),
+          Icon(
+              completed
+                  ? PhosphorIconsFill.sealCheck
+                  : PhosphorIconsFill.prohibit,
+              size: 18.sp,
+              color: completed ? AppColors.success : AppColors.textMuted2),
           SizedBox(width: 10.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('This project is $statusLabel — fields are locked.',
-                    style: AppText.custom(size: 13, weight: FontWeight.w700, color: completed ? AppColors.success : AppColors.textLabelAlt)),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: completed
+                            ? AppColors.success
+                            : AppColors.textLabelAlt)),
                 SizedBox(height: 2.h),
                 // Webapp has no separate Reopen: picking an open status reopens it.
-                Text('Change its status to an open one to reopen it and make changes.',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text(
+                    'Change its status to an open one to reopen it and make changes.',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
@@ -427,9 +533,14 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     );
   }
 
-  Widget _tabsCard(Project p, StatusMeta meta, List<OpsTask> projTasks, bool locked, bool overdue,
+  Widget _tabsCard(Project p, StatusMeta meta, List<OpsTask> projTasks,
+      bool locked, bool overdue,
       {Object? tasksError}) {
-    const tabs = [('details', 'Details'), ('ptasks', 'Tasks'), ('pfiles', 'Files')];
+    const tabs = [
+      ('details', 'Details'),
+      ('ptasks', 'Tasks'),
+      ('pfiles', 'Files')
+    ];
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 8.h),
@@ -437,7 +548,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+            decoration: const BoxDecoration(
+                border: Border(
+                    bottom: BorderSide(color: AppColors.borderCardSoft))),
             child: Row(
               children: [
                 for (final (k, label) in tabs) ...[
@@ -447,10 +560,21 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                     child: Container(
                       padding: EdgeInsets.only(bottom: 12.h),
                       decoration: BoxDecoration(
-                        border: Border(bottom: BorderSide(color: _tab == k ? AppColors.navy : Colors.transparent, width: 2.5)),
+                        border: Border(
+                            bottom: BorderSide(
+                                color: _tab == k
+                                    ? AppColors.navy
+                                    : Colors.transparent,
+                                width: 2.5)),
                       ),
                       child: Text(label,
-                          style: AppText.custom(size: 14, weight: _tab == k ? FontWeight.w700 : FontWeight.w500, color: _tab == k ? AppColors.navy : AppColors.textPlaceholder)),
+                          style: AppText.custom(
+                              size: 14,
+                              weight:
+                                  _tab == k ? FontWeight.w700 : FontWeight.w500,
+                              color: _tab == k
+                                  ? AppColors.navy
+                                  : AppColors.textPlaceholder)),
                     ),
                   ),
                   SizedBox(width: 22.w),
@@ -461,7 +585,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           SizedBox(height: 4.h),
           if (_tab == 'details') _detailsTab(p, locked, overdue),
           if (_tab == 'ptasks')
-            tasksError != null ? _tasksError(p, tasksError) : _tasksTab(p, projTasks),
+            tasksError != null
+                ? _tasksError(p, tasksError)
+                : _tasksTab(p, projTasks),
           if (_tab == 'pfiles') _filesTab(p),
         ],
       ),
@@ -476,24 +602,69 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     final canEdit = hasPermission(ref, 'project', PermVerb.update);
     final priColor = StatusMeta$.projectPriority[p.pri] ?? AppColors.textMuted;
     final rows = <(String, Widget)>[
-      ('Customer', _val(p.internal ? 'Internal project' : orDash(p.company ?? ''), muted: p.internal)),
+      (
+        'Customer',
+        // A linked customer opens its detail page (UI/UX audit #54).
+        (!p.internal && (p.customerId ?? '').isNotEmpty)
+            ? Align(
+                alignment: Alignment.centerRight,
+                child: InkWell(
+                  onTap: () => context
+                      .push('${Routes.customerDetail}?id=${p.customerId}'),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Flexible(
+                      child: _val(orDash(p.company ?? ''),
+                          color: AppColors.blueBright),
+                    ),
+                    SizedBox(width: 4.w),
+                    Icon(PhosphorIconsRegular.arrowUpRight,
+                        size: 14.sp, color: AppColors.blueBright),
+                  ]),
+                ),
+              )
+            : _val(p.internal ? 'Internal project' : orDash(p.company ?? ''),
+                muted: p.internal)
+      ),
       ('Project type', _val(orDash(p.type))),
-      ('Priority', p.pri.trim().isEmpty ? _val(dash) : Align(alignment: Alignment.centerRight, child: StatusPill(label: p.pri, color: priColor))),
+      (
+        'Priority',
+        p.pri.trim().isEmpty
+            ? _val(dash)
+            : Align(
+                alignment: Alignment.centerRight,
+                child: StatusPill(label: p.pri, color: priColor))
+      ),
       ('Visibility', _val(orDash(p.visibility))),
       ('Progress method', _val(orDash(p.method))),
-      ('Expected start', _val(orDash(absoluteDate(parseApiDate(p.startISO)).ifEmpty(p.start)))),
-      ('Expected end', _val(
-          '${orDash(p.end)}${overdue ? ' · Overdue' : ''}',
-          color: overdue ? AppColors.error : null)),
-      ('Estimated cost', _val(p.costNum > 0 ? orDash(p.cost) : dash, muted: p.costNum <= 0)),
+      (
+        'Expected start',
+        _val(orDash(absoluteDate(parseApiDate(p.startISO)).ifEmpty(p.start)))
+      ),
+      (
+        'Expected end',
+        _val('${orDash(p.end)}${overdue ? ' · Overdue' : ''}',
+            color: overdue ? AppColors.error : null)
+      ),
+      (
+        'Estimated cost',
+        _val(p.costNum > 0 ? orDash(p.cost) : dash, muted: p.costNum <= 0)
+      ),
       // Only when linked — opens the quote (webapp button with its number).
       if (p.quotationId.isNotEmpty)
-        ('Linked quote', GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => context.push('${Routes.quoteDetail}?id=${p.quotationId}'),
-          child: _val(ref.watch(linkedQuoteNumberProvider(p.quotationId)).valueOrNull ?? 'Open quote',
-              color: AppColors.navy),
-        )),
+        (
+          'Linked quote',
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () =>
+                context.push('${Routes.quoteDetail}?id=${p.quotationId}'),
+            child: _val(
+                ref
+                        .watch(linkedQuoteNumberProvider(p.quotationId))
+                        .valueOrNull ??
+                    'Open quote',
+                color: AppColors.navy),
+          )
+        ),
       ('Project ID', _val(p.code.isNotEmpty ? p.code : p.id)),
       ('Assigned team', _val(p.team.isEmpty ? dash : p.team)),
     ];
@@ -503,7 +674,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         if (p.desc.trim().isNotEmpty)
           Padding(
             padding: EdgeInsets.fromLTRB(2.w, 12.h, 2.w, 4.h),
-            child: Text(p.desc, style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.6)),
+            child: Text(p.desc,
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w500,
+                    color: AppColors.textLabelAlt,
+                    height: 1.6)),
           ),
         if (!locked)
           // Webapp `PermissionGate`: without `project` update the button stays
@@ -511,75 +687,92 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           Opacity(
             opacity: canEdit ? 1 : 0.5,
             child: GestureDetector(
-            onTap: () {
-              if (!ensurePermission(ref, 'project', PermVerb.update)) return;
-              context.push('${Routes.editProject}?id=${p.id}');
-            },
-            child: Container(
-              height: 44.h,
-              margin: EdgeInsets.symmetric(vertical: 12.h),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(12.r),
-                border: Border.all(color: const Color(0xFFE6E7EA), width: 1.5),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(PhosphorIconsRegular.pencilSimple, size: 15.sp, color: AppColors.textSecondary),
-                  SizedBox(width: 7.w),
-                  Text('Edit project', style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
-                ],
+              onTap: () {
+                if (!ensurePermission(ref, 'project', PermVerb.update)) return;
+                context.push('${Routes.editProject}?id=${p.id}');
+              },
+              child: Container(
+                height: 44.h,
+                margin: EdgeInsets.symmetric(vertical: 12.h),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(12.r),
+                  border:
+                      Border.all(color: const Color(0xFFE6E7EA), width: 1.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsRegular.pencilSimple,
+                        size: 15.sp, color: AppColors.textSecondary),
+                    SizedBox(width: 7.w),
+                    Text('Edit project',
+                        style: AppText.custom(
+                            size: 13.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textSecondary)),
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         if (!canEdit && !locked)
           Padding(
             padding: EdgeInsets.only(bottom: 8.h),
             child: Text(permissionCopy(PermVerb.update),
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted)),
           ),
-        for (final r in rows)
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 2.w),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(r.$1, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
-                SizedBox(width: 14.w),
-                Expanded(child: r.$2),
-              ],
-            ),
-          ),
+        if (!locked && canEdit) const OpsHoldEditHint(),
+        for (final r in rows) _holdRow(p, r.$1, r.$2, locked, canEdit),
         // Webapp "Assignees": a chip per person, or "No assignees yet".
         Padding(
           padding: EdgeInsets.fromLTRB(2.w, 12.h, 2.w, 10.h),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Assignees', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+              Text('Assignees',
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
               SizedBox(height: 8.h),
               if (p.assignees.isEmpty)
-                Text('No assignees yet', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPlaceholder))
+                Text('No assignees yet',
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder))
               else
                 Wrap(spacing: 8.w, runSpacing: 8.h, children: [
                   for (final id in p.assignees)
                     Container(
                       padding: EdgeInsets.fromLTRB(4.w, 4.h, 10.w, 4.h),
-                      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(999)),
+                      decoration: BoxDecoration(
+                          color: AppColors.bgChipGrey,
+                          borderRadius: BorderRadius.circular(999)),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Container(
                           width: 24.w,
                           height: 24.w,
                           alignment: Alignment.center,
-                          decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-                          child: Text(MockUsers.of(id).initials, style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
+                          decoration: const BoxDecoration(
+                              color: AppColors.navy, shape: BoxShape.circle),
+                          child: Text(MockUsers.of(id).initials,
+                              style: AppText.custom(
+                                  size: 8.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.white)),
                         ),
                         SizedBox(width: 6.w),
-                        Text(MockUsers.of(id).firstName, style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                        Text(MockUsers.of(id).firstName,
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.textPrimary)),
                       ]),
                     ),
                 ]),
@@ -590,18 +783,121 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     );
   }
 
+  /// One Details row, long-press editable in place like a lead's fields.
+  /// Priority, visibility, the two expected dates and the estimated cost save
+  /// straight from the row; the rest (customer, type, team, ids) say where to
+  /// change them.
+  Widget _holdRow(
+      Project p, String label, Widget value, bool locked, bool canEdit) {
+    final row = Container(
+      padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 2.w),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(label,
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
+          SizedBox(width: 14.w),
+          Expanded(child: value),
+        ],
+      ),
+    );
+    final toast = ref.read(toastProvider.notifier);
+    void blocked(String m) => toast.show(m);
+    final hint = locked
+        ? 'This project is closed — reopen it to edit.'
+        : permissionCopy(PermVerb.update);
+    OpsHoldEditRow field(String key, String type, Object? raw,
+            {List<(String, String)> choices = const []}) =>
+        OpsHoldEditRow(
+          label: label,
+          display: '',
+          apiKey: key,
+          type: type,
+          rawValue: raw,
+          choices: choices,
+          canEdit: canEdit && !locked,
+          deniedHint: hint,
+          editForm: 'Edit project',
+          onSave: (k, v) => _saveProjectField(p, label, k, v),
+          onBlocked: blocked,
+          child: row,
+        );
+    switch (label) {
+      case 'Priority':
+        return field('priority', 'string', p.pri, choices: const [
+          ('High', 'High'),
+          ('Medium', 'Medium'),
+          ('Low', 'Low'),
+        ]);
+      case 'Visibility':
+        return field('visibility', 'string', p.visibility.toLowerCase(),
+            choices: const [
+              ('private', 'Private'),
+              ('team', 'Team'),
+              ('organization', 'Organization'),
+            ]);
+      case 'Expected start':
+        return field('expected_start_date', 'date', p.startISO);
+      case 'Expected end':
+        return field('expected_end_date', 'date', p.endISO);
+      case 'Estimated cost':
+        return field(
+            'estimated_costing', 'decimal', p.costNum > 0 ? p.costNum : null);
+      case 'Linked quote':
+        return row; // keeps its own tap
+      default:
+        return OpsReadOnlyHoldRow(
+            message: '$label can be changed from Edit project.',
+            onBlocked: blocked,
+            child: row);
+    }
+  }
+
+  /// Writes one field from a row. Null on success, the server's words on a
+  /// refusal (shown beside the box, as on a lead).
+  Future<Object?> _saveProjectField(
+      Project p, String label, String key, Object? value) async {
+    if (!ensurePermission(ref, 'project', PermVerb.update)) {
+      return permissionCopy(PermVerb.update);
+    }
+    Object? v = value;
+    if (key == 'estimated_costing') {
+      final n = value as num?;
+      v = n == null
+          ? '0'
+          : (n == n.roundToDouble() ? n.toInt().toString() : '$n');
+    }
+    try {
+      await ref.read(projectsRepositoryProvider).updateProject(p.id, {key: v});
+      ref.invalidate(projectsProvider);
+      ref.invalidate(projectDetailProvider(p.id));
+      ref.read(toastProvider.notifier).show('$label updated');
+      return null;
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      return e.bareMessage.isEmpty ? 'Could not save.' : e.bareMessage;
+    }
+  }
+
   Widget _val(String v, {Color? color, bool muted = false}) => Text(v,
       textAlign: TextAlign.right,
       style: AppText.custom(
           size: 14,
           weight: FontWeight.w700,
-          color: color ?? (muted ? AppColors.textPlaceholder : AppColors.textPrimary)));
+          color: color ??
+              (muted ? AppColors.textPlaceholder : AppColors.textPrimary)));
 
   /// Webapp project Tasks tab: "Tasks done/total", View all tasks, New group,
   /// the project's real lanes (`/projects/task-groups/?project=`) — an empty
   /// lane shows "No tasks in this group" — then "No group" when it has any.
   Widget _tasksTab(Project p, List<OpsTask> projTasks) {
-    final lanes = ref.watch(taskGroupsProvider(p.id)).valueOrNull ?? const <CatalogOption>[];
+    final lanes = ref.watch(taskGroupsProvider(p.id)).valueOrNull ??
+        const <CatalogOption>[];
     final canCreate = hasPermission(ref, 'project_task', PermVerb.create);
     final total = p.taskCount ?? projTasks.length;
     final done = p.doneCount ?? projTasks.where(_isTaskDone).length;
@@ -611,21 +907,35 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('TASKS', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
+            Text('TASKS',
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder,
+                    letterSpacing: 0.5)),
             SizedBox(width: 8.w),
-            Text('$done/$total done', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
+            Text('$done/$total done',
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textMuted)),
           ]),
           SizedBox(height: 10.h),
           Row(children: [
-            Expanded(child: _ghostButton(PhosphorIconsRegular.arrowUpRight, 'View all tasks', () {
+            Expanded(
+                child: _ghostButton(
+                    PhosphorIconsRegular.arrowUpRight, 'View all tasks', () {
               // Ops › Tasks filtered to this project, everyone's tasks.
               context.go('${Routes.opsTasks}?project=${p.id}');
             })),
             SizedBox(width: 8.w),
-            Expanded(child: Opacity(
+            Expanded(
+                child: Opacity(
               opacity: canCreate ? 1 : 0.5,
-              child: _ghostButton(PhosphorIconsRegular.folderPlus, 'New group', () {
-                if (!ensurePermission(ref, 'project_task', PermVerb.create)) return;
+              child: _ghostButton(PhosphorIconsRegular.folderPlus, 'New group',
+                  () {
+                if (!ensurePermission(ref, 'project_task', PermVerb.create))
+                  return;
                 _groupDialog(p, lanes);
               }),
             )),
@@ -645,15 +955,28 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       ]);
     }
     final laneIds = {for (final g in lanes) g.id};
-    final ungrouped = [for (final t in projTasks) if (!laneIds.contains(t.groupId)) t];
+    final ungrouped = [
+      for (final t in projTasks)
+        if (!laneIds.contains(t.groupId)) t
+    ];
     return Padding(
       padding: EdgeInsets.only(top: 2.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           header,
-          for (final g in lanes) ..._lane(p, g.id, g.name, [for (final t in projTasks) if (t.groupId == g.id) t], lanes),
-          if (ungrouped.isNotEmpty) ..._lane(p, '', 'No group', ungrouped, lanes),
+          for (final g in lanes)
+            ..._lane(
+                p,
+                g.id,
+                g.name,
+                [
+                  for (final t in projTasks)
+                    if (t.groupId == g.id) t
+                ],
+                lanes),
+          if (ungrouped.isNotEmpty)
+            ..._lane(p, '', 'No group', ungrouped, lanes),
           SizedBox(height: 8.h),
           _addTaskButton(p),
           SizedBox(height: 4.h),
@@ -662,7 +985,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     );
   }
 
-  List<Widget> _lane(Project p, String id, String name, List<OpsTask> arr, List<CatalogOption> lanes) {
+  List<Widget> _lane(Project p, String id, String name, List<OpsTask> arr,
+      List<CatalogOption> lanes) {
     final key = id.isEmpty ? '__nogroup__' : id;
     return [
       _groupHeader(p, key, id, name, arr, lanes),
@@ -670,24 +994,35 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         if (arr.isEmpty)
           Padding(
             padding: EdgeInsets.fromLTRB(23.w, 12.h, 2.w, 12.h),
-            child: Text('No tasks in this group', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            child: Text('No tasks in this group',
+                style: AppText.custom(
+                    size: 13,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
           )
         else
           for (final t in arr) _groupTaskRow(t),
     ];
   }
 
-  Widget _ghostButton(IconData icon, String label, VoidCallback onTap) => GestureDetector(
+  Widget _ghostButton(IconData icon, String label, VoidCallback onTap) =>
+      GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
           height: 38.h,
           alignment: Alignment.center,
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(10.r), border: Border.all(color: AppColors.borderInput)),
+          decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10.r),
+              border: Border.all(color: AppColors.borderInput)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 14.sp, color: AppColors.navy),
             SizedBox(width: 6.w),
-            Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+            Text(label,
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ]),
         ),
       );
@@ -695,11 +1030,17 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   /// A task is "done" when its status is closed and not cancelled (webapp).
   bool _isTaskDone(OpsTask t) {
     final name = t.statusName.trim().toLowerCase();
-    final hit = ref.read(opsTaskStatusOptionsProvider).where((s) => s.name.trim().toLowerCase() == name).firstOrNull;
-    return hit != null ? (hit.isClosed && !hit.isCancelled) : t.status == 'completed';
+    final hit = ref
+        .read(opsTaskStatusOptionsProvider)
+        .where((s) => s.name.trim().toLowerCase() == name)
+        .firstOrNull;
+    return hit != null
+        ? (hit.isClosed && !hit.isCancelled)
+        : t.status == 'completed';
   }
 
-  Widget _groupHeader(Project p, String key, String id, String name, List<OpsTask> arr, List<CatalogOption> lanes) {
+  Widget _groupHeader(Project p, String key, String id, String name,
+      List<OpsTask> arr, List<CatalogOption> lanes) {
     final open = !_closedGroups.contains(key);
     final done = arr.where(_isTaskDone).length;
     final canUpdate = hasPermission(ref, 'project_task', PermVerb.update);
@@ -715,26 +1056,46 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       }),
       child: Container(
         padding: EdgeInsets.fromLTRB(2.w, 12.h, 2.w, 10.h),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           children: [
-            Icon(open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.textMuted2),
+            Icon(open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
+                size: 12.sp, color: AppColors.textMuted2),
             SizedBox(width: 9.w),
-            Expanded(child: Text(name, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary))),
-            Text('$done/${arr.length} done', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+            Expanded(
+                child: Text(name,
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary))),
+            Text('$done/${arr.length} done',
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textMuted)),
             // Rename / Delete group — a real lane, and only when either is allowed.
             if (id.isNotEmpty && (canUpdate || canDelete))
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => showActionMenu(context, title: name, actions: [
                   if (canUpdate)
-                    MenuAction(icon: PhosphorIconsRegular.pencilSimple, label: 'Rename', onTap: () => _groupDialog(p, lanes, renameId: id, renameOf: name)),
+                    MenuAction(
+                        icon: PhosphorIconsRegular.pencilSimple,
+                        label: 'Rename',
+                        onTap: () => _groupDialog(p, lanes,
+                            renameId: id, renameOf: name)),
                   if (canDelete)
-                    MenuAction(icon: PhosphorIconsRegular.trash, label: 'Delete group', destructive: true, onTap: () => _deleteGroup(p, id, name)),
+                    MenuAction(
+                        icon: PhosphorIconsRegular.trash,
+                        label: 'Delete group',
+                        destructive: true,
+                        onTap: () => _deleteGroup(p, id, name)),
                 ]),
                 child: Padding(
                   padding: EdgeInsets.only(left: 10.w),
-                  child: Icon(PhosphorIconsBold.dotsThree, size: 18.sp, color: AppColors.textMuted),
+                  child: Icon(PhosphorIconsBold.dotsThree,
+                      size: 18.sp, color: AppColors.textMuted),
                 ),
               ),
           ],
@@ -746,7 +1107,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   /// Webapp `NewGroupModal`: "New task group" / "Rename group", field "Group
   /// name"; blank → "Group name is required", a clash → "That group already
   /// exists".
-  Future<void> _groupDialog(Project p, List<CatalogOption> lanes, {String? renameId, String? renameOf}) async {
+  Future<void> _groupDialog(Project p, List<CatalogOption> lanes,
+      {String? renameId, String? renameOf}) async {
     final ctrl = TextEditingController(text: renameOf ?? '');
     String? err;
     final name = await showDialog<String>(
@@ -760,7 +1122,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
               return;
             }
             final clash = lanes.any((g) =>
-                g.name.toLowerCase() == t.toLowerCase() && g.name.toLowerCase() != (renameOf ?? '').toLowerCase());
+                g.name.toLowerCase() == t.toLowerCase() &&
+                g.name.toLowerCase() != (renameOf ?? '').toLowerCase());
             if (clash) {
               setD(() => err = 'That group already exists');
               return;
@@ -773,13 +1136,20 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             content: TextField(
               controller: ctrl,
               autofocus: true,
-              decoration: InputDecoration(labelText: 'Group name *', hintText: 'e.g. Site Work', errorText: err),
+              decoration: InputDecoration(
+                  labelText: 'Group name *',
+                  hintText: 'e.g. Site Work',
+                  errorText: err),
               onChanged: (_) => setD(() => err = null),
               onSubmitted: (_) => submit(),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-              TextButton(onPressed: submit, child: Text(renameId == null ? 'Add group' : 'Save changes')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel')),
+              TextButton(
+                  onPressed: submit,
+                  child: Text(renameId == null ? 'Add group' : 'Save changes')),
             ],
           );
         },
@@ -795,7 +1165,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     if (error != null) {
       toast.showError(error);
     } else {
-      toast.show(renameId == null ? 'Group "$name" added' : 'Group renamed to "$name"');
+      toast.show(renameId == null
+          ? 'Group "$name" added'
+          : 'Group renamed to "$name"');
     }
   }
 
@@ -804,12 +1176,16 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Delete group "$name"?'),
-        content: const Text('Tasks in this group move to No group — tasks are never deleted with the group.'),
+        content: const Text(
+            'Tasks in this group move to No group — tasks are never deleted with the group.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Delete group', style: TextStyle(color: AppColors.error)),
+            child:
+                Text('Delete group', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -818,7 +1194,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     final error = await deleteTaskGroup(ref, p.id, id);
     if (!mounted) return;
     final toast = ref.read(toastProvider.notifier);
-    error == null ? toast.show('Tasks moved to No group') : toast.showError(error);
+    error == null
+        ? toast.show('Tasks moved to No group')
+        : toast.showError(error);
   }
 
   /// Webapp task row: done checkbox, subject (struck when done), milestone
@@ -831,16 +1209,15 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       statuses: ref.watch(opsTaskStatusOptionsProvider),
     );
     final completed = _isTaskDone(t);
-    final canUpdate = hasPermission(ref, 'project_task', PermVerb.update) && t.canUpdate != false;
-    final canDelete = hasPermission(ref, 'project_task', PermVerb.delete) && t.canDelete != false;
+    final canUpdate = hasPermission(ref, 'project_task', PermVerb.update) &&
+        t.canUpdate != false;
+    final canDelete = hasPermission(ref, 'project_task', PermVerb.delete) &&
+        t.canDelete != false;
     final overdue = (t.isOverdue ?? false) && !completed;
-    final due = [
-      if (t.end.trim().isNotEmpty) _shortDue(t),
-      if (t.assignees.isNotEmpty) MockUsers.of(t.assignees.first).name,
-    ].join(' · ');
     return Container(
       padding: EdgeInsets.fromLTRB(2.w, 10.h, 2.w, 10.h),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF7F8F9)))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF7F8F9)))),
       child: Row(
         children: [
           GestureDetector(
@@ -855,9 +1232,16 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                 decoration: BoxDecoration(
                   color: completed ? AppColors.success : AppColors.white,
                   borderRadius: BorderRadius.circular(5.r),
-                  border: Border.all(color: completed ? AppColors.success : const Color(0xFFAEAEAE), width: 2),
+                  border: Border.all(
+                      color: completed
+                          ? AppColors.success
+                          : const Color(0xFFAEAEAE),
+                      width: 2),
                 ),
-                child: completed ? Icon(PhosphorIconsBold.check, size: 12.sp, color: AppColors.white) : null,
+                child: completed
+                    ? Icon(PhosphorIconsBold.check,
+                        size: 12.sp, color: AppColors.white)
+                    : null,
               ),
             ),
           ),
@@ -877,8 +1261,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                           style: AppText.custom(
                               size: 13.5,
                               weight: FontWeight.w600,
-                              color: completed ? AppColors.textPlaceholder : AppColors.textBody,
-                              decoration: completed ? TextDecoration.lineThrough : null)),
+                              color: completed
+                                  ? AppColors.textPlaceholder
+                                  : AppColors.textBody,
+                              decoration: completed
+                                  ? TextDecoration.lineThrough
+                                  : null)),
                     ),
                     SizedBox(width: 6.w),
                     GestureDetector(
@@ -886,37 +1274,68 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                       onTap: () => _toggleMilestone(t),
                       child: Opacity(
                         opacity: t.milestone ? 1 : 0.3,
-                        child: Icon(PhosphorIconsFill.flag, size: 14.sp, color: AppColors.warningDeep),
+                        child: Icon(PhosphorIconsFill.flag,
+                            size: 14.sp, color: AppColors.warningDeep),
                       ),
                     ),
                     if (t.pendingDeps > 0) ...[
                       SizedBox(width: 6.w),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                        decoration: BoxDecoration(color: AppColors.tintAmber, borderRadius: BorderRadius.circular(6.r)),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 6.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                            color: AppColors.tintAmber,
+                            borderRadius: BorderRadius.circular(6.r)),
                         child: Text('Waiting on ${t.pendingDeps}',
-                            style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: const Color(0xFFB45C00))),
+                            style: AppText.custom(
+                                size: 10.5,
+                                weight: FontWeight.w700,
+                                color: const Color(0xFFB45C00))),
                       ),
                     ],
                   ]),
-                  if (due.isNotEmpty) ...[
-                    SizedBox(height: 2.h),
-                    Text(due, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-                  ],
+                  // Due date and assignee are always shown, and set in
+                  // place (UI/UX audit #03 — the rows had neither).
+                  SizedBox(height: 4.h),
+                  Wrap(spacing: 6.w, runSpacing: 4.h, children: [
+                    _rowChip(
+                      PhosphorIconsRegular.calendarBlank,
+                      t.end.trim().isEmpty
+                          ? 'Set due date'
+                          : 'Due ${_shortDue(t)}',
+                      color: overdue ? AppColors.error : null,
+                      onTap:
+                          canUpdate && !completed ? () => _setRowDue(t) : null,
+                    ),
+                    _rowChip(
+                      PhosphorIconsRegular.userCircle,
+                      t.assignees.isEmpty
+                          ? 'Unassigned'
+                          : MockUsers.of(t.assignees.first).name +
+                              (t.assignees.length > 1
+                                  ? ' +${t.assignees.length - 1}'
+                                  : ''),
+                      onTap: canUpdate && !completed
+                          ? () => _setRowAssignee(t)
+                          : null,
+                    ),
+                  ]),
                 ],
               ),
             ),
           ),
           SizedBox(width: 8.w),
-          overdue ? StatusPill(label: 'Overdue', color: AppColors.error) : StatusPill.meta(meta),
+          overdue
+              ? StatusPill(label: 'Overdue', color: AppColors.error)
+              : StatusPill.meta(meta),
           if (canDelete)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => _deleteTask(t),
               child: Padding(
                 padding: EdgeInsets.only(left: 8.w),
-                child: Icon(PhosphorIconsRegular.trash, size: 15.sp, color: AppColors.textPlaceholder),
+                child: Icon(PhosphorIconsRegular.trash,
+                    size: 15.sp, color: AppColors.textPlaceholder),
               ),
             ),
         ],
@@ -926,10 +1345,10 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
 
   /// "28 Jun, 17:00" — the webapp's task due label (date + time when set).
   String _shortDue(OpsTask t) {
-    final d = DateTime.tryParse(t.endISO);
+    // Local day: "2026-11-11T00:00:00+05:30" parses to 10 Nov 18:30 UTC.
+    final d = DateTime.tryParse(t.endISO)?.toLocal();
     if (d == null) return t.end;
-    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final base = '${d.day} ${m[d.month - 1]}';
+    final base = fmtDay(d); // DD/MM/YYYY (C17)
     final time = t.endTime.trim();
     if (time.isEmpty) return base;
     final hm = RegExp(r'^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$').firstMatch(time);
@@ -938,6 +1357,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     final ap = hm[3]?.toUpperCase();
     if (ap == 'PM' && h < 12) h += 12;
     if (ap == 'AM' && h == 12) h = 0;
+    // Midnight is "no time set" (a date-only pick) — show the day alone.
+    if (h == 0 && hm[2] == '00') return base;
     return '$base, ${h.toString().padLeft(2, '0')}:${hm[2]}';
   }
 
@@ -945,18 +1366,134 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   /// non-cancelled one. A refusal (open subtasks, dependencies) is a toast.
   Future<void> _toggleDone(OpsTask t, bool done) async {
     if (!ensurePermission(ref, 'project_task', PermVerb.update)) return;
-    final target = done ? ref.read(opsTaskOpenStatusProvider) : ref.read(opsTaskDoneStatusProvider);
+    final target = done
+        ? ref.read(opsTaskOpenStatusProvider)
+        : ref.read(opsTaskDoneStatusProvider);
     final toast = ref.read(toastProvider.notifier);
     if (target == null) {
       toast.showError('No matching status configured');
       return;
     }
-    await _taskWrite(() => ref.read(opsTasksRepositoryProvider).updateOpsTask(t.id, {'status': target.id}));
+    // Completing needs a note first, unless the org allows closing without
+    // remarks (webapp parity C14) — then the approval comment, if any.
+    if (!done &&
+        !await ensureOpsClosingNote(context, ref,
+            taskId: t.id, title: t.subject)) {
+      return;
+    }
+    if (!mounted) return;
+    // Closing a task may need approval: ask for the approver's comment.
+    final requestNote = await approvalNoteForClose(context, ref,
+        module: ApprovalModules.projectTask,
+        objectId: t.id,
+        statusCode: projectTaskCloseCode(target),
+        statusLabel: target.name);
+    if (requestNote == null || !mounted) return;
+    await _taskWrite(() => ref.read(opsTasksRepositoryProvider).updateOpsTask(
+        t.id, {'status': target.id, ...requestNoteField(requestNote)}));
+  }
+
+  /// A small tappable meta chip on a task row.
+  Widget _rowChip(IconData icon, String label,
+      {Color? color, VoidCallback? onTap}) {
+    final c = color ?? AppColors.textMuted;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
+        decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(7.r),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12.sp, color: c),
+          SizedBox(width: 4.w),
+          Text(label,
+              style: AppText.custom(
+                  size: 11.5, weight: FontWeight.w600, color: c)),
+        ]),
+      ),
+    );
+  }
+
+  /// Row due-date chip: pick a day; saved through the due-date reason /
+  /// approval flow, as Edit task does.
+  Future<void> _setRowDue(OpsTask t) async {
+    if (!ensurePermission(ref, 'project_task', PermVerb.update)) return;
+    final current = DateTime.tryParse(t.endISO)?.toLocal();
+    final d = await showDatePicker(
+      context: context,
+      helpText: 'Due date',
+      initialDate: current ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(DateTime.now().year + 5),
+    );
+    if (d == null || !mounted) return;
+    try {
+      final outcome = await writeWithDueDateFlow(
+        context,
+        ref,
+        path: '/projects/tasks/${t.id}/',
+        fields: {'exp_end_date': opsTaskEndStamp(d, keepTimeFrom: current)},
+        hadDate: t.endISO.trim().isNotEmpty,
+        dateKey: 'exp_end_date',
+        fieldLabel: 'Due date',
+        dateLabel: dueDateLabel(apiDate(d)),
+      );
+      if (!mounted) return;
+      if (outcome == DueDateWrite.saved) {
+        ref.read(toastProvider.notifier).show('Due date updated');
+      }
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    final pid = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+    ref.invalidate(projectTasksProvider(pid));
+    ref.invalidate(projectDetailProvider(pid));
+  }
+
+  /// Row assignee chip: pick the task's assignee from the project-task
+  /// assignable users.
+  Future<void> _setRowAssignee(OpsTask t) async {
+    if (!ensurePermission(ref, 'project_task', PermVerb.update)) return;
+    List<CatalogOption> users;
+    try {
+      users =
+          await ref.read(opsAssignableUsersProvider('project_task').future) ??
+              const [];
+    } on Object {
+      users = const [];
+    }
+    if (!mounted) return;
+    final picked = await showOpsOptionPicker(
+      context: context,
+      title: 'Assign to',
+      options: [for (final u in users) (value: u.id, label: u.name)],
+      currentValue: t.assignees.isEmpty ? '' : t.assignees.first,
+      searchHint: 'Search people',
+    );
+    if (picked == null || !mounted) return;
+    final id = UserDirectory.realUserId(picked);
+    if (id == null) return;
+    if (await _taskWrite(
+        () => ref.read(opsTasksRepositoryProvider).updateOpsTask(t.id, {
+              'assignees': [id]
+            }))) {
+      if (!mounted) return;
+      final pid = GoRouterState.of(context).uri.queryParameters['id'] ?? '';
+      ref.invalidate(projectTasksProvider(pid));
+      ref.read(toastProvider.notifier).show('Assignee updated');
+    }
   }
 
   Future<void> _toggleMilestone(OpsTask t) async {
     if (!ensurePermission(ref, 'project_task', PermVerb.update)) return;
-    await _taskWrite(() => ref.read(opsTasksRepositoryProvider).updateOpsTask(t.id, {'is_milestone': !t.milestone}));
+    await _taskWrite(() => ref
+        .read(opsTasksRepositoryProvider)
+        .updateOpsTask(t.id, {'is_milestone': !t.milestone}));
   }
 
   Future<void> _deleteTask(OpsTask t) async {
@@ -964,16 +1501,22 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete task?'),
-        content: Text('"${t.subject}" will be permanently deleted.'),
+        title: const Text('Delete this task?'),
+        content: Text('This permanently removes "${t.subject}". Remove its '
+            "dependencies and subtasks first if it's blocking others."),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text('Delete', style: TextStyle(color: AppColors.error))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Delete', style: TextStyle(color: AppColors.error))),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    if (await _taskWrite(() => ref.read(opsTasksRepositoryProvider).deleteOpsTask(t.id))) {
+    if (await _taskWrite(
+        () => ref.read(opsTasksRepositoryProvider).deleteOpsTask(t.id))) {
       ref.read(toastProvider.notifier).show('Task deleted');
     }
   }
@@ -996,7 +1539,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   }
 
   bool _canSetProgress(Project p) =>
-      p.method == 'Manual' && hasPermission(ref, 'project', PermVerb.update) && p.canManage != false;
+      p.method == 'Manual' &&
+      hasPermission(ref, 'project', PermVerb.update) &&
+      p.canManage != false;
 
   /// Webapp `ProgressMetric` on a Manual project: PATCH `percent_complete`,
   /// "Progress set to N%"; outside 0–100 → "Enter a number between 0 and 100.".
@@ -1020,7 +1565,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           }
           setD(() => saving = true);
           try {
-            await ref.read(projectsRepositoryProvider).updateProject(p.id, {'percent_complete': rounded});
+            await ref
+                .read(projectsRepositoryProvider)
+                .updateProject(p.id, {'percent_complete': rounded});
             if (ctx.mounted) Navigator.of(ctx).pop(rounded);
           } on AppError catch (e) {
             ref.read(apiServiceProvider).handled(e);
@@ -1042,8 +1589,11 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             onSubmitted: (_) => commit(),
           ),
           actions: [
-            TextButton(onPressed: saving ? null : () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            TextButton(onPressed: saving ? null : commit, child: const Text('Save')),
+            TextButton(
+                onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: saving ? null : commit, child: const Text('Save')),
           ],
         );
       }),
@@ -1067,7 +1617,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         padding: EdgeInsets.symmetric(vertical: 24.h, horizontal: 20.w),
         child: Text('Loading files…',
             style: AppText.custom(
-                size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                size: 13.5,
+                weight: FontWeight.w500,
+                color: AppColors.textPlaceholder)),
       );
     }
     if (files.isEmpty) {
@@ -1119,15 +1671,35 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
                                   color: AppColors.textPrimary)),
                           SizedBox(height: 2.h),
                           Text(
-                              [f.ext, if (f.uploadedAt.isNotEmpty) f.uploadedAt]
-                                  .join(' · '),
+                              [
+                                f.ext,
+                                if (f.sizeLabel.isNotEmpty) f.sizeLabel,
+                                if (f.uploaderName.isNotEmpty) f.uploaderName,
+                                if (f.uploadedAt.isNotEmpty) f.uploadedAt,
+                              ].join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: AppText.caption()),
                         ],
                       ),
                     ),
-                    SizedBox(width: 8.w),
-                    Icon(PhosphorIconsRegular.arrowSquareOut,
-                        size: 16.sp, color: AppColors.textPlaceholder),
+                    // Rename · Download · Delete, as task / lead / ticket
+                    // files (webapp parity C12).
+                    if (_canEditFiles(p))
+                      _fileBtn(PhosphorIconsRegular.pencilSimple, 'Rename file',
+                          () => _renameProjectFile(p, f)),
+                    _fileBtn(
+                        PhosphorIconsRegular.downloadSimple, 'Download file',
+                        () async {
+                      final failure = await openAttachment(f.url);
+                      if (failure != null && mounted) {
+                        ref.read(toastProvider.notifier).showError(failure);
+                      }
+                    }),
+                    if (_canEditFiles(p))
+                      _fileBtn(PhosphorIconsRegular.trash, 'Delete file',
+                          () => _deleteProjectFile(p, f),
+                          color: AppColors.error),
                   ],
                 ),
               ),
@@ -1165,11 +1737,81 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             SizedBox(width: 8.w),
             Text('Add task',
                 style: AppText.custom(
-                    size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                    size: 13.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ],
         ),
       ),
     );
+  }
+
+  bool _canEditFiles(Project p) =>
+      hasPermission(ref, 'project', PermVerb.update) && p.canManage != false;
+
+  Widget _fileBtn(IconData icon, String label, VoidCallback onTap,
+          {Color? color}) =>
+      Semantics(
+        button: true,
+        label: label,
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8.r),
+            onTap: onTap,
+            child: Padding(
+              padding: EdgeInsets.all(7.w),
+              child:
+                  Icon(icon, size: 17.sp, color: color ?? AppColors.textMuted),
+            ),
+          ),
+        ),
+      );
+
+  Future<void> _renameProjectFile(Project p, LeadFile f) async {
+    if (!ensurePermission(ref, 'project', PermVerb.update)) return;
+    final typed = await showFileNameDialog(context, f.name,
+        title: 'Rename file', action: 'Save');
+    if (typed == null || !mounted) return;
+    final next = storedFileName(typed, f.name);
+    if (next == f.name) return;
+    final err =
+        await ref.read(attachmentsRepositoryProvider).renameFile(f.id, next);
+    if (!mounted) return;
+    if (err != null) {
+      ref.read(toastProvider.notifier).showError(err);
+      return;
+    }
+    ref.invalidate(projectAttachmentsProvider(p.id));
+    ref.read(toastProvider.notifier).show('File renamed');
+  }
+
+  Future<void> _deleteProjectFile(Project p, LeadFile f) async {
+    if (!ensurePermission(ref, 'project', PermVerb.update)) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this file?'),
+        content: Text('“${f.name}” will be removed from this project.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Delete', style: TextStyle(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final err = await ref.read(attachmentsRepositoryProvider).deleteFile(f.id);
+    if (!mounted) return;
+    if (err != null) {
+      ref.read(toastProvider.notifier).showError(err);
+      return;
+    }
+    ref.invalidate(projectAttachmentsProvider(p.id));
+    ref.read(toastProvider.notifier).show('File deleted');
   }
 
   /// The Files tab's upload affordance — the tab could read files but never
@@ -1202,7 +1844,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             SizedBox(width: 8.w),
             Text(_uploading ? 'Uploading…' : 'Upload file',
                 style: AppText.custom(
-                    size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                    size: 13.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ],
         ),
       ),
@@ -1220,23 +1864,33 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     } on Object catch (e) {
       // The picker is a native plugin: silence here reads as a dead button.
       if (!mounted) return;
-      ref.read(toastProvider.notifier).showError('Could not open the file picker: $e');
+      ref
+          .read(toastProvider.notifier)
+          .showError('Could not open the file picker: $e');
       return;
     }
     final file = picked?.files.singleOrNull;
     final path = file?.path;
     if (file == null || path == null || !mounted) return; // cancelled
 
+    // Offer the stored name (extension kept), as every other record's upload
+    // does (webapp upload dialog) — UAT.
+    final typed = await showFileNameDialog(context, file.name);
+    if (typed == null || !mounted) return;
+    final storedName = storedFileName(typed, file.name);
     setState(() => _uploading = true);
     try {
-      await ref.read(projectsRepositoryProvider).uploadProjectAttachment(
-            projectId: p.id,
-            path: path,
-            name: file.name,
-          );
+      // The shared attachments store (related_to=project), as the web (C12).
+      await AttachmentsRemoteDataSource(ref.read(apiServiceProvider))
+          .uploadFile(
+        relatedTo: 'project',
+        relatedToId: p.id,
+        path: path,
+        name: storedName,
+      );
       if (!mounted) return;
       ref.invalidate(projectAttachmentsProvider(p.id));
-      ref.read(toastProvider.notifier).show('${file.name} uploaded');
+      ref.read(toastProvider.notifier).show('$storedName uploaded');
     } on AppError catch (e) {
       if (mounted) ref.read(toastProvider.notifier).showError(e.message);
     } finally {
@@ -1248,9 +1902,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   /// retry, never another list standing in for it.
   Widget _tasksError(Project p, Object error) {
     final e = error is AppError ? error : null;
-    final offline = e?.type == AppErrorType.network || e?.type == AppErrorType.timeout;
+    final offline =
+        e?.type == AppErrorType.network || e?.type == AppErrorType.timeout;
     return _tabEmpty(
-      offline ? PhosphorIconsRegular.wifiSlash : PhosphorIconsRegular.warningCircle,
+      offline
+          ? PhosphorIconsRegular.wifiSlash
+          : PhosphorIconsRegular.warningCircle,
       offline ? "Can't reach Clozr" : "Couldn't load tasks",
       e?.message ?? 'Something went wrong. Please try again.',
       action: GestureDetector(
@@ -1264,7 +1921,10 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             border: Border.all(color: AppColors.borderInput),
           ),
           child: Text('Retry',
-              style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+              style: AppText.custom(
+                  size: 13.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textBody)),
         ),
       ),
     );
@@ -1279,15 +1939,25 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             width: 56.w,
             height: 56.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(16.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgChipGrey,
+                borderRadius: BorderRadius.circular(16.r)),
             child: Icon(icon, size: 26.sp, color: AppColors.textPlaceholder),
           ),
           SizedBox(height: 14.h),
-          Text(title, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text(title,
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 5.h),
           Text(body,
               textAlign: TextAlign.center,
-              style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.5)),
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted,
+                  height: 1.5)),
           if (action != null) ...[SizedBox(height: 16.h), action],
         ],
       ),
@@ -1311,12 +1981,22 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       key: _notesKey,
       author: ref.watch(noteAuthorProvider),
       notes: ref.watch(crmNotesProvider(seed)),
-      onAddNote: (body, atts) => notes.addNote(body, atts, ref.read(noteAuthorProvider)),
-      onAddReply: (noteId, body) => notes.addReply(noteId, body, ref.read(noteAuthorProvider)),
-      // Webapp NotesPanel (related_to=project): Tag · Insert (no @mention
-      // source for projects), author-only pin / edit / delete.
+      onAddNote: (body, atts) =>
+          notes.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) =>
+          notes.addReply(noteId, body, ref.read(noteAuthorProvider)),
+      // Webapp NotesPanel (related_to=project): Tag · @mention · Insert,
+      // author-only pin / edit / delete.
       webappToolbar: true,
       noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
+      // @mention: the module's assignable users, as the webapp's source for
+      // `project` notes (a role without access gets none → no picker).
+      mentionables: [
+        for (final u
+            in ref.watch(opsAssignableUsersProvider('project')).valueOrNull ??
+                const <CatalogOption>[])
+          (id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name),
+      ],
       currentUserId: UserDirectory.currentUserId,
       onAddTypedNote: (body, atts, typeId, typeName, mentions) => notes.addNote(
           body, atts, ref.read(noteAuthorProvider),
@@ -1334,26 +2014,54 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   /// the change (or summary), then "user · time ago". Empty → "No activity
   /// recorded yet."; the derived rows survive only for mock mode.
   Widget _auditLog(Project p, StatusMeta meta, String mgrName) {
-    if (!ApiConfig.apiEnabled) return OpsAuditLog(entries: _audit(p, meta, mgrName));
+    if (!ApiConfig.apiEnabled)
+      return OpsAuditLog(entries: _audit(p, meta, mgrName));
     final async = ref.watch(projectFeedProvider(p.id));
     final entries = async.valueOrNull ?? const <crm_audit.AuditEntry>[];
     return OpsAuditLog(
       entries: [for (final e in entries) _auditRow(e)],
-      emptyText: async.isLoading && entries.isEmpty ? 'Loading audit log…' : 'No activity recorded yet.',
+      emptyText: async.isLoading && entries.isEmpty
+          ? 'Loading audit log…'
+          : 'No activity recorded yet.',
     );
   }
 
   /// One audit row as a timeline entry, iconed by what kind of event it was.
   AuditEntry _auditRow(crm_audit.AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created => (PhosphorIconsRegular.plusCircle, AppColors.pending, AppColors.tintPurple),
-      AuditEventKind.statusChanged => (PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.blueSubtle),
-      AuditEventKind.noteAdded => (PhosphorIconsRegular.note, AppColors.pending, AppColors.tintPurple),
-      AuditEventKind.childAdded => (PhosphorIconsRegular.listChecks, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.deleted => (PhosphorIconsRegular.trash, AppColors.error, AppColors.tintRed),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.blueBright, AppColors.blueSubtle),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.plusCircle,
+          AppColors.pending,
+          AppColors.tintPurple
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.arrowsClockwise,
+          AppColors.blueBright,
+          AppColors.blueSubtle
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.pending,
+          AppColors.tintPurple
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.listChecks,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.tintRed
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.blueBright,
+          AppColors.blueSubtle
+        ),
     };
-    final sub = [e.actor, _timeAgo(e.at)].where((s) => s.isNotEmpty).join(' · ');
+    final sub =
+        [e.actor, _timeAgo(e.at)].where((s) => s.isNotEmpty).join(' · ');
     return AuditEntry(icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
   }
 
@@ -1373,11 +2081,27 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
 
   /// The derived rows — mock mode only.
   List<AuditEntry> _audit(Project p, StatusMeta meta, String mgrName) {
-    final first = p.assignees.isEmpty ? '—' : MockUsers.of(p.assignees.first).firstName;
+    final first =
+        p.assignees.isEmpty ? '—' : MockUsers.of(p.assignees.first).firstName;
     return [
-      AuditEntry(icon: PhosphorIconsRegular.userPlus, tone: AppColors.success, bg: AppColors.tintGreen, title: 'Assignee added', sub: '$first · $mgrName · 02 Jul 2026'),
-      AuditEntry(icon: PhosphorIconsRegular.arrowsClockwise, tone: AppColors.blueBright, bg: AppColors.blueSubtle, title: 'Status changed to ${meta.label}', sub: '$mgrName · 28 Jun 2026'),
-      AuditEntry(icon: PhosphorIconsRegular.plusCircle, tone: AppColors.pending, bg: AppColors.tintPurple, title: 'Project created', sub: '$mgrName · ${p.start}'),
+      AuditEntry(
+          icon: PhosphorIconsRegular.userPlus,
+          tone: AppColors.success,
+          bg: AppColors.tintGreen,
+          title: 'Assignee added',
+          sub: '$first · $mgrName · 02 Jul 2026'),
+      AuditEntry(
+          icon: PhosphorIconsRegular.arrowsClockwise,
+          tone: AppColors.blueBright,
+          bg: AppColors.blueSubtle,
+          title: 'Status changed to ${meta.label}',
+          sub: '$mgrName · 28 Jun 2026'),
+      AuditEntry(
+          icon: PhosphorIconsRegular.plusCircle,
+          tone: AppColors.pending,
+          bg: AppColors.tintPurple,
+          title: 'Project created',
+          sub: '$mgrName · ${p.start}'),
     ];
   }
 
@@ -1393,7 +2117,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     // fields, so they also need the record's `can_manage`.
     final canUpdate = hasPermission(ref, 'project', PermVerb.update);
     final canManage = canUpdate && project.canManage != false;
-    final manageReason = canUpdate ? _governedCopy : permissionCopy(PermVerb.update);
+    final manageReason =
+        canUpdate ? _governedCopy : permissionCopy(PermVerb.update);
 
     await showActionMenu(
       context,
@@ -1434,8 +2159,61 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           destructive: !project.isArchived,
           onTap: () => _archive(project),
         ),
+        // UI/UX audit #14: the record page offers Delete too.
+        MenuAction(
+          icon: PhosphorIconsRegular.trash,
+          label: 'Delete project',
+          destructive: true,
+          enabled: hasPermission(ref, 'project', PermVerb.delete) &&
+              project.canManage != false,
+          sublabel: hasPermission(ref, 'project', PermVerb.delete)
+              ? (project.canManage == false ? manageReason : null)
+              : permissionCopy(PermVerb.delete),
+          onTap: () => _deleteProject(project),
+        ),
       ],
     );
+  }
+
+  /// ⋯ › Delete project: confirm, `DELETE /projects/projects/{id}/`, then the
+  /// project's own files (UI/UX audit #09 — the server keeps them).
+  Future<void> _deleteProject(Project project) async {
+    if (!ensurePermission(ref, 'project', PermVerb.delete)) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this project?'),
+        content: Text('"${project.name}" and its files will be permanently '
+            'removed. Its tasks must be removed or moved first.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Delete', style: TextStyle(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      // Its files go too (UI/UX #09), from the shared store the tab reads.
+      await deleteRecordWithFiles(ref.read(attachmentsRepositoryProvider),
+          relatedTo: 'project',
+          recordId: project.id,
+          deleteRecord: () => ref
+              .read(apiServiceProvider)
+              .delete(ApiEndpoints.project(project.id)));
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(projectsScopedProvider);
+    ref.invalidate(projectsProvider);
+    ref.read(toastProvider.notifier).show('Project deleted');
+    context.canPop() ? context.pop() : context.go(Routes.opsProjects);
   }
 
   /// Webapp governance note for a field only the owner, manager or an admin
@@ -1459,7 +2237,9 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           content: Text('"${project.name}" will be hidden from the projects '
               'list. You can restore it from here afterwards.'),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel')),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               child: Text('Archive', style: TextStyle(color: AppColors.error)),
@@ -1551,11 +2331,26 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     final picked = catalog.where((s) => s.id == chosen).firstOrNull;
     setState(() => _status = projectStatusKey(name: picked?.name));
 
+    // Closing the project may need approval: ask for the approver's comment
+    // before anything is sent; cancelling leaves the pill where it was.
+    final requestNote = await approvalNoteForClose(context, ref,
+        module: ApprovalModules.project,
+        objectId: project.id,
+        statusCode: picked?.isClosed == true ? 'closed' : null,
+        statusLabel: picked?.name ?? 'the new status');
+    if (requestNote == null || !mounted) {
+      if (mounted) setState(() => _status = previous);
+      return;
+    }
+    final note = requestNoteField(requestNote);
+
     final toast = ref.read(toastProvider.notifier);
     final repo = ref.read(projectsRepositoryProvider);
     var done = 'Status updated';
+    var held = false;
     try {
-      await repo.updateProject(project.id, {'status': chosen});
+      held = await writeWasHeld(ref, project.id,
+          () => repo.updateProject(project.id, {'status': chosen, ...note}));
     } on Object catch (e) {
       if (!mounted) return;
       // Closing with open tasks is a question, not an error (webapp D24):
@@ -1566,18 +2361,26 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         if (e is AppError) ref.read(apiServiceProvider).handled(e);
         if (await confirmCloseWithOpenTasks(context, conflict.count)) {
           try {
-            await repo.updateProject(
-                project.id, {'status': chosen, ...openTasksActionCancel});
+            // Carried with an approval request too, and acted on when the
+            // close is approved.
+            held = await writeWasHeld(
+                ref,
+                project.id,
+                () => repo.updateProject(project.id,
+                    {'status': chosen, ...openTasksActionCancel, ...note}));
             closed = true;
             done = closedWithOpenTasksMessage(conflict.count);
           } on Object catch (e2) {
             if (mounted) {
-              toast.showError(e2 is AppError ? e2.bareMessage : 'Could not update the status.');
+              toast.showError(e2 is AppError
+                  ? e2.bareMessage
+                  : 'Could not update the status.');
             }
           }
         }
       } else {
-        toast.showError(e is AppError ? e.bareMessage : 'Could not update the status.');
+        toast.showError(
+            e is AppError ? e.bareMessage : 'Could not update the status.');
       }
       if (!closed) {
         if (mounted) setState(() => _status = previous);
@@ -1589,6 +2392,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     ref.invalidate(projectDetailProvider(project.id));
     ref.invalidate(projectsScopedProvider);
     ref.invalidate(projectStatusCountsProvider);
+    if (held) {
+      // Waiting for approval: the project keeps its status (the shell says
+      // who it went to), so hand the pill straight back.
+      setState(() => _status = previous);
+      return;
+    }
     toast.show(done);
 
     // Then hand the pill back to the server: a workflow may have landed the

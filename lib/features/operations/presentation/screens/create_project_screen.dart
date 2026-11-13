@@ -29,7 +29,8 @@ class CreateProjectScreen extends ConsumerStatefulWidget {
   const CreateProjectScreen({super.key});
 
   @override
-  ConsumerState<CreateProjectScreen> createState() => _CreateProjectScreenState();
+  ConsumerState<CreateProjectScreen> createState() =>
+      _CreateProjectScreenState();
 }
 
 class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
@@ -45,16 +46,21 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
   String _pri = 'Medium';
   DateTime? _start;
   DateTime? _end;
-  String? _manager;
+  // UI/UX audit #18: the creator becomes the owner, so the manager starts
+  // on them too ('me' maps to the signed-in user) instead of "Select…".
+  String? _manager = 'me';
   final Set<String> _assignees = {};
   String _team = '';
   bool _saving = false;
+
   /// The org's own status name; empty = the catalog's first (default) status.
   String _status = '';
+
   /// Null until the user picks one: the form then starts on the org's PMO
   /// default, or "Default (set by your admin)" when that cannot be read.
   String? _visibility;
   String _method = 'Task Completion';
+
   /// The linked quote's id (empty = none) — offered once a customer is picked.
   String _quote = '';
   bool _advanced = false;
@@ -64,15 +70,22 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
   static const _vis = ['Private', 'Team', 'Organization'];
   static const _visDefault = 'Default (set by your admin)';
   // Webapp METHOD_OPTIONS — all four, Task Completion the default.
-  static const _methods = ['Task Completion', 'Task Progress', 'Task Weight', 'Manual'];
+  static const _methods = [
+    'Task Completion',
+    'Task Progress',
+    'Task Weight',
+    'Manual'
+  ];
 
   /// Wire value → label ("team" → "Team").
-  static String _visLabel(String v) => v.isEmpty ? '' : '${v[0].toUpperCase()}${v.substring(1)}';
+  static String _visLabel(String v) =>
+      v.isEmpty ? '' : '${v[0].toUpperCase()}${v.substring(1)}';
 
   /// What the visibility field shows / sends: the pick, else the PMO default,
   /// else '' (= omitted, the server applies the default).
   String get _visibilityValue =>
-      _visibility ?? _visLabel(ref.read(pmoDefaultVisibilityProvider).valueOrNull ?? '');
+      _visibility ??
+      _visLabel(ref.read(pmoDefaultVisibilityProvider).valueOrNull ?? '');
 
   /// The status the form sends: the pick, else the first active org status.
   String get _statusValue {
@@ -83,12 +96,18 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
 
   /// Manager / assignee choices: `/management/assignable-users/?module=project`
   /// (webapp), the roster only while that has not answered.
-  List<({String id, String name, String initials})> _people(List<AppUser> roster) {
+  List<({String id, String name, String initials})> _people(
+      List<AppUser> roster) {
     final assignable = ref.read(projectAssignableUsersProvider).valueOrNull;
     if (assignable == null) {
-      return [for (final r in roster) (id: r.id, name: r.name, initials: r.initials)];
+      return [
+        for (final r in roster) (id: r.id, name: r.name, initials: r.initials)
+      ];
     }
-    return [for (final u in assignable) (id: u.id, name: u.name, initials: MockUsers.of(u.id).initials)];
+    return [
+      for (final u in assignable)
+        (id: u.id, name: u.name, initials: MockUsers.of(u.id).initials)
+    ];
   }
 
   String? get _customerId => _customerOptions
@@ -110,10 +129,12 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
   /// The org's customers and teams as catalog options, so the picked label can
   /// be resolved back to the UUID the API wants.
   List<CatalogOption> get _customerOptions => [
-        for (final c in ref.read(customersProvider).valueOrNull ?? const <Customer>[])
-          CatalogOption(id: c.id, name: c.company?.trim().isNotEmpty == true ? c.company! : c.name),
+        for (final c
+            in ref.read(customersProvider).valueOrNull ?? const <Customer>[])
+          CatalogOption(
+              id: c.id,
+              name: c.company?.trim().isNotEmpty == true ? c.company! : c.name),
       ];
-
 
   /// The org's own project types (`/projects/project-types/`).
   ///
@@ -139,7 +160,8 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     if (_saving) return;
     // Webapp validation, shown on the fields: a blank name and an end date
     // before the start are refused before anything is sent.
-    final nameErr = _name.text.trim().isEmpty ? 'Project name is required' : null;
+    final nameErr =
+        _name.text.trim().isEmpty ? 'Project name is required' : null;
     final endErr = _endErr ? 'End date must be after the start date' : null;
     setState(() {
       _nameErr = nameErr;
@@ -149,8 +171,8 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     // A cost the parser cannot read must not be saved as whatever digits were
     // left in it — "20K" used to land as ₹20 with no warning.
     if (!isValidCostAmount(_cost.text)) {
-      ref.read(toastProvider.notifier)
-          .show('Enter the cost as a number, or a short form like 18L, 20K or 1.5Cr');
+      ref.read(toastProvider.notifier).show(
+          'Enter the cost as a number, or a short form like 18L, 20K or 1.5Cr');
       return;
     }
     if (!ApiConfig.apiEnabled) {
@@ -198,7 +220,9 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       // provider, so it has to drop too or they keep serving the stale list.
       ref.invalidate(projectsProvider);
       // Webapp: "Project PRJ-1007 created", then straight to the new project.
-      final label = (created?.code.isNotEmpty ?? false) ? created!.code : _name.text.trim();
+      final label = (created?.code.isNotEmpty ?? false)
+          ? created!.code
+          : _name.text.trim();
       ref.read(toastProvider.notifier).show('Project $label created');
       if (created != null && created.id.isNotEmpty) {
         context.pushReplacement('${Routes.projectDetail}?id=${created.id}');
@@ -217,7 +241,8 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       ref.read(apiServiceProvider).handled(e);
       if (RegExp('name', caseSensitive: false).hasMatch(msg)) {
         setState(() => _nameErr = msg);
-      } else if (RegExp('end date|start date', caseSensitive: false).hasMatch(msg)) {
+      } else if (RegExp('end date|start date', caseSensitive: false)
+          .hasMatch(msg)) {
         setState(() => _endErrMsg = msg);
       } else {
         ref.read(toastProvider.notifier).showError(msg);
@@ -240,12 +265,16 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     ref.watch(pmoDefaultVisibilityProvider);
     final roster = ref.watch(rosterProvider);
     final people = _people(roster);
-    final statusNames = [for (final st in ref.watch(projectStatusOptionsProvider)) st.name];
-    final pmoDefaultKnown = ref.watch(pmoDefaultVisibilityProvider).valueOrNull != null;
+    final statusNames = [
+      for (final st in ref.watch(projectStatusOptionsProvider)) st.name
+    ];
+    final pmoDefaultKnown =
+        ref.watch(pmoDefaultVisibilityProvider).valueOrNull != null;
     final custId = _customerId;
     final quotes = custId == null
         ? const <CatalogOption>[]
-        : ref.watch(customerQuotesProvider(custId)).valueOrNull ?? const <CatalogOption>[];
+        : ref.watch(customerQuotesProvider(custId)).valueOrNull ??
+            const <CatalogOption>[];
     // The org's real customers, so the picked label resolves to the
     // `customer_id` the API wants. This listed the company names already on
     // loaded projects, so a customer never used on one could not be picked —
@@ -255,7 +284,6 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
     // This listed the team names sitting on roster users.
     final teams = [for (final t in _teamOptions) t.name];
     final mgrName = _manager == null ? '' : MockUsers.of(_manager!).name;
-
 
     return OpsFormScaffold(
       title: 'New Project',
@@ -270,7 +298,13 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
       onClose: () => context.pop(),
       onSubmit: _submit,
       children: [
-        AppTextField(label: 'Project name', required: true, controller: _name, hint: 'e.g. Showroom fit-out', errorText: _nameErr, onChanged: (_) => setState(() => _nameErr = null)),
+        AppTextField(
+            label: 'Project name',
+            required: true,
+            controller: _name,
+            hint: 'e.g. Showroom fit-out',
+            errorText: _nameErr,
+            onChanged: (_) => setState(() => _nameErr = null)),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Customer',
@@ -281,16 +315,27 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
             final v = await showOpsOptionPicker(
               context: context,
               title: 'Select customer',
-              options: [(value: '', label: 'Internal project'), for (final c in customers) (value: c, label: c)],
+              options: [
+                (value: '', label: 'Internal project'),
+                for (final c in customers) (value: c, label: c)
+              ],
               currentValue: _customer,
             );
             // A quote belongs to one customer: changing it clears the link.
-            if (v != null) setState(() { if (v != _customer) _quote = ''; _customer = v; });
+            if (v != null)
+              setState(() {
+                if (v != _customer) _quote = '';
+                _customer = v;
+              });
           },
         ),
         Padding(
           padding: EdgeInsets.only(top: 5.h),
-          child: Text('Leave empty for internal projects.', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          child: Text('Leave empty for internal projects.',
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ),
         // Linked quote — only once a customer is picked (the server requires
         // the same customer).
@@ -298,13 +343,20 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           SizedBox(height: 14.h),
           OpsPickerField(
             label: 'Linked quote',
-            value: quotes.where((q) => q.id == _quote).map((q) => q.name).firstOrNull ?? '',
+            value: quotes
+                    .where((q) => q.id == _quote)
+                    .map((q) => q.name)
+                    .firstOrNull ??
+                '',
             placeholder: 'No linked quote',
             onTap: () async {
               final v = await showOpsOptionPicker(
                 context: context,
                 title: 'Linked quote',
-                options: [(value: '', label: 'No linked quote'), for (final q in quotes) (value: q.id, label: q.name)],
+                options: [
+                  (value: '', label: 'No linked quote'),
+                  for (final q in quotes) (value: q.id, label: q.name)
+                ],
                 currentValue: _quote,
               );
               if (v != null) setState(() => _quote = v);
@@ -312,8 +364,12 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           ),
           Padding(
             padding: EdgeInsets.only(top: 5.h),
-            child: Text('Optional — the quote this project was won from. Accounting derives project financials from it.',
-                style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            child: Text(
+                'Optional — the quote this project was won from. Accounting derives project financials from it.',
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
           ),
         ],
         SizedBox(height: 14.h),
@@ -321,7 +377,11 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           label: 'Project type',
           value: _type,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project type', options: [for (final t in _typeNames) (value: t, label: t)], currentValue: _type);
+            final v = await showOpsOptionPicker(
+                context: context,
+                title: 'Project type',
+                options: [for (final t in _typeNames) (value: t, label: t)],
+                currentValue: _type);
             if (v != null) setState(() => _type = v);
           },
         ),
@@ -330,19 +390,33 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, children: [
           for (final p in const ['High', 'Medium', 'Low'])
-            OpsFormChip(label: p, selected: _pri == p, onTap: () => setState(() => _pri = p)),
+            OpsFormChip(
+                label: p,
+                selected: _pri == p,
+                onTap: () => setState(() => _pri = p)),
         ]),
         SizedBox(height: 14.h),
         Row(
           children: [
-            Expanded(child: _dateField('Expected start', _start, (d) => setState(() => _start = d))),
+            Expanded(
+                child: _dateField('Expected start', _start,
+                    (d) => setState(() => _start = d))),
             SizedBox(width: 9.w),
-            Expanded(child: _dateField('Expected end', _end, (d) => setState(() { _end = d; _endErrMsg = null; }))),
+            Expanded(
+                child: _dateField(
+                    'Expected end',
+                    _end,
+                    (d) => setState(() {
+                          _end = d;
+                          _endErrMsg = null;
+                        }))),
           ],
         ),
         if (_endErrMsg != null || _endErr) ...[
           SizedBox(height: 8.h),
-          Text(_endErrMsg ?? 'End date must be after the start date', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
+          Text(_endErrMsg ?? 'End date must be after the start date',
+              style: AppText.custom(
+                  size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
         ],
         SizedBox(height: 14.h),
         OpsPickerField(
@@ -351,7 +425,11 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           placeholder: 'Select manager…',
           caret: PhosphorIconsBold.caretRight,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Project manager', options: [for (final r in people) (value: r.id, label: r.name)], currentValue: _manager ?? '');
+            final v = await showOpsOptionPicker(
+                context: context,
+                title: 'Project manager',
+                options: [for (final r in people) (value: r.id, label: r.name)],
+                currentValue: _manager ?? '');
             if (v != null) setState(() => _manager = v);
           },
         ),
@@ -365,7 +443,9 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
               name: r.name.split(' ').first,
               color: MockUsers.memberColors[r.id] ?? AppColors.navy,
               selected: _assignees.contains(r.id),
-              onTap: () => setState(() => _assignees.contains(r.id) ? _assignees.remove(r.id) : _assignees.add(r.id)),
+              onTap: () => setState(() => _assignees.contains(r.id)
+                  ? _assignees.remove(r.id)
+                  : _assignees.add(r.id)),
             ),
         ]),
         SizedBox(height: 14.h),
@@ -374,23 +454,46 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           value: _team,
           placeholder: 'Select team…',
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Assigned team', options: [(value: '', label: 'Select team…'), for (final t in teams) (value: t, label: t)], currentValue: _team);
+            final v = await showOpsOptionPicker(
+                context: context,
+                title: 'Assigned team',
+                options: [
+                  (value: '', label: 'Select team…'),
+                  for (final t in teams) (value: t, label: t)
+                ],
+                currentValue: _team);
             if (v != null) setState(() => _team = v);
           },
         ),
         SizedBox(height: 14.h),
-        AppTextField(label: 'Description', controller: _desc, hint: 'Scope, goals, notes…', multiline: true),
+        AppTextField(
+            label: 'Description',
+            controller: _desc,
+            hint: 'Scope, goals, notes…',
+            multiline: true),
         SizedBox(height: 6.h),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => setState(() => _advanced = !_advanced),
           child: Container(
             padding: EdgeInsets.symmetric(vertical: 13.h),
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+            decoration: const BoxDecoration(
+                border:
+                    Border(top: BorderSide(color: AppColors.borderCardSoft))),
             child: Row(
               children: [
-                Expanded(child: Text('Advanced', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary))),
-                Icon(_advanced ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 13.sp, color: AppColors.textMuted2),
+                Expanded(
+                    child: Text('Advanced',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary))),
+                Icon(
+                    _advanced
+                        ? PhosphorIconsBold.caretUp
+                        : PhosphorIconsBold.caretDown,
+                    size: 13.sp,
+                    color: AppColors.textMuted2),
               ],
             ),
           ),
@@ -404,20 +507,31 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
           Wrap(spacing: 8.w, runSpacing: 8.h, children: [
             if (statusNames.isEmpty)
               for (final e in StatusMeta$.project.entries)
-                OpsFormChip(label: e.value.label, selected: _statusValue.toLowerCase() == e.value.label.toLowerCase(), onTap: () => setState(() => _status = e.value.label))
+                OpsFormChip(
+                    label: e.value.label,
+                    selected: _statusValue.toLowerCase() ==
+                        e.value.label.toLowerCase(),
+                    onTap: () => setState(() => _status = e.value.label))
             else
               for (final n in statusNames)
-                OpsFormChip(label: n, selected: _statusValue == n, onTap: () => setState(() => _status = n)),
+                OpsFormChip(
+                    label: n,
+                    selected: _statusValue == n,
+                    onTap: () => setState(() => _status = n)),
           ]),
           SizedBox(height: 14.h),
           OpsPickerField(
             label: 'Visibility',
             value: _visibilityValue.isEmpty ? _visDefault : _visibilityValue,
             onTap: () async {
-              final v = await showOpsOptionPicker(context: context, title: 'Visibility', options: [
-                if (!pmoDefaultKnown) (value: '', label: _visDefault),
-                for (final o in _vis) (value: o, label: o),
-              ], currentValue: _visibilityValue);
+              final v = await showOpsOptionPicker(
+                  context: context,
+                  title: 'Visibility',
+                  options: [
+                    if (!pmoDefaultKnown) (value: '', label: _visDefault),
+                    for (final o in _vis) (value: o, label: o),
+                  ],
+                  currentValue: _visibilityValue);
               if (v != null) setState(() => _visibility = v);
             },
           ),
@@ -426,27 +540,41 @@ class _CreateProjectScreenState extends ConsumerState<CreateProjectScreen> {
             label: 'Progress method',
             value: _method,
             onTap: () async {
-              final v = await showOpsOptionPicker(context: context, title: 'Progress method', options: [for (final o in _methods) (value: o, label: o)], currentValue: _method);
+              final v = await showOpsOptionPicker(
+                  context: context,
+                  title: 'Progress method',
+                  options: [for (final o in _methods) (value: o, label: o)],
+                  currentValue: _method);
               if (v != null) setState(() => _method = v);
             },
           ),
           SizedBox(height: 14.h),
-          AppTextField(label: 'Estimated cost', controller: _cost, hint: 'e.g. 18L, 20K or 2500000'),
+          AppTextField(
+              label: 'Estimated cost',
+              controller: _cost,
+              hint: 'e.g. 18L, 20K or 2500000'),
         ],
       ],
     );
   }
 
-  Widget _label(String t) => Text(t, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
+  Widget _label(String t) => Text(t,
+      style: AppText.custom(
+          size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
 
-  Widget _dateField(String label, DateTime? value, ValueChanged<DateTime> onPick) {
+  Widget _dateField(
+      String label, DateTime? value, ValueChanged<DateTime> onPick) {
     return OpsPickerField(
       label: label,
       value: value == null ? '' : opsFmtDate(value),
       placeholder: 'Pick a date',
       caret: PhosphorIconsRegular.calendarBlank,
       onTap: () async {
-        final d = await showDatePicker(context: context, initialDate: value ?? kFilterToday, firstDate: DateTime(2024), lastDate: DateTime(2030));
+        final d = await showDatePicker(
+            context: context,
+            initialDate: value ?? kFilterToday,
+            firstDate: DateTime(2024),
+            lastDate: DateTime(2030));
         if (d != null) onPick(d);
       },
     );

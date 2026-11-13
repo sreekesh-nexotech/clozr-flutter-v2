@@ -54,7 +54,9 @@ void main() {
     });
 
     test('a partial payload keeps what it did send', () {
-      final partial = HelpKpis.fromJson({'open_tickets': {'count': 1}})!;
+      final partial = HelpKpis.fromJson({
+        'open_tickets': {'count': 1}
+      })!;
 
       expect(partial.openTickets!.count, 1);
       expect(partial.avgResolution, isNull);

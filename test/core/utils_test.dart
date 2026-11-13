@@ -36,7 +36,7 @@ void main() {
           '5h ago');
       expect(relativeTime(DateTime(2026, 7, 8, 5, 0), now: now), 'Yesterday');
       expect(relativeTime(DateTime(2026, 7, 5, 9, 0), now: now), '4d ago');
-      expect(relativeTime(DateTime(2026, 6, 1), now: now), '1 Jun');
+      expect(relativeTime(DateTime(2026, 6, 1), now: now), '01/06/2026');
       expect(relativeTime(null), '');
     });
 
@@ -50,8 +50,10 @@ void main() {
     test('a server clock ahead of the device clamps to "Just now"', () {
       final now = DateTime(2026, 7, 9, 9, 41);
       // Future timestamps (clock skew) must never render "-1d ago".
-      expect(relativeTime(now.add(const Duration(hours: 3)), now: now), 'Just now');
-      expect(relativeTime(now.add(const Duration(days: 2)), now: now), 'Just now');
+      expect(relativeTime(now.add(const Duration(hours: 3)), now: now),
+          'Just now');
+      expect(
+          relativeTime(now.add(const Duration(days: 2)), now: now), 'Just now');
     });
   });
 
@@ -77,8 +79,10 @@ void main() {
       // ...and the name alone is enough when the catalog is unavailable.
       expect(leadStatusKey(name: 'Disqualified'), 'archived');
       // in_progress must NOT override a specific stage name.
-      expect(leadStatusKey(name: 'Negotiation', type: 'in_progress'), 'negotiation');
-      expect(leadStatusKey(name: 'Qualified', type: 'in_progress'), 'qualified');
+      expect(leadStatusKey(name: 'Negotiation', type: 'in_progress'),
+          'negotiation');
+      expect(
+          leadStatusKey(name: 'Qualified', type: 'in_progress'), 'qualified');
     });
 
     test('maps the default org lead pipeline end to end', () {

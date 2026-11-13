@@ -49,13 +49,18 @@ class ClozrCard extends StatelessWidget {
       child: child,
     );
     if (onTap == null) return card;
-    return GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: card);
+    return GestureDetector(
+        behavior: HitTestBehavior.opaque, onTap: onTap, child: card);
   }
 }
 
 /// A thin 1px divider matching the prototype's `#EEF0F3` hairlines.
 class ClozrDivider extends StatelessWidget {
-  const ClozrDivider({super.key, this.height = 1, this.color = AppColors.borderCardSoft, this.margin});
+  const ClozrDivider(
+      {super.key,
+      this.height = 1,
+      this.color = AppColors.borderCardSoft,
+      this.margin});
   final double height;
   final Color color;
   final EdgeInsetsGeometry? margin;

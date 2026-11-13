@@ -4,6 +4,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/utils/inr_format.dart';
+import '../../../../core/utils/relative_time.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../application/providers/crm_catalog_providers.dart';
@@ -42,8 +44,26 @@ class QuoteCard extends ConsumerWidget {
     // pill agrees with the tab the row sits under.
     final meta = quoteStatusMeta(quote, ref.watch(quoteStatusOptionsProvider));
     final lookup = ref.watch(crmPartyLookupProvider);
-    final itemsLabel = '${quote.items.length} ${quote.items.length == 1 ? 'item' : 'items'}';
-    final validLabel = quote.valid == '—' ? 'Draft — not issued' : 'Valid till ${quote.valid}';
+    // A list row carries no line items, so a count would read "0 items" for every
+    // quote; the count only shows where the lines are actually known.
+    final itemsLabel = quote.items.isEmpty
+        ? ''
+        : ' · ${quote.items.length} ${quote.items.length == 1 ? 'item' : 'items'}';
+    // The webapp's SUB-TOTAL and GRAND TOTAL (INCL. GST) columns: full rupee
+    // figures, "—" when the row has none (never a made-up ₹0).
+    final subTotal = quote.subTotalExact != null
+        ? formatInrFull(quote.subTotalExact)
+        : quote.amount;
+    final grandTotal = quote.grandTotalExact != null
+        ? formatInrFull(quote.grandTotalExact)
+        : null;
+    // The ACTIVITY column: "Updated <time ago> · Created <date>".
+    final activity = [
+      if (quote.updatedAt != null) 'Updated ${relativeTime(quote.updatedAt)}',
+      if (quote.createdAt != null) 'Created ${absoluteDate(quote.createdAt)}',
+    ].join(' · ');
+    final validLabel =
+        quote.valid == '—' ? 'Draft — not issued' : 'Valid till ${quote.valid}';
 
     // Column names per `docs-backend/quotation-schema-and-list-view-api.md` §1.
     // `line_items` is a detail column rather than a list one — the doc's own Gaps
@@ -53,8 +73,13 @@ class QuoteCard extends ConsumerWidget {
     // party; `customer_name` / `lead_name` are kept for layouts that flatten
     // them. Without the real two, an org that shows the party but no title
     // would have had its headline gated off.
-    final showWho = schema.showsAny(
-        const ['quotation_title', 'customer_name', 'lead_name', 'customer', 'lead']);
+    final showWho = schema.showsAny(const [
+      'quotation_title',
+      'customer_name',
+      'lead_name',
+      'customer',
+      'lead'
+    ]);
     final showStatus = schema.shows('status');
     final showAmount = schema.showsAny(const ['total_amount', 'currency']);
     final showValid = schema.shows('valid_until');
@@ -83,12 +108,33 @@ class QuoteCard extends ConsumerWidget {
                       Text(quoteHeadline(quote, lookup),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                          style: AppText.custom(
+                              size: 14.5,
+                              weight: FontWeight.w700,
+                              color: AppColors.textPrimary)),
                     if (showWho) SizedBox(height: 3.h),
-                    Text('#${quote.id} · $itemsLabel',
+                    if (quote.optionChip.isNotEmpty) ...[
+                      Container(
+                        margin: EdgeInsets.only(bottom: 3.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 7.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                            color: AppColors.bgChipGrey,
+                            borderRadius: BorderRadius.circular(6.r)),
+                        child: Text(quote.optionChip,
+                            style: AppText.custom(
+                                size: 11,
+                                weight: FontWeight.w700,
+                                color: AppColors.textSecondary)),
+                      ),
+                    ],
+                    Text('#${quote.id}$itemsLabel',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -100,7 +146,17 @@ class QuoteCard extends ConsumerWidget {
                     if (showStatus) StatusPill.meta(meta),
                     if (showAmount) ...[
                       SizedBox(height: 5.h),
-                      Text(quote.amount, style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                      Text(subTotal,
+                          style: AppText.custom(
+                              size: 15,
+                              weight: FontWeight.w800,
+                              color: AppColors.textPrimary)),
+                      if (grandTotal != null)
+                        Text('$grandTotal incl. GST',
+                            style: AppText.custom(
+                                size: 11,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted)),
                     ],
                   ],
                 ),
@@ -113,13 +169,42 @@ class QuoteCard extends ConsumerWidget {
               children: [
                 Expanded(
                   child: showValid
-                      ? Text(validLabel, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted))
+                      ? Text(validLabel,
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted))
                       : const SizedBox.shrink(),
                 ),
                 if (showPayType)
-                  Text(quote.payType, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                  Text(quote.payType,
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w600,
+                          color: AppColors.textLabelAlt)),
               ],
             ),
+            if (activity.isNotEmpty) ...[
+              SizedBox(height: 4.h),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(activity,
+                    style: AppText.custom(
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
+              ),
+            ],
+          ],
+          // The org's mobile layout can hide the whole validity / payment footer;
+          // the ACTIVITY line is not one of its columns, so it still shows.
+          if (!showFooter && activity.isNotEmpty) ...[
+            const ClozrDivider(margin: EdgeInsets.only(top: 11, bottom: 8)),
+            Text(activity,
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
           ],
         ],
       ),

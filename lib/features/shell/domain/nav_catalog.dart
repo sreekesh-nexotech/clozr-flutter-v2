@@ -32,6 +32,11 @@ class NavEntry {
   /// fallback keeps to modules, and an accounting-only role on a plan without
   /// the feature lands on the Accounting home, which says so in words.
   final String? planFeature;
+
+  /// Whether [landingPathFor] may pick this entry as a role's first screen.
+  /// Off for an entry every user sees (Training's "My Trainings"), which would
+  /// otherwise outrank the sections a role was actually given.
+  final bool landing;
   const NavEntry({
     required this.key,
     required this.label,
@@ -40,13 +45,15 @@ class NavEntry {
     this.children = const [],
     this.modules = const [],
     this.planFeature,
+    this.landing = true,
   });
 
   bool get isGroup => children.isNotEmpty;
 
   /// Where tapping this entry actually goes — its own path, or its first
   /// child's when it is a path-less group (People, Training).
-  String? get landingPath => path ?? (children.isNotEmpty ? children.first.path : null);
+  String? get landingPath =>
+      path ?? (children.isNotEmpty ? children.first.path : null);
 }
 
 /// The app's top-level sections, in the order the drawer renders them. The
@@ -64,6 +71,9 @@ const List<String> dashboardModuleKeys = [
   'dashboard',
 ];
 
+/// The Approvals entry's key — the drawer puts the pending count on it.
+const String approvalsNavKey = 'approvals';
+
 const List<NavEntry> navCatalog = [
   NavEntry(
       key: 'dashboard',
@@ -71,6 +81,17 @@ const List<NavEntry> navCatalog = [
       icon: PhosphorIconsRegular.layout,
       path: Routes.dashboard,
       modules: dashboardModuleKeys),
+  // Unified Approvals — for everyone signed in, as on the webapp
+  // (`requires: 'signedIn'`): anyone may have requests of their own and the
+  // server scopes every row, so the entry is never module-gated. Never a
+  // landing screen — it would otherwise outrank the sections a role was
+  // actually given.
+  NavEntry(
+      key: approvalsNavKey,
+      label: 'Approvals',
+      icon: PhosphorIconsRegular.sealCheck,
+      path: Routes.approvals,
+      landing: false),
   NavEntry(
       key: 'crm',
       label: 'CRM',
@@ -109,15 +130,21 @@ const List<NavEntry> navCatalog = [
       icon: PhosphorIconsRegular.trophy,
       path: Routes.rewards,
       modules: ['milestone']),
+  // Webapp Training group: gated on the `lms` plan feature only — every user
+  // on the plan gets "My Trainings" (their own enrolments); the three admin
+  // surfaces (`staffHidden`) need the `course` module.
   NavEntry(
       key: 'training',
       label: 'Training',
       icon: PhosphorIconsRegular.graduationCap,
-      modules: ['course', 'lms_module', 'quiz', 'course_enrollment'],
+      planFeature: 'lms',
+      landing: false,
       children: [
-        NavGroupChild('Overview', Routes.lmsOverview, modules: ['course']),
-        NavGroupChild('Learners', Routes.lmsLearners, modules: ['course_enrollment']),
-        NavGroupChild('My courses', Routes.lmsMy, modules: ['course_enrollment']),
+        NavGroupChild('Training Dashboard', Routes.lmsOverview,
+            modules: ['course']),
+        NavGroupChild('My Trainings', Routes.lmsMy),
+        NavGroupChild('Learners', Routes.lmsLearners, modules: ['course']),
+        NavGroupChild('Course builder', Routes.lmsCourses, modules: ['course']),
       ]),
   NavEntry(
       key: 'products',
@@ -129,7 +156,11 @@ const List<NavEntry> navCatalog = [
       key: 'users',
       label: 'People',
       icon: PhosphorIconsRegular.users,
-      modules: ['user_management', 'team', 'role'],
+      modules: [
+        'user_management',
+        'team',
+        'role'
+      ],
       children: [
         NavGroupChild('Members', Routes.members, modules: ['user_management']),
         NavGroupChild('Teams', Routes.teams, modules: ['team']),
@@ -171,9 +202,11 @@ const List<NavEntry> navCatalog = [
         'acc_report',
       ],
       children: [
-        NavGroupChild('Invoices', Routes.accInvoices, modules: ['acc_document']),
+        NavGroupChild('Invoices', Routes.accInvoices,
+            modules: ['acc_document']),
         NavGroupChild('Money', Routes.accMoney, modules: ['acc_settlement']),
-        NavGroupChild('Purchases', Routes.accPurchases, modules: ['acc_purchase']),
+        NavGroupChild('Purchases', Routes.accPurchases,
+            modules: ['acc_purchase']),
         NavGroupChild('Vendors', Routes.accVendors, modules: ['acc_purchase']),
         NavGroupChild('Reports', Routes.accReports, modules: ['acc_report']),
         NavGroupChild('Periods', Routes.accPeriods, modules: ['acc_period']),
@@ -213,7 +246,7 @@ List<String> visibleDashboardTabs(ModuleAccess? access) => [
 String landingPathFor(ModuleAccess? access) {
   if (access == null) return Routes.dashboard;
   for (final e in navCatalog) {
-    if (access.canAny(e.modules)) {
+    if (e.landing && access.canAny(e.modules)) {
       final path = e.landingPath;
       if (path != null) return path;
     }

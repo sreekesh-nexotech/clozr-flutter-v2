@@ -32,7 +32,11 @@ class DashEmployeeRow extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 11.h),
       child: Row(
         children: [
-          InitialsAvatar(initials: user.initials, size: 34, background: AppColors.navy, fontSize: 12),
+          InitialsAvatar(
+              initials: user.initials,
+              size: 34,
+              background: AppColors.navy,
+              fontSize: 12),
           SizedBox(width: 11.w),
           Expanded(
             child: Column(
@@ -41,12 +45,18 @@ class DashEmployeeRow extends StatelessWidget {
                 Text(user.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 1.h),
                 Text(sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ],
             ),
           ),
@@ -74,7 +84,10 @@ class DashStatChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(7.r),
       ),
       child: Text(label,
-          style: AppText.custom(size: 11, weight: FontWeight.w800, color: bad ? DashColors.red : DashColors.green)),
+          style: AppText.custom(
+              size: 11,
+              weight: FontWeight.w800,
+              color: bad ? DashColors.red : DashColors.green)),
     );
   }
 }
@@ -82,7 +95,8 @@ class DashStatChip extends StatelessWidget {
 /// A trailing two-line value (bold primary + grey caption), used by the CRM
 /// employee row (closed value + last-activity time).
 class DashTrailingValue extends StatelessWidget {
-  const DashTrailingValue({super.key, required this.primary, required this.caption});
+  const DashTrailingValue(
+      {super.key, required this.primary, required this.caption});
   final String primary;
   final String caption;
 
@@ -91,9 +105,17 @@ class DashTrailingValue extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(primary, style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+        Text(primary,
+            style: AppText.custom(
+                size: 13.5,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
         SizedBox(height: 3.h),
-        Text(caption, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+        Text(caption,
+            style: AppText.custom(
+                size: 11,
+                weight: FontWeight.w500,
+                color: AppColors.textPlaceholder)),
       ],
     );
   }

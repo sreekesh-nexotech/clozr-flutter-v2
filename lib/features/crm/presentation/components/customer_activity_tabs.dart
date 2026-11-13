@@ -9,6 +9,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/utils/upload_rules.dart';
+import '../../../../core/widgets/file_name_dialog.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/network/app_error.dart';
@@ -28,6 +30,7 @@ import '../../application/customer_activity_view.dart';
 import '../../application/providers/attachments_providers.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/crm_tasks_providers.dart';
+import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/customer_activity_providers.dart';
 import '../../application/providers/customer_activity_tabs_providers.dart';
 import '../../application/providers/followups_providers.dart';
@@ -79,14 +82,22 @@ class CustomerActivityTabs extends ConsumerStatefulWidget {
   final Future<void> Function()? onRecordPayment;
 
   @override
-  ConsumerState<CustomerActivityTabs> createState() => _CustomerActivityTabsState();
+  ConsumerState<CustomerActivityTabs> createState() =>
+      _CustomerActivityTabsState();
 }
 
 class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
   int _tab = 0;
   bool _uploading = false;
 
-  static const _baseTabs = ['Tasks', 'Call log', 'Follow-ups', 'Payments', 'Opportunities', 'Files'];
+  static const _baseTabs = [
+    'Tasks',
+    'Call log',
+    'Follow-ups',
+    'Payments',
+    'Opportunities',
+    'Files'
+  ];
 
   Customer get _cust => widget.customer;
 
@@ -96,11 +107,23 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
 
   /// Lead id → reference ("LD-0021"), for "From lead …" tags.
   Map<String, String> get _leadRefs => {
-        for (final l in ref.watch(customerLinkedLeadsProvider(_cust.id)).valueOrNull ?? const <CustomerLinkedLead>[])
+        for (final l
+            in ref.watch(customerLinkedLeadsProvider(_cust.id)).valueOrNull ??
+                const <CustomerLinkedLead>[])
           l.id: l.reference.isNotEmpty ? l.reference : l.name,
       };
 
   // ───────────────────────────── CTA ─────────────────────────────
+
+  /// The phone as the record has it, else the list entity's.
+  String _livePhone() {
+    final row = ref.read(customerRowProvider(_cust.id)).valueOrNull;
+    for (final k in ['phone', 'mobile_no', 'whatsapp_no']) {
+      final v = row?[k];
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    }
+    return _cust.phone;
+  }
 
   Future<void> _cta() async {
     final toast = ref.read(toastProvider.notifier);
@@ -120,8 +143,13 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
         if (mounted) ref.invalidate(customerTasksProvider(_cust.id));
       case 1:
         final saved = await showAddCustomerCallLogSheet(context,
-            customerId: _cust.id, customerName: _cust.name, customerPhone: _cust.phone);
-        if (saved && mounted) ref.invalidate(customerCallItemsProvider(_cust.id));
+            customerId: _cust.id,
+            customerName: _cust.name,
+            // The record's number — an inline phone edit lands on the row,
+            // not on the list entity this widget was built from.
+            customerPhone: _livePhone());
+        if (saved && mounted)
+          ref.invalidate(customerCallItemsProvider(_cust.id));
       case 2:
         await showAddFollowupSheet(context, ref, customer: link);
         if (mounted) {
@@ -155,7 +183,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
     final toast = ref.read(toastProvider.notifier);
     FilePickerResult? picked;
     try {
-      picked = await FilePicker.platform.pickFiles(allowMultiple: true, withData: false);
+      picked = await FilePicker.platform
+          .pickFiles(allowMultiple: true, withData: false);
     } on Object catch (e) {
       if (mounted) toast.showError('Could not open the file picker: $e');
       return;
@@ -166,6 +195,18 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
         if (f.path != null) (path: f.path!, name: f.name),
     ];
     if (files.isEmpty) return;
+
+    // One file: offer its name (the extension stays), as the lead, follow-up
+    // and task uploads do (webapp upload dialog).
+    if (files.length == 1) {
+      final typed = await showFileNameDialog(context, files.first.name);
+      if (typed == null || !mounted) return;
+      files[0] = (
+        path: files.first.path,
+        name: storedFileName(typed, files.first.name)
+      );
+    }
+
     if (!ApiConfig.apiEnabled) {
       toast.show('Files upload once the app is connected to the API.');
       return;
@@ -176,7 +217,11 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
     String? failure;
     for (final f in files) {
       try {
-        final saved = await repo.uploadFile(relatedTo: 'customer', relatedToId: _cust.id, path: f.path, name: f.name);
+        final saved = await repo.uploadFile(
+            relatedTo: 'customer',
+            relatedToId: _cust.id,
+            path: f.path,
+            name: f.name);
         if (saved != null) stored++;
       } on AppError catch (e) {
         ref.read(apiServiceProvider).handled(e);
@@ -207,7 +252,9 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       'Record payment',
       'New lead',
       _uploading ? 'Uploading…' : 'Upload file',
-      ref.watch(accPermProvider('acc_settlement')).create ? 'Record receipt' : 'New invoice',
+      ref.watch(accPermProvider('acc_settlement')).create
+          ? 'Record receipt'
+          : 'New invoice',
     ];
     final showCta = !(_tab == 4 && widget.onUpsell == null);
     return ClozrCard(
@@ -219,19 +266,28 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
             children: [
               Expanded(
                   child: Text('Customer activity',
-                      style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary))),
               if (showCta)
                 GestureDetector(
                   onTap: _cta,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
                     decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(9.r), border: Border.all(color: const Color(0xFFE6E7EA))),
+                        borderRadius: BorderRadius.circular(9.r),
+                        border: Border.all(color: const Color(0xFFE6E7EA))),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(_tab == 5 ? PhosphorIconsRegular.uploadSimple : PhosphorIconsBold.plus,
-                            size: 13.sp, color: AppColors.textSecondary),
+                        Icon(
+                            _tab == 5
+                                ? PhosphorIconsRegular.uploadSimple
+                                : PhosphorIconsBold.plus,
+                            size: 13.sp,
+                            color: AppColors.textSecondary),
                         SizedBox(width: 6.w),
                         Text(ctaLabels[_tab], style: AppText.bodyStrong()),
                       ],
@@ -241,7 +297,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
             ],
           ),
           SizedBox(height: 14.h),
-          DetailUnderlineTabs(labels: labels, index: _tab, onChanged: (i) => setState(() => _tab = i)),
+          DetailUnderlineTabs(
+              labels: labels,
+              index: _tab,
+              onChanged: (i) => setState(() => _tab = i)),
           SizedBox(height: 6.h),
           switch (_tab) {
             0 => _tasksTab(),
@@ -265,7 +324,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
     required VoidCallback onRetry,
   }) {
     return async.when(
-      loading: () => ListSkeleton(itemCount: 3, itemHeight: 54.h, padding: EdgeInsets.symmetric(vertical: 14.h)),
+      loading: () => ListSkeleton(
+          itemCount: 3,
+          itemHeight: 54.h,
+          padding: EdgeInsets.symmetric(vertical: 14.h)),
       error: (e, _) => ErrorState.forError(crmAppError(e), onRetry: onRetry),
       data: (items) => items.isEmpty ? empty : data(items),
     );
@@ -274,10 +336,14 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
   Widget _miniPill(StatusMeta meta, {bool strike = false}) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 3.h),
-      decoration: BoxDecoration(color: meta.color.withOpacity(0.09), borderRadius: BorderRadius.circular(7.r)),
+      decoration: BoxDecoration(
+          color: meta.color.withOpacity(0.09),
+          borderRadius: BorderRadius.circular(7.r)),
       child: Text(meta.label,
-          style: AppText.custom(size: 11, weight: FontWeight.w700, color: meta.color)
-              .copyWith(decoration: strike ? TextDecoration.lineThrough : null)),
+          style: AppText.custom(
+                  size: 11, weight: FontWeight.w700, color: meta.color)
+              .copyWith(
+                  decoration: strike ? TextDecoration.lineThrough : null)),
     );
   }
 
@@ -285,31 +351,42 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
   Widget _historyChip(String text) => Container(
         margin: EdgeInsets.only(top: 5.h),
         padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-        decoration: BoxDecoration(color: AppColors.navy.withOpacity(0.08), borderRadius: BorderRadius.circular(6.r)),
-        child: Text(text, style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.navy)),
+        decoration: BoxDecoration(
+            color: AppColors.navy.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(6.r)),
+        child: Text(text,
+            style: AppText.custom(
+                size: 10.5, weight: FontWeight.w700, color: AppColors.navy)),
       );
 
   String? _historyOf(Map<String, dynamic> raw) {
     final p = relatedParentOf(raw);
     return leadHistoryTag(
-        parentModel: p.model, parentId: p.id, customerId: _cust.id, reference: p.reference, leadRefs: _leadRefs);
+        parentModel: p.model,
+        parentId: p.id,
+        customerId: _cust.id,
+        reference: p.reference,
+        leadRefs: _leadRefs);
   }
 
   // ───────────────────────────── Tasks ─────────────────────────────
 
-  String _taskStatus(CrmTask t) => ref.watch(crmTaskStatusOverrideProvider)[t.id] ?? t.status;
+  String _taskStatus(CrmTask t) =>
+      ref.watch(crmTaskStatusOverrideProvider)[t.id] ?? t.status;
 
   StatusMeta _taskMeta(CrmTask t) {
-    final statuses = ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [];
+    final statuses =
+        ref.watch(taskStatusCatalogProvider).valueOrNull ?? const [];
     final key = _taskStatus(t);
     if (key == t.status) return crmTaskStatusMeta(t, statuses);
     for (final s in statuses) {
-      if (crmTaskStatusKey(name: s.name, type: s.statusType) == key) return StatusMeta(s.name, crmTaskStatusColor(s));
+      if (crmTaskStatusKey(name: s.name, type: s.statusType) == key)
+        return StatusMeta(s.name, crmTaskStatusColor(s));
     }
     return StatusMeta$.task[key] ?? StatusMeta$.task['todo']!;
   }
 
-  static final _dueFormat = DateFormat('dd MMM yyyy');
+  static final _dueFormat = DateFormat('dd/MM/yyyy');
 
   DateTime? _dueOf(String due) {
     final s = due.trim();
@@ -333,10 +410,15 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
   Future<void> _toggleTask(CrmTask t) async {
     final next = _taskStatus(t) == 'done' ? 'todo' : 'done';
     final prev = ref.read(crmTaskStatusOverrideProvider);
-    ref.read(crmTaskStatusOverrideProvider.notifier).state = {...prev, t.id: next};
+    ref.read(crmTaskStatusOverrideProvider.notifier).state = {
+      ...prev,
+      t.id: next
+    };
     if (ApiConfig.apiEnabled) {
       try {
-        await ref.read(crmTasksRepositoryProvider).setTaskStatusByKey(t.id, next);
+        await ref
+            .read(crmTasksRepositoryProvider)
+            .setTaskStatusByKey(t.id, next);
       } on AppError catch (e) {
         ref.read(apiServiceProvider).handled(e);
         final rolled = {...ref.read(crmTaskStatusOverrideProvider)};
@@ -346,7 +428,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
           rolled.remove(t.id);
         }
         ref.read(crmTaskStatusOverrideProvider.notifier).state = rolled;
-        if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage.isEmpty ? e.message : e.bareMessage);
+        if (mounted)
+          ref
+              .read(toastProvider.notifier)
+              .showError(e.bareMessage.isEmpty ? e.message : e.bareMessage);
         return;
       }
       if (!mounted) return;
@@ -354,7 +439,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       ref.invalidate(crmTasksProvider);
       ref.invalidate(taskRowProvider(t.id));
     }
-    if (mounted) ref.read(toastProvider.notifier).show(next == 'done' ? 'Task completed' : 'Task reopened');
+    if (mounted)
+      ref
+          .read(toastProvider.notifier)
+          .show(next == 'done' ? 'Task completed' : 'Task reopened');
   }
 
   Widget _tasksTab() {
@@ -372,14 +460,19 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
   Widget _taskRow(CrmTask t) {
     final done = _taskStatus(t) == 'done';
     final due = _dueOf(t.due);
-    final when = done ? 'Completed' : (due == null ? 'No due date' : 'Due ${_dueFormat.format(due)}');
+    final when = done
+        ? 'Completed'
+        : (due == null ? 'No due date' : 'Due ${_dueFormat.format(due)}');
     final who = MockUsers.of(t.assignee).name;
-    final sub = who.isEmpty || who == 'Unknown' ? when : '$when · ${who.split(' ').first}';
+    final sub = who.isEmpty || who == 'Unknown'
+        ? when
+        : '$when · ${who.split(' ').first}';
     final badge = taskDueBadge(due: due, done: done);
     final fromLead = _historyOf(t.raw);
     return Container(
       padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -396,8 +489,12 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                       style: AppText.custom(
                               size: 14,
                               weight: FontWeight.w600,
-                              color: done ? AppColors.textPlaceholder : AppColors.textPrimary)
-                          .copyWith(decoration: done ? TextDecoration.lineThrough : null)),
+                              color: done
+                                  ? AppColors.textPlaceholder
+                                  : AppColors.textPrimary)
+                          .copyWith(
+                              decoration:
+                                  done ? TextDecoration.lineThrough : null)),
                   SizedBox(height: 3.h),
                   Text(sub, style: AppText.caption()),
                   if (fromLead != null) _historyChip(fromLead),
@@ -406,7 +503,9 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
             ),
           ),
           SizedBox(width: 8.w),
-          _miniPill(badge == null ? _taskMeta(t) : StatusMeta(badge, _badgeColors[badge]!)),
+          _miniPill(badge == null
+              ? _taskMeta(t)
+              : StatusMeta(badge, _badgeColors[badge]!)),
         ],
       ),
     );
@@ -421,7 +520,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       empty: const DetailTabEmpty(
           icon: PhosphorIconsRegular.phone,
           title: 'No calls logged yet.',
-          body: 'Calls made to or received from this customer will appear here.'),
+          body:
+              'Calls made to or received from this customer will appear here.'),
       data: (calls) => Column(children: [for (final c in calls) _callRow(c)]),
     );
   }
@@ -430,7 +530,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
     final c = item.log;
     final row = item.row;
     final fromLead = leadHistoryTag(
-        parentModel: row.parentModel, parentId: row.parentId, customerId: _cust.id, leadRefs: _leadRefs);
+        parentModel: row.parentModel,
+        parentId: row.parentId,
+        customerId: _cust.id,
+        leadRefs: _leadRefs);
     final icon = c.isMissed
         ? PhosphorIconsRegular.phoneX
         : row.isOutgoing
@@ -447,7 +550,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
     final meta = row.metaLine();
     final content = Container(
       padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -455,7 +559,9 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
             width: 38.w,
             height: 38.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgChipGrey,
+                borderRadius: BorderRadius.circular(11.r)),
             child: Icon(icon, size: 18.sp, color: tone),
           ),
           SizedBox(width: 12.w),
@@ -468,20 +574,28 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                   runSpacing: 4.h,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(row.direction.isEmpty ? 'Call' : row.direction, style: AppText.bodyStrong()),
+                    Text(row.direction.isEmpty ? 'Call' : row.direction,
+                        style: AppText.bodyStrong()),
                     if (row.medium.isNotEmpty)
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 7.w, vertical: 2.h),
                         decoration: BoxDecoration(
-                            color: exotel ? AppColors.navy.withOpacity(0.08) : AppColors.bgChipGrey,
+                            color: exotel
+                                ? AppColors.navy.withOpacity(0.08)
+                                : AppColors.bgChipGrey,
                             borderRadius: BorderRadius.circular(99.r)),
                         child: Text(row.medium,
                             style: AppText.custom(
                                 size: 10.5,
                                 weight: FontWeight.w700,
-                                color: exotel ? AppColors.navy : AppColors.textMuted)),
+                                color: exotel
+                                    ? AppColors.navy
+                                    : AppColors.textMuted)),
                       ),
-                    if (c.hasRecording) Icon(PhosphorIconsFill.playCircle, size: 16.sp, color: AppColors.blueBright),
+                    if (c.hasRecording)
+                      Icon(PhosphorIconsFill.playCircle,
+                          size: 16.sp, color: AppColors.blueBright),
                   ],
                 ),
                 if (meta.isNotEmpty) ...[
@@ -494,7 +608,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                   Text(c.summary,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)
+                      style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)
                           .copyWith(height: 1.4)),
                 ],
               ],
@@ -504,15 +621,20 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       ),
     );
     final allowActivity = fromLead == null;
-    final hasActions = allowActivity || c.hasRecording || (c.transcript.isNotEmpty && c.summary.isEmpty);
+    final hasActions = allowActivity ||
+        c.hasRecording ||
+        (c.transcript.isNotEmpty && c.summary.isEmpty);
     if (!hasActions) return content;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
-        await showCallLogActions(context, ref, call: c, leadId: _cust.id, allowActivity: allowActivity,
-            onPlay: () async {
+        await showCallLogActions(context, ref,
+            call: c,
+            leadId: _cust.id,
+            allowActivity: allowActivity, onPlay: () async {
           final failure = await openAttachment(c.recordingUrl);
-          if (failure != null && mounted) ref.read(toastProvider.notifier).showError(failure);
+          if (failure != null && mounted)
+            ref.read(toastProvider.notifier).showError(failure);
         });
         if (mounted) ref.invalidate(customerCallItemsProvider(_cust.id));
       },
@@ -528,13 +650,18 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       await ref.read(followupsRepositoryProvider).setFollowupDone(f.id, done);
     } on AppError catch (e) {
       ref.read(apiServiceProvider).handled(e);
-      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage.isEmpty ? e.message : e.bareMessage);
+      if (mounted)
+        ref
+            .read(toastProvider.notifier)
+            .showError(e.bareMessage.isEmpty ? e.message : e.bareMessage);
       return;
     }
     if (!mounted) return;
     ref.invalidate(customerFollowupsProvider(_cust.id));
     refreshFollowups(ref);
-    ref.read(toastProvider.notifier).show(done ? 'Task completed' : 'Task reopened');
+    ref
+        .read(toastProvider.notifier)
+        .show(done ? 'Task completed' : 'Task reopened');
   }
 
   Widget _followupsTab() {
@@ -559,7 +686,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       margin: EdgeInsets.only(bottom: 12.h),
       padding: EdgeInsets.all(14.r),
       decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14.r), border: Border.all(color: AppColors.borderCardSoft)),
+          borderRadius: BorderRadius.circular(14.r),
+          border: Border.all(color: AppColors.borderCardSoft)),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
@@ -568,14 +696,18 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
           children: [
             Padding(
               padding: EdgeInsets.only(top: 10.h, right: 10.w),
-              child: CrmCheckBox(done: f.status == 'done', onTap: () => _toggleFollowup(f)),
+              child: CrmCheckBox(
+                  done: f.status == 'done', onTap: () => _toggleFollowup(f)),
             ),
             Container(
               width: 42.w,
               height: 42.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(12.r)),
-              child: Icon(PhosphorIconsRegular.calendarBlank, size: 19.sp, color: AppColors.navy),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFEEF1F4),
+                  borderRadius: BorderRadius.circular(12.r)),
+              child: Icon(PhosphorIconsRegular.calendarBlank,
+                  size: 19.sp, color: AppColors.navy),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -583,22 +715,31 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(f.title.isEmpty ? '${f.kind} follow-up' : f.title,
-                      style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
-                  Text('${f.kind.trim().isEmpty ? 'Follow-up' : f.kind}${hasDue ? ' · ${f.due}' : ''}',
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                  Text(
+                      '${f.kind.trim().isEmpty ? 'Follow-up' : f.kind}${hasDue ? ' · ${f.due}' : ''}',
+                      style: AppText.custom(
+                          size: 12.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted2)),
                   if (f.description.trim().isNotEmpty) ...[
                     SizedBox(height: 3.h),
                     Text(f.description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.caption(color: AppColors.textPlaceholder)),
+                        style:
+                            AppText.caption(color: AppColors.textPlaceholder)),
                   ],
                   if (fromLead != null) _historyChip(fromLead),
                 ],
               ),
             ),
-            _miniPill(StatusMeta$.followup[f.status] ?? StatusMeta$.followup['due']!),
+            _miniPill(
+                StatusMeta$.followup[f.status] ?? StatusMeta$.followup['due']!),
           ],
         ),
       ),
@@ -632,18 +773,24 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
         children: [
           Container(
             padding: EdgeInsets.all(14.r),
-            decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(14.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgChipGrey,
+                borderRadius: BorderRadius.circular(14.r)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(PhosphorIconsRegular.receipt, size: 16.sp, color: AppColors.navy),
+                    Icon(PhosphorIconsRegular.receipt,
+                        size: 16.sp, color: AppColors.navy),
                     SizedBox(width: 8.w),
                     Expanded(
                       child: Text(paymentPlanTitle(p),
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                          style: AppText.custom(
+                              size: 13.5,
+                              weight: FontWeight.w700,
+                              color: AppColors.textPrimary)),
                     ),
                     SizedBox(width: 8.w),
                     _miniPill(StatusMeta(
@@ -706,7 +853,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       opacity: row.cancelled ? 0.6 : 1,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 2.w),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -715,10 +863,14 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
               height: 34.w,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                  color: row.done ? AppColors.success.withOpacity(0.1) : AppColors.bgChipGrey,
+                  color: row.done
+                      ? AppColors.success.withOpacity(0.1)
+                      : AppColors.bgChipGrey,
                   borderRadius: BorderRadius.circular(10.r)),
               child: Icon(PhosphorIconsRegular.fileText,
-                  size: 16.sp, color: row.done ? AppColors.success : AppColors.textSecondary),
+                  size: 16.sp,
+                  color:
+                      row.done ? AppColors.success : AppColors.textSecondary),
             ),
             SizedBox(width: 10.w),
             Expanded(
@@ -726,7 +878,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(row.title,
-                      style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                   if (meta.isNotEmpty) ...[
                     SizedBox(height: 3.h),
                     Text(meta, style: AppText.caption()),
@@ -741,8 +896,14 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                 _miniPill(StatusMeta(row.statusLabel, color)),
                 SizedBox(height: 5.h),
                 Text(activityMoney(row.amount),
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)
-                        .copyWith(decoration: row.cancelled ? TextDecoration.lineThrough : null)),
+                    style: AppText.custom(
+                            size: 13.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)
+                        .copyWith(
+                            decoration: row.cancelled
+                                ? TextDecoration.lineThrough
+                                : null)),
               ],
             ),
           ],
@@ -761,7 +922,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
           icon: PhosphorIconsRegular.trendUp,
           title: 'No opportunities yet.',
           body: 'Use Upsell (or create a quote) to start one.'),
-      data: (leads) => Column(children: [for (final l in leads) _opportunityRow(l)]),
+      data: (leads) =>
+          Column(children: [for (final l in leads) _opportunityRow(l)]),
     );
   }
 
@@ -778,7 +940,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
       onTap: () => context.push('${Routes.leadDetail}?id=${l.id}'),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 13.h, horizontal: 2.w),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -787,10 +950,16 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
               height: 38.w,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                  color: l.isConverted ? AppColors.success.withOpacity(0.1) : AppColors.bgChipGrey,
+                  color: l.isConverted
+                      ? AppColors.success.withOpacity(0.1)
+                      : AppColors.bgChipGrey,
                   borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(l.isSource ? PhosphorIconsRegular.user : PhosphorIconsRegular.trendUp,
-                  size: 17.sp, color: l.isConverted ? AppColors.success : AppColors.navy),
+              child: Icon(
+                  l.isSource
+                      ? PhosphorIconsRegular.user
+                      : PhosphorIconsRegular.trendUp,
+                  size: 17.sp,
+                  color: l.isConverted ? AppColors.success : AppColors.navy),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -800,7 +969,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                   Text(l.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 5.h),
                   Wrap(
                     spacing: 6.w,
@@ -810,8 +982,11 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                           ? const StatusMeta('ORIGINAL DEAL', AppColors.navy)
                           : const StatusMeta('UPSELL', AppColors.warning)),
                       if (l.statusName.isNotEmpty)
-                        _miniPill(StatusMeta(l.statusName.toUpperCase(), _hex(l.statusColor, AppColors.textMuted))),
-                      if (l.isConverted) _miniPill(const StatusMeta('CONVERTED', AppColors.success)),
+                        _miniPill(StatusMeta(l.statusName.toUpperCase(),
+                            _hex(l.statusColor, AppColors.textMuted))),
+                      if (l.isConverted)
+                        _miniPill(
+                            const StatusMeta('CONVERTED', AppColors.success)),
                     ],
                   ),
                   if (meta.isNotEmpty) ...[
@@ -824,7 +999,10 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
             if (l.value != null) ...[
               SizedBox(width: 8.w),
               Text(activityMoney(l.value),
-                  style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ],
         ),
@@ -848,7 +1026,8 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
             InkWell(
               onTap: () async {
                 final failure = await openAttachment(f.url);
-                if (failure != null && mounted) ref.read(toastProvider.notifier).showError(failure);
+                if (failure != null && mounted)
+                  ref.read(toastProvider.notifier).showError(failure);
               },
               borderRadius: BorderRadius.circular(10.r),
               child: Padding(
@@ -859,9 +1038,11 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                       width: 38.w,
                       height: 38.w,
                       alignment: Alignment.center,
-                      decoration:
-                          BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(11.r)),
-                      child: Icon(PhosphorIconsRegular.paperclip, size: 18.sp, color: AppColors.textSecondary),
+                      decoration: BoxDecoration(
+                          color: AppColors.bgChipGrey,
+                          borderRadius: BorderRadius.circular(11.r)),
+                      child: Icon(PhosphorIconsRegular.paperclip,
+                          size: 18.sp, color: AppColors.textSecondary),
                     ),
                     SizedBox(width: 12.w),
                     Expanded(
@@ -871,15 +1052,21 @@ class _CustomerActivityTabsState extends ConsumerState<CustomerActivityTabs> {
                           Text(f.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                              style: AppText.custom(
+                                  size: 14,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textPrimary)),
                           SizedBox(height: 3.h),
-                          Text([f.ext, if (f.uploadedAt.isNotEmpty) f.uploadedAt].join(' · '),
+                          Text(
+                              [f.ext, if (f.uploadedAt.isNotEmpty) f.uploadedAt]
+                                  .join(' · '),
                               style: AppText.caption()),
                         ],
                       ),
                     ),
                     SizedBox(width: 8.w),
-                    Icon(PhosphorIconsRegular.arrowSquareOut, size: 16.sp, color: AppColors.textPlaceholder),
+                    Icon(PhosphorIconsRegular.arrowSquareOut,
+                        size: 16.sp, color: AppColors.textPlaceholder),
                   ],
                 ),
               ),

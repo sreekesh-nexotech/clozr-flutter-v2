@@ -19,14 +19,16 @@ class LmsFilterChip extends StatelessWidget {
     required String label,
     required bool active,
     required VoidCallback onTap,
-  }) : this._(key: key, label: label, active: active, onTap: onTap, solid: true);
+  }) : this._(
+            key: key, label: label, active: active, onTap: onTap, solid: true);
 
   const LmsFilterChip.subtle({
     Key? key,
     required String label,
     required bool active,
     required VoidCallback onTap,
-  }) : this._(key: key, label: label, active: active, onTap: onTap, solid: false);
+  }) : this._(
+            key: key, label: label, active: active, onTap: onTap, solid: false);
 
   final String label;
   final bool active;

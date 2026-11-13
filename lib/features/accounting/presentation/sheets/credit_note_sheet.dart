@@ -24,8 +24,10 @@ import 'acc_sheet_scaffold.dart';
 /// split is not validated (handover §12.2), and the app cannot know the note's
 /// total before the server computes its tax. The server default — reduce what
 /// the customer owes, hold the rest as a credit — is the safe one.
-Future<AccDocument?> showCreditNoteSheet(BuildContext context, AccDocument invoice) =>
-    showClozrSheet<AccDocument>(context: context, builder: (_) => _CreditNoteSheet(invoice: invoice));
+Future<AccDocument?> showCreditNoteSheet(
+        BuildContext context, AccDocument invoice) =>
+    showClozrSheet<AccDocument>(
+        context: context, builder: (_) => _CreditNoteSheet(invoice: invoice));
 
 class _LineDraft {
   _LineDraft(this.line)
@@ -56,7 +58,9 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
   String _reason = 'RETURN';
   bool _withGst = true;
   DateTime _date = DateTime.now();
-  late final List<_LineDraft> _lines = [for (final l in widget.invoice.lines) _LineDraft(l)];
+  late final List<_LineDraft> _lines = [
+    for (final l in widget.invoice.lines) _LineDraft(l)
+  ];
   bool _busy = false;
   AppError? _error;
 
@@ -77,7 +81,9 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
   Future<void> _submit() async {
     final chosen = _lines.where((l) => l.on).toList();
     if (chosen.isEmpty) {
-      ref.read(toastProvider.notifier).showError('Pick at least one line to credit');
+      ref
+          .read(toastProvider.notifier)
+          .showError('Pick at least one line to credit');
       return;
     }
     setState(() {
@@ -85,7 +91,8 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
       _error = null;
     });
     try {
-      final note = await ref.read(accountingRepositoryProvider).createCreditNote({
+      final note =
+          await ref.read(accountingRepositoryProvider).createCreditNote({
         'references_document': widget.invoice.id,
         'reason': _reason,
         'with_gst': _withGst,
@@ -95,15 +102,20 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
             {
               'original_line_no': chosen[i].line.lineNo,
               'line_no': i + 1,
-              'qty': chosen[i].qty.text.trim().isEmpty ? chosen[i].line.qty : chosen[i].qty.text.trim(),
-              'unit_price': moneyInput(chosen[i].price.text) ?? chosen[i].line.unitPrice,
+              'qty': chosen[i].qty.text.trim().isEmpty
+                  ? chosen[i].line.qty
+                  : chosen[i].qty.text.trim(),
+              'unit_price':
+                  moneyInput(chosen[i].price.text) ?? chosen[i].line.unitPrice,
               'description': chosen[i].line.description,
             },
         ],
       });
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show('Credit note ${note?.number ?? ''} issued');
+      ref
+          .read(toastProvider.notifier)
+          .show('Credit note ${note?.number ?? ''} issued');
       Navigator.of(context).pop(note);
     } on AppError catch (e) {
       if (!mounted) return;
@@ -122,7 +134,8 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
       busyLabel: 'Issuing…',
       busy: _busy,
       error: _error,
-      errorAction: _error?.code == 'CN_CUTOFF_PASSED' ? 'Issue without GST' : null,
+      errorAction:
+          _error?.code == 'CN_CUTOFF_PASSED' ? 'Issue without GST' : null,
       onErrorAction: () => setState(() {
         _withGst = false;
         _error = null;
@@ -133,23 +146,38 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
         AccChoiceChips(
           label: 'Reason',
           required: true,
-          options: const {'RETURN': 'Goods returned', 'VALUE_CORRECTION': 'Value correction'},
+          options: const {
+            'RETURN': 'Goods returned',
+            'VALUE_CORRECTION': 'Value correction'
+          },
           selected: _reason,
           onSelected: (v) => setState(() => _reason = v),
         ),
         AccCheckRow(
           label: 'Reverse GST',
           value: _withGst,
-          hint: 'Untick once the GST cut-off for the original invoice has passed.',
+          hint:
+              'Untick once the GST cut-off for the original invoice has passed.',
           onChanged: (v) => setState(() => _withGst = v),
         ),
-        AccDateBox(label: 'Note date', value: _date, showIstHint: true, onChanged: (d) => setState(() => _date = d ?? _date)),
+        AccDateBox(
+            label: 'Note date',
+            value: _date,
+            showIstHint: true,
+            onChanged: (d) => setState(() => _date = d ?? _date)),
         Text(_reason == 'RETURN' ? 'What came back' : 'What to reduce',
-            style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
+            style: AppText.custom(
+                size: 13,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
         for (final l in _lines) _lineRow(l),
         if (_taxableHint > 0)
-          Text('About ${formatMoneyStr(toMoneyStr(_taxableHint))} before tax — the server works out the exact note.',
-              style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+          Text(
+              'About ${formatMoneyStr(toMoneyStr(_taxableHint))} before tax — the server works out the exact note.',
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPlaceholder)),
         const AccInfoBanner(
           'The note first reduces what the customer still owes; anything beyond that is kept as a customer credit.',
         ),
@@ -163,7 +191,8 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
       decoration: BoxDecoration(
         color: l.on ? AppColors.blueSubtle : AppColors.white,
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: l.on ? const Color(0xFFA6D1FF) : AppColors.borderCardSoft),
+        border: Border.all(
+            color: l.on ? const Color(0xFFA6D1FF) : AppColors.borderCardSoft),
       ),
       child: Column(
         children: [
@@ -172,14 +201,27 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
             onTap: () => setState(() => l.on = !l.on),
             child: Row(
               children: [
-                CrmCheckBox(done: l.on, onTap: () => setState(() => l.on = !l.on), size: 22),
+                CrmCheckBox(
+                    done: l.on,
+                    onTap: () => setState(() => l.on = !l.on),
+                    size: 22),
                 SizedBox(width: 10.w),
                 Expanded(
-                  child: Text(l.line.description.isEmpty ? 'Line ${l.line.lineNo}' : l.line.description,
-                      style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  child: Text(
+                      l.line.description.isEmpty
+                          ? 'Line ${l.line.lineNo}'
+                          : l.line.description,
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ),
-                Text('${_LineDraft._trim(l.line.qty)} × ${formatMoneyStr(l.line.unitPrice)}',
-                    style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
+                Text(
+                    '${_LineDraft._trim(l.line.qty)} × ${formatMoneyStr(l.line.unitPrice)}',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
@@ -191,15 +233,20 @@ class _CreditNoteSheetState extends ConsumerState<_CreditNoteSheet> {
                   child: AccInput(
                     label: _reason == 'RETURN' ? 'Qty returned' : 'Qty',
                     controller: l.qty,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,3}'))],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                          RegExp(r'^\d*\.?\d{0,3}'))
+                    ],
                     onChanged: (_) => setState(() {}),
                   ),
                 ),
                 SizedBox(width: 9.w),
                 Expanded(
                   child: MoneyField(
-                    label: _reason == 'RETURN' ? 'Unit price' : 'Reduce per unit',
+                    label:
+                        _reason == 'RETURN' ? 'Unit price' : 'Reduce per unit',
                     controller: l.price,
                     onChanged: (_) => setState(() {}),
                   ),

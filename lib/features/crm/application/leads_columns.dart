@@ -1,3 +1,4 @@
+import '../../../core/utils/phone_format.dart';
 import '../../../core/utils/relative_time.dart';
 import '../../../data/mock/mock_users.dart';
 import 'record_rows.dart';
@@ -52,7 +53,11 @@ List<({String label, String value, LeadColumn? column})> leadDetailRows(
 ) {
   final out = <({String label, String value, LeadColumn? column})>[];
   for (final column in schema.columns) {
-    final value = leadColumnText(lead, column);
+    var value = leadColumnText(lead, column);
+    // Phone numbers read "+91 98765 00107" (UI/UX audit #40).
+    if (value != null && value.isNotEmpty && isPhoneField(column.name)) {
+      value = PhoneFormat.display(value);
+    }
     out.add((
       label: column.label,
       value: (value == null || value.isEmpty) ? '—' : value,

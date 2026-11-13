@@ -3,25 +3,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/empty_state.dart';
-import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
-import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/providers/lms_providers.dart';
-import '../../domain/entities/course.dart';
-import '../../domain/entities/learner_record.dart';
-import '../../domain/lms_logic.dart';
-import '../components/lms_footer.dart';
+import '../../../../core/widgets/status_pill.dart';
+import '../../../../data/mock/status_meta.dart';
+import '../../application/providers/mandatory_block_provider.dart';
+import '../../application/providers/my_training_providers.dart';
+import '../../domain/entities/my_course.dart';
 import '../components/lms_header.dart';
 import '../components/lms_progress_bar.dart';
+import '../components/lms_video_player.dart';
 import '../lms_nav.dart';
 
-/// Video Lesson — the player card (play/pause, progress, Expand, Play Next),
-/// resources, description and the Mark-as-Completed action → certificate card
-/// when the whole course finishes.
+/// Webapp `LessonPlayerScreen` (`/training/watch/:enrollment`): course
+/// progress, the selected lesson's video, its resources and the "Course
+/// content" rail with sequential locks — all from the learner's own
+/// enrolment, so it works for every learner, admin or not.
 class LmsPlayerScreen extends ConsumerStatefulWidget {
   const LmsPlayerScreen({super.key});
 
@@ -30,305 +32,497 @@ class LmsPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _LmsPlayerScreenState extends ConsumerState<LmsPlayerScreen> {
-  int? _idx;
-  bool _playing = false;
+  String _selectedId = '';
+  bool _blockCleared = false;
 
-  void _toast(String m) => ref.read(toastProvider.notifier).show(m);
+  static String _statusKey(String s) => switch (s) {
+        'in_progress' => 'inprogress',
+        'not_started' => 'notstarted',
+        'completed' => 'completed',
+        'overdue' => 'overdue',
+        _ => 'notstarted',
+      };
 
-  void _togglePlay(String courseId, CourseProgress entry, int idx) {
-    if (!_playing && (idx < entry.mods.length ? entry.mods[idx] : 0) < 35) {
-      ref.read(lmsRecordsControllerProvider.notifier).setModule('me', courseId, idx, 35);
+  static String _fmt(int s) =>
+      '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+
+  /// Webapp: lift the app-wide mandatory block once this course reaches 100%.
+  void _maybeClearBlock(MyCourseDetail course) {
+    if (_blockCleared || course.completion < 100) return;
+    final block = ref.read(mandatoryBlockProvider);
+    final listed = block.courses.any((c) => c.courseId == course.courseId);
+    if (course.isMandatory || listed) {
+      _blockCleared = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(mandatoryBlockProvider.notifier).clearBlock();
+      });
     }
-    setState(() => _playing = !_playing);
-  }
-
-  void _markDone(String courseId, int idx) {
-    ref.read(lmsRecordsControllerProvider.notifier).setModule('me', courseId, idx, 100);
-    setState(() => _playing = false);
-    _toast('Module completed');
-  }
-
-  void _playNext(Course c, CourseProgress entry, int idx) {
-    if (idx >= c.modules.length - 1) {
-      _toast('This is the last module');
-      return;
-    }
-    if (LmsLogic.lockedAt(entry, c, idx + 1)) {
-      _toast('Mark this module as completed first');
-      return;
-    }
-    setState(() {
-      _idx = idx + 1;
-      _playing = false;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final query = GoRouterState.of(context).uri.queryParameters;
-    // Fall back to the learner's first in-progress course when the player is
-    // opened without a lesson context (e.g. a direct deep link).
-    final courseId = (query['id']?.isNotEmpty ?? false) ? query['id']! : 'LC-01';
-    _idx ??= int.tryParse(query['m'] ?? '0') ?? 0;
+    final enrollmentId =
+        GoRouterState.of(context).uri.queryParameters['enrollment'] ?? '';
+    final async = ref.watch(myCourseDetailProvider(enrollmentId));
+    final course = async.valueOrNull;
 
-    final course = ref.watch(lmsCourseByIdProvider(courseId));
-    final record = ref.watch(lmsRecordByIdProvider('me'));
-    final entry = record.entryFor(courseId);
-    final load = lmsCombine([
-      ref.watch(lmsCoursesControllerProvider),
-      ref.watch(lmsRecordsControllerProvider),
-    ]);
+    Widget header(String title, {bool gone = false}) => LmsHeader(
+          onBack: () {
+            // The list still holds the card that led here; drop it.
+            if (gone) ref.read(myTrainingRefreshProvider.notifier).state++;
+            lmsBack(context, fallback: Routes.lmsMy);
+          },
+          title: Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.custom(
+                  size: 20,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.4)),
+        );
 
-    if (course == null || entry == null) {
+    if (course == null) {
+      final e = async.error;
       return Container(
         color: AppColors.bgScreen,
         child: Column(
           children: [
-            LmsHeader(onBack: () => lmsBack(context), title: Text('Lesson', style: AppText.h1())),
+            header('Lesson player', gone: !async.isLoading),
             Expanded(
-              child: load.loading
+              child: async.isLoading
                   ? const DetailSkeleton()
-                  : load.error != null
-                      ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
-                      : const EmptyState(
-                          icon: PhosphorIconsRegular.playCircle,
-                          title: 'Lesson not found',
-                          body: 'This lesson is no longer available, or you are not enrolled in this course.',
-                        ),
+                  : Padding(
+                      padding: EdgeInsets.all(24.r),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            enrollmentId.isEmpty ||
+                                    e == null ||
+                                    (e is AppError &&
+                                        e.type == AppErrorType.notFound)
+                                ? 'Course not found.'
+                                : (e is AppError
+                                    ? e.message
+                                    : 'Course not found.'),
+                            style: AppText.custom(
+                                size: 14,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted),
+                          ),
+                          SizedBox(height: 16.h),
+                          // A removed course is usually reached from a stale card or a
+                          // link, where Back may lead nowhere useful.
+                          GestureDetector(
+                            onTap: () {
+                              ref
+                                  .read(myTrainingRefreshProvider.notifier)
+                                  .state++;
+                              context.go(Routes.lmsMy);
+                            },
+                            child: Container(
+                              height: 42.h,
+                              padding: EdgeInsets.symmetric(horizontal: 16.w),
+                              decoration: BoxDecoration(
+                                color: AppColors.white,
+                                borderRadius: BorderRadius.circular(11.r),
+                                border:
+                                    Border.all(color: AppColors.borderInput),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(PhosphorIconsBold.arrowLeft,
+                                      size: 15.sp,
+                                      color: AppColors.textSecondary),
+                                  SizedBox(width: 8.w),
+                                  Text('Back to My Trainings',
+                                      style: AppText.custom(
+                                          size: 13.5,
+                                          weight: FontWeight.w700,
+                                          color: AppColors.textSecondary)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
             ),
           ],
         ),
       );
     }
 
-    final idx = _idx!.clamp(0, course.modules.length - 1);
-    final m = course.modules[idx];
-    final p = idx < entry.mods.length ? entry.mods[idx] : 0;
-    final moduleDone = p >= 100;
-    final courseDone = LmsLogic.done(entry);
-    final coursePct = LmsLogic.pct(entry);
-    final completedModules = entry.mods.where((x) => x >= 100).length;
-    final hasNext = idx < course.modules.length - 1;
+    _maybeClearBlock(course);
+    final videos = course.videos;
+    final firstOpen = videos.where((v) => v.isUnlocked && !v.isCompleted);
+    final firstUnlocked = videos.where((v) => v.isUnlocked);
+    final defaultId = firstOpen.isNotEmpty
+        ? firstOpen.first.videoResourceId
+        : (firstUnlocked.isNotEmpty
+            ? firstUnlocked.first.videoResourceId
+            : (videos.isEmpty ? '' : videos.first.videoResourceId));
+    final activeId = _selectedId.isNotEmpty ? _selectedId : defaultId;
+    final selected =
+        videos.where((v) => v.videoResourceId == activeId).firstOrNull;
+    final moduleOf = course.modules
+        .where((m) => m.videos.any((v) => v.videoResourceId == activeId))
+        .firstOrNull;
+    final locked = selected != null && !selected.isUnlocked;
+    final total = course.modules.fold<int>(0, (s, m) => s + m.totalVideos);
+    final done = course.modules.fold<int>(0, (s, m) => s + m.completedVideos);
+    final pct = course.completion.round();
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
-          LmsHeader(
-            onBack: () => lmsBack(context),
-            title: Text(course.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-          ),
+          header(course.title),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 40.h),
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Text('$completedModules of ${course.modules.length} modules completed',
-                          style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textMuted)),
-                    ),
-                    if (course.deadline.isNotEmpty)
-                      Text('Deadline: ${course.deadline}',
-                          style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                  ],
-                ),
-                SizedBox(height: 9.h),
-                Row(
-                  children: [
-                    Expanded(child: LmsProgressBar(value: coursePct / 100, color: courseDone ? AppColors.success : AppColors.warning)),
-                    SizedBox(width: 10.w),
-                    Text('$coursePct%', style: AppText.custom(size: 12.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                  ],
-                ),
-                SizedBox(height: 16.h),
-                _playerCard(course, m, idx, p, moduleDone),
-                if (hasNext)
-                  GestureDetector(
-                    onTap: () => _playNext(course, entry, idx),
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(4.w, 13.h, 4.w, 2.h),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                ClozrCard(
+                  radius: 16,
+                  padding: EdgeInsets.all(16.r),
+                  child: Column(
+                    children: [
+                      Row(
                         children: [
-                          Text('Play Next', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textSecondary)),
-                          SizedBox(width: 6.w),
-                          Icon(PhosphorIconsBold.caretRight, size: 14.sp, color: AppColors.textSecondary),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('My progress',
+                                    style: AppText.custom(
+                                        size: 16,
+                                        weight: FontWeight.w800,
+                                        color: AppColors.textPrimary)),
+                                SizedBox(height: 2.h),
+                                Text('$done of $total lessons completed',
+                                    style: AppText.custom(
+                                        size: 12.5,
+                                        weight: FontWeight.w500,
+                                        color: AppColors.textMuted)),
+                              ],
+                            ),
+                          ),
+                          StatusPill.meta(
+                              StatusMeta$.lms[_statusKey(course.status)]!),
                         ],
                       ),
-                    ),
-                  ),
-                if (m.res.isNotEmpty) ...[
-                  SizedBox(height: 14.h),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8.w,
-                    runSpacing: 8.h,
-                    children: [
-                      Text('Resources :', style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                      for (final r in m.res)
-                        GestureDetector(
-                          onTap: () => _toast('Opening $r'),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(PhosphorIconsFill.filePdf, size: 15.sp, color: AppColors.error),
-                              SizedBox(width: 6.w),
-                              Text(r,
-                                  style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.blueBright)
-                                      .copyWith(decoration: TextDecoration.underline)),
-                            ],
-                          ),
-                        ),
+                      SizedBox(height: 13.h),
+                      Row(
+                        children: [
+                          Expanded(
+                              child: LmsProgressBar(
+                                  value: pct / 100,
+                                  color: AppColors.warning,
+                                  height: 8)),
+                          SizedBox(width: 10.w),
+                          Text('$pct%',
+                              style: AppText.custom(
+                                  size: 13,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.textPrimary)),
+                        ],
+                      ),
                     ],
                   ),
+                ),
+                SizedBox(height: 18.h),
+                Text(course.title,
+                    style: AppText.custom(
+                        size: 18,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
+                if (selected != null) ...[
+                  SizedBox(height: 3.h),
+                  Text(
+                      '${moduleOf != null ? '${moduleOf.title} · ' : ''}${selected.title}',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                 ],
-                SizedBox(height: 13.h),
-                Text(course.desc,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.65)),
-                if (courseDone) ...[
-                  SizedBox(height: 18.h),
-                  _certificateCard(),
-                ],
+                SizedBox(height: 12.h),
+                ClozrCard(
+                  radius: 14,
+                  padding: EdgeInsets.zero,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14.r),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _frame(course, selected, locked),
+                        if (selected != null && !locked) _lessonMeta(selected),
+                        if (selected != null && !locked && selected.hasVideo)
+                          _resources(selected, course),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                ClozrCard(
+                    radius: 14,
+                    padding: EdgeInsets.zero,
+                    child: _rail(course, activeId, done, total)),
               ],
             ),
           ),
-          LmsFooter(
-            child: moduleDone
-                ? Container(
-                    height: 50.h,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(14.r)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(PhosphorIconsFill.checkCircle, size: 18.sp, color: AppColors.success),
-                        SizedBox(width: 8.w),
-                        Text('Module completed', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.success)),
-                      ],
-                    ),
-                  )
-                : LmsCtaButton(
-                    label: 'Mark as Completed',
-                    icon: PhosphorIconsBold.check,
-                    onTap: () => _markDone(courseId, idx),
-                  ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _playerCard(Course course, CourseModule m, int idx, int p, bool moduleDone) {
-    final entry = ref.read(lmsRecordByIdProvider('me')).entryFor(course.id)!;
-    return GestureDetector(
-      onTap: () => _togglePlay(course.id, entry, idx),
-      child: Container(
-        height: 210.h,
-        decoration: BoxDecoration(color: course.tint, borderRadius: BorderRadius.circular(16.r)),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
+  Widget _dark(Widget child) => Container(
+        constraints: BoxConstraints(minHeight: 200.h),
+        color: const Color(0xFF0B1020),
+        alignment: Alignment.center,
+        padding: EdgeInsets.all(20.r),
+        child: child,
+      );
+
+  Widget _darkText(String t, {double size = 14, double alpha = 0.82}) => Text(t,
+      textAlign: TextAlign.center,
+      style: AppText.custom(
+          size: size,
+          weight: FontWeight.w600,
+          color: AppColors.white.withOpacity(alpha)));
+
+  Widget _frame(MyCourseDetail course, MyCourseVideo? selected, bool locked) {
+    if (selected == null || locked) {
+      return _dark(Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+              locked
+                  ? PhosphorIconsRegular.lock
+                  : PhosphorIconsRegular.playCircle,
+              size: 44.sp,
+              color: AppColors.white.withOpacity(0.82)),
+          SizedBox(height: 10.h),
+          _darkText(locked ? 'This lesson is locked' : 'No lesson selected',
+              size: 15),
+          if (locked) ...[
+            SizedBox(height: 6.h),
+            _darkText('Complete the previous lessons to unlock this one.',
+                size: 13, alpha: 0.6),
+          ],
+        ],
+      ));
+    }
+    final view = ref.watch(
+        videoViewProvider((selected.videoResourceId, course.enrollmentId)));
+    return view.when(
+      loading: () => _dark(_darkText('Loading video…', alpha: 0.7)),
+      error: (e, _) => _dark(_darkText(
+          e is AppError ? e.message : 'This video could not be loaded.')),
+      data: (v) => v.videoUrl.isEmpty
+          ? _dark(_darkText('This video could not be loaded.'))
+          : LmsVideoPlayer(
+              key: ValueKey(v.videoResourceId),
+              view: v,
+              enrollmentId: course.enrollmentId,
+              onCompleted: () =>
+                  ref.read(myTrainingRefreshProvider.notifier).state++,
+            ),
+    );
+  }
+
+  Widget _lessonMeta(MyCourseVideo v) => Container(
+        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+        decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12.w,
+          runSpacing: 6.h,
           children: [
-            Center(child: Icon(course.icon, size: 56.sp, color: course.accent.withOpacity(0.35))),
-            Center(
-              child: Container(
-                width: 56.w,
-                height: 56.w,
-                alignment: Alignment.center,
+            Text(v.title,
+                style: AppText.custom(
+                    size: 14.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
+            Text(_fmt(v.durationSeconds),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
+            if (v.isCompleted)
+              Container(
+                height: 28.h,
+                padding: EdgeInsets.symmetric(horizontal: 10.w),
                 decoration: BoxDecoration(
-                  color: AppColors.white.withOpacity(0.92),
-                  borderRadius: BorderRadius.circular(18.r),
-                  boxShadow: [
-                    BoxShadow(color: const Color(0xFF101828).withOpacity(0.22), blurRadius: 18, offset: const Offset(0, 6)),
+                    color: AppColors.tintGreen,
+                    borderRadius: BorderRadius.circular(8.r)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsFill.checkCircle,
+                        size: 14.sp, color: AppColors.success),
+                    SizedBox(width: 5.w),
+                    Text('Completed',
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.success)),
                   ],
                 ),
-                child: Icon(_playing ? PhosphorIconsFill.pause : PhosphorIconsFill.play, size: 24.sp, color: AppColors.navy),
               ),
-            ),
-            Positioned(
-              top: 10.h,
-              right: 10.w,
-              child: GestureDetector(
-                onTap: () => _toast('Fullscreen opens in the real app'),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-                  decoration: BoxDecoration(color: AppColors.white.withOpacity(0.85), borderRadius: BorderRadius.circular(9.r)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Expand', style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
-                      SizedBox(width: 6.w),
-                      Icon(PhosphorIconsBold.arrowsOutSimple, size: 12.sp, color: AppColors.textSecondary),
-                    ],
-                  ),
+          ],
+        ),
+      );
+
+  Widget _resources(MyCourseVideo v, MyCourseDetail course) {
+    final res = ref
+            .watch(videoViewProvider((v.videoResourceId, course.enrollmentId)))
+            .valueOrNull
+            ?.resources ??
+        const [];
+    if (res.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Resources',
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w700,
+                  color: AppColors.textMuted)),
+          for (final r in res)
+            GestureDetector(
+              onTap: () => launchUrl(Uri.parse(r.fileUrl),
+                  mode: LaunchMode.externalApplication),
+              child: Padding(
+                padding: EdgeInsets.only(top: 8.h),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIconsRegular.fileText,
+                        size: 16.sp, color: AppColors.navy),
+                    SizedBox(width: 8.w),
+                    Expanded(
+                      child: Text(r.title,
+                          style: AppText.custom(
+                              size: 14,
+                              weight: FontWeight.w600,
+                              color: AppColors.navy)),
+                    ),
+                  ],
                 ),
               ),
             ),
-            Positioned(
-              left: 14.w,
-              right: 14.w,
-              bottom: 34.h,
-              child: LmsProgressBar(
-                value: p / 100,
-                color: moduleDone ? AppColors.success : AppColors.warningDeep,
-                height: 6,
-                track: AppColors.white.withOpacity(0.8),
-              ),
-            ),
-            Positioned(
-              left: 14.w,
-              bottom: 11.h,
-              child: Text('Module ${idx + 1} - ${m.title}',
-                  style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: const Color(0xFF2A2C31))),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _certificateCard() {
-    return ClozrCard(
-      radius: 18,
-      padding: EdgeInsets.symmetric(horizontal: 22.w, vertical: 28.h),
-      child: Column(
-        children: [
-          Container(
-            width: 62.r,
-            height: 62.r,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.tintAmber, borderRadius: BorderRadius.circular(19.r)),
-            child: Icon(PhosphorIconsFill.trophy, size: 30.sp, color: AppColors.warningDeep),
+  /// Webapp `CourseContentRail`.
+  Widget _rail(MyCourseDetail course, String activeId, int done, int total) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+          decoration: const BoxDecoration(
+              border:
+                  Border(bottom: BorderSide(color: AppColors.borderCardSoft))),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text('Course content',
+                    style: AppText.custom(
+                        size: 15.5,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
+              ),
+              Text('$done/$total done',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
+            ],
           ),
-          SizedBox(height: 12.h),
-          Text('Course completed!', style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
-          SizedBox(height: 6.h),
-          Text('All modules are done. Your certificate is ready.',
-              textAlign: TextAlign.center,
-              style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.5)),
-          SizedBox(height: 14.h),
-          GestureDetector(
-            onTap: () => _toast('Certificate downloaded'),
-            child: Container(
-              height: 42.h,
-              padding: EdgeInsets.symmetric(horizontal: 18.w),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+        ),
+        for (final m in course.modules) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 4.h),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(m.title.toUpperCase(),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPlaceholder,
+                          letterSpacing: 0.4)),
+                ),
+                if (m.isLocked)
+                  Icon(PhosphorIconsRegular.lock,
+                      size: 13.sp, color: AppColors.textPlaceholder),
+              ],
+            ),
+          ),
+          for (final v in m.videos) _railRow(v, v.videoResourceId == activeId),
+        ],
+        SizedBox(height: 8.h),
+      ],
+    );
+  }
+
+  Widget _railRow(MyCourseVideo v, bool active) {
+    final locked = !v.isUnlocked;
+    final (icon, color) = v.isCompleted
+        ? (PhosphorIconsFill.checkCircle, AppColors.success)
+        : locked
+            ? (PhosphorIconsRegular.lock, AppColors.textPlaceholder)
+            : active
+                ? (PhosphorIconsFill.play, AppColors.navy)
+                : (PhosphorIconsRegular.circle, AppColors.navy);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap:
+          locked ? null : () => setState(() => _selectedId = v.videoResourceId),
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+        decoration: BoxDecoration(
+          color: active ? AppColors.blueSubtle : Colors.transparent,
+          border:
+              Border.all(color: active ? AppColors.navy : Colors.transparent),
+          borderRadius: BorderRadius.circular(10.r),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 17.sp, color: color),
+            SizedBox(width: 11.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(PhosphorIconsFill.downloadSimple, size: 15.sp, color: AppColors.white),
-                  SizedBox(width: 7.w),
-                  Text('Download certificate', style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.white)),
+                  Text(v.title,
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: locked
+                              ? AppColors.textPlaceholder
+                              : AppColors.textPrimary)),
+                  SizedBox(height: 2.h),
+                  Text(_fmt(v.durationSeconds),
+                      style: AppText.custom(
+                          size: 11,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

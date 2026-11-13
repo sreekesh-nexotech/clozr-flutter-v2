@@ -7,9 +7,10 @@ import 'package:clozrapp/features/crm/domain/entities/product.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-
   group('accounting change', () {
-    test('deprecated_rate is carried verbatim and only when the server sends it', () {
+    test(
+        'deprecated_rate is carried verbatim and only when the server sends it',
+        () {
       // The exact sentence `GET /crm/products/{id}/` returns for a 12% product,
       // captured from the live dev org. The app must not compose its own
       // wording or derive it from the rate - the server owns the list of
@@ -35,7 +36,8 @@ void main() {
       expect(fine.deprecatedRate, isNull);
     });
 
-    test('gstServerComputed distinguishes server figures from local arithmetic', () {
+    test('gstServerComputed distinguishes server figures from local arithmetic',
+        () {
       // Both computed columns present - the live shape on this org.
       final served = productFromApi({
         'product_id': 'p-a',
@@ -61,7 +63,8 @@ void main() {
   });
 
   group('productFromApi', () {
-    test('maps a full row: money strings, gst/gross computed, category kept', () {
+    test('maps a full row: money strings, gst/gross computed, category kept',
+        () {
       final p = productFromApi({
         'product_id': 'uuid-1',
         'product_name': 'Turnkey Office Fit-out',
@@ -79,10 +82,10 @@ void main() {
       expect(p.cat, 'Fit-out');
       expect(p.hsn, '995461');
       expect(p.unit, 'per sq.ft.');
-      expect(p.price, '₹2.4K');
+      expect(p.price, '₹2,400.00');
       expect(p.gst, 18);
-      expect(p.gstAmt, '₹432');
-      expect(p.gross, '₹2.8K');
+      expect(p.gstAmt, '₹432.00');
+      expect(p.gross, '₹2,832.00');
       expect(p.active, isTrue);
       expect(p.desc, 'End-to-end fit-out.');
     });
@@ -95,7 +98,7 @@ void main() {
       expect(p.cat, '');
       expect(p.hsn, '');
       expect(p.unit, '');
-      expect(p.price, '₹0');
+      expect(p.price, '₹0.00');
       expect(p.gst, 18);
       expect(p.deals, 0);
       expect(p.revenue, '₹0');
@@ -139,16 +142,17 @@ void main() {
       // Unknown category kept raw — the list handles unknown keys gracefully.
       expect(p.cat, 'Custom Widgets');
       expect(p.gst, 12);
-      expect(p.price, '₹1L');
-      expect(p.gstAmt, '₹12K');
-      expect(p.gross, '₹1.1L');
+      expect(p.price, '₹1,00,000.00');
+      expect(p.gstAmt, '₹12,000.00');
+      expect(p.gross, '₹1,12,000.00');
       expect(p.deals, 4);
       expect(p.revenue, '₹8L');
       expect(p.revNum, 800000);
       expect(p.avg, '₹2L');
     });
 
-    test('server-computed gst_amount / price_incl win over the app\'s own math', () {
+    test('server-computed gst_amount / price_incl win over the app\'s own math',
+        () {
       // The live list row on the dev org: `tax_rate` is dropped by the org's
       // view config, but the serializer still sends its computed tax figures.
       final p = productFromApi({
@@ -161,8 +165,8 @@ void main() {
       })!;
       expect(p.gstKnown, isTrue);
       expect(p.gst, 18);
-      expect(p.gstAmt, '₹27');
-      expect(p.gross, '₹177');
+      expect(p.gstAmt, '₹27.00');
+      expect(p.gross, '₹177.00');
 
       // Detail row: rate and computed figures both present, and they agree.
       final d = productFromApi({
@@ -174,7 +178,7 @@ void main() {
         'price_incl': '177.00',
       })!;
       expect(d.gst, 18);
-      expect(d.gross, '₹177');
+      expect(d.gross, '₹177.00');
 
       // A 0%-rated product with the computed figures: nothing invented.
       final z = productFromApi({
@@ -186,8 +190,8 @@ void main() {
       })!;
       expect(z.gstKnown, isTrue);
       expect(z.gst, 0);
-      expect(z.gstAmt, '₹0');
-      expect(z.gross, '₹15K');
+      expect(z.gstAmt, '₹0.00');
+      expect(z.gross, '₹14,999.00');
     });
 
     test('rows without product_id are skipped, never fatal', () {
@@ -235,7 +239,7 @@ void main() {
     test('tax_rate is read, so a 0%-rated item is not shown as 18%', () {
       final p = productFromApi(liveRow())!;
       expect(p.gst, 0);
-      expect(p.gstAmt, '₹0');
+      expect(p.gstAmt, '₹0.00');
       // Gross equals net when nothing is added on top.
       expect(p.gross, p.price);
     });
@@ -257,7 +261,8 @@ void main() {
 
     test('item_type is what makes an item a package', () {
       expect(productFromApi(liveRow())!.kind, 'product');
-      expect(productFromApi(liveRow()..['item_type'] = 'package')!.kind, 'package');
+      expect(productFromApi(liveRow()..['item_type'] = 'package')!.kind,
+          'package');
     });
 
     test('a missing tax_rate is unknown, not 18%', () {
@@ -272,7 +277,8 @@ void main() {
 
     test('a rate that IS sent counts as known, including 0%', () {
       expect(productFromApi(liveRow())!.gstKnown, isTrue);
-      expect(productFromApi(liveRow()..['tax_rate'] = '18.00')!.gstKnown, isTrue);
+      expect(
+          productFromApi(liveRow()..['tax_rate'] = '18.00')!.gstKnown, isTrue);
     });
 
     test('the trimmed 10-field row still maps to a usable product', () {
@@ -292,7 +298,7 @@ void main() {
       expect(p.name, 'NexoCRM Pro');
       expect(p.code, 'PRD-NEXOCR-9AF0');
       expect(p.cat, 'SaaS Platform');
-      expect(p.price, '₹5K');
+      expect(p.price, '₹4,999.00');
       expect(p.gstKnown, isFalse);
       expect(p.hsn, '');
       expect(p.unit, '');
@@ -318,7 +324,7 @@ void _priceFacetTests() {
         'product_name': 'NexoCRM Pro',
         'price': '4999.000000',
       })!;
-      expect(p.price, '₹5K', reason: 'the display is abbreviated');
+      expect(p.price, '₹4,999.00', reason: 'the display is exact (UI/UX #45)');
       expect(productPriceNum(p), 4999);
     });
 
@@ -348,7 +354,6 @@ void _priceFacetTests() {
       expect(productPriceNum(p), 2400);
     });
   });
-
 }
 
 /// The product detail's Activity card reads the shared audit trail
@@ -377,7 +382,8 @@ void _activityTests() {
         };
 
     test('a create reads as the product being created, by whom', () {
-      final e = AuditLogRemoteDataSource.mapEntry(createRow(), recordLabel: 'Product')!;
+      final e = AuditLogRemoteDataSource.mapEntry(createRow(),
+          recordLabel: 'Product')!;
       expect(e.title, 'Product created');
       expect(e.kind, AuditEventKind.created);
       expect(e.actor, 'Admin Acme');
@@ -397,7 +403,8 @@ void _activityTests() {
     });
 
     test('rows are skipped, never fatal, when they carry nothing', () {
-      expect(AuditLogRemoteDataSource.mapEntries(const [null, 'x', 42]), isEmpty);
+      expect(
+          AuditLogRemoteDataSource.mapEntries(const [null, 'x', 42]), isEmpty);
     });
   });
 }
@@ -420,7 +427,8 @@ void _packageTests() {
           'computed_total_incl': '1860.00',
         };
 
-    test('the computed totals identify a package when item_type is stripped', () {
+    test('the computed totals identify a package when item_type is stripped',
+        () {
       expect(productFromApi(packageRow())!.kind, 'package');
     });
 
@@ -428,7 +436,8 @@ void _packageTests() {
       final row = packageRow()..['item_type'] = 'product';
       expect(productFromApi(row)!.kind, 'product',
           reason: 'never override what the serializer actually said');
-      expect(productFromApi({...packageRow(), 'item_type': 'package'})!.kind, 'package');
+      expect(productFromApi({...packageRow(), 'item_type': 'package'})!.kind,
+          'package');
     });
 
     test('a plain product carries none of them and stays a product', () {
@@ -532,7 +541,8 @@ void _compositionTests() {
         'adjustments_total_excl': '-500.00',
         'computed_total_excl': '1500.00',
         'computed_total_incl': '1860.00',
-      })!.composition!;
+      })!
+          .composition!;
       expect(c.components, isEmpty);
       expect(c.totalIncl, 1860.00);
     });
@@ -547,7 +557,8 @@ void _compositionTests() {
 /// The Packages tab shares the Products list's chips and drawer, and both were
 /// hardcoded to the product side.
 void _packagesListTests() {
-  Product item({required bool isPackage, String cat = 'SaaS Platform'}) => Product(
+  Product item({required bool isPackage, String cat = 'SaaS Platform'}) =>
+      Product(
         id: isPackage ? 'pkg' : 'prod',
         name: isPackage ? 'test package' : 'NexoCRM Pro',
         kind: isPackage ? 'package' : 'product',
@@ -566,7 +577,7 @@ void _packagesListTests() {
         active: true,
       );
 
-    group('packages list', () {
+  group('packages list', () {
     test('the category chips count the open mode, not always products', () {
       final catalog = [item(isPackage: false), item(isPackage: true)];
       expect(prodCatCount(catalog, 'all'), 1, reason: 'products by default');
@@ -577,7 +588,11 @@ void _packagesListTests() {
     });
 
     test('the mode counts split the catalog', () {
-      final catalog = [item(isPackage: false), item(isPackage: true), item(isPackage: true)];
+      final catalog = [
+        item(isPackage: false),
+        item(isPackage: true),
+        item(isPackage: true)
+      ];
       expect(prodModeCount(catalog, 'products'), 1);
       expect(prodModeCount(catalog, 'packages'), 2);
     });

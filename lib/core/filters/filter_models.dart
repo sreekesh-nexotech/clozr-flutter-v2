@@ -38,7 +38,8 @@ enum FilterControl {
 /// search-select row). [icon] and [dot] are optional adornments used by the
 /// icon/dot checkbox variants (e.g. task types, priorities, statuses).
 class FilterOption {
-  const FilterOption({required this.id, required this.label, this.icon, this.dot});
+  const FilterOption(
+      {required this.id, required this.label, this.icon, this.dot});
 
   final String id;
   final String label;
@@ -184,7 +185,8 @@ class ChoiceValue extends FilterValue {
     return ChoiceValue(ids: next, isNot: isNot);
   }
 
-  ChoiceValue withMode(bool notMode) => ChoiceValue(ids: {...ids}, isNot: notMode);
+  ChoiceValue withMode(bool notMode) =>
+      ChoiceValue(ids: {...ids}, isNot: notMode);
 
   @override
   bool operator ==(Object other) =>
@@ -248,7 +250,10 @@ class DateValue extends FilterValue {
 
   @override
   bool operator ==(Object other) =>
-      other is DateValue && other.chip == chip && other.from == from && other.to == to;
+      other is DateValue &&
+      other.chip == chip &&
+      other.from == from &&
+      other.to == to;
 
   @override
   int get hashCode => Object.hash(chip, from, to);
@@ -272,7 +277,8 @@ class RangeValue extends FilterValue {
   RangeValue withMax(double? v) => RangeValue(min: min, max: v);
 
   @override
-  bool operator ==(Object other) => other is RangeValue && other.min == min && other.max == max;
+  bool operator ==(Object other) =>
+      other is RangeValue && other.min == min && other.max == max;
 
   @override
   int get hashCode => Object.hash(min, max);
@@ -281,7 +287,8 @@ class RangeValue extends FilterValue {
 /// A mutable fieldId → value map — the draft the drawer edits and the applied
 /// state a list matches against.
 class FilterValues {
-  FilterValues([Map<String, FilterValue>? values]) : _m = values ?? <String, FilterValue>{};
+  FilterValues([Map<String, FilterValue>? values])
+      : _m = values ?? <String, FilterValue>{};
 
   final Map<String, FilterValue> _m;
 
@@ -291,10 +298,14 @@ class FilterValues {
   Iterable<MapEntry<String, FilterValue>> get entries => _m.entries;
 
   // Typed accessors — return null when the field is absent or the wrong type.
-  ChoiceValue? choice(String id) => _m[id] is ChoiceValue ? _m[id] as ChoiceValue : null;
-  RadioValue? radio(String id) => _m[id] is RadioValue ? _m[id] as RadioValue : null;
-  DateValue? date(String id) => _m[id] is DateValue ? _m[id] as DateValue : null;
-  RangeValue? range(String id) => _m[id] is RangeValue ? _m[id] as RangeValue : null;
+  ChoiceValue? choice(String id) =>
+      _m[id] is ChoiceValue ? _m[id] as ChoiceValue : null;
+  RadioValue? radio(String id) =>
+      _m[id] is RadioValue ? _m[id] as RadioValue : null;
+  DateValue? date(String id) =>
+      _m[id] is DateValue ? _m[id] as DateValue : null;
+  RangeValue? range(String id) =>
+      _m[id] is RangeValue ? _m[id] as RangeValue : null;
 
   /// Deep copy — the drawer mutates a copy so dismiss leaves state untouched.
   FilterValues copy() =>
@@ -327,8 +338,10 @@ class FilterValues {
     return true;
   }
 
-  Map<String, FilterValue> get _activeMap =>
-      {for (final e in _m.entries) if (e.value.isActive) e.key: e.value};
+  Map<String, FilterValue> get _activeMap => {
+        for (final e in _m.entries)
+          if (e.value.isActive) e.key: e.value
+      };
 
   @override
   int get hashCode {
@@ -405,7 +418,8 @@ class FilterMatch {
 
   /// ≥ Min · ≤ Max · Between. [scale] converts the display-unit bounds to the
   /// row's raw unit (e.g. 100000 for ₹ lakhs). Inactive value passes.
-  static bool matchRange(RangeValue? value, num? itemValue, {double scale = 1}) {
+  static bool matchRange(RangeValue? value, num? itemValue,
+      {double scale = 1}) {
     if (value == null || !value.isActive) return true;
     final n = itemValue ?? 0;
     if (value.min != null && n < value.min! * scale) return false;
@@ -418,9 +432,8 @@ class FilterMatch {
   static bool matchDate(DateValue? value, DateTime? itemDate) {
     if (value == null || !value.isActive) return true;
     if (itemDate == null) return false;
-    final (from, to) = value.chip != null
-        ? chipRange(value.chip!)
-        : (value.from, value.to);
+    final (from, to) =
+        value.chip != null ? chipRange(value.chip!) : (value.from, value.to);
     final d = DateTime(itemDate.year, itemDate.month, itemDate.day);
     if (from != null && d.isBefore(_dayStart(from))) return false;
     if (to != null && d.isAfter(_dayStart(to))) return false;
@@ -450,5 +463,6 @@ class FilterMatch {
   }
 
   static DateTime _dayStart(DateTime d) => DateTime(d.year, d.month, d.day);
-  static DateTime _addDays(DateTime d, int n) => DateTime(d.year, d.month, d.day + n);
+  static DateTime _addDays(DateTime d, int n) =>
+      DateTime(d.year, d.month, d.day + n);
 }

@@ -172,15 +172,16 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
     final managerLabel = _managerId.isEmpty
         ? 'No manager'
         : members
-            .where((m) => m.id == _managerId)
-            .map((m) => m.name)
-            .firstOrNull ??
+                .where((m) => m.id == _managerId)
+                .map((m) => m.name)
+                .firstOrNull ??
             'No manager';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Invite member', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Invite member', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -205,7 +206,8 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                       controller: _email,
                       hint: 'name@kairali.in',
                       keyboardType: TextInputType.emailAddress,
-                      errorText: _showErrors && !_emailOk ? 'Enter an email' : null,
+                      errorText:
+                          _showErrors && !_emailOk ? 'Enter an email' : null,
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
@@ -215,8 +217,9 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                       label: 'Phone',
                       controller: _phone,
                       hint: '98470 11001',
-                      errorText:
-                          _showErrors && !_phoneOk ? phoneDigitsMessage(_phone.rule) : null,
+                      errorText: _showErrors && !_phoneOk
+                          ? phoneDigitsMessage(_phone.rule)
+                          : null,
                       onChanged: () => setState(() {}),
                     ),
                   ),
@@ -249,7 +252,8 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                 ),
               ),
               SizedBox(height: 6.h),
-              _hint(null, 'Reports to a manager or executive — never directly to the System Admin.'),
+              _hint(null,
+                  'Reports to a manager or executive — never directly to the System Admin.'),
               SizedBox(height: 14.h),
               AppTextField(
                 label: 'Team',
@@ -285,7 +289,10 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
         ],
         Expanded(
           child: Text(text,
-              style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ),
       ],
     );
@@ -316,12 +323,14 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                       Navigator.of(ctx).pop();
                     },
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
                       child: Row(
                         children: [
                           Expanded(child: Text(label, style: AppText.body())),
                           if (value == current)
-                            Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                            Icon(PhosphorIconsBold.check,
+                                size: 19.sp, color: AppColors.success),
                         ],
                       ),
                     ),

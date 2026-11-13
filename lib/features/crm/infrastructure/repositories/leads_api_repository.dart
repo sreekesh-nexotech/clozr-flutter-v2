@@ -39,7 +39,8 @@ class LeadsApiRepository implements LeadsRepository {
     // failure), so it can be awaited on the offline path too.
     final types = _remote.statusTypes();
     try {
-      final rows = await _remote.fetchLeadRows(mineOnly: mineOnly, filters: filters);
+      final rows =
+          await _remote.fetchLeadRows(mineOnly: mineOnly, filters: filters);
       if (cacheable) await AppCache.put(AppCache.crmCache, key, rows);
       return LeadsRemoteDataSource.mapLeadRows(rows, statusTypes: await types);
     } on AppError catch (e) {
@@ -48,11 +49,13 @@ class LeadsApiRepository implements LeadsRepository {
       }
       // A filtered query has no cached counterpart; surface the outage rather
       // than quietly showing an unfiltered list as if it were the result.
-      final cached = cacheable ? AppCache.get(AppCache.crmCache, key)?.data : null;
+      final cached =
+          cacheable ? AppCache.get(AppCache.crmCache, key)?.data : null;
       if (cached is List) {
         // Offline: the catalog call failed too, but a previously cached
         // catalog still applies — otherwise this degrades to name matching.
-        return LeadsRemoteDataSource.mapLeadRows(cached, statusTypes: await types);
+        return LeadsRemoteDataSource.mapLeadRows(cached,
+            statusTypes: await types);
       }
       rethrow;
     }
@@ -123,7 +126,8 @@ class LeadsApiRepository implements LeadsRepository {
   }
 
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async {
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields,
+      {String? version}) async {
     final lead = await _remote.updateLead(leadId, fields, version: version);
     // The edited lead appears in both list scopes and in its own detail cache.
     await AppCache.remove(AppCache.crmCache, _cacheKey);

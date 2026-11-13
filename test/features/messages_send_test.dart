@@ -50,13 +50,19 @@ class _FakeRepo implements MessagesRepository {
   }
 
   @override
-  Future<ChatMessage?> sendTemplate(String id, String templateId, String body) async => null;
+  Future<ChatMessage?> sendTemplate(
+          String id, String templateId, String body) async =>
+      null;
 
   @override
-  Future<ChatMessage?> sendImage(String id, String path, String filename) async => null;
+  Future<ChatMessage?> sendImage(
+          String id, String path, String filename) async =>
+      null;
 
   @override
-  Future<ChatMessage?> sendDocument(String id, String path, String filename) async => null;
+  Future<ChatMessage?> sendDocument(
+          String id, String path, String filename) async =>
+      null;
 
   @override
   Future<(List<int>, String?)?> fetchMedia(String mediaId) async => null;
@@ -67,7 +73,8 @@ class _FakeRepo implements MessagesRepository {
 
 void main() {
   test('ChatMessage.copyWith flips status; failed getter tracks it', () {
-    const m = ChatMessage(mine: true, text: 'hi', time: 'Now', status: 'sent', localId: 'l1');
+    const m = ChatMessage(
+        mine: true, text: 'hi', time: 'Now', status: 'sent', localId: 'l1');
     expect(m.failed, isFalse);
     final f = m.copyWith(status: 'failed');
     expect(f.failed, isTrue);

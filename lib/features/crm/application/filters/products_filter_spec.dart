@@ -18,7 +18,8 @@ import '../providers/products_providers.dart';
 /// price, where it is still exact ("₹2,400" → 2400).
 int productPriceNum(Product p) {
   if (p.priceNum > 0) return p.priceNum.round();
-  final digits = p.price.replaceAll(RegExp(r'[^0-9]'), '');
+  // Paise are dropped first: "₹2,400.00" must read 2400, not 240000.
+  final digits = p.price.split('.').first.replaceAll(RegExp(r'[^0-9]'), '');
   return int.tryParse(digits) ?? 0;
 }
 
@@ -42,9 +43,11 @@ FilterSpec buildProductsFilterSpec(List<Product> products) {
     FilterOption(id: 'inactive', label: 'Inactive'),
   ];
   // Distinct billing units in the catalog (admin-configurable list).
-  final units = (products.map((p) => p.unit).where((u) => u.isNotEmpty).toSet().toList()..sort())
-      .map((u) => FilterOption(id: u, label: u))
-      .toList();
+  final units =
+      (products.map((p) => p.unit).where((u) => u.isNotEmpty).toSet().toList()
+            ..sort())
+          .map((u) => FilterOption(id: u, label: u))
+          .toList();
 
   return FilterSpec(
     title: 'Products',
@@ -84,9 +87,11 @@ FilterSpec buildProductsFilterSpec(List<Product> products) {
 /// Evaluate a product against applied filter values.
 bool productMatchesFilters(Product p, FilterValues v) {
   if (!FilterMatch.matchAnyOf(v.choice('category'), [p.cat])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('status'), [p.active ? 'active' : 'inactive'])) return false;
+  if (!FilterMatch.matchAnyOf(
+      v.choice('status'), [p.active ? 'active' : 'inactive'])) return false;
   if (!FilterMatch.matchAnyOf(v.choice('billingUnit'), [p.unit])) return false;
-  if (!FilterMatch.matchRange(v.range('unitPrice'), productPriceNum(p), scale: 1)) return false;
+  if (!FilterMatch.matchRange(v.range('unitPrice'), productPriceNum(p),
+      scale: 1)) return false;
   return true;
 }
 
@@ -106,8 +111,10 @@ final productsFilterSpecProvider = Provider<FilterSpec>((ref) {
 });
 
 /// Applied drawer filters for the Products list (source of the badge count).
-final productFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final productFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Products list (bookmark chips).
 final productSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());

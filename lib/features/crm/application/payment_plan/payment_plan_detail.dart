@@ -26,9 +26,14 @@ double? planNumOrNull(Object? v) {
   return null;
 }
 
-String _str(Object? v) => v is String ? v : v == null ? '' : '$v';
+String _str(Object? v) => v is String
+    ? v
+    : v == null
+        ? ''
+        : '$v';
 
-Map<String, dynamic>? _map(Object? v) => v is Map ? Map<String, dynamic>.from(v) : null;
+Map<String, dynamic>? _map(Object? v) =>
+    v is Map ? Map<String, dynamic>.from(v) : null;
 
 /// `record_summary.document` — the tax invoice accounting issued (or drafted).
 class PlanRecordDocument {
@@ -168,7 +173,8 @@ class PlanRecord {
   final String adjustmentState;
 
   /// "Installment 2" when the record carries no label of its own.
-  String get displayLabel => label.trim().isNotEmpty ? label.trim() : 'Installment $installmentNumber';
+  String get displayLabel =>
+      label.trim().isNotEmpty ? label.trim() : 'Installment $installmentNumber';
 
   /// Accounting has issued a document for it — delete / revert are blocked.
   bool get isLinkedToDocument => linkedDocumentId.isNotEmpty;
@@ -183,9 +189,10 @@ class PlanRecord {
   factory PlanRecord.fromJson(Map<String, dynamic> j) {
     final status = _status(j['status']);
     final rawSettlement = _str(j['settlement_state']);
-    final settlement = const {'paid', 'partly_paid', 'pending'}.contains(rawSettlement)
-        ? rawSettlement
-        : (status == 'paid' ? 'paid' : 'pending');
+    final settlement =
+        const {'paid', 'partly_paid', 'pending'}.contains(rawSettlement)
+            ? rawSettlement
+            : (status == 'paid' ? 'paid' : 'pending');
     final expected = planNum(j['amount_expected']);
     final gross = planNumOrNull(j['amount_due_gross']) ?? expected;
     final dueIncl = planNumOrNull(j['amount_due_incl_gst']) ?? gross;
@@ -196,7 +203,11 @@ class PlanRecord {
     final refundNotDue = planNum(j['amount_refund_not_due']);
     final balance = planNumOrNull(j['balance_due']) ??
         (status == 'paid'
-            ? math.max(0.0, ((gross - (paid + tds + bank - refunded + refundNotDue)) * 100).round() / 100)
+            ? math.max(
+                0.0,
+                ((gross - (paid + tds + bank - refunded + refundNotDue)) * 100)
+                        .round() /
+                    100)
             : gross);
 
     final summary = _map(j['record_summary']);
@@ -205,17 +216,24 @@ class PlanRecord {
     final adjMap = _map(summary?['adjustments']);
     final product = j['product_name'];
     return PlanRecord(
-      id: _str(j['record_id']).isNotEmpty ? _str(j['record_id']) : _str(j['id']),
+      id: _str(j['record_id']).isNotEmpty
+          ? _str(j['record_id'])
+          : _str(j['id']),
       installmentNumber: (j['installment_number'] as num?)?.toInt() ?? 0,
-      planId: _str(j['payment']).isNotEmpty ? _str(j['payment']) : _str(j['invoice_id']),
+      planId: _str(j['payment']).isNotEmpty
+          ? _str(j['payment'])
+          : _str(j['invoice_id']),
       quoteNumber: _str(j['quotation_number']),
       customerName: _str(j['customer_name']),
       leadName: _str(j['lead_name']),
-      productName: product is List ? product.map(_str).where((s) => s.isNotEmpty).join(', ') : _str(product),
+      productName: product is List
+          ? product.map(_str).where((s) => s.isNotEmpty).join(', ')
+          : _str(product),
       amountExpected: expected,
       amountPaid: paid,
       amountDueInclGst: dueIncl,
-      amountDueBasis: const {'INVOICE', 'ESTIMATE', 'AS_QUOTED'}.contains(_str(j['amount_due_basis']))
+      amountDueBasis: const {'INVOICE', 'ESTIMATE', 'AS_QUOTED'}
+              .contains(_str(j['amount_due_basis']))
           ? _str(j['amount_due_basis'])
           : '',
       balanceDue: balance,
@@ -266,7 +284,8 @@ class PlanRecord {
 
 /// One `needs_attention` item: what accounting is waiting on a person for.
 class PlanAttention {
-  const PlanAttention({required this.code, this.message = '', this.recordIds = const []});
+  const PlanAttention(
+      {required this.code, this.message = '', this.recordIds = const []});
 
   /// `CUSTOMER_REQUIRED`, `MILESTONES_REQUIRED`, …
   final String code;
@@ -362,7 +381,8 @@ class PlanSubscription {
 
 /// `charge_split` — the quote's one-time plan and recurring schedule.
 class PlanChargeSplit {
-  const PlanChargeSplit({this.oneTimePlanId = '', this.recurringPlanId = '', this.label = ''});
+  const PlanChargeSplit(
+      {this.oneTimePlanId = '', this.recurringPlanId = '', this.label = ''});
 
   final String oneTimePlanId;
   final String recurringPlanId;
@@ -479,19 +499,28 @@ class PlanDetail {
     final ownerRaw = j['owner'];
     final owner = _map(ownerRaw);
     final ownerName = owner == null
-        ? (ownerRaw is String && !_uuidLike.hasMatch(ownerRaw) ? ownerRaw : (ownerRaw is String ? 'Unknown user' : ''))
+        ? (ownerRaw is String && !_uuidLike.hasMatch(ownerRaw)
+            ? ownerRaw
+            : (ownerRaw is String ? 'Unknown user' : ''))
         : (_str(owner['name']).isNotEmpty
             ? _str(owner['name'])
             : _str(owner['full_name']).isNotEmpty
                 ? _str(owner['full_name'])
                 : (_str(owner['user_id']).isNotEmpty ? 'Unknown user' : ''));
     final attention = <PlanAttention>[
-      for (final a in (j['needs_attention'] is List ? j['needs_attention'] as List : const []))
+      for (final a in (j['needs_attention'] is List
+          ? j['needs_attention'] as List
+          : const []))
         if (a is Map && _str(a['code']).isNotEmpty)
           PlanAttention(
             code: _str(a['code']),
             message: _str(a['message']),
-            recordIds: [for (final id in (a['record_ids'] is List ? a['record_ids'] as List : const [])) _str(id)],
+            recordIds: [
+              for (final id in (a['record_ids'] is List
+                  ? a['record_ids'] as List
+                  : const []))
+                _str(id)
+            ],
           ),
     ];
     final scope = _str(j['charge_scope']);
@@ -500,7 +529,9 @@ class PlanDetail {
       quoteNumber: _str(j['quotation_number']),
       quotationUuid: _str(j['quotation']),
       customerId: _str(customer?['customer_id']),
-      customerName: _str(j['customer_name']).isNotEmpty ? _str(j['customer_name']) : _str(customer?['name']),
+      customerName: _str(j['customer_name']).isNotEmpty
+          ? _str(j['customer_name'])
+          : _str(customer?['name']),
       leadId: _str(customer?['lead_id']),
       ptype: _str(j['payment_type']),
       status: _str(j['status']),
@@ -531,7 +562,9 @@ class PlanDetail {
   }
 }
 
-final RegExp _uuidLike = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', caseSensitive: false);
+final RegExp _uuidLike = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    caseSensitive: false);
 
 /// Whether [s] is a UUID — a plan route may carry the `payment_id` itself or a
 /// display id (the quote number) that has to be resolved first.

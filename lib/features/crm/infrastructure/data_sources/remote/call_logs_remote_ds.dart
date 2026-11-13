@@ -7,8 +7,8 @@ import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../domain/entities/call_log.dart';
 
-final DateFormat _clock = DateFormat('h:mm a');
-final DateFormat _dayMonth = DateFormat('d MMM');
+final DateFormat _clock = DateFormat('HH:mm');
+final DateFormat _dayMonth = DateFormat('dd/MM/yyyy');
 
 /// Remote call logs (`/crm/call-logs/`). HTTP + JSON → [CallLog] mapping only;
 /// caching lives in the API repository.
@@ -158,10 +158,9 @@ class CallLogsRemoteDataSource {
       leadId: _str(json['related_to_model']) == 'lead'
           ? _str(json['related_to_object_id'])
           : null,
-      direction:
-          (_str(json['type']) ?? '').toLowerCase() == 'incoming'
-              ? 'incoming'
-              : 'outgoing',
+      direction: (_str(json['type']) ?? '').toLowerCase() == 'incoming'
+          ? 'incoming'
+          : 'outgoing',
       isMissed: isMissed,
       connected: connected,
       outcome: outcomeLabel(

@@ -22,7 +22,10 @@ abstract class NotesRepository {
   });
 
   /// Edits a note's content. Throws when refused.
-  Future<void> updateNote({required String noteId, required String body, List<String> mentionedUserIds = const []});
+  Future<void> updateNote(
+      {required String noteId,
+      required String body,
+      List<String> mentionedUserIds = const []});
 
   /// Deletes a note and its replies. Throws when refused.
   Future<void> deleteNote(String noteId);

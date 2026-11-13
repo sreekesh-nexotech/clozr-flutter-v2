@@ -9,6 +9,7 @@ import '../../../../core/network/app_error.dart';
 import '../../../../core/storage/remembered_email.dart';
 import '../../application/providers/auth_providers.dart';
 import '../../domain/entities/auth_session.dart';
+import '../components/login_backdrop.dart';
 
 enum _LoginStep { credentials, challenge, enrol }
 
@@ -82,7 +83,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on AppError catch (e) {
       if (mounted) setState(() => _error = mapError?.call(e) ?? e.message);
     } on Object {
-      if (mounted) setState(() => _error = 'Something went wrong. Please try again.');
+      if (mounted)
+        setState(() => _error = 'Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -177,115 +179,174 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     if (_backupCodes.isNotEmpty) return _backupCodesView();
     final reason = ref.watch(signOutReasonProvider);
-    final signOutMessage = reason == null ? null : signOutReasonMessages[reason];
+    final signOutMessage =
+        reason == null ? null : signOutReasonMessages[reason];
     return Scaffold(
       backgroundColor: AppColors.bgScreen,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 32.h),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: 342.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // The logo sits centred on a square transparent canvas, so
-                  // the inner Align + ClipRect trims it to the artwork
-                  // (88% × 47% of the canvas) — the visible logo is 34.h
-                  // tall. `semanticLabel` keeps the brand name in the
-                  // accessibility tree now that it is no longer real text.
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ClipRect(
-                      child: Align(
-                        widthFactor: 0.88,
-                        heightFactor: 0.47,
-                        child: Image.asset(
-                          'assets/Clozr-Regular-1080px.png',
-                          height: 34.h / 0.47,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.medium,
-                          semanticLabel: AppConstants.brandName,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: LoginBackdrop()),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 32.h),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: 400.w),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Brand lockup, centred above the card like the webapp's
+                      // sign-in header. The logo sits on a square transparent
+                      // canvas, so Align + ClipRect trim it to the artwork.
+                      Center(
+                        child: ClipRect(
+                          child: Align(
+                            widthFactor: 0.88,
+                            heightFactor: 0.47,
+                            child: Image.asset(
+                              'assets/Clozr-Regular-1080px.png',
+                              height: 40.h / 0.47,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                              semanticLabel: AppConstants.brandName,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      SizedBox(height: 24.h),
+                      Container(
+                        padding: EdgeInsets.fromLTRB(22.w, 26.h, 22.w, 22.h),
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(16.r),
+                          border: Border.all(color: AppColors.bgSubtle),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.navy.withOpacity(0.06),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              switch (_step) {
+                                _LoginStep.credentials => 'Welcome back',
+                                _LoginStep.challenge =>
+                                  'Two-factor verification',
+                                _LoginStep.enrol => 'Set up two-factor sign-in',
+                              },
+                              textAlign: TextAlign.center,
+                              style: AppText.h1(),
+                            ),
+                            SizedBox(height: 4.h),
+                            Text(
+                              switch (_step) {
+                                _LoginStep.credentials =>
+                                  'Sign in to your account',
+                                _LoginStep.challenge =>
+                                  'One more step to sign in',
+                                _LoginStep.enrol =>
+                                  'Your organization requires it',
+                              },
+                              textAlign: TextAlign.center,
+                              style: AppText.bodyMuted(),
+                            ),
+                            SizedBox(height: 22.h),
+                            if (_error == null && signOutMessage != null) ...[
+                              // The webapp's sign-out notice: why the server ended
+                              // the last session, until the next sign-in attempt.
+                              _notice(signOutMessage, Icons.info_outline,
+                                  AppColors.blueBright),
+                              SizedBox(height: 16.h),
+                            ],
+                            if (_error != null) ...[
+                              _notice(_error!, Icons.error_outline,
+                                  AppColors.error),
+                              SizedBox(height: 16.h),
+                            ],
+                            ...switch (_step) {
+                              _LoginStep.credentials => _credentialFields(),
+                              _LoginStep.challenge => _challengeFields(),
+                              _LoginStep.enrol => _enrolFields(),
+                            },
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 6.h),
-                  Text(
-                    switch (_step) {
-                      _LoginStep.credentials => 'Sign in to your workspace',
-                      _LoginStep.challenge => 'Two-factor verification',
-                      _LoginStep.enrol => 'Set up two-factor authentication',
-                    },
-                    style: AppText.bodyMuted(),
-                  ),
-                  SizedBox(height: 24.h),
-                  if (_error == null && signOutMessage != null) ...[
-                    // The webapp's sign-out notice: why the server ended the
-                    // last session, until the next sign-in attempt.
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(12.r),
-                      decoration: BoxDecoration(
-                        color: AppColors.blueBright.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10.r),
-                      ),
-                      child: Text(
-                        signOutMessage,
-                        style: AppText.caption(color: AppColors.blueBright),
-                      ),
-                    ),
-                    SizedBox(height: 16.h),
-                  ],
-                  if (_error != null) ...[
-                    Container(
-                      padding: EdgeInsets.all(12.r),
-                      decoration: BoxDecoration(
-                        color: AppColors.error.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10.r),
-                      ),
-                      child: Text(
-                        _error!,
-                        style: AppText.caption(color: AppColors.error),
-                      ),
-                    ),
-                    SizedBox(height: 16.h),
-                  ],
-                  ...switch (_step) {
-                    _LoginStep.credentials => _credentialFields(),
-                    _LoginStep.challenge => _challengeFields(),
-                    _LoginStep.enrol => _enrolFields(),
-                  },
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
+
+  /// Icon + message banner (webapp's info / danger alert), tinted by [color].
+  Widget _notice(String message, IconData icon, Color color) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: 1.h),
+            child: Icon(icon, size: 16.r, color: color),
+          ),
+          SizedBox(width: 8.w),
+          Expanded(child: Text(message, style: AppText.caption(color: color))),
+        ],
       ),
     );
   }
 
   List<Widget> _credentialFields() => [
-        _field(_email, hint: 'Work email', keyboard: TextInputType.emailAddress),
-        SizedBox(height: 12.h),
+        _field(_email,
+            label: 'Email',
+            hint: 'you@company.com',
+            keyboard: TextInputType.emailAddress,
+            autofill: const [AutofillHints.username, AutofillHints.email],
+            action: TextInputAction.next),
+        SizedBox(height: 16.h),
         _field(
           _password,
-          hint: 'Password',
+          label: 'Password',
+          hint: 'Enter your password',
+          autofill: const [AutofillHints.password],
+          action: TextInputAction.done,
           obscure: _obscure,
           suffix: IconButton(
             onPressed: () => setState(() => _obscure = !_obscure),
             icon: Icon(
-              _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              _obscure
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
               size: 18.r,
               color: AppColors.textMuted,
             ),
           ),
           onSubmitted: (_) => _submitCredentials(),
         ),
-        SizedBox(height: 6.h),
+        SizedBox(height: 8.h),
         _rememberRow(),
-        SizedBox(height: 14.h),
+        SizedBox(height: 16.h),
         _primaryButton('Sign in', _submitCredentials),
+        SizedBox(height: 14.h),
+        Text(
+          'Trouble signing in? Contact your administrator.',
+          textAlign: TextAlign.center,
+          style: AppText.caption(),
+        ),
       ];
 
   /// "Remember me" — the email only, and it says so, so nobody reads it as a
@@ -306,7 +367,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 color: _remember ? AppColors.navy : AppColors.white,
                 borderRadius: BorderRadius.circular(6.r),
                 border: Border.all(
-                    color: _remember ? AppColors.navy : AppColors.borderInput, width: 1.5),
+                    color: _remember ? AppColors.navy : AppColors.borderInput,
+                    width: 1.5),
               ),
               child: _remember
                   ? Icon(Icons.check, size: 14.r, color: AppColors.white)
@@ -315,7 +377,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             SizedBox(width: 10.w),
             Text('Remember my email',
                 style: AppText.custom(
-                    size: 13, weight: FontWeight.w600, color: AppColors.textBody)),
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ],
         ),
       ),
@@ -330,6 +394,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         SizedBox(height: 12.h),
         _field(
           _code,
+          label: 'Verification code',
           hint: '6-digit code',
           keyboard: TextInputType.number,
           onSubmitted: (_) => _submitCode(),
@@ -372,7 +437,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ],
         _field(
           _code,
-          hint: 'First 6-digit code',
+          label: 'First 6-digit code',
+          hint: '123456',
           keyboard: TextInputType.number,
           onSubmitted: (_) => _submitCode(),
         ),
@@ -433,38 +499,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _field(
     TextEditingController controller, {
+    required String label,
     required String hint,
     bool obscure = false,
     TextInputType? keyboard,
     Widget? suffix,
     ValueChanged<String>? onSubmitted,
+    Iterable<String>? autofill,
+    TextInputAction? action,
   }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboard,
-      onSubmitted: onSubmitted,
-      style: AppText.body(),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: AppText.body(color: AppColors.textPlaceholder),
-        filled: true,
-        fillColor: AppColors.white,
-        suffixIcon: suffix,
-        contentPadding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 14.h),
-        border: OutlineInputBorder(
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
           borderRadius: BorderRadius.circular(10.r),
-          borderSide: const BorderSide(color: AppColors.bgSubtle),
+          borderSide: BorderSide(color: c, width: w),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: AppText.captionStrong(color: AppColors.textSecondary)),
+        SizedBox(height: 6.h),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          keyboardType: keyboard,
+          textInputAction: action,
+          autofillHints: autofill,
+          enabled: !_busy,
+          onSubmitted: onSubmitted,
+          style: AppText.body(),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: AppText.body(color: AppColors.textPlaceholder),
+            filled: true,
+            fillColor: AppColors.bgPage,
+            suffixIcon: suffix,
+            contentPadding:
+                EdgeInsets.symmetric(horizontal: 14.w, vertical: 14.h),
+            border: border(AppColors.borderInput),
+            enabledBorder: border(AppColors.borderInput),
+            disabledBorder: border(AppColors.bgSubtle),
+            focusedBorder: border(AppColors.blueBright, 1.5),
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10.r),
-          borderSide: const BorderSide(color: AppColors.bgSubtle),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10.r),
-          borderSide: const BorderSide(color: AppColors.blueBright),
-        ),
-      ),
+      ],
     );
   }
 
@@ -502,7 +579,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 _error = null;
                 _code.clear();
               }),
-      child: Text('Back to sign in', style: AppText.caption(color: AppColors.blueBright)),
+      child: Text('Back to sign in',
+          style: AppText.caption(color: AppColors.blueBright)),
     );
   }
 }

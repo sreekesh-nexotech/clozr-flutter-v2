@@ -23,7 +23,9 @@ class KeyboardVisibility extends InheritedWidget {
 
   /// True while the keyboard is on screen; false outside the shell.
   static bool of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<KeyboardVisibility>()?.visible ??
+      context
+          .dependOnInheritedWidgetOfExactType<KeyboardVisibility>()
+          ?.visible ??
       false;
 
   @override

@@ -39,7 +39,8 @@ class SegmentedControl extends StatelessWidget {
                 padding: EdgeInsets.symmetric(horizontal: 12.w),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: selectedIndex == i ? AppColors.white : Colors.transparent,
+                  color:
+                      selectedIndex == i ? AppColors.white : Colors.transparent,
                   borderRadius: BorderRadius.circular(7.r),
                   boxShadow: selectedIndex == i
                       ? [
@@ -56,7 +57,9 @@ class SegmentedControl extends StatelessWidget {
                   style: AppText.custom(
                     size: 12,
                     weight: FontWeight.w700,
-                    color: selectedIndex == i ? AppColors.navy : AppColors.textMuted,
+                    color: selectedIndex == i
+                        ? AppColors.navy
+                        : AppColors.textMuted,
                   ),
                 ),
               ),

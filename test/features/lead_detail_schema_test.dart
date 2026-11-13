@@ -118,8 +118,12 @@ void main() {
 
   group('leadDetailRows', () {
     test('renders every visible column, in the org order', () {
-      final rows = leadDetailRows(_lead(whatsappNo: '+919000000000',
-          territory: 'South', lastFu: 'Call · 2d ago'), schema);
+      final rows = leadDetailRows(
+          _lead(
+              whatsappNo: '+919000000000',
+              territory: 'South',
+              lastFu: 'Call · 2d ago'),
+          schema);
 
       expect(rows.map((r) => r.label).toList(), [
         'Lead Name',
@@ -166,10 +170,11 @@ void main() {
       expect(byLabel['Last Follow-up'], '—');
       // …while the ones it does have render normally.
       expect(byLabel['Email'], 'ishaan@example.com');
-      expect(byLabel['Contact'], '+917676055470');
+      expect(byLabel['Contact'], '+91 76760 55470'); // UI/UX #40
     });
 
-    test('a column the entity cannot supply is still listed, as an em dash', () {
+    test('a column the entity cannot supply is still listed, as an em dash',
+        () {
       // `annual_revenue` has no field on [Lead], so leadColumnText answers
       // null. It used to disappear from the card; now the row is present and
       // labelled, with no value to show.
@@ -199,8 +204,10 @@ void main() {
         'has_org_config': true,
         'all_fields': {
           'columns': [
-            _col('custom_fields.budget', 'Budget', 1, type: 'number', custom: true),
-            _col('custom_fields.signed', 'Signed', 2, type: 'boolean', custom: true),
+            _col('custom_fields.budget', 'Budget', 1,
+                type: 'number', custom: true),
+            _col('custom_fields.signed', 'Signed', 2,
+                type: 'boolean', custom: true),
           ],
         },
       });
@@ -215,7 +222,9 @@ void main() {
           ['Budget=5000000', 'Signed=Yes']);
     });
 
-    test('the empty schema yields no rows, so the screen keeps its built-in set', () {
+    test(
+        'the empty schema yields no rows, so the screen keeps its built-in set',
+        () {
       expect(leadDetailRows(_lead(), LeadListSchema.empty), isEmpty);
     });
   });
@@ -259,32 +268,40 @@ void _editableRowTests() {
 
   group('leadDetailRows — editability', () {
     test('every row carries the column behind it', () {
-      final rows = leadDetailRows(_lead(), schemaOf([
-        _col('lead_name', 'Lead Name', 1),
-        _col('email', 'Email', 2, type: 'email'),
-      ]));
+      final rows = leadDetailRows(
+          _lead(),
+          schemaOf([
+            _col('lead_name', 'Lead Name', 1),
+            _col('email', 'Email', 2, type: 'email'),
+          ]));
       expect(rows.map((r) => r.column?.name).toList(), ['lead_name', 'email']);
     });
 
     test('a typed, form-backed column is editable', () {
-      final rows = leadDetailRows(_lead(), schemaOf([
-        _col('email', 'Email', 1, type: 'email'),
-      ]));
+      final rows = leadDetailRows(
+          _lead(),
+          schemaOf([
+            _col('email', 'Email', 1, type: 'email'),
+          ]));
       expect(rows.single.column!.isEditable, isTrue);
     });
 
     test('a custom field is not — it needs its own write shape', () {
-      final rows = leadDetailRows(_lead(), schemaOf([
-        _col('budget', 'Budget', 1, type: 'decimal', custom: true),
-      ]));
+      final rows = leadDetailRows(
+          _lead(),
+          schemaOf([
+            _col('budget', 'Budget', 1, type: 'decimal', custom: true),
+          ]));
       expect(rows.single.column!.isEditable, isFalse);
     });
 
     test('a column the schema gives no type is not editable', () {
       // Nothing says how to render or coerce it, so no box is offered.
-      final rows = leadDetailRows(_lead(), schemaOf([
-        _col('activity', 'Activity', 1, type: ''),
-      ]));
+      final rows = leadDetailRows(
+          _lead(),
+          schemaOf([
+            _col('activity', 'Activity', 1, type: ''),
+          ]));
       expect(rows.single.column!.isEditable, isFalse);
     });
   });
@@ -293,12 +310,22 @@ void _editableRowTests() {
     LeadColumn columnOf(Map<String, dynamic> raw) =>
         LeadSchemaRemoteDataSource.mapSchema({
           'has_org_config': true,
-          'all_fields': {'columns': [raw]},
+          'all_fields': {
+            'columns': [raw]
+          },
         }).columns.single;
 
     test('typeable fields do', () {
-      for (final type in ['string', 'email', 'url', 'phone', 'text', 'decimal']) {
-        expect(leadFieldEditsInline(columnOf(_col('f', 'F', 1, type: type))), isTrue,
+      for (final type in [
+        'string',
+        'email',
+        'url',
+        'phone',
+        'text',
+        'decimal'
+      ]) {
+        expect(leadFieldEditsInline(columnOf(_col('f', 'F', 1, type: type))),
+            isTrue,
             reason: type);
       }
     });
@@ -306,15 +333,22 @@ void _editableRowTests() {
     test('a picker field does not — a text box cannot produce its value', () {
       // A status is an id, a date is an ISO string, a boolean is a flag: typing
       // free text into any of them writes something the API rejects or misreads.
-      for (final type in ['foreignkey', 'manytomany', 'date', 'datetime', 'boolean']) {
-        expect(leadFieldEditsInline(columnOf(_col('f', 'F', 1, type: type))), isFalse,
+      for (final type in [
+        'foreignkey',
+        'manytomany',
+        'date',
+        'datetime',
+        'boolean'
+      ]) {
+        expect(leadFieldEditsInline(columnOf(_col('f', 'F', 1, type: type))),
+            isFalse,
             reason: type);
       }
     });
 
     test('a read-only column never does, whatever its type', () {
-      final c = columnOf(_col('created_at', 'Created on', 1,
-          type: 'string', inFields: false));
+      final c = columnOf(
+          _col('created_at', 'Created on', 1, type: 'string', inFields: false));
       expect(leadFieldEditsInline(c), isFalse);
     });
   });
@@ -323,11 +357,15 @@ void _editableRowTests() {
     LeadColumn columnOf(Map<String, dynamic> raw) =>
         LeadSchemaRemoteDataSource.mapSchema({
           'has_org_config': true,
-          'all_fields': {'columns': [raw]},
+          'all_fields': {
+            'columns': [raw]
+          },
         }).columns.single;
 
     test('an editable row has nothing to explain', () {
-      expect(leadInlineEditHint(columnOf(_col('email', 'Email', 1, type: 'email'))),
+      expect(
+          leadInlineEditHint(
+              columnOf(_col('email', 'Email', 1, type: 'email'))),
           isNull);
     });
 
@@ -345,10 +383,11 @@ void _editableRowTests() {
       expect(hint, startsWith('Status'));
     });
 
-    test('a custom field says it is not supported yet', () {
-      final hint = leadInlineEditHint(
-          columnOf(_col('budget', 'Budget', 1, type: 'decimal', custom: true)));
-      expect(hint, contains('custom field'));
+    test('a custom field edits in place by its own type', () {
+      expect(
+          leadInlineEditHint(columnOf(
+              _col('budget', 'Budget', 1, type: 'decimal', custom: true))),
+          isNull);
     });
 
     test('a row with no column behind it still answers', () {
@@ -364,7 +403,9 @@ void _sharedInlineEditTests() {
   LeadColumn columnOf(Map<String, dynamic> raw) =>
       LeadSchemaRemoteDataSource.mapSchema({
         'has_org_config': true,
-        'all_fields': {'columns': [raw]},
+        'all_fields': {
+          'columns': [raw]
+        },
       }).columns.single;
 
   group('inline editing — shared across modules', () {
@@ -378,7 +419,8 @@ void _sharedInlineEditTests() {
 
     test('a read-only row reads the same whichever module asks', () {
       final c = columnOf(_col('created_at', 'Created on', 1, inFields: false));
-      expect(inlineEditHint(c, editForm: 'Edit task'), 'Created on is read-only.');
+      expect(
+          inlineEditHint(c, editForm: 'Edit task'), 'Created on is read-only.');
       expect(inlineEditHint(c, editForm: 'Edit follow-up'),
           'Created on is read-only.');
     });

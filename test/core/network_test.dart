@@ -28,8 +28,8 @@ class _FakeAdapter implements HttpClientAdapter {
   }
 
   @override
-  Future<ResponseBody> fetch(RequestOptions options, Stream<List<int>>? _,
-      Future<void>? __) async {
+  Future<ResponseBody> fetch(
+      RequestOptions options, Stream<List<int>>? _, Future<void>? __) async {
     calls.add('${options.method} ${options.path}');
     final queue = script[options.path];
     if (queue == null || queue.isEmpty) {
@@ -126,8 +126,8 @@ void main() {
     });
 
     test('handles raw DRF detail bodies and throttling', () {
-      final e = AppError.fromDio(
-          http(429, {'detail': 'Request was throttled.'}));
+      final e =
+          AppError.fromDio(http(429, {'detail': 'Request was throttled.'}));
       expect(e.type, AppErrorType.throttled);
       expect(e.message, 'Request was throttled.');
     });
@@ -221,12 +221,55 @@ void main() {
       expect(adapter.calls.where((c) => c.contains('refresh')).length, 1);
     });
 
+    // C22: refresh before sending when the access token has expired.
+    String jwt(DateTime exp) {
+      String b64(Map<String, Object> m) =>
+          base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
+      return '${b64({'alg': 'HS256'})}.'
+          '${b64({'exp': exp.millisecondsSinceEpoch ~/ 1000})}.sig';
+    }
+
+    test('an expired JWT is refreshed before the request, not after a 401',
+        () async {
+      await tokens.saveTokens(
+          access: jwt(DateTime.now().subtract(const Duration(minutes: 5))),
+          refresh: 'refresh-1');
+      final fresh = jwt(DateTime.now().add(const Duration(minutes: 30)));
+      adapter.on('/auth/login/refresh/', 200, {'access': fresh});
+      adapter.on('/crm/leads/', 200, {'count': 0, 'results': []});
+      final res = await dio.get<dynamic>('/crm/leads/');
+      expect(res.statusCode, 200);
+      expect(tokens.accessToken, fresh);
+      // refresh first, then one request — no 401 round trip
+      expect(adapter.calls.where((c) => c.contains('/crm/leads/')).length, 1);
+      expect(adapter.calls.first, contains('refresh'));
+    });
+
+    test('a valid JWT is sent without refreshing', () async {
+      await tokens.saveTokens(
+          access: jwt(DateTime.now().add(const Duration(minutes: 20))),
+          refresh: 'refresh-1');
+      adapter.on('/crm/leads/', 200, {'count': 0, 'results': []});
+      await dio.get<dynamic>('/crm/leads/');
+      expect(adapter.calls.where((c) => c.contains('refresh')), isEmpty);
+    });
+
+    test('a rotated refresh token from the refresh endpoint is kept', () async {
+      adapter.on('/crm/leads/', 401, {'code': 401, 'message': 'expired'});
+      adapter.on('/auth/login/refresh/', 200,
+          {'access': 'new-access', 'refresh': 'refresh-2'});
+      adapter.on('/crm/leads/', 200, {'count': 0, 'results': []});
+      await dio.get<dynamic>('/crm/leads/');
+      expect(tokens.refreshToken, 'refresh-2');
+    });
+
     test('failed refresh clears tokens and fires session expiry', () async {
       adapter.on('/crm/leads/', 401, {'code': 401, 'message': 'expired'});
       adapter.on('/auth/login/refresh/', 401,
           {'code': 401, 'message': 'Token is blacklisted'});
 
-      await expectLater(dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
+      await expectLater(
+          dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
       expect(expired, isTrue);
       expect(tokens.hasSession, isFalse);
     });
@@ -235,26 +278,32 @@ void main() {
       adapter.on('/crm/leads/', 401,
           {'detail': 'Session has been revoked.', 'code': 'session_revoked'});
 
-      await expectLater(dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
+      await expectLater(
+          dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
       expect(expired, isTrue);
       expect(adapter.calls.any((c) => c.contains('refresh')), isFalse);
     });
 
-    test('a deactivated account signs out as user_inactive, without refreshing', () async {
-      adapter.on('/crm/leads/', 401, {'code': 401, 'message': 'User is inactive'});
+    test('a deactivated account signs out as user_inactive, without refreshing',
+        () async {
+      adapter
+          .on('/crm/leads/', 401, {'code': 401, 'message': 'User is inactive'});
       final interceptor = dio.interceptors.whereType<AuthInterceptor>().single;
 
-      await expectLater(dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
+      await expectLater(
+          dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
       expect(expired, isTrue);
       expect(interceptor.lastSignOutReason, 'user_inactive');
       expect(adapter.calls.any((c) => c.contains('refresh')), isFalse);
     });
 
     test('the webapp terminal codes are all final', () async {
-      adapter.on('/crm/leads/', 401, {'detail': 'Outside hours', 'code': 'session_outside_work_hours'});
+      adapter.on('/crm/leads/', 401,
+          {'detail': 'Outside hours', 'code': 'session_outside_work_hours'});
       final interceptor = dio.interceptors.whereType<AuthInterceptor>().single;
 
-      await expectLater(dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
+      await expectLater(
+          dio.get<dynamic>('/crm/leads/'), throwsA(isA<DioException>()));
       expect(interceptor.lastSignOutReason, 'session_outside_work_hours');
     });
 
@@ -292,9 +341,39 @@ void main() {
       api = ApiService(tokens: tokens, dio: dio, refreshDio: bare);
     });
 
+    // C24: user / team lists read every page, not just the first.
+    test('getAllPages merges every page into one body', () async {
+      adapter.on('/management/users/', 200, {
+        'count': 5, 'next': 'p2', 'results': [{'id': 1}, {'id': 2}]
+      });
+      adapter.on('/management/users/', 200, {
+        'count': 5, 'next': 'p3', 'results': [{'id': 3}, {'id': 4}]
+      });
+      adapter.on('/management/users/', 200, {
+        'count': 5, 'next': null, 'results': [{'id': 5}]
+      });
+      final body = await api.getAllPages('/management/users/',
+          query: {'page_size': 2}) as Map;
+      expect(body['count'], 5);
+      expect([for (final r in body['results'] as List) r['id']],
+          [1, 2, 3, 4, 5]);
+      expect(adapter.calls.length, 3);
+    });
+
+    test('getAllPages makes one request for a one-page list', () async {
+      adapter.on('/management/users/', 200, {
+        'count': 1, 'next': null, 'results': [{'id': 1}]
+      });
+      final body = await api.getAllPages('/management/users/') as Map;
+      expect((body['results'] as List).length, 1);
+      expect(adapter.calls.length, 1);
+    });
+
     test('a 403 read publishes, even when the caller swallows it', () async {
-      adapter.on('/crm/lead-statuses/', 403,
-          {'code': 403, 'message': 'You do not have permission to view statuses.'});
+      adapter.on('/crm/lead-statuses/', 403, {
+        'code': 403,
+        'message': 'You do not have permission to view statuses.'
+      });
 
       // Exactly what the catalog data sources do.
       try {
@@ -314,7 +393,9 @@ void main() {
         'code': 400,
         'message': 'Validation Error',
         'errors': {
-          'related_to': ['Invalid model name. Must be one of: lead, …, quotation']
+          'related_to': [
+            'Invalid model name. Must be one of: lead, …, quotation'
+          ]
         },
       });
 

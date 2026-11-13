@@ -38,13 +38,48 @@ class MockUsers {
   MockUsers._();
 
   static const List<AppUser> reps = [
-    AppUser(id: 'me', name: 'Manoj Varma', initials: 'MV', color: AppColors.navy, role: 'System Admin · You'),
-    AppUser(id: 'am', name: 'Anjana Menon', initials: 'AM', color: AppColors.navy, role: 'Sales executive · Team Kochi'),
-    AppUser(id: 'rk', name: 'Rahul Krishnan', initials: 'RK', color: AppColors.navy, role: 'Sales executive · Team Kochi'),
-    AppUser(id: 'fa', name: 'Fariz Ahmed', initials: 'FA', color: AppColors.navy, role: 'Sales executive · Team North Kerala'),
-    AppUser(id: 'dr', name: 'Deepak Raj', initials: 'DR', color: AppColors.navy, role: 'Sales executive · Team South Kerala'),
-    AppUser(id: 'st', name: 'Sneha Thomas', initials: 'ST', color: AppColors.navy, role: 'Sales executive · Team Kochi'),
-    AppUser(id: 'an', name: 'Arjun Nair', initials: 'AN', color: AppColors.navy, role: 'Manager · Team Central'),
+    AppUser(
+        id: 'me',
+        name: 'Manoj Varma',
+        initials: 'MV',
+        color: AppColors.navy,
+        role: 'System Admin · You'),
+    AppUser(
+        id: 'am',
+        name: 'Anjana Menon',
+        initials: 'AM',
+        color: AppColors.navy,
+        role: 'Sales executive · Team Kochi'),
+    AppUser(
+        id: 'rk',
+        name: 'Rahul Krishnan',
+        initials: 'RK',
+        color: AppColors.navy,
+        role: 'Sales executive · Team Kochi'),
+    AppUser(
+        id: 'fa',
+        name: 'Fariz Ahmed',
+        initials: 'FA',
+        color: AppColors.navy,
+        role: 'Sales executive · Team North Kerala'),
+    AppUser(
+        id: 'dr',
+        name: 'Deepak Raj',
+        initials: 'DR',
+        color: AppColors.navy,
+        role: 'Sales executive · Team South Kerala'),
+    AppUser(
+        id: 'st',
+        name: 'Sneha Thomas',
+        initials: 'ST',
+        color: AppColors.navy,
+        role: 'Sales executive · Team Kochi'),
+    AppUser(
+        id: 'an',
+        name: 'Arjun Nair',
+        initials: 'AN',
+        color: AppColors.navy,
+        role: 'Manager · Team Central'),
   ];
 
   static final Map<String, AppUser> byId = {for (final r in reps) r.id: r};

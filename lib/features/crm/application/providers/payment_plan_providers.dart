@@ -14,7 +14,8 @@ final paymentPlanRemoteProvider = Provider<PaymentPlanRemoteDataSource>(
 /// Refetched off the write tick: settling, re-splitting or adding a milestone
 /// recalculates the plan server-side. The screen renders its own not-found /
 /// load-error state, so the failure is withdrawn from the shell toast.
-final paymentPlanDetailProvider = FutureProvider.autoDispose.family<PlanDetail, String>((ref, planId) async {
+final paymentPlanDetailProvider =
+    FutureProvider.autoDispose.family<PlanDetail, String>((ref, planId) async {
   ref.watch(apiWriteTickProvider);
   try {
     return await ref.read(paymentPlanRemoteProvider).getPlan(planId);
@@ -25,7 +26,8 @@ final paymentPlanDetailProvider = FutureProvider.autoDispose.family<PlanDetail, 
 });
 
 /// One payment record, keyed by `record_id`. Same refresh / error rules.
-final paymentRecordDetailProvider = FutureProvider.autoDispose.family<PlanRecord, String>((ref, recordId) async {
+final paymentRecordDetailProvider = FutureProvider.autoDispose
+    .family<PlanRecord, String>((ref, recordId) async {
   ref.watch(apiWriteTickProvider);
   try {
     return await ref.read(paymentPlanRemoteProvider).getRecord(recordId);
@@ -36,10 +38,13 @@ final paymentRecordDetailProvider = FutureProvider.autoDispose.family<PlanRecord
 });
 
 /// The lead behind a lead-only plan, read off its quote. '' when unknown.
-final planQuoteLeadIdProvider = FutureProvider.autoDispose.family<String, String>((ref, quotationId) async {
+final planQuoteLeadIdProvider =
+    FutureProvider.autoDispose.family<String, String>((ref, quotationId) async {
   if (quotationId.isEmpty) return '';
   try {
-    return await ref.read(paymentPlanRemoteProvider).getQuoteLeadId(quotationId);
+    return await ref
+        .read(paymentPlanRemoteProvider)
+        .getQuoteLeadId(quotationId);
   } on AppError {
     return '';
   }

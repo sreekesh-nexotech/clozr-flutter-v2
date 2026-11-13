@@ -11,7 +11,12 @@ import '../domain/entities/ticket.dart';
 String ticketChannelLabel(String? code) {
   final c = (code ?? '').trim().toLowerCase();
   if (c.isEmpty) return 'Unset';
-  const known = {'email': 'Email', 'whatsapp': 'WhatsApp', 'phone': 'Phone', 'api': 'API / Webhook'};
+  const known = {
+    'email': 'Email',
+    'whatsapp': 'WhatsApp',
+    'phone': 'Phone',
+    'api': 'API / Webhook'
+  };
   if (known[c] case final label?) return label;
   final words = c.replaceAll(RegExp(r'[_-]+'), ' ').trim();
   return words[0].toUpperCase() + words.substring(1);
@@ -22,7 +27,8 @@ bool isReplyDispatchable(String? code) => code == 'email' || code == 'whatsapp';
 
 /// "Log first response" is offered while no first response is recorded and
 /// the ticket is not locked — on any channel.
-bool canLogFirstResponse(Ticket t) => (t.respondedISO ?? '').isEmpty && !t.isLocked;
+bool canLogFirstResponse(Ticket t) =>
+    (t.respondedISO ?? '').isEmpty && !t.isLocked;
 
 /// Header sub-line: "<Category or Uncategorised> · <Customer or No customer>".
 String ticketHeaderSubline(Ticket t) {
@@ -52,7 +58,8 @@ String firstResponseAgo(Ticket t, {DateTime? now}) =>
     'First response ${_timeAgo(t.respondedISO, now: now).toLowerCase()}';
 
 /// "Added 5m ago · Sufail Salim".
-String attachmentAddedLine(TicketAttachment a, {DateTime? now, String uploader = ''}) {
+String attachmentAddedLine(TicketAttachment a,
+    {DateTime? now, String uploader = ''}) {
   final ago = _timeAgo(a.uploadedAt?.toIso8601String(), now: now);
   final by = a.uploadedBy.isNotEmpty ? a.uploadedBy : uploader;
   return by.isEmpty ? 'Added $ago' : 'Added $ago · $by';
@@ -69,7 +76,9 @@ String formatSlaTarget(num? value, String? unit) {
   final u = (unit ?? '').trim().toLowerCase();
   if (value == null || u.isEmpty) return 'No SLA';
   final singular = u.endsWith('s') ? u.substring(0, u.length - 1) : u;
-  final v = value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+  final v = value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
   return '$v ${value == 1 ? singular : '${singular}s'}';
 }
 
@@ -96,30 +105,61 @@ SlaSeg? firstResponseSeg(Ticket t) {
   final f = t.facts;
   if ((t.respByISO ?? '').isEmpty) return null;
   if ((t.respondedISO ?? '').isNotEmpty) {
-    return (label: 'Met · ${ticketDateTime(t.respondedISO)}', tone: SlaTone.met, icon: SlaIcon.check);
+    return (
+      label: 'Met · ${ticketDateTime(t.respondedISO)}',
+      tone: SlaTone.met,
+      icon: SlaIcon.check
+    );
   }
-  if (f?.statusOnHold ?? t.isPaused) return (label: 'Paused', tone: SlaTone.muted, icon: SlaIcon.pause);
+  if (f?.statusOnHold ?? t.isPaused)
+    return (label: 'Paused', tone: SlaTone.muted, icon: SlaIcon.pause);
   final left = f?.firstResponseRemainingSeconds;
-  if (left == null) return (label: 'Due ${ticketDateTime(t.respByISO)}', tone: SlaTone.normal, icon: SlaIcon.clock);
+  if (left == null)
+    return (
+      label: 'Due ${ticketDateTime(t.respByISO)}',
+      tone: SlaTone.normal,
+      icon: SlaIcon.clock
+    );
   final r = formatSlaRemaining(left);
   return r.overdue
-      ? (label: 'Breached · was due ${ticketDateTime(t.respByISO)}', tone: SlaTone.breached, icon: SlaIcon.alert)
-      : (label: 'Due ${ticketDateTime(t.respByISO)} · ${r.label}', tone: SlaTone.normal, icon: SlaIcon.clock);
+      ? (
+          label: 'Breached · was due ${ticketDateTime(t.respByISO)}',
+          tone: SlaTone.breached,
+          icon: SlaIcon.alert
+        )
+      : (
+          label: 'Due ${ticketDateTime(t.respByISO)} · ${r.label}',
+          tone: SlaTone.normal,
+          icon: SlaIcon.clock
+        );
 }
 
 /// The Resolution row — always shown.
 SlaSeg resolutionSeg(Ticket t) {
   if ((t.resolvedISO ?? '').isNotEmpty) {
-    return (label: 'Resolved · ${ticketDateTime(t.resolvedISO)}', tone: SlaTone.met, icon: SlaIcon.check);
+    return (
+      label: 'Resolved · ${ticketDateTime(t.resolvedISO)}',
+      tone: SlaTone.met,
+      icon: SlaIcon.check
+    );
   }
   final left = t.facts?.slaRemainingSeconds;
-  if (left == null) return (label: 'No SLA', tone: SlaTone.muted, icon: SlaIcon.off);
+  if (left == null)
+    return (label: 'No SLA', tone: SlaTone.muted, icon: SlaIcon.off);
   if (t.facts?.slaHoldStarted ?? false) {
-    return (label: 'Paused — waiting on customer', tone: SlaTone.muted, icon: SlaIcon.pause);
+    return (
+      label: 'Paused — waiting on customer',
+      tone: SlaTone.muted,
+      icon: SlaIcon.pause
+    );
   }
   final r = formatSlaRemaining(left);
   if (r.overdue) {
-    return (label: '${r.label} · was due ${ticketDateTime(t.resolveByISO)}', tone: SlaTone.breached, icon: SlaIcon.alert);
+    return (
+      label: '${r.label} · was due ${ticketDateTime(t.resolveByISO)}',
+      tone: SlaTone.breached,
+      icon: SlaIcon.alert
+    );
   }
   return (
     label: 'Due ${ticketDateTime(t.resolveByISO)} · ${r.label}',
@@ -135,7 +175,8 @@ String? billingRowValue(Ticket t, String Function(double) money) {
   final parts = [t.isBilled ? 'Billed' : 'Billable'];
   final amount = double.tryParse(t.billableAmount ?? '');
   if (amount != null) parts.add(money(amount));
-  if ((t.billableProductId ?? '').isNotEmpty) parts.add(amount != null ? '+ product' : 'product');
+  if ((t.billableProductId ?? '').isNotEmpty)
+    parts.add(amount != null ? '+ product' : 'product');
   return parts.join(' · ');
 }
 
@@ -151,7 +192,8 @@ String customFieldLabel(String key) {
 /// server's `error_codes` (the prose names tickets and changes).
 String hierarchyErrorCopy(AppError e) {
   final codes = e.fieldErrorCodes('parent_issue');
-  if (codes.contains('parent_self_reference')) return "A ticket can't be its own parent.";
+  if (codes.contains('parent_self_reference'))
+    return "A ticket can't be its own parent.";
   if (codes.contains('parent_depth_exceeded')) {
     return 'That ticket is already a child of another ticket. Tickets can only nest two levels deep.';
   }
@@ -159,7 +201,8 @@ String hierarchyErrorCopy(AppError e) {
     return "That ticket already has children of its own, so it can't become a child.";
   }
   if (e.fieldErrors?.containsKey('issue_id') == true ||
-      RegExp('not found in this organization', caseSensitive: false).hasMatch(e.bareMessage)) {
+      RegExp('not found in this organization', caseSensitive: false)
+          .hasMatch(e.bareMessage)) {
     return "That ticket couldn't be found in this workspace.";
   }
   return e.bareMessage;
@@ -173,8 +216,13 @@ List<({String id, String name})> assigneeChoices(
   String? currentName,
 }) {
   final out = [...eligible];
-  if (currentId != null && currentId.isNotEmpty && !out.any((u) => u.id == currentId)) {
-    out.insert(0, (id: currentId, name: (currentName ?? '').isEmpty ? 'Current assignee' : currentName!));
+  if (currentId != null &&
+      currentId.isNotEmpty &&
+      !out.any((u) => u.id == currentId)) {
+    out.insert(0, (
+      id: currentId,
+      name: (currentName ?? '').isEmpty ? 'Current assignee' : currentName!
+    ));
   }
   return out;
 }

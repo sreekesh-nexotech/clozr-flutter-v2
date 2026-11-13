@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../../core/widgets/row_actions_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import '../../../../app/router/routes.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
+import '../../../../core/widgets/status_group_bar.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
@@ -20,8 +25,10 @@ import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/providers/lead_schema_providers.dart';
 import '../../application/providers/leads_providers.dart';
 import '../../application/providers/saved_filters_providers.dart';
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/lead.dart';
 import '../components/lead_card.dart';
+import '../../../onboarding/presentation/tour_anchor.dart';
 import '../components/saved_chip_row.dart' as chips;
 
 /// Leads list — the reference CRM list screen. Header (brand + title + search +
@@ -56,7 +63,8 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     }
     // A query left behind by a collapsed box would filter the list with
     // nothing on screen saying so; only keep it while the box is open.
-    if (!ref.read(leadSearchOpenProvider) && ref.read(leadSearchProvider).isNotEmpty) {
+    if (!ref.read(leadSearchOpenProvider) &&
+        ref.read(leadSearchProvider).isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(leadSearchProvider.notifier).state = '';
       });
@@ -76,14 +84,21 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // Contextual add: the bottom-nav `+` opens the Add lead form on this screen.
     registerAdd(
       ref,
-      AddAction(label: 'Add lead', module: 'lead', run: (ctx) => ctx.push(Routes.addLead)),
+      AddAction(
+          label: 'Add lead',
+          module: 'lead',
+          run: (ctx) => ctx.push(Routes.addLead)),
     );
 
     final async = ref.watch(leadsListProvider);
     final tab = ref.watch(leadTabProvider);
     final searchOpen = ref.watch(leadSearchOpenProvider);
     final query = ref.watch(leadSearchProvider);
-    final filterCount = ref.watch(leadFiltersProvider).activeCount;
+    // "My leads" (a Home card's scope) counts as a filter so the badge and
+    // Clear filters show it; it is not a drawer facet of its own.
+    final filterCount = ref.watch(leadFiltersProvider).activeCount +
+        (ref.watch(leadMineProvider) ? 1 : 0) +
+        (ref.watch(leadScopeParamsProvider).isNotEmpty ? 1 : 0);
 
     final tabBase = ref.watch(leadSearchedProvider);
     // The org's own pipeline stages when `/crm/lead-statuses/` has loaded,
@@ -91,10 +106,18 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // the catalog, so the row looks unchanged but reads the org's stages.
     final tabDefs = ref.watch(leadTabsProvider);
     final archived = ref.watch(leadArchivedProvider);
-    final lanes = {for (final t in tabDefs) if (t.id != 'all') t.id};
+    final lanes = {
+      for (final t in tabDefs)
+        if (t.id != 'all') t.id
+    };
     // Webapp: board total minus the lanes' sum — leads in no known stage.
-    final otherCount = leadTabCount(tabBase, leadOtherTab, lanes: lanes);
     final statuses = ref.watch(leadStatusesProvider);
+    // The server's aggregate when it answered, else the loaded rows.
+    final counts = ref.watch(leadStatusCountsProvider).valueOrNull ??
+        const <String, int>{};
+    int countOf(String key) =>
+        counts[key] ?? leadTabCount(tabBase, key, lanes: lanes);
+    final otherCount = countOf(leadOtherTab);
     // Watched purely to start the drawer's option-list fetches now, at mount.
     // Nothing else on this screen references them, so without this they would
     // not begin loading until the user opened the drawer — and the sheet would
@@ -114,6 +137,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
             const HeaderHairline(),
             SizedBox(height: 14.h),
             ScreenTitleRow(
+              tourArea: 'leads',
               title: 'Leads',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
@@ -133,7 +157,8 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search name, company, product…',
-                onChanged: (v) => ref.read(leadSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(leadSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(leadSearchProvider.notifier).state = '';
@@ -142,107 +167,149 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
               ),
             ],
             SizedBox(height: 10.h),
-            SizedBox(
-              height: 40.h,
-              child: TabChipRow(
-                children: [
-                  // Multi-select like the webapp: "All" is the empty set and
-                  // status chips OR-combine; counts follow search and filters,
-                  // never the chip selection.
-                  for (final t in tabDefs)
+            // The org's statuses grouped by type (Oct 2026 header); the flat
+            // per-stage row only while `/crm/lead-statuses/` is unavailable
+            // (loading, failed, mock mode), when no stage has a type to group by.
+            if (statuses.isNotEmpty)
+              _groupBar(statuses, tab,
+                  counts: countOf, otherCount: otherCount, archived: archived)
+            else
+              SizedBox(
+                height: 40.h,
+                child: TabChipRow(
+                  children: [
+                    // Multi-select like the webapp: "All" is the empty set and
+                    // status chips OR-combine; counts follow search and filters,
+                    // never the chip selection.
+                    for (final t in tabDefs)
+                      TabChip(
+                        label: '${t.label} (${countOf(t.id)})',
+                        active:
+                            t.id == 'all' ? tab.isEmpty : tab.contains(t.id),
+                        dotColor: t.color,
+                        onTap: () => _toggleTab(t.id),
+                      ),
+                    if (otherCount > 0 || tab.contains(leadOtherTab))
+                      TabChip(
+                        label: 'Other / no status ($otherCount)',
+                        active: tab.contains(leadOtherTab),
+                        onTap: () => _toggleTab(leadOtherTab),
+                      ),
                     TabChip(
-                      label: '${t.label} (${leadTabCount(tabBase, t.id)})',
-                      active: t.id == 'all' ? tab.isEmpty : tab.contains(t.id),
-                      dotColor: t.color,
-                      onTap: () => _toggleTab(t.id),
+                      label: 'Archived',
+                      icon: PhosphorIconsRegular.archive,
+                      active: archived,
+                      onTap: _toggleArchived,
                     ),
-                  if (otherCount > 0 || tab.contains(leadOtherTab))
-                    TabChip(
-                      label: 'Other / no status ($otherCount)',
-                      active: tab.contains(leadOtherTab),
-                      onTap: () => _toggleTab(leadOtherTab),
-                    ),
-                  TabChip(
-                    label: 'Archived',
-                    icon: PhosphorIconsRegular.archive,
-                    active: archived,
-                    onTap: _toggleArchived,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             SizedBox(height: 12.h),
             _savedViewRow(filterCount),
             SizedBox(height: 14.h),
           ],
         ),
         Expanded(
-          child: AsyncStateView<List<Lead>>(
-            value: async,
-            onRetry: () => ref.invalidate(leadsScopedProvider),
-            onRefresh: _refresh,
-            data: (_) {
-              final visible = ref.watch(visibleLeadsProvider);
-              if (visible.isEmpty) {
-                return ListView(
-                  // So the gesture still works with nothing to scroll.
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    _isNarrowed() || !archived
-                        ? _isNarrowed() ? EmptyState(
-                            icon: PhosphorIconsRegular.funnel,
-                            title: 'No leads match your filters',
-                            body: 'Try widening your search or clearing a filter to see more.',
-                            ctaLabel: 'Clear filters',
-                            ctaIcon: PhosphorIconsBold.xCircle,
-                            onCta: _resetListView,
-                          )
-                        : EmptyState(
-                            icon: PhosphorIconsRegular.magnifyingGlass,
-                            title: 'No leads yet',
-                            body: 'Leads are the people and companies you\'re selling to. Add your first one to get started.',
-                            ctaLabel: 'Add lead',
-                            ctaIcon: PhosphorIconsBold.plus,
-                            onCta: () => context.push(Routes.addLead),
-                          )
-                        : EmptyState(
-                            icon: PhosphorIconsRegular.archive,
-                            title: 'No archived leads',
-                            body: 'Leads you archive show up here — and lost leads, if your organization auto-archives them.',
-                            ctaLabel: 'Back to active leads',
-                            ctaIcon: PhosphorIconsBold.arrowLeft,
-                            onCta: _toggleArchived,
-                          ),
-                  ],
-                );
-              }
-              return ListView.separated(
-                // Scrolling the results puts the search keyboard away. Without
-                // it the only exit is the search field's own × chip, so the
-                // keyboard covered the rows the user had just searched for.
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                itemCount: visible.length,
-                separatorBuilder: (_, __) => SizedBox(height: 14.h),
-                itemBuilder: (context, i) {
-                  final lead = visible[i];
-                  return LeadCard(
-                    lead: lead,
-                    // Resolved here rather than inside the card so the pill and
-                    // the tab dot above it always agree on name and colour.
-                    status: leadStatusMeta(lead, statuses),
-                    schema: schema,
-                    onTap: () => context.push('${Routes.leadDetail}?id=${lead.id}'),
-                    onCall: () => ref.read(toastProvider.notifier).show('Calling ${lead.name.split(' ').first}…'),
+          child: TourAnchor(
+              id: TourAnchors.leadsList,
+              child: AsyncStateView<List<Lead>>(
+                value: async,
+                onRetry: () => ref.invalidate(leadsScopedProvider),
+                onRefresh: _refresh,
+                data: (_) {
+                  final visible = ref.watch(visibleLeadsProvider);
+                  if (visible.isEmpty) {
+                    return ListView(
+                      // So the gesture still works with nothing to scroll.
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        _isNarrowed() || !archived
+                            ? _isNarrowed()
+                                ? EmptyState(
+                                    icon: PhosphorIconsRegular.funnel,
+                                    title: 'No leads match your filters',
+                                    body:
+                                        'Try widening your search or clearing a filter to see more.',
+                                    ctaLabel: 'Clear filters',
+                                    ctaIcon: PhosphorIconsBold.xCircle,
+                                    onCta: _resetListView,
+                                  )
+                                : EmptyState(
+                                    icon: PhosphorIconsRegular.magnifyingGlass,
+                                    title: 'No leads yet',
+                                    body:
+                                        'Leads are the people and companies you\'re selling to. Add your first one to get started.',
+                                    ctaLabel: 'Add lead',
+                                    ctaIcon: PhosphorIconsBold.plus,
+                                    onCta: () => context.push(Routes.addLead),
+                                  )
+                            : EmptyState(
+                                icon: PhosphorIconsRegular.archive,
+                                title: 'No archived leads',
+                                body:
+                                    'Leads you archive show up here — and lost leads, if your organization auto-archives them.',
+                                ctaLabel: 'Back to active leads',
+                                ctaIcon: PhosphorIconsBold.arrowLeft,
+                                onCta: _toggleArchived,
+                              ),
+                      ],
+                    );
+                  }
+                  return ListView.separated(
+                    // Scrolling the results puts the search keyboard away. Without
+                    // it the only exit is the search field's own × chip, so the
+                    // keyboard covered the rows the user had just searched for.
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                    itemCount: visible.length,
+                    separatorBuilder: (_, __) => SizedBox(height: 14.h),
+                    itemBuilder: (context, i) {
+                      final lead = visible[i];
+                      return LeadCard(
+                        // The shared row actions (View / Edit) on a long press.
+                        onLongPress: () => _showRowMenu(lead),
+                        lead: lead,
+                        // Resolved here rather than inside the card so the pill and
+                        // the tab dot above it always agree on name and colour.
+                        status: leadStatusMeta(lead, statuses),
+                        schema: schema,
+                        onTap: () =>
+                            context.push('${Routes.leadDetail}?id=${lead.id}'),
+                        onCall: () => ref
+                            .read(toastProvider.notifier)
+                            .show('Calling ${lead.name.split(' ').first}…'),
+                      );
+                    },
                   );
                 },
-              );
-            },
-          ),
+              )),
         ),
       ],
     );
+  }
+
+  /// Long-press on a row: View lead / Edit lead, as the webapp's row actions.
+  /// "Edit lead" opens the lead's edit form, after the same guards as the
+  /// detail's pencil: update right, and a Won lead's locked fields.
+  Future<void> _showRowMenu(Lead lead) async {
+    final pick = await showRowActionsSheet(context,
+        title: lead.name,
+        actions: [RowAction.view('lead'), RowAction.edit('lead')]);
+    if (pick == null || !mounted) return;
+    if (pick == 'view') {
+      context.push('${Routes.leadDetail}?id=${lead.id}');
+      return;
+    }
+    if (lead.status == 'won') {
+      ref
+          .read(toastProvider.notifier)
+          .show('Won — details are locked. Move it out of Won to edit.');
+      return;
+    }
+    if (!ensurePermission(ref, 'lead', PermVerb.update)) return;
+    context.push('${Routes.addLead}?id=${lead.id}');
   }
 
   /// Pull-to-refresh. Takes the rows, the org's vocabularies, the card layout
@@ -254,6 +321,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   /// restart to show up.
   Future<void> _refresh() async {
     ref.invalidate(leadsScopedProvider);
+    ref.invalidate(leadStatusCountsProvider);
     ref.invalidate(leadStatusCatalogProvider);
     ref.invalidate(leadSourceCatalogProvider);
     ref.invalidate(leadListSchemaFutureProvider);
@@ -286,8 +354,8 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // if that fetch fails; the preview is an estimate, never a blocker.
     List<Lead> previewBase;
     try {
-      previewBase = await ref
-          .read(leadsScopedProvider(ref.read(leadsUnfilteredQueryProvider)).future);
+      previewBase = await ref.read(
+          leadsScopedProvider(ref.read(leadsUnfilteredQueryProvider)).future);
     } on Object {
       previewBase = ref.read(leadBaseProvider);
     }
@@ -303,9 +371,17 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       initial: current,
       // Still the local matcher: a live count per keystroke cannot be a round
       // trip. Apply is authoritative — that is what re-queries the server.
-      previewCount: (draft) => previewBase.where((l) => leadMatchesFilters(l, draft)).length,
+      // API mode: the mobile rows do not carry every filtered field (no
+      // `lead_source` on the list view), so the local estimate read "0" for
+      // Source = Website while Apply returned 9 (UAT). No count beats a wrong
+      // one; the server's own count arrives with Apply.
+      previewCount: ApiConfig.apiEnabled
+          ? (_) => -1
+          : (draft) =>
+              previewBase.where((l) => leadMatchesFilters(l, draft)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(leadSavedFiltersProvider).filters.map((f) => f.name).toSet(),
+      existingViewNames:
+          ref.read(leadSavedFiltersProvider).filters.map((f) => f.name).toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;
@@ -330,9 +406,12 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   /// combination that was fetched earlier really re-queries instead of serving
   /// the list as it looked then.
   void _applyFilters(FilterValues values) {
-    final params = leadFilterParamsFor(values, ref.read(leadFilterCodecProvider));
-    ref.invalidate(leadsScopedProvider(
-        leadListQueryFor(params, archived: ref.read(leadArchivedProvider))));
+    final params =
+        leadFilterParamsFor(values, ref.read(leadFilterCodecProvider));
+    ref.invalidate(leadsScopedProvider(leadListQueryFor(params,
+        archived: ref.read(leadArchivedProvider),
+        mine: ref.read(leadMineProvider),
+        extra: ref.read(leadScopeParamsProvider))));
     ref.read(leadFiltersProvider.notifier).state = values;
   }
 
@@ -347,10 +426,14 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
         .read(leadSavedFiltersProvider)
         .filters
         .any((f) => f.name.trim().toLowerCase() == name.trim().toLowerCase());
-    final error = await ref.read(leadSavedFiltersProvider.notifier).save(name, definition);
+    final error = await ref
+        .read(leadSavedFiltersProvider.notifier)
+        .save(name, definition);
     if (!mounted) return;
     final toast = ref.read(toastProvider.notifier);
-    error != null ? toast.showError(error) : toast.show(updating ? 'Filter updated' : 'Filter saved');
+    error != null
+        ? toast.showError(error)
+        : toast.show(updating ? 'Filter updated' : 'Filter saved');
   }
 
   /// Deletes a saved view after the chip's confirm. Removing the applied view
@@ -378,7 +461,10 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
         children: [
           Expanded(
             child: chips.SavedChipRow(
-              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name, invalid: !f.isValid)],
+              views: [
+                for (final f in saved.filters)
+                  chips.SavedView(f.id, f.name, invalid: !f.isValid)
+              ],
               active: {if (saved.activeId != null) saved.activeId!},
               showClearAlways: filterCount > 0,
               onToggle: _toggleView,
@@ -405,7 +491,9 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.filters.where((f) => f.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     // A filter the server marked invalid (it references a purged custom field)
@@ -413,7 +501,8 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     if (!view.isValid) {
       // Webapp `applyPreset`: the server's reason, else its fallback.
       ref.read(toastProvider.notifier).showError(
-            view.invalidReason ?? 'This saved filter is invalid and cannot be applied.',
+            view.invalidReason ??
+                'This saved filter is invalid and cannot be applied.',
           );
       return;
     }
@@ -435,16 +524,99 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   /// the webapp then says "match your filters" instead of "yet".
   bool _isNarrowed() =>
       ref.read(leadSearchProvider).trim().isNotEmpty ||
+      ref.read(leadMineProvider) ||
+      ref.read(leadScopeParamsProvider).isNotEmpty ||
       ref.read(leadFiltersProvider).activeCount > 0 ||
-      ref.read(leadTabProvider).isNotEmpty;
+      ref.read(leadTabProvider).isNotEmpty ||
+      ref.read(leadGroupProvider) != null;
 
-  void _toggleTab(String id) =>
-      ref.read(leadTabProvider.notifier).update((s) => toggleLeadTab(s, id));
+  void _toggleTab(String id) {
+    // "All" and "Other" leave every group; a stage keeps the group it is in.
+    if (id == 'all' || id == leadOtherTab)
+      ref.read(leadGroupProvider.notifier).state = null;
+    ref.read(leadTabProvider.notifier).update((s) => toggleLeadTab(s, id));
+  }
+
+  /// The group row: `All`, the five status types, then "Other / no status" and
+  /// "Archived"; a picked type opens a second row with its own stages.
+  Widget _groupBar(
+    List<CatalogOption> statuses,
+    Set<String> tab, {
+    required int Function(String) counts,
+    required int otherCount,
+    required bool archived,
+  }) {
+    final group = ref.watch(leadGroupProvider);
+    final open = StatusGroups.displayedGroup(
+      picked: tab,
+      group: group,
+      statuses: statuses,
+      groupOf: StatusGroups.ofTyped,
+      keyOf: (s) => s.key,
+    );
+    int groupCount(String code) =>
+        ref
+            .watch(leadStatusCountsProvider)
+            .valueOrNull?[StatusGroups.countKey(code)] ??
+        [
+          for (final s in statuses)
+            if (StatusGroups.ofTyped(s) == code) counts(s.key)
+        ].fold(0, (a, b) => a + b);
+    return StatusGroupBar(
+      allCount: counts('all'),
+      allActive: tab.isEmpty && open == null,
+      onAll: () => _toggleTab('all'),
+      groups: [
+        for (final g in StatusGroups.lead)
+          StatusGroupChip(
+              code: g.code, label: g.label, count: groupCount(g.code)),
+      ],
+      activeGroup: open,
+      onGroup: (code) => _pickGroup(code, open),
+      statuses: [
+        for (final s in statuses)
+          if (open != null && StatusGroups.ofTyped(s) == open)
+            StatusGroupStatusChip(
+              key: s.key,
+              label: s.name,
+              count: counts(s.key),
+              active: tab.contains(s.key),
+              color: leadStatusColor(s),
+            ),
+      ],
+      onStatus: (key) {
+        ref.read(leadGroupProvider.notifier).state = open;
+        _toggleTab(key);
+      },
+      trailing: [
+        if (otherCount > 0 || tab.contains(leadOtherTab))
+          TabChip(
+            label: 'Other / no status ($otherCount)',
+            active: tab.contains(leadOtherTab),
+            onTap: () => _toggleTab(leadOtherTab),
+          ),
+        TabChip(
+          label: 'Archived',
+          icon: PhosphorIconsRegular.archive,
+          active: archived,
+          onTap: _toggleArchived,
+        ),
+      ],
+    );
+  }
+
+  /// A group picked on its own lists every stage of that type; picking the
+  /// open group again goes back to All.
+  void _pickGroup(String code, String? open) {
+    ref.read(leadTabProvider.notifier).state = const {};
+    ref.read(leadGroupProvider.notifier).state = code == open ? null : code;
+  }
 
   /// The webapp's Archived toggle: list, counts and search switch to archived
   /// leads (`is_archive=true`); the chip selection resets like a page change.
   void _toggleArchived() {
     ref.read(leadTabProvider.notifier).state = const {};
+    ref.read(leadGroupProvider.notifier).state = null;
     ref.read(leadArchivedProvider.notifier).update((a) => !a);
   }
 
@@ -453,10 +625,14 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     _searchCtrl.clear();
     ref.read(leadSearchProvider.notifier).state = '';
     ref.read(leadTabProvider.notifier).state = const {};
+    ref.read(leadGroupProvider.notifier).state = null;
     _clearFilters();
   }
 
   void _clearFilters() {
+    // A Home card's "My leads" scope clears with everything else.
+    ref.read(leadMineProvider.notifier).state = false;
+    ref.read(leadScopeParamsProvider.notifier).state = const {};
     ref.read(leadSavedFiltersProvider.notifier).deactivate();
     _applyFilters(FilterValues());
     ref.read(toastProvider.notifier).show('Filters cleared');

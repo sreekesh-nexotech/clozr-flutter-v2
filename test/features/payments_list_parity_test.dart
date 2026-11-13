@@ -30,8 +30,10 @@ void main() {
     test('type labels match the webapp', () {
       expect(plan({'payment_type': 'lumpsum'}).type, 'Lump sum');
       expect(plan({'payment_type': 'subscription'}).type, 'Subscription');
-      expect(plan({'payment_type': 'installment_even'}).type, 'Instalments – even split');
-      expect(plan({'payment_type': 'installment_custom'}).type, 'Milestone-based');
+      expect(plan({'payment_type': 'installment_even'}).type,
+          'Instalments – even split');
+      expect(
+          plan({'payment_type': 'installment_custom'}).type, 'Milestone-based');
       expect(planTypeLabel('some_new_type'), 'Some new type');
     });
 
@@ -45,14 +47,31 @@ void main() {
       });
       expect(sub.status, 'partial');
       // QTN-00004: nothing paid.
-      expect(plan({'total_amount': '86999.00', 'amount_paid': 0.0, 'amount_remaining': 86999.0}).status, 'unpaid');
+      expect(
+          plan({
+            'total_amount': '86999.00',
+            'amount_paid': 0.0,
+            'amount_remaining': 86999.0
+          }).status,
+          'unpaid');
       // QTN-00009: the server says completed even with GST still open.
       expect(
-        plan({'status': 'completed', 'total_amount': '50000.00', 'amount_paid': 50000.0, 'amount_remaining': 7430.87}).status,
+        plan({
+          'status': 'completed',
+          'total_amount': '50000.00',
+          'amount_paid': 50000.0,
+          'amount_remaining': 7430.87
+        }).status,
         'completed',
       );
       // Nothing left to settle completes it too (TDS-settled).
-      expect(plan({'total_amount': '100.00', 'amount_paid': 90.0, 'amount_remaining': 0.0}).status, 'completed');
+      expect(
+          plan({
+            'total_amount': '100.00',
+            'amount_paid': 90.0,
+            'amount_remaining': 0.0
+          }).status,
+          'completed');
     });
 
     test('figures: incl. GST with the as-quoted line when it differs', () {
@@ -107,7 +126,11 @@ void main() {
     test('progress text: recurring, record counts, then percentage', () {
       final rec = plan({
         'payment_type': 'subscription',
-        'recurring': {'periods_paid': 1, 'effective_term_periods': 12, 'ongoing': false},
+        'recurring': {
+          'periods_paid': 1,
+          'effective_term_periods': 12,
+          'ongoing': false
+        },
       });
       expect(planProgressText(rec), '1 of 12 paid');
       final ongoing = plan({
@@ -115,15 +138,31 @@ void main() {
       });
       expect(planProgressText(ongoing), '3 paid · ongoing');
 
-      final even = plan({'total_amount': '300.00', 'amount_paid': 100.0, 'amount_remaining': 200.0});
-      expect(planProgressText(even, counts: const PlanRecordCount(3, 2)), '2/3 settled');
+      final even = plan({
+        'total_amount': '300.00',
+        'amount_paid': 100.0,
+        'amount_remaining': 200.0
+      });
+      expect(planProgressText(even, counts: const PlanRecordCount(3, 2)),
+          '2/3 settled');
       expect(planProgressText(even), '33% settled');
     });
 
-    test('record counts: every record counts, settled = settlement_state paid', () {
+    test('record counts: every record counts, settled = settlement_state paid',
+        () {
       final rows = paymentsFromApiRows([
-        {'record_id': 'a', 'payment': 'p-1', 'status': 'paid', 'settlement_state': 'partly_paid'},
-        {'record_id': 'b', 'payment': 'p-1', 'status': 'paid', 'settlement_state': 'paid'},
+        {
+          'record_id': 'a',
+          'payment': 'p-1',
+          'status': 'paid',
+          'settlement_state': 'partly_paid'
+        },
+        {
+          'record_id': 'b',
+          'payment': 'p-1',
+          'status': 'paid',
+          'settlement_state': 'paid'
+        },
         {'record_id': 'c', 'payment': 'p-1', 'status': 'pending'},
         {'record_id': 'd', 'payment': 'p-2', 'status': 'cancelled'},
       ]);
@@ -135,18 +174,32 @@ void main() {
 
     test('lead-only plan is named after its lead (from the records)', () {
       final rows = paymentsFromApiRows([
-        {'record_id': 'a', 'payment': 'p-9', 'customer_name': null, 'lead_name': 'Arjun Roy - Upselling 01'},
+        {
+          'record_id': 'a',
+          'payment': 'p-9',
+          'customer_name': null,
+          'lead_name': 'Arjun Roy - Upselling 01'
+        },
       ]);
       final leads = planLeadNames(rows);
-      expect(planWho(null, leads['p-9']), (name: 'Arjun Roy - Upselling 01', isLead: true));
+      expect(planWho(null, leads['p-9']),
+          (name: 'Arjun Roy - Upselling 01', isLead: true));
       expect(planWho('Manoj Nair', 'x'), (name: 'Manoj Nair', isLead: false));
       expect(planWho(null, null), (name: '—', isLead: false));
     });
 
     test('two plans of one quote (recurring split) get unique ids', () {
       final plans = invoicesFromApiRows([
-        {'payment_id': 'one-time', 'quotation_number': 'QTN-00044', 'payment_type': 'lumpsum'},
-        {'payment_id': 'recurring', 'quotation_number': 'QTN-00044', 'payment_type': 'subscription'},
+        {
+          'payment_id': 'one-time',
+          'quotation_number': 'QTN-00044',
+          'payment_type': 'lumpsum'
+        },
+        {
+          'payment_id': 'recurring',
+          'quotation_number': 'QTN-00044',
+          'payment_type': 'subscription'
+        },
         {'payment_id': 'solo', 'quotation_number': 'QTN-00042'},
       ]);
       expect(plans.map((p) => p.id), ['one-time', 'recurring', 'QTN-00042']);
@@ -184,11 +237,12 @@ void main() {
     })!;
 
     test('settlement pill, incl.-GST figure, hint, as-quoted, paid date', () {
-      expect(settlementPill(paidPartly), (label: 'Partly paid', tone: PayTone.warning));
+      expect(settlementPill(paidPartly),
+          (label: 'Partly paid', tone: PayTone.warning));
       expect(payMoney(paidPartly.amountDueInclGst), '₹24,780');
       expect(amountDueHint(paidPartly), 'incl. GST · estimate');
       expect(quotedAmountNote(paidPartly), 'As quoted ₹20,999.67');
-      expect(paidPartly.date, '04-Oct-2026');
+      expect(paidPartly.date, '04/10/2026');
       expect(paymentSubLine(paidPartly), 'QTN-00002 · Installment 1 of 3');
       expect(paymentWho(paidPartly), (name: 'Arjun Roy', isLead: false));
     });
@@ -201,18 +255,23 @@ void main() {
         'settlement_state': 'pending',
       })!;
       expect(settlementPill(overdue), (label: 'Pending', tone: PayTone.danger));
-      expect(overdue.date, 'Overdue 05-Oct-2026');
-      final due = paymentRecordFromApi({'record_id': 'r-3', 'status': 'pending', 'due_date': '2026-11-04'})!;
+      expect(overdue.date, 'Overdue 05/10/2026');
+      final due = paymentRecordFromApi(
+          {'record_id': 'r-3', 'status': 'pending', 'due_date': '2026-11-04'})!;
       expect(due.status, 'due');
       expect(settlementPill(due), (label: 'Pending', tone: PayTone.warning));
-      expect(due.date, 'Due 04-Nov-2026');
-      final paid = paymentRecordFromApi({'record_id': 'r-4', 'status': 'paid', 'settlement_state': 'paid'})!;
+      expect(due.date, 'Due 04/11/2026');
+      final paid = paymentRecordFromApi(
+          {'record_id': 'r-4', 'status': 'paid', 'settlement_state': 'paid'})!;
       expect(settlementPill(paid), (label: 'Paid', tone: PayTone.success));
-      final cancelled = paymentRecordFromApi({'record_id': 'r-5', 'status': 'cancelled'})!;
-      expect(settlementPill(cancelled), (label: 'Cancelled', tone: PayTone.muted));
+      final cancelled =
+          paymentRecordFromApi({'record_id': 'r-5', 'status': 'cancelled'})!;
+      expect(
+          settlementPill(cancelled), (label: 'Cancelled', tone: PayTone.muted));
     });
 
-    test('lead-only record shows the lead with a badge; linked one says so', () {
+    test('lead-only record shows the lead with a badge; linked one says so',
+        () {
       final lead = paymentRecordFromApi({
         'record_id': 'r-6',
         'quotation_number': 'QTN-00009',
@@ -223,7 +282,8 @@ void main() {
         'linked_document_id': 'doc-1',
       })!;
       expect(paymentWho(lead), (name: 'UAT Pay Even', isLead: true));
-      expect(paymentSubLine(lead), 'QTN-00009 · Installment 2 · Linked to tax invoice');
+      expect(paymentSubLine(lead),
+          'QTN-00009 · Installment 2 · Linked to tax invoice');
     });
 
     test('as-quoted basis: no GST on top, no as-quoted line', () {
@@ -238,10 +298,15 @@ void main() {
     });
 
     test('older backend: incl. GST falls back to gross, then expected', () {
-      final r = paymentRecordFromApi({'record_id': 'r-8', 'amount_expected': '500.00', 'amount_due_gross': '590.00'})!;
+      final r = paymentRecordFromApi({
+        'record_id': 'r-8',
+        'amount_expected': '500.00',
+        'amount_due_gross': '590.00'
+      })!;
       expect(r.amountDueInclGst, 590);
       expect(amountDueHint(r), 'incl. GST');
-      final bare = paymentRecordFromApi({'record_id': 'r-9', 'amount_expected': '500.00'})!;
+      final bare = paymentRecordFromApi(
+          {'record_id': 'r-9', 'amount_expected': '500.00'})!;
       expect(bare.amountDueInclGst, 500);
       expect(amountDueHint(bare), '');
     });
@@ -267,27 +332,46 @@ void main() {
   });
 
   group('delete eligibility (PY-011)', () {
-    Payment rec(Map<String, dynamic> extra) =>
-        paymentRecordFromApi({'record_id': 'r', 'status': 'pending', ...extra})!;
+    Payment rec(Map<String, dynamic> extra) => paymentRecordFromApi(
+        {'record_id': 'r', 'status': 'pending', ...extra})!;
 
-    test('only an unpaid, uninvoiced record on a milestone plan, with permission', () {
+    test(
+        'only an unpaid, uninvoiced record on a milestone plan, with permission',
+        () {
       final open = rec({});
-      expect(canDeletePaymentRecord(open, planType: 'installment_custom', hasDeletePermission: true), isTrue);
-      expect(canDeletePaymentRecord(open, planType: 'installment_custom', hasDeletePermission: false), isFalse);
-      expect(canDeletePaymentRecord(open, planType: 'installment_even', hasDeletePermission: true), isFalse);
-      expect(canDeletePaymentRecord(open, planType: null, hasDeletePermission: true), isFalse);
       expect(
-        canDeletePaymentRecord(rec({'status': 'paid', 'settlement_state': 'paid'}),
+          canDeletePaymentRecord(open,
+              planType: 'installment_custom', hasDeletePermission: true),
+          isTrue);
+      expect(
+          canDeletePaymentRecord(open,
+              planType: 'installment_custom', hasDeletePermission: false),
+          isFalse);
+      expect(
+          canDeletePaymentRecord(open,
+              planType: 'installment_even', hasDeletePermission: true),
+          isFalse);
+      expect(
+          canDeletePaymentRecord(open,
+              planType: null, hasDeletePermission: true),
+          isFalse);
+      expect(
+        canDeletePaymentRecord(
+            rec({'status': 'paid', 'settlement_state': 'paid'}),
+            planType: 'installment_custom',
+            hasDeletePermission: true),
+        isFalse,
+      );
+      expect(
+        canDeletePaymentRecord(rec({'linked_document_id': 'doc'}),
             planType: 'installment_custom', hasDeletePermission: true),
         isFalse,
       );
       expect(
-        canDeletePaymentRecord(rec({'linked_document_id': 'doc'}), planType: 'installment_custom', hasDeletePermission: true),
-        isFalse,
-      );
-      expect(
-        canDeletePaymentRecord(rec({'settlement_state': 'partly_paid', 'amount_paid': '10.00'}),
-            planType: 'installment_custom', hasDeletePermission: true),
+        canDeletePaymentRecord(
+            rec({'settlement_state': 'partly_paid', 'amount_paid': '10.00'}),
+            planType: 'installment_custom',
+            hasDeletePermission: true),
         isFalse,
       );
     });

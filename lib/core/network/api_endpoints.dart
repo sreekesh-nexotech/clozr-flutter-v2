@@ -16,13 +16,24 @@ class ApiEndpoints {
   static const passwordReset = '/auth/password-reset/';
   static const passwordResetConfirm = '/auth/password-reset/confirm/';
 
+  // ── Unified Approvals (`docs-flutter/APPROVALS_FLUTTER_ROUTEMAP.md`) ──
+  static const approvals = '/approvals/';
+  static String approval(String id) => '/approvals/$id/';
+  static String approvalAction(String id, String action) =>
+      '/approvals/$id/$action/';
+  static const approvalCounts = '/approvals/counts/';
+  static const approvalBulkDecide = '/approvals/bulk-decide/';
+  static const approvalForRecord = '/approvals/for-record/';
+
   // ── CRM: leads ──
   static const leads = '/crm/leads/';
   static String lead(String id) => '/crm/leads/$id/';
   static const leadSchema = '/crm/leads/schema/';
   static const leadBoard = '/crm/leads/board/';
+  static const leadStatusCounts = '/crm/leads/status-counts/';
   static String leadConvert(String id) => '/crm/leads/$id/convert/';
   static String leadLostImpact(String id) => '/crm/leads/$id/lost-impact/';
+
   /// Users a new record of `module` may be owned by / assigned to.
   static const assignableUsers = '/management/assignable-users/';
   static const assignableTeams = '/management/assignable-teams/';
@@ -48,7 +59,8 @@ class ApiEndpoints {
   // ── CRM: customers ──
   static const customers = '/crm/customers/';
   static String customer(String id) => '/crm/customers/$id/';
-  static String customerLostImpact(String id) => '/crm/customers/$id/lost-impact/';
+  static String customerLostImpact(String id) =>
+      '/crm/customers/$id/lost-impact/';
   static const customerSchema = '/crm/customers/schema/';
   static const customerStatuses = '/crm/customer-statuses/';
   static String customerUpsell(String id) => '/crm/customers/$id/upsell/';
@@ -57,6 +69,7 @@ class ApiEndpoints {
   static const crmTasks = '/crm/tasks/';
   static String crmTask(String id) => '/crm/tasks/$id/';
   static const crmTaskSchema = '/crm/tasks/schema/';
+  static const crmTaskStatusCounts = '/crm/tasks/status-counts/';
   static const crmTaskStatuses = '/crm/crm-task-statuses/';
   static const taskPriorities = '/crm/task-priorities/';
   static const followUpTypes = '/crm/follow-up-types/';
@@ -64,7 +77,8 @@ class ApiEndpoints {
   // ── CRM: call logs (telephony activity on a lead / customer) ──
   static const callLogs = '/crm/call-logs/';
   static String callLog(String id) => '/crm/call-logs/$id/';
-  static String callLogTranscribe(String id) => '/crm/call-logs/$id/transcribe/';
+  static String callLogTranscribe(String id) =>
+      '/crm/call-logs/$id/transcribe/';
   static String callLogSummarize(String id) => '/crm/call-logs/$id/summarize/';
   static String exotelCallNote(String id) => '/crm/exotel/call-logs/$id/note/';
   static String exotelCallTask(String id) => '/crm/exotel/call-logs/$id/task/';
@@ -99,10 +113,23 @@ class ApiEndpoints {
   static const notificationsMarkAllRead = '/crm/notifications/mark-all-read/';
   static String notificationPin(String id) => '/crm/notifications/$id/pin/';
   static String notificationUnpin(String id) => '/crm/notifications/$id/unpin/';
-  static String notificationSnooze(String id) => '/crm/notifications/$id/snooze/';
-  static String notificationUnsnooze(String id) => '/crm/notifications/$id/unsnooze/';
+  static String notificationSnooze(String id) =>
+      '/crm/notifications/$id/snooze/';
+  static String notificationUnsnooze(String id) =>
+      '/crm/notifications/$id/unsnooze/';
   static String notificationMarkRead(String id) =>
       '/crm/notifications/$id/mark-read/';
+
+  // ── CRM: push-notification device tokens (FCM) ──
+  /// POST registers / reactivates `{device_token, platform, device_name}`;
+  /// GET lists this user's active devices.
+  static const devices = '/crm/devices/';
+
+  /// DELETE deactivates one device (by `user_device_id`).
+  static String device(String id) => '/crm/devices/$id/';
+
+  /// POST `{old_token, new_token, platform}` after an FCM token rotation.
+  static const devicesRefresh = '/crm/devices/refresh/';
 
   // ── Quotations / payments ──
   static const quotations = '/quotations/quotations/';
@@ -118,9 +145,11 @@ class ApiEndpoints {
   /// (`quotation-schema-and-list-view-api.md` §2b).
   static String paymentSummary(String id) =>
       '/quotations/payments/$id/summary/';
+
   /// The org's Payment layout. `model_name: payment` in the view-settings engine
   /// is this collection — the invoice header — not `payment-records/`.
   static const paymentSchema = '/quotations/payments/schema/';
+
   /// Every installment in the org, flat. The backend confirmed this is the
   /// collection for "all installments" — the header list above never embeds
   /// `records` (only `payment(id)` does).
@@ -136,10 +165,10 @@ class ApiEndpoints {
 
   /// Archive **or restore** one project — `{"is_archive": true|false}`.
   /// A toggle, not a one-way action (`operations.md` §8).
-  static String projectArchive(String id) =>
-      '/projects/projects/$id/archive/';
+  static String projectArchive(String id) => '/projects/projects/$id/archive/';
   static const projectStatusCounts = '/projects/projects/status-counts/';
   static const projectStatuses = '/projects/project-statuses/';
+
   /// The Type facet on the projects drawer (`operations.md` §4).
   static const projectTypes = '/projects/project-types/';
   static const projectTasks = '/projects/tasks/';
@@ -151,10 +180,12 @@ class ApiEndpoints {
   /// `view_task`, so a PM without `view_audit_log` still reads the history of a
   /// task they can already see. Rows arrive pre-humanized (`summary` +
   /// `event_type`) rather than as raw diffs.
-  static String projectTaskActivity(String id) => '/projects/tasks/$id/activity/';
+  static String projectTaskActivity(String id) =>
+      '/projects/tasks/$id/activity/';
   static const projectTaskStatusCounts = '/projects/tasks/status-counts/';
   static const projectTaskStatuses = '/projects/project-task-statuses/';
   static const taskGroups = '/projects/task-groups/';
+
   /// The project Files tab (`operations.md` §15).
   static const projectAttachments = '/projects/project-attachments/';
 
@@ -167,6 +198,10 @@ class ApiEndpoints {
   // ── Helpdesk (issues) ──
   static const issues = '/crm/issues/';
   static String issue(String id) => '/crm/issues/$id/';
+
+  /// The ticket Trash (soft delete) and its restore action.
+  static const issuesDeleted = '/crm/issues/deleted/';
+  static String issueRestore(String id) => '/crm/issues/$id/restore/';
   static const issueStatuses = '/crm/issue-statuses/';
 
   /// Per-status tab counts for the tickets list, under the same filters
@@ -179,7 +214,8 @@ class ApiEndpoints {
   static const issueTypes = '/crm/issue-types/';
   static String issueReplies(String id) => '/crm/issues/$id/replies/';
   static String issueChildren(String id) => '/crm/issues/$id/children/';
-  static String issueLogFirstResponse(String id) => '/crm/issues/$id/log-first-response/';
+  static String issueLogFirstResponse(String id) =>
+      '/crm/issues/$id/log-first-response/';
 
   /// One ticket's own activity feed (`helpdesk.md` §10) — gated by `view_issue`
   /// rather than `view_audit_log`, unlike the org-wide audit trail.
@@ -252,11 +288,13 @@ class ApiEndpoints {
 
   // ── LMS / training ──
   static const myCourses = '/lms/my-courses/';
-  static String myCourse(String enrollmentId) => '/lms/my-courses/$enrollmentId/';
+  static String myCourse(String enrollmentId) =>
+      '/lms/my-courses/$enrollmentId/';
 
   // ── Rewards / milestones ──
   static const milestoneProgress = '/milestones/progress/';
   static const milestoneRewards = '/milestones/rewards/';
+
   /// The Closer Track: a track's ordered steps, each pointing at a milestone.
   static const milestoneTracks = '/milestones/tracks/';
   static const milestoneSteps = '/milestones/steps/';
@@ -275,6 +313,7 @@ class ApiEndpoints {
   static const whatsappSendImage = '/whatsapp/send/image/';
   static const whatsappSendDocument = '/whatsapp/send/document/';
   static const whatsappTemplates = '/whatsapp/templates/';
+  static const whatsappAccounts = '/whatsapp/accounts/';
   static const whatsappBadge = '/whatsapp/badge/';
 
   /// Binary proxy for a sent/received attachment — Meta's own media URLs are

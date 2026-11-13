@@ -14,6 +14,7 @@ class Ticket extends Equatable {
   /// What to print where a ticket number belongs.
   String get displayRef => reference.isNotEmpty ? reference : id;
   final String subject;
+
   /// The org's own issue type ("Billing", "Integration") when the API names
   /// one; the built-in Complaint / Request / Query vocabulary otherwise.
   final String cat;
@@ -162,10 +163,12 @@ class Ticket extends Equatable {
   }
 
   bool get isMine => assignees.contains('me');
+
   /// Webapp `isIssueLocked`: a ticket in a resolved status (Resolved, Closed,
   /// Duplicate…) is read-only until it is reopened. The org's own
   /// `is_resolved` flag decides; mock rows fall back to the built-in key.
-  bool get isLocked => facts != null ? facts!.statusResolved : status == 'closed';
+  bool get isLocked =>
+      facts != null ? facts!.statusResolved : status == 'closed';
   bool get isPaused => status == 'pending';
 
   /// A shallow copy used by the detail screen's local status/assignee edits so
@@ -248,6 +251,9 @@ class TicketServerFacts {
     this.attachments = const [],
     this.replies = const [],
     this.customFields = const {},
+    this.updatedAt = '',
+    this.canDelete,
+    this.deleteBlockedReason = '',
   });
 
   /// The org status' own colour (`#3B82F6`), null when unset.
@@ -306,6 +312,16 @@ class TicketServerFacts {
 
   /// Extra data a webhook-intake key stashed on the ticket (`custom_fields`).
   final Map<String, String> customFields;
+
+  /// `updated_at` as the server sent it — the version an edit sends as
+  /// `If-Match` so a change made elsewhere is refused (412), not overwritten.
+  final String updatedAt;
+
+  /// `can_delete`; null when the server did not say (older payloads).
+  final bool? canDelete;
+
+  /// `delete_blocked_reason` — why Delete is off (e.g. open child tickets).
+  final String deleteBlockedReason;
 }
 
 /// One file on a ticket. [url] is the signed `file_url` (bare `file` 403s).
@@ -332,7 +348,8 @@ class TicketAttachment {
 
 /// One reply sent to the customer from the ticket.
 class TicketReply {
-  const TicketReply({required this.id, required this.body, this.author = '', this.at});
+  const TicketReply(
+      {required this.id, required this.body, this.author = '', this.at});
 
   final String id;
   final String body;

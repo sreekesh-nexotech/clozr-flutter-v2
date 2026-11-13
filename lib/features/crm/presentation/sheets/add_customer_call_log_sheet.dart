@@ -50,10 +50,12 @@ class _AddCustomerCallLogSheet extends ConsumerStatefulWidget {
   final String customerPhone;
 
   @override
-  ConsumerState<_AddCustomerCallLogSheet> createState() => _AddCustomerCallLogSheetState();
+  ConsumerState<_AddCustomerCallLogSheet> createState() =>
+      _AddCustomerCallLogSheetState();
 }
 
-class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogSheet> {
+class _AddCustomerCallLogSheetState
+    extends ConsumerState<_AddCustomerCallLogSheet> {
   static const _mediums = ['Manual', 'Twilio', 'Exotel'];
 
   late final _from = TextEditingController(
@@ -76,7 +78,8 @@ class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogShe
   Future<void> _submit() async {
     if (_saving) return;
     final toast = ref.read(toastProvider.notifier);
-    final problem = validateCustomerCallLog(from: _from.text, to: _to.text, duration: _duration.text);
+    final problem = validateCustomerCallLog(
+        from: _from.text, to: _to.text, duration: _duration.text);
     if (problem != null) {
       setState(() => _error = problem);
       toast.showError(problem);
@@ -121,7 +124,9 @@ class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogShe
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Add call log', onClose: () => Navigator.of(context).pop(false)),
+        SheetHeader(
+            title: 'Add call log',
+            onClose: () => Navigator.of(context).pop(false)),
         Flexible(
           child: SingleChildScrollView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -141,7 +146,9 @@ class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogShe
                         controller: _from,
                         hint: '+91…',
                         keyboardType: TextInputType.phone,
-                        errorText: numbersMissing && _from.text.trim().isEmpty ? callLogNumbersRequired : null,
+                        errorText: numbersMissing && _from.text.trim().isEmpty
+                            ? callLogNumbersRequired
+                            : null,
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
@@ -153,7 +160,9 @@ class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogShe
                         controller: _to,
                         hint: '+91…',
                         keyboardType: TextInputType.phone,
-                        errorText: numbersMissing && _to.text.trim().isEmpty ? callLogNumbersRequired : null,
+                        errorText: numbersMissing && _to.text.trim().isEmpty
+                            ? callLogNumbersRequired
+                            : null,
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
@@ -163,13 +172,19 @@ class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogShe
                 const SheetFieldLabel('Direction'),
                 Wrap(spacing: 8.w, runSpacing: 8.h, children: [
                   for (final d in const ['Outgoing', 'Incoming'])
-                    SelectChip(label: d, selected: _direction == d, onTap: () => setState(() => _direction = d)),
+                    SelectChip(
+                        label: d,
+                        selected: _direction == d,
+                        onTap: () => setState(() => _direction = d)),
                 ]),
                 SizedBox(height: 16.h),
                 const SheetFieldLabel('Medium'),
                 Wrap(spacing: 8.w, runSpacing: 8.h, children: [
                   for (final m in _mediums)
-                    SelectChip(label: m, selected: _medium == m, onTap: () => setState(() => _medium = m)),
+                    SelectChip(
+                        label: m,
+                        selected: _medium == m,
+                        onTap: () => setState(() => _medium = m)),
                 ]),
                 SizedBox(height: 16.h),
                 AppTextField(
@@ -177,7 +192,9 @@ class _AddCustomerCallLogSheetState extends ConsumerState<_AddCustomerCallLogShe
                   controller: _duration,
                   hint: 'HH:MM:SS — e.g. 00:03:20',
                   keyboardType: TextInputType.datetime,
-                  errorText: _error == callLogDurationInvalid ? callLogDurationInvalid : null,
+                  errorText: _error == callLogDurationInvalid
+                      ? callLogDurationInvalid
+                      : null,
                   onChanged: (_) => setState(() {}),
                 ),
               ],

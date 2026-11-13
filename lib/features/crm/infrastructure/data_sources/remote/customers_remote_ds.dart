@@ -20,7 +20,8 @@ class CustomersRemoteDataSource {
 
   /// The UI keeps a full in-memory list, so follow `next` a bounded number of
   /// pages instead of paging on scroll.
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
   static const int _pageSize = 100;
 
   /// Raw customer rows (up to [_maxPages] pages). Exposed separately from
@@ -61,8 +62,10 @@ class CustomersRemoteDataSource {
   ///
   /// Sent verbatim: unlike [createCustomer] this must be able to *clear* a
   /// field, so blanks and nulls are meaningful and are not stripped.
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version}) =>
-      _api.patch(ApiEndpoints.customer(id), body: fields, headers: ifMatchHeaders(version));
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields,
+          {String? version}) =>
+      _api.patch(ApiEndpoints.customer(id),
+          body: fields, headers: ifMatchHeaders(version));
 
   /// `POST /crm/customers/{id}/upsell/` — spawns a new upsell lead against this
   /// customer and moves it into the `upsell_in_progress` status.
@@ -83,8 +86,8 @@ class CustomersRemoteDataSource {
   /// (`active` / `upsell_in_progress` / `completed` / `lost`) that decides the
   /// pill colour, where the name is free text an org can rename.
   Future<List<Map<String, dynamic>>> fetchCustomerStatusRows() async {
-    final body = await _api.get(ApiEndpoints.customerStatuses,
-        query: {'page_size': 100});
+    final body = await _api
+        .get(ApiEndpoints.customerStatuses, query: {'page_size': 100});
     return Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
   }
 
@@ -197,7 +200,8 @@ class CustomersRemoteDataSource {
       location: location.isNotEmpty ? location : _str(row, 'address'),
       createdOn: absoluteDate(parseApiDate(row['created_at'])),
       time: relativeTime(parseApiDate(row['activity'])),
-      lastFu: _followupLabel(row['last_followup_type'], row['last_followup_at']),
+      lastFu:
+          _followupLabel(row['last_followup_type'], row['last_followup_at']),
       notif: 0,
     );
   }
@@ -211,9 +215,8 @@ class CustomersRemoteDataSource {
     final when = parseApiDate(at);
     if (when == null) return '';
     final t = (type is String ? type : '').trim();
-    final label = t.isEmpty
-        ? 'Follow-up'
-        : '${t[0].toUpperCase()}${t.substring(1)}';
+    final label =
+        t.isEmpty ? 'Follow-up' : '${t[0].toUpperCase()}${t.substring(1)}';
     return '$label · ${relativeTime(when)}';
   }
 

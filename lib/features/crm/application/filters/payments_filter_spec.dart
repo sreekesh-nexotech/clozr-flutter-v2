@@ -13,8 +13,18 @@ import '../providers/payments_providers.dart';
 /// Generic drawer (title "Payments").
 
 const _months = {
-  'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-  'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+  'Jan': 1,
+  'Feb': 2,
+  'Mar': 3,
+  'Apr': 4,
+  'May': 5,
+  'Jun': 6,
+  'Jul': 7,
+  'Aug': 8,
+  'Sep': 9,
+  'Oct': 10,
+  'Nov': 11,
+  'Dec': 12,
 };
 
 /// Extract the "dd Mon yyyy" from a payment date line, which may be prefixed
@@ -54,11 +64,19 @@ FilterSpec buildPaymentsFilterSpec(
   required CrmPartyLookup lookup,
 }) {
   // Canonical method vocabulary (audit §7).
-  const methodValues = ['Bank transfer', 'UPI', 'Card', 'Cash', 'Cheque', 'Auto-debit'];
+  const methodValues = [
+    'Bank transfer',
+    'UPI',
+    'Card',
+    'Cash',
+    'Cheque',
+    'Auto-debit'
+  ];
   final methods = [for (final m in methodValues) FilterOption(id: m, label: m)];
   const statusKeys = ['paid', 'due', 'overdue', 'scheduled'];
   final statuses = [
-    for (final k in statusKeys) FilterOption(id: k, label: StatusMeta$.payment[k]!.label),
+    for (final k in statusKeys)
+      FilterOption(id: k, label: StatusMeta$.payment[k]!.label),
   ];
   final ownerIds = payments.map((p) => p.owner).toSet();
   final owners = [
@@ -118,7 +136,16 @@ FilterSpec buildPaymentsFilterSpec(
             id: 'paymentDate',
             label: 'Payment date',
             control: FilterControl.dateRange,
-            dateChips: ['overdue', 'today', 'tomorrow', 'last7', 'last30', 'next7', 'next30', 'next90']),
+            dateChips: [
+              'overdue',
+              'today',
+              'tomorrow',
+              'last7',
+              'last30',
+              'next7',
+              'next30',
+              'next90'
+            ]),
       ]),
     ],
   );
@@ -128,16 +155,18 @@ FilterSpec buildPaymentsFilterSpec(
 bool paymentMatchesFilters(Payment p, FilterValues v, CrmPartyLookup lookup) {
   if (!FilterMatch.matchAnyOf(v.choice('method'), [p.method])) return false;
   // A pending record answers to both Due and Scheduled (backend `pending`).
-  if (!FilterMatch.matchAnyOf(
-      v.choice('status'), p.status == 'due' ? const ['due', 'scheduled'] : [p.status])) {
+  if (!FilterMatch.matchAnyOf(v.choice('status'),
+      p.status == 'due' ? const ['due', 'scheduled'] : [p.status])) {
     return false;
   }
   if (!FilterMatch.matchAnyOf(v.choice('recordedBy'), [p.owner])) return false;
   final company = paymentCompany(p, lookup);
-  if (!FilterMatch.matchAnyOf(v.choice('company'), company == null ? const [] : [company])) {
+  if (!FilterMatch.matchAnyOf(
+      v.choice('company'), company == null ? const [] : [company])) {
     return false;
   }
-  if (!FilterMatch.matchRange(v.range('amount'), p.amountNum, scale: 100000)) return false;
+  if (!FilterMatch.matchRange(v.range('amount'), p.amountNum, scale: 100000))
+    return false;
   if (!FilterMatch.matchDate(
       v.date('paymentDate'), p.paidOn ?? p.dueOn ?? parsePaymentDate(p.date))) {
     return false;
@@ -158,8 +187,10 @@ final paymentsFilterSpecProvider = Provider<FilterSpec>((ref) {
 });
 
 /// Applied drawer filters for the Payments list (source of the badge count).
-final paymentFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final paymentFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Payments list (bookmark chips).
 final paymentSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());

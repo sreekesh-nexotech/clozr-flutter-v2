@@ -35,7 +35,8 @@ const Color kBannerText = Color(0xFF35507C);
 /// an org that never activated sees one honest sentence instead of a screen of
 /// 403s and 409s.
 class AccountingGate extends ConsumerWidget {
-  const AccountingGate({super.key, required this.child, this.allowInactive = false});
+  const AccountingGate(
+      {super.key, required this.child, this.allowInactive = false});
 
   final Widget child;
 
@@ -53,14 +54,20 @@ class AccountingGate extends ConsumerWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           ErrorState.forError(
-            e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Something went wrong.'),
+            e is AppError
+                ? e
+                : const AppError(
+                    type: AppErrorType.unknown,
+                    message: 'Something went wrong.'),
             onRetry: () => ref.invalidate(accountingStatusProvider),
           ),
         ],
       ),
       data: (s) {
         if (s == AccountingStatus.active) return child;
-        if (allowInactive && (s == AccountingStatus.inactive || s == AccountingStatus.paused)) return child;
+        if (allowInactive &&
+            (s == AccountingStatus.inactive || s == AccountingStatus.paused))
+          return child;
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: [_empty(context, s)],
@@ -75,13 +82,15 @@ class AccountingGate extends ConsumerWidget {
         return const EmptyState(
           icon: PhosphorIconsRegular.lockSimple,
           title: 'Not in your plan',
-          body: 'Accounting is not included in your current plan. Upgrade on the web app.',
+          body:
+              'Accounting is not included in your current plan. Upgrade on the web app.',
         );
       case AccountingStatus.noAccess:
         return const EmptyState(
           icon: PhosphorIconsRegular.lock,
           title: 'No access',
-          body: 'Your role does not include accounting. Ask an admin for access.',
+          body:
+              'Your role does not include accounting. Ask an admin for access.',
         );
       case AccountingStatus.unavailable:
         return const EmptyState(
@@ -93,7 +102,8 @@ class AccountingGate extends ConsumerWidget {
         return EmptyState(
           icon: PhosphorIconsRegular.pauseCircle,
           title: 'Accounting is paused',
-          body: 'The books are activating or suspended. Check the status for details.',
+          body:
+              'The books are activating or suspended. Check the status for details.',
           ctaLabel: 'View status',
           onCta: () => context.push(Routes.accStatus),
         );
@@ -103,7 +113,8 @@ class AccountingGate extends ConsumerWidget {
         return EmptyState(
           icon: PhosphorIconsRegular.calculator,
           title: 'Accounting is not activated',
-          body: 'Set it up on the web app first. You can see what is missing on the status screen.',
+          body:
+              'Set it up on the web app first. You can see what is missing on the status screen.',
           ctaLabel: 'View status',
           ctaIcon: PhosphorIconsBold.arrowRight,
           onCta: () => context.push(Routes.accStatus),
@@ -118,7 +129,8 @@ class AccountingGate extends ConsumerWidget {
 /// Rendered inside the sheet rather than only toasted: the `cause` is the part
 /// that tells the user what to fix, and a toast is gone before it is read.
 class ConflictBanner extends StatelessWidget {
-  const ConflictBanner({super.key, required this.error, this.actionLabel, this.onAction});
+  const ConflictBanner(
+      {super.key, required this.error, this.actionLabel, this.onAction});
 
   final AppError error;
   final String? actionLabel;
@@ -131,7 +143,8 @@ class ConflictBanner extends StatelessWidget {
         : conflictCopy(error);
     final chips = <String>[
       for (final e in error.causeMap.entries)
-        if (e.value is String || e.value is num) '${label(const {}, e.key)}: ${e.value}',
+        if (e.value is String || e.value is num)
+          '${label(const {}, e.key)}: ${e.value}',
     ].take(3).toList();
     return Container(
       padding: EdgeInsets.fromLTRB(13.w, 12.h, 13.w, 12.h),
@@ -143,16 +156,25 @@ class ConflictBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsFill.warningCircle, size: 17.sp, color: AppColors.error),
+          Icon(PhosphorIconsFill.warningCircle,
+              size: 17.sp, color: AppColors.error),
           SizedBox(width: 9.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(copy.title, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.errorDeep)),
+                Text(copy.title,
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.errorDeep)),
                 SizedBox(height: 3.h),
                 Text(copy.body,
-                    style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textSecondary, height: 1.45)),
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                        height: 1.45)),
                 if (chips.isNotEmpty) ...[
                   SizedBox(height: 8.h),
                   Wrap(
@@ -161,9 +183,16 @@ class ConflictBanner extends StatelessWidget {
                     children: [
                       for (final c in chips)
                         Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                          decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(7.r)),
-                          child: Text(c, style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textLabel)),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                              color: AppColors.white,
+                              borderRadius: BorderRadius.circular(7.r)),
+                          child: Text(c,
+                              style: AppText.custom(
+                                  size: 11,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textLabel)),
                         ),
                     ],
                   ),
@@ -173,7 +202,10 @@ class ConflictBanner extends StatelessWidget {
                   GestureDetector(
                     onTap: onAction,
                     child: Text(actionLabel!,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.blueBright)),
                   ),
                 ],
               ],
@@ -188,7 +220,8 @@ class ConflictBanner extends StatelessWidget {
 /// Amber strip listing a document's or preview's warnings. Not errors — the
 /// document is fine, these are things to know.
 class WarningsStrip extends StatelessWidget {
-  const WarningsStrip({super.key, required this.warnings, this.configDraftRows = 0});
+  const WarningsStrip(
+      {super.key, required this.warnings, this.configDraftRows = 0});
 
   final List<DocWarning> warnings;
   final int configDraftRows;
@@ -197,17 +230,21 @@ class WarningsStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final lines = [
       for (final w in warnings) warningCopy(w),
-      if (configDraftRows > 0 && !warnings.any((w) => w.code == 'DRAFT_CONFIG_USED'))
+      if (configDraftRows > 0 &&
+          !warnings.any((w) => w.code == 'DRAFT_CONFIG_USED'))
         'Some tax rates used are not yet verified by your accountant.',
     ];
     if (lines.isEmpty) return const SizedBox.shrink();
     return Container(
       padding: EdgeInsets.fromLTRB(13.w, 11.h, 13.w, 11.h),
-      decoration: BoxDecoration(color: AppColors.tintAmber, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: AppColors.tintAmber,
+          borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsFill.warning, size: 16.sp, color: AppColors.warningDeep),
+          Icon(PhosphorIconsFill.warning,
+              size: 16.sp, color: AppColors.warningDeep),
           SizedBox(width: 9.w),
           Expanded(
             child: Column(
@@ -216,7 +253,11 @@ class WarningsStrip extends StatelessWidget {
                 for (int i = 0; i < lines.length; i++) ...[
                   if (i > 0) SizedBox(height: 5.h),
                   Text(lines[i],
-                      style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textSecondary, height: 1.4)),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                          height: 1.4)),
                 ],
               ],
             ),
@@ -229,7 +270,8 @@ class WarningsStrip extends StatelessWidget {
 
 /// The blue explanatory banner the finance sheets use.
 class AccInfoBanner extends StatelessWidget {
-  const AccInfoBanner(this.text, {super.key, this.icon = PhosphorIconsRegular.info});
+  const AccInfoBanner(this.text,
+      {super.key, this.icon = PhosphorIconsRegular.info});
 
   final String text;
   final IconData icon;
@@ -238,14 +280,21 @@ class AccInfoBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-      decoration: BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(10.r)),
+      decoration: BoxDecoration(
+          color: AppColors.blueSubtle,
+          borderRadius: BorderRadius.circular(10.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 15.sp, color: AppColors.blueBright),
           SizedBox(width: 8.w),
           Expanded(
-            child: Text(text, style: AppText.custom(size: 12, weight: FontWeight.w500, color: kBannerText, height: 1.5)),
+            child: Text(text,
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: kBannerText,
+                    height: 1.5)),
           ),
         ],
       ),
@@ -260,7 +309,8 @@ class DocStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      StatusPill.meta(StatusMeta$.accDocument[status] ?? StatusMeta(label(const {}, status), AppColors.textMuted));
+      StatusPill.meta(StatusMeta$.accDocument[status] ??
+          StatusMeta(label(const {}, status), AppColors.textMuted));
 }
 
 /// A document's payment-state pill; renders nothing for `NA`.
@@ -282,15 +332,20 @@ class AccPill extends StatelessWidget {
   final String value;
 
   @override
-  Widget build(BuildContext context) =>
-      StatusPill.meta(map[value] ?? StatusMeta(label(const {}, value), AppColors.textMuted));
+  Widget build(BuildContext context) => StatusPill.meta(
+      map[value] ?? StatusMeta(label(const {}, value), AppColors.textMuted));
 }
 
 /// A document's money breakdown: taxable value, each tax head that is not
 /// zero, round-off and the grand total. Draft figures are provisional — the
 /// server recomputes them at issue — so they carry an "estimated" note.
 class AccTotalsCard extends StatelessWidget {
-  const AccTotalsCard({super.key, required this.totals, this.estimated = false, this.title = 'Totals', this.extra = const []});
+  const AccTotalsCard(
+      {super.key,
+      required this.totals,
+      this.estimated = false,
+      this.title = 'Totals',
+      this.extra = const []});
 
   /// `taxable_total, tax_cgst, tax_sgst, tax_igst, tax_cess, round_off,
   /// grand_total` as money strings.
@@ -315,34 +370,52 @@ class AccTotalsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <(String, String)>[
       ('Taxable value', totals['taxable_total'] ?? '0'),
-      for (final h in const [('CGST', 'tax_cgst'), ('SGST', 'tax_sgst'), ('IGST', 'tax_igst'), ('Cess', 'tax_cess')])
+      for (final h in const [
+        ('CGST', 'tax_cgst'),
+        ('SGST', 'tax_sgst'),
+        ('IGST', 'tax_igst'),
+        ('Cess', 'tax_cess')
+      ])
         if (!moneyIsZero(totals[h.$2])) (h.$1, totals[h.$2]!),
-      if (!moneyIsZero(totals['round_off'])) ('Round-off', totals['round_off']!),
+      if (!moneyIsZero(totals['round_off']))
+        ('Round-off', totals['round_off']!),
     ];
     return FinanceCard(
       title: title,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final r in rows) MetaRow(label: r.$1, value: formatMoneyStr(r.$2)),
+          for (final r in rows)
+            MetaRow(label: r.$1, value: formatMoneyStr(r.$2)),
           Padding(
             padding: EdgeInsets.only(top: 12.h),
             child: Row(
               children: [
                 Expanded(
                   child: Text(estimated ? 'Total (estimated)' : 'Grand total',
-                      style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ),
                 Text(formatMoneyStr(totals['grand_total']),
-                    style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    style: AppText.custom(
+                        size: 18,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
               ],
             ),
           ),
-          for (final r in extra) MetaRow(label: r.$1, value: r.$2, last: r == extra.last),
+          for (final r in extra)
+            MetaRow(label: r.$1, value: r.$2, last: r == extra.last),
           if (estimated) ...[
             SizedBox(height: 8.h),
             Text('Tax is recalculated when the invoice is issued.',
-                style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
           ],
         ],
       ),
@@ -368,7 +441,8 @@ class AccLinesCard extends StatelessWidget {
               padding: EdgeInsets.symmetric(vertical: 10.h),
               child: Text('No lines', style: AppText.caption()),
             ),
-          for (int i = 0; i < lines.length; i++) _row(lines[i], i == lines.length - 1),
+          for (int i = 0; i < lines.length; i++)
+            _row(lines[i], i == lines.length - 1),
         ],
       ),
     );
@@ -378,11 +452,15 @@ class AccLinesCard extends StatelessWidget {
     final meta = [
       if ((l.hsnSac ?? '').isNotEmpty) 'HSN ${l.hsnSac}',
       if ((l.ratePct ?? '').isNotEmpty) '${_trimPct(l.ratePct!)}%',
-      if ((l.supplyNature ?? '').isNotEmpty) label(supplyNatureLabels, l.supplyNature),
+      if ((l.supplyNature ?? '').isNotEmpty)
+        label(supplyNatureLabels, l.supplyNature),
     ].join(' · ');
     return Container(
       padding: EdgeInsets.symmetric(vertical: 11.h),
-      decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: last
+          ? null
+          : const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -391,29 +469,43 @@ class AccLinesCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(l.description.isEmpty ? 'Line ${l.lineNo}' : l.description,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 if (meta.isNotEmpty) ...[
                   SizedBox(height: 2.h),
-                  Text(meta, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  Text(meta,
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 ],
                 SizedBox(height: 2.h),
-                Text('${_trimQty(l.qty)} × ${formatMoneyStr(l.unitPrice)}'
+                Text(
+                    '${_trimQty(l.qty)} × ${formatMoneyStr(l.unitPrice)}'
                     '${moneyIsZero(l.lineDiscount) ? '' : ' − ${formatMoneyStr(l.lineDiscount)}'}',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
           SizedBox(width: 10.w),
           Text(formatMoneyStr(l.taxable ?? _lineGross(l)),
-              style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 13.5,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
         ],
       ),
     );
   }
 
   /// A draft line has no server taxable yet; qty × price is a hint only.
-  static String _lineGross(AccDocumentLine l) =>
-      toMoneyStr(moneyNum(l.qty) * moneyNum(l.unitPrice) - moneyNum(l.lineDiscount));
+  static String _lineGross(AccDocumentLine l) => toMoneyStr(
+      moneyNum(l.qty) * moneyNum(l.unitPrice) - moneyNum(l.lineDiscount));
 }
 
 String _trimQty(String q) {
@@ -426,13 +518,15 @@ String _trimPct(String p) => _trimQty(p);
 
 /// A label ⋯ value row whose value is money — keeps paise.
 class MoneyRow extends StatelessWidget {
-  const MoneyRow({super.key, required this.label, required this.value, this.last = false});
+  const MoneyRow(
+      {super.key, required this.label, required this.value, this.last = false});
   final String label;
   final String? value;
   final bool last;
 
   @override
-  Widget build(BuildContext context) => MetaRow(label: label, value: formatMoneyStr(value), last: last);
+  Widget build(BuildContext context) =>
+      MetaRow(label: label, value: formatMoneyStr(value), last: last);
 }
 
 // ── Form pieces ──
@@ -466,7 +560,9 @@ class MoneyField extends StatelessWidget {
         errorText: errorText,
         prefix: '₹',
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))],
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))
+        ],
       );
 }
 
@@ -508,12 +604,16 @@ class AccInput extends StatelessWidget {
         SheetFieldLabel(label, required: required),
         Container(
           constraints: BoxConstraints(minHeight: 44.h),
-          padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: maxLines > 1 ? 10.h : 0),
+          padding: EdgeInsets.symmetric(
+              horizontal: 13.w, vertical: maxLines > 1 ? 10.h : 0),
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: AppColors.white,
             borderRadius: BorderRadius.circular(11.r),
-            border: Border.all(color: errorText != null ? AppColors.error : AppColors.borderInput, width: 1.5),
+            border: Border.all(
+                color:
+                    errorText != null ? AppColors.error : AppColors.borderInput,
+                width: 1.5),
           ),
           child: Row(
             children: [
@@ -545,7 +645,9 @@ class AccInput extends StatelessWidget {
         ),
         if (errorText != null) ...[
           SizedBox(height: 5.h),
-          Text(errorText!, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+          Text(errorText!,
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w500, color: AppColors.error)),
         ],
       ],
     );
@@ -602,7 +704,9 @@ class AccPickerBox extends StatelessWidget {
                     child: Text(has ? value! : hint,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: has ? AppText.body() : AppText.body(color: AppColors.textPlaceholder)),
+                        style: has
+                            ? AppText.body()
+                            : AppText.body(color: AppColors.textPlaceholder)),
                   ),
                   Icon(icon, size: 14.sp, color: AppColors.textPlaceholder),
                 ],
@@ -612,7 +716,11 @@ class AccPickerBox extends StatelessWidget {
         ),
         if (footnote != null) ...[
           SizedBox(height: 5.h),
-          Text(footnote!, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text(footnote!,
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ],
       ],
     );
@@ -649,7 +757,8 @@ class AccDateBox extends StatelessWidget {
       icon: PhosphorIconsRegular.calendarBlank,
       footnote: showIstHint ? 'Dates are in IST' : null,
       onTap: () async {
-        final picked = await pickSheetDate(context, value == null ? '' : isoDay(value!));
+        final picked =
+            await pickSheetDate(context, value == null ? '' : isoDay(value!));
         if (picked != null) onChanged(picked);
       },
     );
@@ -685,7 +794,10 @@ class AccChoiceChips extends StatelessWidget {
           runSpacing: 8.h,
           children: [
             for (final e in options.entries)
-              SelectChip(label: e.value, selected: selected == e.key, onTap: () => onSelected(e.key)),
+              SelectChip(
+                  label: e.value,
+                  selected: selected == e.key,
+                  onTap: () => onSelected(e.key)),
           ],
         ),
       ],
@@ -695,7 +807,12 @@ class AccChoiceChips extends StatelessWidget {
 
 /// A checkbox row — the CRM check box beside a label and an optional hint.
 class AccCheckRow extends StatelessWidget {
-  const AccCheckRow({super.key, required this.label, required this.value, required this.onChanged, this.hint});
+  const AccCheckRow(
+      {super.key,
+      required this.label,
+      required this.value,
+      required this.onChanged,
+      this.hint});
 
   final String label;
   final bool value;
@@ -718,11 +835,19 @@ class AccCheckRow extends StatelessWidget {
               children: [
                 Padding(
                   padding: EdgeInsets.only(top: 2.h),
-                  child: Text(label, style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                  child: Text(label,
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.textBody)),
                 ),
                 if (hint != null) ...[
                   SizedBox(height: 2.h),
-                  Text(hint!, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  Text(hint!,
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 ],
               ],
             ),
@@ -735,7 +860,11 @@ class AccCheckRow extends StatelessWidget {
 
 /// A collapsible "More options" block inside a sheet.
 class AccDisclosure extends StatefulWidget {
-  const AccDisclosure({super.key, required this.title, required this.children, this.initiallyOpen = false});
+  const AccDisclosure(
+      {super.key,
+      required this.title,
+      required this.children,
+      this.initiallyOpen = false});
 
   final String title;
   final List<Widget> children;
@@ -760,10 +889,18 @@ class _AccDisclosureState extends State<AccDisclosure> {
             padding: EdgeInsets.symmetric(vertical: 6.h),
             child: Row(
               children: [
-                Text(widget.title, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                Text(widget.title,
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: AppColors.blueBright)),
                 SizedBox(width: 5.w),
-                Icon(_open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
-                    size: 12.sp, color: AppColors.blueBright),
+                Icon(
+                    _open
+                        ? PhosphorIconsBold.caretUp
+                        : PhosphorIconsBold.caretDown,
+                    size: 12.sp,
+                    color: AppColors.blueBright),
               ],
             ),
           ),
@@ -787,7 +924,8 @@ class _AccDisclosureState extends State<AccDisclosure> {
 /// the server has answered, that submission is over: resubmitting corrected
 /// values under the same key is refused as `IDEMPOTENCY_PAYLOAD_MISMATCH`
 /// (handover §5), so a fresh key is minted.
-String nextEventId(String current, AppError e) => e.statusCode == null ? current : newEventId();
+String nextEventId(String current, AppError e) =>
+    e.statusCode == null ? current : newEventId();
 
 /// Whether the device can post right now. Posting sheets disable their submit
 /// when offline and say so — a queued post could land in a period that has
@@ -803,10 +941,12 @@ class OfflineNote extends StatelessWidget {
         padding: EdgeInsets.only(top: 10.h),
         child: Row(
           children: [
-            Icon(PhosphorIconsRegular.wifiSlash, size: 14.sp, color: AppColors.error),
+            Icon(PhosphorIconsRegular.wifiSlash,
+                size: 14.sp, color: AppColors.error),
             SizedBox(width: 6.w),
             Text('Posting needs a connection',
-                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.error)),
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w600, color: AppColors.error)),
           ],
         ),
       );

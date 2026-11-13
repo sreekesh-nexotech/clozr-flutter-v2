@@ -16,6 +16,7 @@ class CatalogOption extends Equatable {
     this.isConverted = false,
     this.isClosed = false,
     this.isCancelled = false,
+    this.isOnHold = false,
     this.depth = 0,
     this.disabled = false,
     this.isDefault = false,
@@ -55,6 +56,10 @@ class CatalogOption extends Equatable {
   final bool isClosed;
   final bool isCancelled;
 
+  /// Issue statuses only: the org's "on hold" lane (`is_on_hold`) — with
+  /// [isClosed] (`is_resolved`) it decides the status's header group.
+  final bool isOnHold;
+
   /// The value list rows join on. The leads list serializer sends `status` and
   /// `lead_source` as display *names*, not ids, so the case-folded name — not
   /// [id] — is the join key.
@@ -84,6 +89,7 @@ class CatalogOption extends Equatable {
         isConverted,
         isClosed,
         isCancelled,
+        isOnHold,
         depth,
         disabled,
         isDefault,

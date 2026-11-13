@@ -35,7 +35,12 @@ Uri? attachmentUri(String url) {
 /// does. Shared by every Files list (lead, task, follow-up) so the same
 /// extension never draws as two different things.
 IconData attachmentIcon(String ext) => switch (ext.toUpperCase()) {
-      'PNG' || 'JPG' || 'JPEG' || 'GIF' || 'WEBP' || 'HEIC' =>
+      'PNG' ||
+      'JPG' ||
+      'JPEG' ||
+      'GIF' ||
+      'WEBP' ||
+      'HEIC' =>
         PhosphorIconsRegular.image,
       'PDF' => PhosphorIconsRegular.filePdf,
       'DOC' || 'DOCX' || 'RTF' || 'TXT' => PhosphorIconsRegular.fileText,

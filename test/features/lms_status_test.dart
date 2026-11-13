@@ -42,7 +42,8 @@ void main() {
             'name': 'x',
             'assigned_courses': 1,
             'status': raw,
-          })!.serverStatus;
+          })!
+              .serverStatus;
       expect(key('in_progress'), 'inprogress');
       expect(key('not_started'), 'notstarted');
       expect(key('completed'), 'completed');

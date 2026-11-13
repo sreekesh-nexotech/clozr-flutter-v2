@@ -19,8 +19,10 @@ class SavedFiltersRemoteDataSource {
   /// ordered by `(module, order, created_at)`. Always a paginated envelope.
   Future<List<SavedFilter>> fetch(String module) async {
     // Quiet: a role without saved views simply has none to show.
-    final body = await _api.get(ApiEndpoints.savedFilters, query: {'module': module}, quiet: true);
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final body = await _api.get(ApiEndpoints.savedFilters,
+        query: {'module': module}, quiet: true);
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <SavedFilter>[];
     for (final row in rows) {
       final f = mapSavedFilter(row);

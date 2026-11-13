@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../auth/application/providers/auth_providers.dart';
 
@@ -31,14 +32,18 @@ class DashboardHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(sessionControllerProvider).user;
-    final name =
-        (user?.fullName.trim().isNotEmpty ?? false) ? user!.fullName : _seedName;
+    final name = (user?.fullName.trim().isNotEmpty ?? false)
+        ? user!.fullName
+        // The seed name is a mock-mode placeholder: against the live API an
+        // unresolved session shows nothing rather than another person's name.
+        : (ApiConfig.apiEnabled ? '' : _seedName);
     final now = DateTime.now();
 
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.white,
-        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
+        border: Border(
+            bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
       ),
       padding: EdgeInsets.fromLTRB(18.w, 56.h, 18.w, 10.h),
       child: Column(
@@ -56,19 +61,29 @@ class DashboardHeader extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(_greeting(now),
-                        style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                     SizedBox(height: 1.h),
                     Text(name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 24, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
+                        style: AppText.custom(
+                            size: 24,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.5)),
                   ],
                 ),
               ),
               Padding(
                 padding: EdgeInsets.only(bottom: 3.h),
                 child: Text(_headerDate(now),
-                    style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ),
             ],
           ),

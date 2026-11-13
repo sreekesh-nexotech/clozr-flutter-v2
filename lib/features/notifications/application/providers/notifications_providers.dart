@@ -32,7 +32,8 @@ extension on NotifFilter {
 const notificationSnoozeHours = 3;
 
 /// DI seam: mock seed without a base URL, REST otherwise.
-final notificationsRepositoryProvider = Provider<NotificationsRepository>((ref) {
+final notificationsRepositoryProvider =
+    Provider<NotificationsRepository>((ref) {
   if (!ApiConfig.apiEnabled) {
     return const NotificationsRepositoryImpl(NotificationsMockDataSource());
   }
@@ -79,7 +80,9 @@ class NotificationsState {
   /// The server already narrowed [all] to the filter; the local pass only
   /// keeps a just-read row from lingering under Unread.
   List<AppNotification> get filtered {
-    final list = filter == NotifFilter.unread ? all.where((n) => n.unread).toList() : List.of(all);
+    final list = filter == NotifFilter.unread
+        ? all.where((n) => n.unread).toList()
+        : List.of(all);
     list.sort((a, b) => (_dayRank[a.day] ?? 3).compareTo(_dayRank[b.day] ?? 3));
     return list;
   }
@@ -110,7 +113,8 @@ class NotificationsController extends StateNotifier<NotificationsState> {
     try {
       final rows = await _repo.getNotifications(status: filter.status);
       if (!mounted || state.filter != filter) return;
-      if (mounted) state = state.copyWith(all: rows, loading: false, clearError: true);
+      if (mounted)
+        state = state.copyWith(all: rows, loading: false, clearError: true);
     } on AppError catch (e) {
       // Surface the failure so a real 500 isn't mistaken for "all caught up".
       if (mounted) state = state.copyWith(loading: false, error: e);
@@ -118,7 +122,10 @@ class NotificationsController extends StateNotifier<NotificationsState> {
       if (mounted) {
         state = state.copyWith(
           loading: false,
-          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+          error: AppError(
+              type: AppErrorType.unknown,
+              message: 'Something went wrong. Please try again.',
+              cause: e),
         );
       }
     }
@@ -153,7 +160,9 @@ class NotificationsController extends StateNotifier<NotificationsState> {
     try {
       await _repo.setSnoozed(
         id,
-        snooze ? DateTime.now().add(const Duration(hours: notificationSnoozeHours)) : null,
+        snooze
+            ? DateTime.now().add(const Duration(hours: notificationSnoozeHours))
+            : null,
       );
     } on AppError catch (e) {
       return e.message;
@@ -163,7 +172,8 @@ class NotificationsController extends StateNotifier<NotificationsState> {
   }
 
   void markAllRead() {
-    state = state.copyWith(all: [for (final n in state.all) n.copyWith(unread: false)]);
+    state = state
+        .copyWith(all: [for (final n in state.all) n.copyWith(unread: false)]);
     unawaited(_repo.markAllRead());
   }
 
@@ -178,14 +188,19 @@ class NotificationsController extends StateNotifier<NotificationsState> {
     if (target == null) return;
     final becomesRead = target.unread;
     state = state.copyWith(
-      all: [for (final n in state.all) n.id == id ? n.copyWith(unread: !n.unread) : n],
+      all: [
+        for (final n in state.all)
+          n.id == id ? n.copyWith(unread: !n.unread) : n
+      ],
     );
     unawaited(_repo.markRead(id, becomesRead));
   }
 
   void markRead(String id) {
     state = state.copyWith(
-      all: [for (final n in state.all) n.id == id ? n.copyWith(unread: false) : n],
+      all: [
+        for (final n in state.all) n.id == id ? n.copyWith(unread: false) : n
+      ],
     );
     unawaited(_repo.markRead(id, true));
   }

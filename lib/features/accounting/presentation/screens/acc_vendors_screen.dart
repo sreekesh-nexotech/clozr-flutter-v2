@@ -58,7 +58,8 @@ class _AccVendorsScreenState extends ConsumerState<AccVendorsScreen> {
                     icon: PhosphorIconsBold.plus,
                     onTap: () async {
                       final v = await showVendorFormSheet(context);
-                      if (v != null && context.mounted) context.push('${Routes.accVendorDetail}?id=${v.id}');
+                      if (v != null && context.mounted)
+                        context.push('${Routes.accVendorDetail}?id=${v.id}');
                     },
                   )
                 : null,
@@ -81,8 +82,14 @@ class _AccVendorsScreenState extends ConsumerState<AccVendorsScreen> {
                 SizedBox(
                   height: 40.h,
                   child: TabChipRow(children: [
-                    TabChip(label: 'Active', active: _activeOnly, onTap: () => setState(() => _activeOnly = true)),
-                    TabChip(label: 'All', active: !_activeOnly, onTap: () => setState(() => _activeOnly = false)),
+                    TabChip(
+                        label: 'Active',
+                        active: _activeOnly,
+                        onTap: () => setState(() => _activeOnly = true)),
+                    TabChip(
+                        label: 'All',
+                        active: !_activeOnly,
+                        onTap: () => setState(() => _activeOnly = false)),
                   ]),
                 ),
               ],
@@ -113,9 +120,14 @@ class _AccVendorsScreenState extends ConsumerState<AccVendorsScreen> {
                       children: [
                         EmptyState(
                           icon: PhosphorIconsRegular.storefront,
-                          title: all.isEmpty ? 'No vendors yet' : 'No matching vendor',
-                          body: all.isEmpty ? 'Add the suppliers you buy from.' : 'Try a different search.',
-                          ctaLabel: all.isEmpty && canCreate ? 'Add vendor' : null,
+                          title: all.isEmpty
+                              ? 'No vendors yet'
+                              : 'No matching vendor',
+                          body: all.isEmpty
+                              ? 'Add the suppliers you buy from.'
+                              : 'Try a different search.',
+                          ctaLabel:
+                              all.isEmpty && canCreate ? 'Add vendor' : null,
                           ctaIcon: PhosphorIconsBold.plus,
                           onCta: () => showVendorFormSheet(context),
                         ),
@@ -149,8 +161,12 @@ class _AccVendorsScreenState extends ConsumerState<AccVendorsScreen> {
             width: 40.w,
             height: 40.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(11.r)),
-            child: Text(initialsOf(v.name), style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+            decoration: BoxDecoration(
+                color: const Color(0xFFEEF1F4),
+                borderRadius: BorderRadius.circular(11.r)),
+            child: Text(initialsOf(v.name),
+                style: AppText.custom(
+                    size: 13, weight: FontWeight.w700, color: AppColors.navy)),
           ),
           SizedBox(width: 12.w),
           Expanded(
@@ -160,20 +176,31 @@ class _AccVendorsScreenState extends ConsumerState<AccVendorsScreen> {
                 Text(v.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 14.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 3.h),
                 Text(
-                  [if ((v.legalName ?? '').isNotEmpty) v.legalName!, if (v.stateCode != null) stateName(v.stateCode)].join(' · '),
+                  [
+                    if ((v.legalName ?? '').isNotEmpty) v.legalName!,
+                    if (v.stateCode != null) stateName(v.stateCode)
+                  ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted),
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted),
                 ),
               ],
             ),
           ),
-          if (!v.isActive) const StatusPill(label: 'Inactive', color: AppColors.textMuted),
+          if (!v.isActive)
+            const StatusPill(label: 'Inactive', color: AppColors.textMuted),
           SizedBox(width: 6.w),
-          Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsBold.caretRight,
+              size: 13.sp, color: AppColors.textPlaceholder),
         ],
       ),
     );

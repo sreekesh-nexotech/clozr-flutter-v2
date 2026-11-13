@@ -37,9 +37,14 @@ Map<String, dynamic> projectWriteFields({
   List<CatalogOption> types = const [],
   List<CatalogOption> statuses = const [],
   List<CatalogOption> teams = const [],
+
   /// The record's current team id: used when [teamLabel] is not in [teams]
   /// (the list could not be read), so an unchanged team is re-sent, not cleared.
   String teamFallbackId = '',
+  // The project's own customer, kept when the label is unchanged but the
+  // loaded customer catalog (paged) does not contain it, which would otherwise
+  // turn the project into an internal one on any save.
+  String customerFallbackId = '',
 }) {
   final manager = UserDirectory.realUserId(managerId);
   final manualPercent =
@@ -67,10 +72,14 @@ Map<String, dynamic> projectWriteFields({
     // An empty customer is "internal project", which the API takes as null —
     // distinct from omitting the key, which would leave an existing link alone.
     if (customerLabel != null)
-      'customer': customerLabel.isEmpty ? null : _idFor(customers, customerLabel),
+      'customer': customerLabel.isEmpty
+          ? null
+          : (_idFor(customers, customerLabel) ??
+              customerFallbackId.ifEmptyNull),
     // The linked quote (accounting §B8): null when the form has none — sent
     // explicitly on edit so a removed link is cleared, omitted when unknown.
-    if (quotationId != null) 'quotation': quotationId.isEmpty ? null : quotationId,
+    if (quotationId != null)
+      'quotation': quotationId.isEmpty ? null : quotationId,
     if (_idFor(types, typeLabel) case final id?) 'project_type': id,
     if (_idFor(statuses, statusLabel) case final id?) 'status': id,
     if (teamLabel != null)
@@ -134,10 +143,12 @@ String? _idFor(List<CatalogOption> options, String? label) {
 /// Null rather than "0" for anything else, so the caller can refuse the save
 /// and say so instead of writing a wrong number.
 String? parseCostAmount(String raw) {
-  var s = raw.trim().replaceAll('₹', '').replaceAll(',', '').replaceAll(' ', '');
+  var s =
+      raw.trim().replaceAll('₹', '').replaceAll(',', '').replaceAll(' ', '');
   if (s.isEmpty) return null;
-  final m = RegExp(r'^(\d+(?:\.\d+)?)(k|l|lac|lakh|cr|crore)?$', caseSensitive: false)
-      .firstMatch(s);
+  final m =
+      RegExp(r'^(\d+(?:\.\d+)?)(k|l|lac|lakh|cr|crore)?$', caseSensitive: false)
+          .firstMatch(s);
   if (m == null) return null;
   final n = double.parse(m.group(1)!);
   final mult = switch ((m.group(2) ?? '').toLowerCase()) {

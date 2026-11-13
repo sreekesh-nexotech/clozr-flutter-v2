@@ -35,10 +35,12 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   }
 
   @override
-  Future<List<OpsTask>> getOpsTasks({Map<String, dynamic> filters = const {}}) async {
+  Future<List<OpsTask>> getOpsTasks(
+      {Map<String, dynamic> filters = const {}}) async {
     try {
       final tasks = await _remote.fetchOpsTasks(filters: filters);
-      await AppCache.put(_box, _keyFor(filters), [for (final t in tasks) _toJson(t)]);
+      await AppCache.put(
+          _box, _keyFor(filters), [for (final t in tasks) _toJson(t)]);
       return tasks;
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
@@ -151,7 +153,8 @@ class OpsTasksApiRepository implements OpsTasksRepository {
       );
 
   @override
-  Future<List<CatalogOption>> getOpsTaskStatuses() => _remote.fetchOpsTaskStatuses();
+  Future<List<CatalogOption>> getOpsTaskStatuses() =>
+      _remote.fetchOpsTaskStatuses();
 
   /// Not cached: an aggregate is cheap, and a stale tab strip over a fresh list
   /// is worse than no strip counts at all.
@@ -172,7 +175,8 @@ class OpsTasksApiRepository implements OpsTasksRepository {
   /// Edges change what the list's `pending_dependency_count` says, so the
   /// cached list has to go with them.
   @override
-  Future<void> addDependency({required String taskId, required String dependsOn}) async {
+  Future<void> addDependency(
+      {required String taskId, required String dependsOn}) async {
     await _remote.addDependency(taskId: taskId, dependsOn: dependsOn);
     await AppCache.clearBox(_box);
   }
@@ -204,9 +208,15 @@ class OpsTasksApiRepository implements OpsTasksRepository {
     required String parentId,
     required String subject,
     String projectId = '',
+    String? endIso,
+    String? assigneeId,
   }) async {
     await _remote.createSubtask(
-        parentId: parentId, subject: subject, projectId: projectId);
+        parentId: parentId,
+        subject: subject,
+        projectId: projectId,
+        endIso: endIso,
+        assigneeId: assigneeId);
     await AppCache.clearBox(_box);
   }
 

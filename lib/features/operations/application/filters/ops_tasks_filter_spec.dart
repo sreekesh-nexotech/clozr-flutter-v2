@@ -23,11 +23,14 @@ DateTime? opsTaskDueDate(OpsTask t) => DateTime.tryParse(t.endISO);
 /// Build the Ops Tasks drawer spec from the current task + project sets. [roster]
 /// supplies the assignee options (real members in API mode, prototype reps in
 /// mock mode); null defaults to the mock reps.
-FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
-    {List<AppUser>? roster,
-    List<CatalogOption> statusCatalog = const [],
-    List<CatalogOption> typeCatalog = const [],
-    List<CatalogOption> groupCatalog = const [],}) {
+FilterSpec buildOpsTasksFilterSpec(
+  List<OpsTask> tasks,
+  List<Project> projects, {
+  List<AppUser>? roster,
+  List<CatalogOption> statusCatalog = const [],
+  List<CatalogOption> typeCatalog = const [],
+  List<CatalogOption> groupCatalog = const [],
+}) {
   final statuses = [
     // The org's own statuses when the catalog has loaded, the built-in
     // vocabulary otherwise. The built-ins are only right by accident: an org
@@ -49,12 +52,14 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
   };
   if (typeById.isEmpty) {
     for (final t in tasks) {
-      if (t.typeId.isNotEmpty && t.typeName.isNotEmpty) typeById[t.typeId] = t.typeName;
+      if (t.typeId.isNotEmpty && t.typeName.isNotEmpty)
+        typeById[t.typeId] = t.typeName;
     }
   }
   final types = [
-    for (final e in typeById.entries.toList()
-      ..sort((a, b) => a.value.compareTo(b.value)))
+    for (final e
+        in typeById.entries.toList()
+          ..sort((a, b) => a.value.compareTo(b.value)))
       FilterOption(id: e.key, label: e.value),
   ];
   // Task groups: the org's real lanes keyed by `task_group_id` (labelled with
@@ -62,14 +67,18 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
   // the server; the loaded rows' group names only in mock mode.
   final groups = groupCatalog.isNotEmpty
       ? [for (final g in groupCatalog) FilterOption(id: g.id, label: g.name)]
-      : (tasks.map((t) => t.group).where((g) => g.isNotEmpty).toSet().toList()..sort())
+      : (tasks.map((t) => t.group).where((g) => g.isNotEmpty).toSet().toList()
+            ..sort())
           .map((g) => FilterOption(id: g, label: g))
           .toList();
-  final depts = (tasks.map((t) => t.dept).where((d) => d.isNotEmpty).toSet().toList()..sort())
-      .map((d) => FilterOption(id: d, label: d))
-      .toList();
+  final depts =
+      (tasks.map((t) => t.dept).where((d) => d.isNotEmpty).toSet().toList()
+            ..sort())
+          .map((d) => FilterOption(id: d, label: d))
+          .toList();
   final users = [
-    for (final u in (roster ?? MockUsers.reps)) FilterOption(id: u.id, label: u.name),
+    for (final u in (roster ?? MockUsers.reps))
+      FilterOption(id: u.id, label: u.name),
   ];
 
   return FilterSpec(
@@ -168,7 +177,15 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
             id: 'due',
             label: 'Due date',
             control: FilterControl.dateRange,
-            dateChips: ['overdue', 'today', 'tomorrow', 'next7', 'next30', 'next60', 'next90']),
+            dateChips: [
+              'overdue',
+              'today',
+              'tomorrow',
+              'next7',
+              'next30',
+              'next60',
+              'next90'
+            ]),
         // Expected time has no backing in API mode: the task shape carries no
         // hours/effort field and no param filters on one, so `expHrs` is always
         // 0 and the slider could only ever match everything or nothing. Offered
@@ -193,17 +210,19 @@ FilterSpec buildOpsTasksFilterSpec(List<OpsTask> tasks, List<Project> projects,
 String opsTaskType(OpsTask t) => t.typeId;
 
 /// Evaluate an ops task against applied filter values.
-bool opsTaskMatchesFilters(OpsTask t, FilterValues v, {bool serverApplied = false}) {
+bool opsTaskMatchesFilters(OpsTask t, FilterValues v,
+    {bool serverApplied = false}) {
   // Skipped when the server already ran them. Re-applying is not merely
   // redundant: the server matched on ids where these match on the display values
   // a row carries, so a renamed status would be filtered out twice and wrongly.
   if (!serverApplied) {
-    if (!FilterMatch.matchAnyOf(
-        v.choice('statuses'), [t.status, if (t.statusName.isNotEmpty) t.statusName])) {
+    if (!FilterMatch.matchAnyOf(v.choice('statuses'),
+        [t.status, if (t.statusName.isNotEmpty) t.statusName])) {
       return false;
     }
     if (!FilterMatch.matchAnyOf(v.choice('pri'), [t.pri])) return false;
-    if (!FilterMatch.matchAnyOf(v.choice('types'), [opsTaskType(t)])) return false;
+    if (!FilterMatch.matchAnyOf(v.choice('types'), [opsTaskType(t)]))
+      return false;
     if (!FilterMatch.matchAnyOf(v.choice('projects'), [t.projId])) return false;
   }
 
@@ -218,7 +237,8 @@ bool opsTaskMatchesFilters(OpsTask t, FilterValues v, {bool serverApplied = fals
   // Groups are keyed by lane id (names in mock mode); both sent server-side
   // in API mode, as is the due date (`is_overdue` / `end_date_after|before`).
   if (!serverApplied) {
-    if (!FilterMatch.matchAnyOf(v.choice('groups'), [t.groupId, t.group])) return false;
+    if (!FilterMatch.matchAnyOf(v.choice('groups'), [t.groupId, t.group]))
+      return false;
   }
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), t.assignees)) return false;
   if (!FilterMatch.matchAnyOf(v.choice('depts'), [t.dept])) return false;
@@ -251,7 +271,8 @@ final opsTasksFilterSpecProvider = Provider<FilterSpec>((ref) {
     roster: ref.watch(rosterProvider),
     statusCatalog: ref.watch(opsTaskStatusOptionsProvider),
     typeCatalog: ref.watch(opsTaskTypeCatalogProvider).valueOrNull ?? const [],
-    groupCatalog: ref.watch(opsTaskGroupCatalogProvider).valueOrNull ?? const [],
+    groupCatalog:
+        ref.watch(opsTaskGroupCatalogProvider).valueOrNull ?? const [],
   );
 });
 

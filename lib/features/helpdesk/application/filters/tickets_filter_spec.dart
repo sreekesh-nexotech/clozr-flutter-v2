@@ -24,7 +24,15 @@ import '../providers/tickets_providers.dart';
 /// (`MockUsers.reps`, the prototype's `REPS`).
 
 /// The canonical due-date quick chips the prototype's Resolve-by field exposes.
-const _dueChips = ['overdue', 'today', 'tomorrow', 'next7', 'next30', 'next60', 'next90'];
+const _dueChips = [
+  'overdue',
+  'today',
+  'tomorrow',
+  'next7',
+  'next30',
+  'next60',
+  'next90'
+];
 
 /// The display label for a ticket's linked customer (company, falling back to
 /// the contact name) — the value the Customer filter matches against. Pass the
@@ -42,7 +50,9 @@ String ticketCustomerDisplay(Ticket t, [TicketLookups? lookups]) {
 /// the board anchor (09:41), matching the prototype.
 String? ticketSlaState(Ticket t) {
   if (t.status != 'new' && t.status != 'open') return null;
-  final iso = (t.responded == null && t.respByISO != null) ? t.respByISO : t.resolveByISO;
+  final iso = (t.responded == null && t.respByISO != null)
+      ? t.respByISO
+      : t.resolveByISO;
   if (iso == null) return 'ontrack';
   final d = DateTime.parse(iso).millisecondsSinceEpoch;
   final now = kNowBoard.millisecondsSinceEpoch;
@@ -53,7 +63,10 @@ String? ticketSlaState(Ticket t) {
 }
 
 List<FilterOption> _uniqueOptions(Iterable<String?> values) {
-  final set = <String>{for (final v in values) if (v != null && v.isNotEmpty) v};
+  final set = <String>{
+    for (final v in values)
+      if (v != null && v.isNotEmpty) v
+  };
   final list = set.toList()..sort();
   return [for (final v in list) FilterOption(id: v, label: v)];
 }
@@ -82,7 +95,9 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
           for (final e in StatusMeta$.ticket.entries)
             FilterOption(id: e.key, label: e.value.label),
         ];
-  final priorities = [for (final p in kIssuePriorities) FilterOption(id: p, label: p)];
+  final priorities = [
+    for (final p in kIssuePriorities) FilterOption(id: p, label: p)
+  ];
   final cats = typeCatalog.isNotEmpty
       ? [for (final t in typeCatalog) FilterOption(id: t.id, label: t.name)]
       : _uniqueOptions(tickets.map((t) => t.cat));
@@ -92,9 +107,12 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
   final custs = customers.isNotEmpty
       ? customers
       : _uniqueOptions(tickets.map((t) => ticketCustomerDisplay(t, lookups)));
-  final projs = projects.isNotEmpty ? projects : _uniqueOptions(tickets.map((t) => t.projName));
+  final projs = projects.isNotEmpty
+      ? projects
+      : _uniqueOptions(tickets.map((t) => t.projName));
   final assignees = [
-    for (final u in (roster ?? MockUsers.reps)) FilterOption(id: u.id, label: u.name),
+    for (final u in (roster ?? MockUsers.reps))
+      FilterOption(id: u.id, label: u.name),
   ];
 
   return FilterSpec(
@@ -199,26 +217,36 @@ FilterSpec buildTicketsFilterSpec(List<Ticket> tickets,
 bool ticketMatchesFilters(Ticket t, FilterValues v,
     [TicketLookups? lookups, bool serverApplied = false]) {
   if (!serverApplied) {
-    if (!FilterMatch.matchAnyOf(v.choice('statuses'),
-        [t.status, if (t.statusId.isNotEmpty) t.statusId, if (t.statusName.isNotEmpty) t.statusName])) {
+    if (!FilterMatch.matchAnyOf(v.choice('statuses'), [
+      t.status,
+      if (t.statusId.isNotEmpty) t.statusId,
+      if (t.statusName.isNotEmpty) t.statusName
+    ])) {
+      return false;
+    }
+    if (!FilterMatch.matchAnyOf(v.choice('pri'),
+        [t.pri, if (t.priorityName.isNotEmpty) t.priorityName])) {
       return false;
     }
     if (!FilterMatch.matchAnyOf(
-        v.choice('pri'), [t.pri, if (t.priorityName.isNotEmpty) t.priorityName])) {
+        v.choice('cats'), [t.cat, if (t.typeId.isNotEmpty) t.typeId]))
       return false;
-    }
-    if (!FilterMatch.matchAnyOf(v.choice('cats'), [t.cat, if (t.typeId.isNotEmpty) t.typeId])) return false;
     if (!FilterMatch.matchAnyOf(
         v.choice('companies'), [ticketCustomerDisplay(t, lookups), t.custId])) {
       return false;
     }
-    if (!FilterMatch.matchAnyOf(v.choice('assignees'), t.assignees)) return false;
-    if (!FilterMatch.matchAnyOf(v.choice('products'),
-        [if (t.product != null) t.product!, if (t.productId != null) t.productId!])) {
+    if (!FilterMatch.matchAnyOf(v.choice('assignees'), t.assignees))
+      return false;
+    if (!FilterMatch.matchAnyOf(v.choice('products'), [
+      if (t.product != null) t.product!,
+      if (t.productId != null) t.productId!
+    ])) {
       return false;
     }
-    if (!FilterMatch.matchAnyOf(v.choice('projects'),
-        [if (t.projName != null) t.projName!, if (t.projId != null) t.projId!])) {
+    if (!FilterMatch.matchAnyOf(v.choice('projects'), [
+      if (t.projName != null) t.projName!,
+      if (t.projId != null) t.projId!
+    ])) {
       return false;
     }
   }
@@ -233,7 +261,9 @@ bool ticketMatchesFilters(Ticket t, FilterValues v,
   }
 
   final linked = v.radio('linked');
-  if (linked != null && linked.isActive && !(serverApplied && linked.id == 'task')) {
+  if (linked != null &&
+      linked.isActive &&
+      !(serverApplied && linked.id == 'task')) {
     switch (linked.id) {
       case 'proj':
         if (t.projId == null) return false;
@@ -244,8 +274,7 @@ bool ticketMatchesFilters(Ticket t, FilterValues v,
     }
   }
 
-  if (!FilterMatch.matchDate(
-      v.date('resolveBy'),
+  if (!FilterMatch.matchDate(v.date('resolveBy'),
       t.resolveByISO == null ? null : DateTime.parse(t.resolveByISO!))) {
     return false;
   }
@@ -283,7 +312,12 @@ TicketViewDefinition encodeTicketView(FilterValues v) {
     if (c == null || !c.isActive) continue;
     final ids = [
       for (final id in c.ids)
-        if (field == 'assignees') UserDirectory.realUserId(id) ?? '' else if (field == 'pri' && id == 'Urgent') 'Critical' else id,
+        if (field == 'assignees')
+          UserDirectory.realUserId(id) ?? ''
+        else if (field == 'pri' && id == 'Urgent')
+          'Critical'
+        else
+          id,
     ].where((id) => id.isNotEmpty).toList();
     if (ids.isEmpty) continue;
     if (c.isNot && !canExclude) {
@@ -309,7 +343,10 @@ FilterValues decodeTicketView(Map<String, dynamic> definition) {
     if (!isIn && !isNot) continue;
     final ids = split(definition[isIn ? '${key}__in' : '${key}__not']);
     out[field] = ChoiceValue(
-      ids: {for (final id in ids) field == 'assignees' ? UserDirectory.mapUserId(id) : id},
+      ids: {
+        for (final id in ids)
+          field == 'assignees' ? UserDirectory.mapUserId(id) : id
+      },
       isNot: !isIn,
     );
   }
@@ -324,7 +361,9 @@ final ticketFilterCatalogsProvider = FutureProvider<void>((ref) async {
   await Future.wait<Object?>([
     ref.watch(ticketStatusCatalogProvider.future),
     ref.watch(ticketTypeCatalogProvider.future),
-    ref.watch(productCatalogProvider.future).catchError((_) => const <CatalogOption>[]),
+    ref
+        .watch(productCatalogProvider.future)
+        .catchError((_) => const <CatalogOption>[]),
     ref.watch(customersProvider.future).catchError((_) => const <Customer>[]),
   ]);
 });
@@ -340,11 +379,15 @@ final ticketsFilterSpecProvider = Provider<FilterSpec>((ref) {
     typeCatalog: ref.watch(ticketTypeOptionsProvider),
     productCatalog: ref.watch(productOptionsProvider),
     projects: [
-      for (final p in ref.watch(allProjectsProvider)) FilterOption(id: p.id, label: p.name),
+      for (final p in ref.watch(allProjectsProvider))
+        FilterOption(id: p.id, label: p.name),
     ],
     customers: [
-      for (final c in ref.watch(customersProvider).valueOrNull ?? const <Customer>[])
-        FilterOption(id: c.id, label: (c.company ?? '').isNotEmpty ? c.company! : c.name),
+      for (final c
+          in ref.watch(customersProvider).valueOrNull ?? const <Customer>[])
+        FilterOption(
+            id: c.id,
+            label: (c.company ?? '').isNotEmpty ? c.company! : c.name),
     ],
   );
 });
@@ -357,5 +400,7 @@ final filteredTicketsProvider = Provider<List<Ticket>>((ref) {
   final filters = ref.watch(ticketFiltersProvider);
   if (filters.isEmpty) return base;
   final dir = ref.watch(ticketDirectoryProvider);
-  return base.where((t) => ticketMatchesFilters(t, filters, dir, ApiConfig.apiEnabled)).toList();
+  return base
+      .where((t) => ticketMatchesFilters(t, filters, dir, ApiConfig.apiEnabled))
+      .toList();
 });

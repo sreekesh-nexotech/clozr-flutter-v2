@@ -68,7 +68,8 @@ class WinLossGroupRow extends WinLossMetrics {
   final String key;
   final String name;
 
-  factory WinLossGroupRow._from(Map<String, dynamic> j, String idKey, String nameKey, int index) {
+  factory WinLossGroupRow._from(
+      Map<String, dynamic> j, String idKey, String nameKey, int index) {
     final m = WinLossMetrics.fromJson(j);
     final id = '${j[idKey] ?? ''}';
     return WinLossGroupRow(
@@ -106,19 +107,28 @@ class WinLossReport {
   final List<WinLossGroupRow> bySource;
 
   factory WinLossReport.fromJson(Object? body) {
-    final j = body is Map ? Map<String, dynamic>.from(body) : const <String, dynamic>{};
+    final j = body is Map
+        ? Map<String, dynamic>.from(body)
+        : const <String, dynamic>{};
     List<WinLossGroupRow> rows(String field, String idKey, String nameKey) {
       final raw = j[field];
       if (raw is! List) return const [];
-      final maps = [for (final r in raw) if (r is Map) Map<String, dynamic>.from(r)];
-      return [for (var i = 0; i < maps.length; i++) WinLossGroupRow._from(maps[i], idKey, nameKey, i)];
+      final maps = [
+        for (final r in raw)
+          if (r is Map) Map<String, dynamic>.from(r)
+      ];
+      return [
+        for (var i = 0; i < maps.length; i++)
+          WinLossGroupRow._from(maps[i], idKey, nameKey, i)
+      ];
     }
 
     final summary = j['summary'];
     return WinLossReport(
       dateFrom: j['date_from'] is String ? j['date_from'] as String : '',
       dateTo: j['date_to'] is String ? j['date_to'] as String : '',
-      summary: WinLossMetrics.fromJson(summary is Map ? Map<String, dynamic>.from(summary) : const {}),
+      summary: WinLossMetrics.fromJson(
+          summary is Map ? Map<String, dynamic>.from(summary) : const {}),
       byOwner: rows('by_owner', 'owner_id', 'owner_name'),
       byProduct: rows('by_product', 'product_id', 'product_name'),
       bySource: rows('by_source', 'source_id', 'source_name'),
@@ -151,7 +161,8 @@ enum WinLossPreset {
 }
 
 /// `(from, to)` ISO days for [preset] relative to [today]; '' = open-ended.
-({String from, String to}) winLossPresetRange(WinLossPreset preset, DateTime today) {
+({String from, String to}) winLossPresetRange(
+    WinLossPreset preset, DateTime today) {
   final to = isoDay(today);
   switch (preset) {
     case WinLossPreset.allTime:
@@ -160,9 +171,15 @@ enum WinLossPreset {
     case WinLossPreset.thisYear:
       return (from: '${today.year.toString().padLeft(4, '0')}-01-01', to: to);
     case WinLossPreset.last30:
-      return (from: isoDay(DateTime(today.year, today.month, today.day - 29)), to: to);
+      return (
+        from: isoDay(DateTime(today.year, today.month, today.day - 29)),
+        to: to
+      );
     case WinLossPreset.last90:
-      return (from: isoDay(DateTime(today.year, today.month, today.day - 89)), to: to);
+      return (
+        from: isoDay(DateTime(today.year, today.month, today.day - 89)),
+        to: to
+      );
   }
 }
 
@@ -178,7 +195,8 @@ bool isValidIsoDay(String s) {
 /// A range the server accepts (it answers 400 otherwise), or the error to show.
 /// Blank = open-ended and always fine.
 String? winLossRangeError(String from, String to) {
-  if ((from.isNotEmpty && !isValidIsoDay(from)) || (to.isNotEmpty && !isValidIsoDay(to))) {
+  if ((from.isNotEmpty && !isValidIsoDay(from)) ||
+      (to.isNotEmpty && !isValidIsoDay(to))) {
     return 'Use a valid date.';
   }
   if (from.isNotEmpty && to.isNotEmpty && from.compareTo(to) > 0) {
@@ -197,7 +215,8 @@ Map<String, dynamic> winLossQuery(String from, String to) => {
 
 String _trimmed(double n, int dp) {
   var s = n.toStringAsFixed(dp);
-  if (s.contains('.')) s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  if (s.contains('.'))
+    s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
   return s == '-0' ? '0' : s;
 }
 

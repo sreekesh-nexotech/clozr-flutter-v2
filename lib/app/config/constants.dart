@@ -16,7 +16,8 @@ class AppConstants {
   /// the dashboard header formats it ("Thu, 9 Jul"). Computed per read rather
   /// than held as a literal so it cannot go stale, and so a session that spans
   /// midnight rolls over.
-  static String get headerDate => DateFormat('EEE, d MMM').format(DateTime.now());
+  static String get headerDate =>
+      DateFormat('EEE, d MMM').format(DateTime.now());
 
   /// Simulated status-bar clock, matching the design canvas.
   static const String statusBarClock = '9:41';
@@ -28,6 +29,11 @@ class AppConstants {
   /// server refusal is a full sentence the user has to read and act on, and
   /// there is no way to bring it back once it has gone.
   static const Duration toastErrorDuration = Duration(milliseconds: 5000);
+
+  /// How long the in-app notification banner stays up before it closes on its
+  /// own. Long enough to read and act on, short enough that one you ignore
+  /// gets out of the way.
+  static const Duration notificationBannerDuration = Duration(seconds: 15);
 
   /// Simulated network latency for mock data sources so skeleton/loading
   /// states are visible. Set to [Duration.zero] to disable.

@@ -10,6 +10,7 @@ import '../models/note.dart';
 import '../utils/attachment_link.dart';
 import '../utils/mention_text.dart';
 import 'attachment_preview.dart';
+import 'inline_note_controller.dart';
 import 'app_bottom_sheet.dart';
 
 /// The shared Notes section used on every detail page (#13).
@@ -50,8 +51,12 @@ class NotesThread extends ConsumerStatefulWidget {
 
   /// Used instead of [onAddNote] when set: also carries the chosen tag and
   /// the users still @mentioned in the text (webapp `mentionedIdsIn`).
-  final void Function(String body, List<NoteAttachment> attachments, String? noteTypeId,
-      String? noteTypeName, List<String> mentionedUserIds)? onAddTypedNote;
+  final void Function(
+      String body,
+      List<NoteAttachment> attachments,
+      String? noteTypeId,
+      String? noteTypeName,
+      List<String> mentionedUserIds)? onAddTypedNote;
 
   /// The signed-in user — only a note's author may pin, edit or delete it.
   final String? currentUserId;
@@ -66,6 +71,7 @@ class NotesThread extends ConsumerStatefulWidget {
   final bool readOnly;
 
   final List<NoteEntry> notes;
+
   /// Who the composer is writing as — supply from `noteAuthorProvider`.
   final NoteAuthor author;
 
@@ -88,10 +94,10 @@ class NotesThread extends ConsumerStatefulWidget {
 }
 
 class NotesThreadState extends ConsumerState<NotesThread> {
-  final _noteCtrl = TextEditingController();
+  final _noteCtrl = InlineNoteController();
+  int _localSeq = 0;
   final _replyCtrl = TextEditingController();
   final _noteFocus = FocusNode();
-  final List<NoteAttachment> _pending = [];
   String? _openReplyFor;
 
   /// The composer's tag — "No tag" (null) until picked, reset after posting.
@@ -103,12 +109,19 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   /// Webapp composer toolbar (Tag · Mention · Insert) — the CRM records, or
   /// any host that wires the webapp's tags or mentions. Other hosts keep the
   /// paperclip inside the field.
-  bool get _toolbar => widget.webappToolbar || widget.noteTypes.isNotEmpty || widget.mentionables.isNotEmpty;
+  bool get _toolbar =>
+      widget.webappToolbar ||
+      widget.noteTypes.isNotEmpty ||
+      widget.mentionables.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     // Inline @mentions: the suggestion list follows the text and the caret.
+    _noteCtrl.chipBuilder = (a, i) => _attachmentChip(a,
+        onRemove: () => _noteCtrl.removeAttachmentAt(i),
+        maxWidth: 130,
+        inline: true);
     _noteCtrl.addListener(_onDraftChanged);
     _noteFocus.addListener(_onDraftChanged);
   }
@@ -117,13 +130,24 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   ({int start, String query})? _activeMention;
   int _mentionCount = 0;
 
+  int _attCount = 0;
+
   void _onDraftChanged() {
+    // The composer's line height depends on whether a chip is in the text.
+    if (_attCount != _noteCtrl.attachments.length) {
+      _attCount = _noteCtrl.attachments.length;
+      if (mounted) setState(() {});
+    }
     final sel = _noteCtrl.selection;
-    final next = widget.mentionables.isEmpty || !_noteFocus.hasFocus || !sel.isValid || !sel.isCollapsed
+    final next = widget.mentionables.isEmpty ||
+            !_noteFocus.hasFocus ||
+            !sel.isValid ||
+            !sel.isCollapsed
         ? null
         : activeMentionAt(_noteCtrl.text, sel.baseOffset, widget.mentionables);
     // The Mention chip's "N mentioned" follows the text too.
-    final count = widget.mentionables.isEmpty ? 0 : _mentionedIn(_noteCtrl.text).length;
+    final count =
+        widget.mentionables.isEmpty ? 0 : _mentionedIn(_noteCtrl.text).length;
     if (next == _activeMention && count == _mentionCount) return;
     if (mounted) {
       setState(() {
@@ -144,7 +168,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   void _pickInlineMention(({String id, String name}) user) {
     final m = _activeMention;
     if (m == null) return;
-    final r = insertMention(_noteCtrl.text, m.start, _noteCtrl.selection.baseOffset, user.name);
+    final r = insertMention(
+        _noteCtrl.text, m.start, _noteCtrl.selection.baseOffset, user.name);
     _setDraft(r.text, r.caret);
     _noteFocus.requestFocus();
   }
@@ -158,25 +183,28 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   }
 
   void _send() {
-    final body = _noteCtrl.text.trim();
-    if (body.isEmpty && _pending.isEmpty) return;
+    // Files sit inside the text where they were inserted, as [[att:<id>]]
+    // markers (the webapp's format); the list says which file each one is.
+    final body = _noteCtrl.encode().trim();
+    final atts = List<NoteAttachment>.of(_noteCtrl.attachments);
+    if (body.isEmpty && atts.isEmpty) return;
     final typed = widget.onAddTypedNote;
     if (typed != null) {
-      typed(body, List.of(_pending), _noteType?.id, _noteType?.name, _mentionedIn(body));
+      typed(body, atts, _noteType?.id, _noteType?.name, _mentionedIn(body));
       ref.read(toastProvider.notifier).show('Note added');
     } else {
-      widget.onAddNote(body, List.of(_pending));
+      widget.onAddNote(body, atts);
     }
     _noteCtrl.clear();
     setState(() {
-      _pending.clear();
       _noteType = null;
     });
     FocusScope.of(context).unfocus();
   }
 
   /// Users whose `@Name` token is still in [text] (webapp `mentionedIdsIn`).
-  List<String> _mentionedIn(String text) => mentionedIdsIn(text, widget.mentionables);
+  List<String> _mentionedIn(String text) =>
+      mentionedIdsIn(text, widget.mentionables);
 
   /// The tag's own colour (the server's hex), or the muted text colour.
   static Color _tagColor(String hex) {
@@ -197,29 +225,39 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       context: context,
       builder: (ctx) => SafeArea(
         top: false,
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SheetHeader(title: 'Tag'),
-          Flexible(
-            child: ListView(shrinkWrap: true, children: [
-              ListTile(
-                leading: _dot(const Color(0xFF9AA0A6)),
-                minLeadingWidth: 8.w,
-                title: const Text('No tag'),
-                trailing: _noteType == null ? Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.navy) : null,
-                onTap: () => Navigator.of(ctx).pop((id: '', name: '', color: '')),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SheetHeader(title: 'Tag'),
+              Flexible(
+                child: ListView(shrinkWrap: true, children: [
+                  ListTile(
+                    leading: _dot(const Color(0xFF9AA0A6)),
+                    minLeadingWidth: 8.w,
+                    title: const Text('No tag'),
+                    trailing: _noteType == null
+                        ? Icon(PhosphorIconsBold.check,
+                            size: 16.sp, color: AppColors.navy)
+                        : null,
+                    onTap: () =>
+                        Navigator.of(ctx).pop((id: '', name: '', color: '')),
+                  ),
+                  for (final t in widget.noteTypes)
+                    ListTile(
+                      leading: _dot(_tagColor(t.color)),
+                      minLeadingWidth: 8.w,
+                      title: Text(t.name),
+                      trailing: _noteType?.id == t.id
+                          ? Icon(PhosphorIconsBold.check,
+                              size: 16.sp, color: AppColors.navy)
+                          : null,
+                      onTap: () => Navigator.of(ctx).pop(t),
+                    ),
+                ]),
               ),
-              for (final t in widget.noteTypes)
-                ListTile(
-                  leading: _dot(_tagColor(t.color)),
-                  minLeadingWidth: 8.w,
-                  title: Text(t.name),
-                  trailing: _noteType?.id == t.id ? Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.navy) : null,
-                  onTap: () => Navigator.of(ctx).pop(t),
-                ),
+              SizedBox(height: 8.h),
             ]),
-          ),
-          SizedBox(height: 8.h),
-        ]),
       ),
     );
     if (picked == null || !mounted) return;
@@ -247,7 +285,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                       value: on.contains(u.id),
                       controlAffinity: ListTileControlAffinity.leading,
                       activeColor: AppColors.navy,
-                      title: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: Text(u.name,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
                       onChanged: (_) {
                         _toggleMention(u, on.contains(u.id));
                         setSheet(() {});
@@ -290,7 +329,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       );
     } on Object catch (e) {
       if (!mounted) return;
-      ref.read(toastProvider.notifier).showError('Could not open the file picker: $e');
+      ref
+          .read(toastProvider.notifier)
+          .showError('Could not open the file picker: $e');
       return;
     }
     final f = result?.files.firstOrNull;
@@ -298,8 +339,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     if (f == null || path == null || !mounted) return; // cancelled
     final kind = _kindOf(f.extension);
     if (f.size > (kind == 'image' ? _imageSizeLimit : _fileSizeLimit)) {
-      ref.read(toastProvider.notifier)
-          .showError('${f.name} is too large — max ${kind == 'image' ? '5 MB' : '10 MB'}');
+      ref.read(toastProvider.notifier).showError(
+          '${f.name} is too large — max ${kind == 'image' ? '5 MB' : '10 MB'}');
       return;
     }
     final name = await showDialog<String>(
@@ -307,17 +348,20 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       builder: (ctx) => _NameAttachmentDialog(initial: f.name),
     );
     if (name == null || name.isEmpty || !mounted) return; // cancelled or blank
-    setState(() => _pending.add(NoteAttachment(
-          name: name,
-          kind: kind,
-          size: _formatBytes(f.size),
-          localPath: path,
-        )));
+    _noteCtrl.insertAttachment(NoteAttachment(
+      name: name,
+      kind: kind,
+      size: _formatBytes(f.size),
+      localPath: path,
+      localId: 'local-${DateTime.now().microsecondsSinceEpoch}-${_localSeq++}',
+    ));
+    _noteFocus.requestFocus();
   }
 
   /// Author-only actions (webapp `NoteCard`): Pin/Unpin, Edit, Delete.
   Future<void> _noteActions(NoteEntry n) async {
-    final mine = widget.currentUserId != null && n.authorId == widget.currentUserId;
+    final mine =
+        widget.currentUserId != null && n.authorId == widget.currentUserId;
     if (!mine || widget.readOnly && widget.onEditNote == null) return;
     // Drop the composer's focus first, or the keyboard comes back when the
     // sheet / dialog closes and covers the result toast.
@@ -328,7 +372,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           if (widget.onTogglePin != null)
             ListTile(
-              leading: Icon(n.pinned ? PhosphorIconsRegular.pushPinSlash : PhosphorIconsRegular.pushPin),
+              leading: Icon(n.pinned
+                  ? PhosphorIconsRegular.pushPinSlash
+                  : PhosphorIconsRegular.pushPin),
               title: Text(n.pinned ? 'Unpin' : 'Pin'),
               onTap: () => Navigator.of(ctx).pop('pin'),
             ),
@@ -340,8 +386,10 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             ),
           if (widget.onDeleteNote != null)
             ListTile(
-              leading: const Icon(PhosphorIconsRegular.trash, color: AppColors.error),
-              title: const Text('Delete', style: TextStyle(color: AppColors.error)),
+              leading: const Icon(PhosphorIconsRegular.trash,
+                  color: AppColors.error),
+              title: const Text('Delete',
+                  style: TextStyle(color: AppColors.error)),
               onTap: () => Navigator.of(ctx).pop('delete'),
             ),
         ]),
@@ -358,7 +406,11 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         // dialog is still animating out, crashed the screen.
         final body = await showDialog<String>(
           context: context,
-          builder: (ctx) => _EditNoteDialog(initial: n.body),
+          builder: (ctx) => _EditNoteDialog(
+              initial: n.body,
+              attachments: n.attachments,
+              chip: (a, onRemove) => _attachmentChip(a,
+                  onRemove: onRemove, maxWidth: 110, inline: true)),
         );
         if (body == null || body.isEmpty || body == n.body || !mounted) return;
         final err = await widget.onEditNote!(n.id, body);
@@ -368,12 +420,16 @@ class NotesThreadState extends ConsumerState<NotesThread> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Delete note?'),
-            content: const Text('This permanently removes the note and its replies.'),
+            content: const Text(
+                'This permanently removes the note and its replies.'),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel')),
               TextButton(
                   onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text('Delete', style: TextStyle(color: AppColors.error))),
+                  child: const Text('Delete',
+                      style: TextStyle(color: AppColors.error))),
             ],
           ),
         );
@@ -387,7 +443,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     final body = _replyCtrl.text.trim();
     if (body.isEmpty) return;
     widget.onAddReply(noteId, body);
-    if (widget.onAddTypedNote != null) ref.read(toastProvider.notifier).show('Reply posted');
+    if (widget.onAddTypedNote != null)
+      ref.read(toastProvider.notifier).show('Reply posted');
     _replyCtrl.clear();
     setState(() => _openReplyFor = null);
     FocusScope.of(context).unfocus();
@@ -422,8 +479,17 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   /// and Markdown. Constraining the picker means a rejected upload is something
   /// the user can't stumble into.
   static const _allowedExtensions = [
-    'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
-    'pdf', 'xls', 'xlsx', 'csv', 'md',
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'heic',
+    'pdf',
+    'xls',
+    'xlsx',
+    'csv',
+    'md',
   ];
 
   /// Same caps as the WhatsApp composer (`whatsapp.md` §4.5), kept consistent
@@ -456,7 +522,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       // and `ScaffoldMessenger.maybeOf` drops the message outright when there is
       // no messenger in scope. The toast is mounted above the navigator and
       // clears the keyboard, which is always up while a note is being written.
-      ref.read(toastProvider.notifier).showError('Could not open the file picker: $e');
+      ref
+          .read(toastProvider.notifier)
+          .showError('Could not open the file picker: $e');
       return;
     }
     final picked = result;
@@ -473,11 +541,13 @@ class NotesThreadState extends ConsumerState<NotesThread> {
           tooLarge.add(f.name);
           continue;
         }
-        _pending.add(NoteAttachment(
+        _noteCtrl.insertAttachment(NoteAttachment(
           name: f.name,
           kind: kind,
           size: _formatBytes(f.size),
           localPath: path,
+          localId:
+              'local-${DateTime.now().microsecondsSinceEpoch}-${_localSeq++}',
         ));
       }
     });
@@ -494,7 +564,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
 
   static String _kindOf(String? extension) {
     const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'};
-    return imageExts.contains((extension ?? '').toLowerCase()) ? 'image' : 'file';
+    return imageExts.contains((extension ?? '').toLowerCase())
+        ? 'image'
+        : 'file';
   }
 
   static String _formatBytes(int bytes) {
@@ -505,7 +577,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     return '$bytes B';
   }
 
-  Widget _attachOption(BuildContext ctx, IconData icon, String label, VoidCallback onTap) {
+  Widget _attachOption(
+      BuildContext ctx, IconData icon, String label, VoidCallback onTap) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -541,7 +614,10 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         color: AppColors.white,
         borderRadius: BorderRadius.circular(18.r),
         boxShadow: [
-          BoxShadow(color: const Color(0xFF101828).withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 10)),
+          BoxShadow(
+              color: const Color(0xFF101828).withOpacity(0.05),
+              blurRadius: 24,
+              offset: const Offset(0, 10)),
         ],
         border: Border.all(color: const Color(0xFFEEF0F3)),
       ),
@@ -553,10 +629,20 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text('Notes',
-                  style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 15.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
+                  style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontVariations: const [FontVariation('wght', 700.0)],
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF14151A))),
               SizedBox(width: 8.w),
               Text('${widget.notes.length}',
-                  style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                  style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontVariations: const [FontVariation('wght', 600.0)],
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
             ],
           ),
           SizedBox(height: 13.h),
@@ -564,7 +650,6 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             _composer(),
             if (_activeMention != null) _mentionSuggestions(),
           ],
-          if (_pending.isNotEmpty) _pendingChips(),
           if (!widget.readOnly && _toolbar) _composerExtras(),
           SizedBox(height: 2.h),
           for (final n in widget.notes) _noteRow(n),
@@ -597,8 +682,11 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             child: Row(mainAxisSize: MainAxisSize.min, children: children),
           ),
         );
-    TextStyle label(Color c) =>
-        TextStyle(fontFamily: 'Manrope', fontSize: 12.5.sp, fontWeight: FontWeight.w600, color: c);
+    TextStyle label(Color c) => TextStyle(
+        fontFamily: 'Manrope',
+        fontSize: 12.5.sp,
+        fontWeight: FontWeight.w600,
+        color: c);
     final muted = AppColors.textMuted;
     return Padding(
       padding: EdgeInsets.only(top: 10.h, left: 44.w),
@@ -611,14 +699,16 @@ class NotesThreadState extends ConsumerState<NotesThread> {
               if (tagColor != null) ...[_dot(tagColor), SizedBox(width: 6.w)],
               Text(tag?.name ?? 'Tag', style: label(tagColor ?? muted)),
               SizedBox(width: 4.w),
-              Icon(PhosphorIconsRegular.caretDown, size: 12.sp, color: tagColor ?? muted),
+              Icon(PhosphorIconsRegular.caretDown,
+                  size: 12.sp, color: tagColor ?? muted),
             ],
           ),
         if (widget.mentionables.isNotEmpty)
           chip(onTap: _pickMention, children: [
             Icon(PhosphorIconsRegular.at, size: 14.sp, color: muted),
             SizedBox(width: 5.w),
-            Text(mentioned > 0 ? '$mentioned mentioned' : 'Mention', style: label(muted)),
+            Text(mentioned > 0 ? '$mentioned mentioned' : 'Mention',
+                style: label(muted)),
             SizedBox(width: 4.w),
             Icon(PhosphorIconsRegular.caretDown, size: 12.sp, color: muted),
           ]),
@@ -633,7 +723,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
 
   /// Webapp `MentionTextarea`'s popup: who matches the `@query` being typed.
   Widget _mentionSuggestions() {
-    final hits = filterMentionCandidates(widget.mentionables, _activeMention!.query);
+    final hits =
+        filterMentionCandidates(widget.mentionables, _activeMention!.query);
     if (hits.isEmpty) return const SizedBox.shrink();
     return Container(
       margin: EdgeInsets.only(top: 6.h, left: 44.w),
@@ -641,7 +732,12 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         color: AppColors.white,
         borderRadius: BorderRadius.circular(12.r),
         border: Border.all(color: const Color(0xFFECECEC)),
-        boxShadow: [BoxShadow(color: const Color(0xFF101828).withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [
+          BoxShadow(
+              color: const Color(0xFF101828).withOpacity(0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 6))
+        ],
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         for (final u in hits)
@@ -657,7 +753,11 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                   child: Text(u.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontFamily: 'Manrope', fontSize: 13.5.sp, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                      style: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontSize: 13.5.sp,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
                 ),
               ]),
             ),
@@ -667,9 +767,11 @@ class NotesThreadState extends ConsumerState<NotesThread> {
   }
 
   static String _initialsOf(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts =
+        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.isEmpty) return '?';
-    return (parts.first[0] + (parts.length > 1 ? parts[1][0] : '')).toUpperCase();
+    return (parts.first[0] + (parts.length > 1 ? parts[1][0] : ''))
+        .toUpperCase();
   }
 
   Widget _composer() {
@@ -679,34 +781,52 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         SizedBox(width: 10.w),
         Expanded(
           child: Container(
-            height: 46.h,
+            // Grows with the text: Enter adds a line (UAT), Send posts.
+            constraints: BoxConstraints(minHeight: 46.h),
             decoration: BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.circular(12.r),
               border: Border.all(color: const Color(0xFFE6E7EA)),
             ),
-            padding: EdgeInsets.symmetric(horizontal: 12.w),
+            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 12.h),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _noteCtrl,
                     focusNode: _noteFocus,
-                    onSubmitted: (_) => _send(),
-                    textInputAction: TextInputAction.send,
-                    style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 14.sp, color: AppColors.textBody),
+                    // UAT: a note can span lines — Enter inserts a line break
+                    // on the soft keyboard and the Send button posts.
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    minLines: 1,
+                    maxLines: 6,
+                    // With a chip in the text every line is tall enough for
+                    // it, so a chip never sits over the line above or below.
+                    strutStyle:
+                        _noteCtrl.attachments.isEmpty ? null : _chipStrut(),
+                    style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontVariations: const [FontVariation('wght', 400.0)],
+                        fontSize: 14.sp,
+                        color: AppColors.textBody),
                     decoration: InputDecoration(
                       isCollapsed: true,
                       border: InputBorder.none,
                       hintText: 'Add a note…',
-                      hintStyle: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 14.sp, color: AppColors.textPlaceholder),
+                      hintStyle: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontVariations: const [FontVariation('wght', 400.0)],
+                          fontSize: 14.sp,
+                          color: AppColors.textPlaceholder),
                     ),
                   ),
                 ),
                 if (!_toolbar)
                   GestureDetector(
                     onTap: _pickAttachment,
-                    child: Icon(PhosphorIconsRegular.paperclip, size: 19.sp, color: AppColors.textMuted),
+                    child: Icon(PhosphorIconsRegular.paperclip,
+                        size: 19.sp, color: AppColors.textMuted),
                   ),
               ],
             ),
@@ -718,26 +838,95 @@ class NotesThreadState extends ConsumerState<NotesThread> {
           child: Container(
             width: 46.w,
             height: 46.h,
-            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
-            child: Icon(PhosphorIconsFill.paperPlaneRight, size: 18.sp, color: AppColors.white),
+            decoration: BoxDecoration(
+                color: AppColors.navy,
+                borderRadius: BorderRadius.circular(12.r)),
+            child: Icon(PhosphorIconsFill.paperPlaneRight,
+                size: 18.sp, color: AppColors.white),
           ),
         ),
       ],
     );
   }
 
-  Widget _pendingChips() {
-    return Padding(
-      padding: EdgeInsets.only(top: 10.h, left: 44.w),
-      child: Wrap(
-        spacing: 8.w,
-        runSpacing: 8.h,
-        children: [
-          for (int i = 0; i < _pending.length; i++)
-            _attachmentChip(_pending[i], onRemove: () => setState(() => _pending.removeAt(i))),
-        ],
-      ),
-    );
+  StrutStyle _chipStrut() => StrutStyle(
+      fontFamily: 'Manrope',
+      fontSize: 14.sp,
+      height: 2.0,
+      forceStrutHeight: true);
+
+  TextStyle get _bodyStyle => TextStyle(
+      fontFamily: 'Manrope',
+      fontVariations: const [FontVariation('wght', 400.0)],
+      fontSize: 14.sp,
+      height: 1.55,
+      color: const Color(0xFF363636));
+
+  /// The note's attachment for a `[[att:<id>]]` marker — by its server id, or
+  /// by the temporary id a just-posted note still carries.
+  static NoteAttachment? _attFor(NoteEntry n, String id) => n.attachments
+      .where((a) => a.markerId == id || a.localId == id)
+      .firstOrNull;
+
+  /// Attachments the text does not place — older notes, and files whose
+  /// marker is gone — which still show as a group under it.
+  List<NoteAttachment> _looseAttachments(NoteEntry n) {
+    if (!noteHasAttMarkers(n.body)) return n.attachments;
+    final placed = <NoteAttachment>{};
+    for (final p in splitNoteContent(n.body)) {
+      final a = p.attId == null ? null : _attFor(n, p.attId!);
+      if (a != null) placed.add(a);
+    }
+    return [
+      for (final a in n.attachments)
+        if (!placed.contains(a)) a
+    ];
+  }
+
+  /// The note's text with each attached file shown at the place it was
+  /// inserted, as the webapp does.
+  /// [text] as spans, with each `@Name` of someone who can be mentioned shown
+  /// in bold navy (webapp parity) — plain text when nobody is mentionable.
+  List<InlineSpan> _textSpans(String text) {
+    if (widget.mentionables.isEmpty) return [TextSpan(text: text)];
+    return [
+      for (final seg in tokenizeMentions(text, widget.mentionables))
+        seg.id == null
+            ? TextSpan(text: seg.text)
+            : TextSpan(
+                text: seg.text,
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontVariations: const [FontVariation('wght', 700.0)],
+                    color: AppColors.navy)),
+    ];
+  }
+
+  Widget _noteBody(NoteEntry n) {
+    if (!noteHasAttMarkers(n.body)) {
+      return widget.mentionables.isEmpty
+          ? Text(n.body, style: _bodyStyle)
+          : Text.rich(
+              TextSpan(style: _bodyStyle, children: _textSpans(n.body)));
+    }
+    final spans = <InlineSpan>[];
+    for (final p in splitNoteContent(n.body)) {
+      if (p.text != null) {
+        spans.addAll(_textSpans(p.text!));
+        continue;
+      }
+      final a = _attFor(n, p.attId!);
+      if (a == null) continue;
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 2.h),
+          child: _attachmentChip(a, maxWidth: 150, inline: true),
+        ),
+      ));
+    }
+    return Text.rich(TextSpan(style: _bodyStyle, children: spans),
+        strutStyle: _chipStrut());
   }
 
   Widget _noteRow(NoteEntry n) {
@@ -745,76 +934,108 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       behavior: HitTestBehavior.opaque,
       onLongPress: () => _noteActions(n),
       child: Container(
-      padding: EdgeInsets.symmetric(vertical: 13.h),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _avatar(n.initials, n.avatarColor ?? AppColors.navy, 30),
-          SizedBox(width: 11.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8.w,
-                  runSpacing: 4.h,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(n.author,
-                        style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 13.5.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
-                    if (n.via != null) _viaPill(n.via!)
-                    else if (n.noteType != null && n.noteType!.isNotEmpty) _viaPill(n.noteType!),
-                    if (n.pinned) _pinnedPill(),
-                    Text(n.time, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 500.0)], fontSize: 11.sp, fontWeight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                  ],
-                ),
-                if (n.body.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(top: 4.h),
-                    child: Text(n.body,
-                        style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 14.sp, height: 1.55, color: const Color(0xFF363636))),
+        padding: EdgeInsets.symmetric(vertical: 13.h),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5))),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _avatar(n.initials, n.avatarColor ?? AppColors.navy, 30),
+            SizedBox(width: 11.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8.w,
+                    runSpacing: 4.h,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(n.author,
+                          style: TextStyle(
+                              fontFamily: 'Manrope',
+                              fontVariations: const [
+                                FontVariation('wght', 700.0)
+                              ],
+                              fontSize: 13.5.sp,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF14151A))),
+                      if (n.via != null)
+                        _viaPill(n.via!)
+                      else if (n.noteType != null && n.noteType!.isNotEmpty)
+                        _viaPill(n.noteType!),
+                      if (n.pinned) _pinnedPill(),
+                      Text(n.time,
+                          style: TextStyle(
+                              fontFamily: 'Manrope',
+                              fontVariations: const [
+                                FontVariation('wght', 500.0)
+                              ],
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textPlaceholder)),
+                    ],
                   ),
-                if (n.attachments.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(top: 9.h),
-                    child: Wrap(
-                      spacing: 8.w,
-                      runSpacing: 8.h,
-                      children: [for (final a in n.attachments) _attachmentChip(a)],
+                  if (n.body.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 4.h),
+                      child: _noteBody(n),
                     ),
-                  ),
-                for (final r in n.replies) _replyRow(r),
-                if (_openReplyFor == n.id) _replyComposer(n.id),
-                if (!widget.readOnly) GestureDetector(
-                  onTap: () => setState(() => _openReplyFor = _openReplyFor == n.id ? null : n.id),
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 9.h),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(PhosphorIconsBold.arrowBendDownRight, size: 12.sp, color: const Color(0xFF6B6B6B)),
-                        SizedBox(width: 5.w),
-                        Text(
-                          _openReplyFor == n.id
-                              ? 'Cancel'
-                              : (n.replies.isEmpty ? 'Reply' : 'Reply (${n.replies.length})'),
-                          style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 12.5.sp, fontWeight: FontWeight.w600, color: const Color(0xFF6B6B6B)),
+                  if (_looseAttachments(n).isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 9.h),
+                      child: Wrap(
+                        spacing: 8.w,
+                        runSpacing: 8.h,
+                        children: [
+                          for (final a in _looseAttachments(n))
+                            _attachmentChip(a)
+                        ],
+                      ),
+                    ),
+                  for (final r in n.replies) _replyRow(r),
+                  if (_openReplyFor == n.id) _replyComposer(n.id),
+                  if (!widget.readOnly)
+                    GestureDetector(
+                      onTap: () => setState(() =>
+                          _openReplyFor = _openReplyFor == n.id ? null : n.id),
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 9.h),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(PhosphorIconsBold.arrowBendDownRight,
+                                size: 12.sp, color: const Color(0xFF6B6B6B)),
+                            SizedBox(width: 5.w),
+                            Text(
+                              _openReplyFor == n.id
+                                  ? 'Cancel'
+                                  : (n.replies.isEmpty
+                                      ? 'Reply'
+                                      : 'Reply (${n.replies.length})'),
+                              style: TextStyle(
+                                  fontFamily: 'Manrope',
+                                  fontVariations: const [
+                                    FontVariation('wght', 600.0)
+                                  ],
+                                  fontSize: 12.5.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF6B6B6B)),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          if (widget.onTogglePin != null &&
-              (widget.currentUserId == null || n.authorId == widget.currentUserId))
-            _pinButton(n),
-        ],
-      ),
+            if (widget.onTogglePin != null &&
+                (widget.currentUserId == null ||
+                    n.authorId == widget.currentUserId))
+              _pinButton(n),
+          ],
+        ),
       ),
     );
   }
@@ -828,7 +1049,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         HapticFeedback.selectionClick();
         widget.onTogglePin!(n.id);
         if (widget.onAddTypedNote != null) {
-          ref.read(toastProvider.notifier).show(n.pinned ? 'Unpinned' : 'Pinned');
+          ref
+              .read(toastProvider.notifier)
+              .show(n.pinned ? 'Unpinned' : 'Pinned');
         }
       },
       child: Padding(
@@ -865,7 +1088,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     return Container(
       margin: EdgeInsets.only(top: 9.h),
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-      decoration: BoxDecoration(color: const Color(0xFFF6F8FB), borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF6F8FB),
+          borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -879,13 +1104,35 @@ class NotesThreadState extends ConsumerState<NotesThread> {
                   spacing: 7.w,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(r.author, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 12.5.sp, fontWeight: FontWeight.w700, color: const Color(0xFF14151A))),
-                    Text(r.time, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 500.0)], fontSize: 10.5.sp, fontWeight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    Text(r.author,
+                        style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontVariations: const [
+                              FontVariation('wght', 700.0)
+                            ],
+                            fontSize: 12.5.sp,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF14151A))),
+                    Text(r.time,
+                        style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontVariations: const [
+                              FontVariation('wght', 500.0)
+                            ],
+                            fontSize: 10.5.sp,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
                 Padding(
                   padding: EdgeInsets.only(top: 3.h),
-                  child: Text(r.body, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 13.sp, height: 1.5, color: const Color(0xFF444444))),
+                  child: Text(r.body,
+                      style: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontVariations: const [FontVariation('wght', 400.0)],
+                          fontSize: 13.sp,
+                          height: 1.5,
+                          color: const Color(0xFF444444))),
                 ),
               ],
             ),
@@ -902,8 +1149,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
         children: [
           Expanded(
             child: Container(
-              height: 40.h,
-              padding: EdgeInsets.symmetric(horizontal: 12.w),
+              constraints: BoxConstraints(minHeight: 40.h),
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
               decoration: BoxDecoration(
                 color: AppColors.white,
                 borderRadius: BorderRadius.circular(10.r),
@@ -913,14 +1160,24 @@ class NotesThreadState extends ConsumerState<NotesThread> {
               child: TextField(
                 controller: _replyCtrl,
                 autofocus: true,
-                onSubmitted: (_) => _sendReply(noteId),
-                textInputAction: TextInputAction.send,
-                style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 13.sp, color: AppColors.textBody),
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                minLines: 1,
+                maxLines: 4,
+                style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontVariations: const [FontVariation('wght', 400.0)],
+                    fontSize: 13.sp,
+                    color: AppColors.textBody),
                 decoration: InputDecoration(
                   isCollapsed: true,
                   border: InputBorder.none,
                   hintText: 'Write a reply…',
-                  hintStyle: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 13.sp, color: AppColors.textPlaceholder),
+                  hintStyle: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontVariations: const [FontVariation('wght', 400.0)],
+                      fontSize: 13.sp,
+                      color: AppColors.textPlaceholder),
                 ),
               ),
             ),
@@ -931,8 +1188,11 @@ class NotesThreadState extends ConsumerState<NotesThread> {
             child: Container(
               width: 40.w,
               height: 40.h,
-              decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(10.r)),
-              child: Icon(PhosphorIconsFill.paperPlaneRight, size: 15.sp, color: AppColors.white),
+              decoration: BoxDecoration(
+                  color: AppColors.navy,
+                  borderRadius: BorderRadius.circular(10.r)),
+              child: Icon(PhosphorIconsFill.paperPlaneRight,
+                  size: 15.sp, color: AppColors.white),
             ),
           ),
         ],
@@ -978,14 +1238,18 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     ref.read(toastProvider.notifier).showError(failure);
   }
 
-  Widget _attachmentChip(NoteAttachment a, {VoidCallback? onRemove}) {
+  Widget _attachmentChip(NoteAttachment a,
+      {VoidCallback? onRemove, double? maxWidth, bool inline = false}) {
     final failed = a.failed;
     final chip = Container(
-      padding: EdgeInsets.fromLTRB(8.w, 6.h, onRemove != null ? 6.w : 10.w, 6.h),
+      padding: inline
+          ? EdgeInsets.fromLTRB(6.w, 3.h, onRemove != null ? 5.w : 8.w, 3.h)
+          : EdgeInsets.fromLTRB(8.w, 6.h, onRemove != null ? 6.w : 10.w, 6.h),
       decoration: BoxDecoration(
         color: failed ? AppColors.tintRed : const Color(0xFFF3F5F8),
         borderRadius: BorderRadius.circular(9.r),
-        border: Border.all(color: failed ? AppColors.error : const Color(0xFFE6E7EA)),
+        border: Border.all(
+            color: failed ? AppColors.error : const Color(0xFFE6E7EA)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -994,7 +1258,8 @@ class NotesThreadState extends ConsumerState<NotesThread> {
           // point is to catch the eye as "something's wrong here", not to say
           // what kind of file it was.
           if (failed)
-            Icon(PhosphorIconsFill.warningCircle, size: 15.sp, color: AppColors.error)
+            Icon(PhosphorIconsFill.warningCircle,
+                size: 15.sp, color: AppColors.error)
           // The photo itself, not a generic glyph — a row of identically
           // named camera files is otherwise impossible to tell apart.
           else if (attachmentImage(a) case final img?)
@@ -1002,36 +1267,55 @@ class NotesThreadState extends ConsumerState<NotesThread> {
               borderRadius: BorderRadius.circular(4.r),
               child: Image(
                 image: img,
-                width: 18.w,
-                height: 18.w,
+                width: (inline ? 16 : 18).w,
+                height: (inline ? 16 : 18).w,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Icon(PhosphorIconsFill.image,
                     size: 15.sp, color: AppColors.blueBright),
               ),
             )
           else
-            Icon(a.isImage ? PhosphorIconsFill.image : PhosphorIconsFill.filePdf,
-                size: 15.sp, color: a.isImage ? AppColors.blueBright : AppColors.error),
+            Icon(
+                a.isImage ? PhosphorIconsFill.image : PhosphorIconsFill.filePdf,
+                size: 15.sp,
+                color: a.isImage ? AppColors.blueBright : AppColors.error),
           SizedBox(width: 6.w),
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 120.w),
+            constraints: BoxConstraints(maxWidth: (maxWidth ?? 120).w),
             child: Text(a.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppColors.textBody)),
+                style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontVariations: const [FontVariation('wght', 600.0)],
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ),
           if (failed) ...[
             SizedBox(width: 6.w),
-            Text('Failed', style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: 10.5.sp, fontWeight: FontWeight.w700, color: AppColors.error)),
-          ] else if (a.size != null) ...[
+            Text('Failed',
+                style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontVariations: const [FontVariation('wght', 700.0)],
+                    fontSize: 10.5.sp,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.error)),
+          ] else if (a.size != null && !inline) ...[
             SizedBox(width: 6.w),
-            Text(a.size!, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 400.0)], fontSize: 10.5.sp, color: AppColors.textPlaceholder)),
+            Text(a.size!,
+                style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontVariations: const [FontVariation('wght', 400.0)],
+                    fontSize: 10.5.sp,
+                    color: AppColors.textPlaceholder)),
           ],
           if (onRemove != null) ...[
             SizedBox(width: 4.w),
             GestureDetector(
               onTap: onRemove,
-              child: Icon(PhosphorIconsBold.x, size: 13.sp, color: AppColors.textMuted),
+              child: Icon(PhosphorIconsBold.x,
+                  size: 13.sp, color: AppColors.textMuted),
             ),
           ],
         ],
@@ -1048,7 +1332,9 @@ class NotesThreadState extends ConsumerState<NotesThread> {
     final isCall = via.toLowerCase() == 'call';
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-      decoration: BoxDecoration(color: const Color(0xFFEFF4FB), borderRadius: BorderRadius.circular(6.r)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFEFF4FB),
+          borderRadius: BorderRadius.circular(6.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1061,7 +1347,13 @@ class NotesThreadState extends ConsumerState<NotesThread> {
               size: 11.sp,
               color: AppColors.navy),
           SizedBox(width: 4.w),
-          Text(via, style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 600.0)], fontSize: 11.sp, fontWeight: FontWeight.w600, color: AppColors.navy)),
+          Text(via,
+              style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontVariations: const [FontVariation('wght', 600.0)],
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.navy)),
         ],
       ),
     );
@@ -1074,22 +1366,42 @@ class NotesThreadState extends ConsumerState<NotesThread> {
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       alignment: Alignment.center,
       child: Text(initials,
-          style: TextStyle(fontFamily: 'Manrope', fontVariations: const [FontVariation('wght', 700.0)], fontSize: (size * 0.34).sp, fontWeight: FontWeight.w700, color: AppColors.white)),
+          style: TextStyle(
+              fontFamily: 'Manrope',
+              fontVariations: const [FontVariation('wght', 700.0)],
+              fontSize: (size * 0.34).sp,
+              fontWeight: FontWeight.w700,
+              color: AppColors.white)),
     );
   }
 }
 
 class _EditNoteDialog extends StatefulWidget {
-  const _EditNoteDialog({required this.initial});
+  const _EditNoteDialog({
+    required this.initial,
+    required this.attachments,
+    required this.chip,
+  });
 
   final String initial;
+  final List<NoteAttachment> attachments;
+  final Widget Function(NoteAttachment a, VoidCallback onRemove) chip;
 
   @override
   State<_EditNoteDialog> createState() => _EditNoteDialogState();
 }
 
 class _EditNoteDialogState extends State<_EditNoteDialog> {
-  late final _ctrl = TextEditingController(text: widget.initial);
+  late final _ctrl = InlineNoteController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Files stay where the text put them; removing a chip drops its marker.
+    _ctrl.chipBuilder =
+        (a, i) => widget.chip(a, () => _ctrl.removeAttachmentAt(i));
+    _ctrl.load(widget.initial, widget.attachments);
+  }
 
   @override
   void dispose() {
@@ -1105,11 +1417,20 @@ class _EditNoteDialogState extends State<_EditNoteDialog> {
         controller: _ctrl,
         minLines: 3,
         maxLines: 6,
-        decoration: const InputDecoration(hintText: 'Edit note…', border: OutlineInputBorder()),
+        strutStyle: _ctrl.attachments.isEmpty
+            ? null
+            : const StrutStyle(
+                fontSize: 14, height: 2.0, forceStrutHeight: true),
+        decoration: const InputDecoration(
+            hintText: 'Edit note…', border: OutlineInputBorder()),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        TextButton(onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()), child: const Text('Save')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(_ctrl.encode().trim()),
+            child: const Text('Save')),
       ],
     );
   }
@@ -1140,8 +1461,12 @@ class _NameAttachmentDialogState extends State<_NameAttachmentDialog> {
       title: const Text('Name this attachment'),
       content: TextField(controller: _ctrl, autofocus: true),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        TextButton(onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()), child: const Text('OK')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()),
+            child: const Text('OK')),
       ],
     );
   }

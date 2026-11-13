@@ -8,7 +8,9 @@
 /// Anything else (or a missing key) reads as NOT_REQUIRED, like the webapp.
 String quoteApprovalStatus(Map<String, dynamic>? quote) {
   final v = '${quote?['approval_status'] ?? ''}'.trim().toUpperCase();
-  return const ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED'].contains(v) ? v : 'NOT_REQUIRED';
+  return const ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED'].contains(v)
+      ? v
+      : 'NOT_REQUIRED';
 }
 
 /// "Mark as sent" waits for a pending / rejected discount approval
@@ -18,9 +20,12 @@ bool isSendBlockedByApproval(Map<String, dynamic>? quote) {
   return s == 'PENDING' || s == 'REJECTED';
 }
 
-const kMarkSentPendingApproval = 'Waiting for discount approval — it can be marked as sent once approved';
-const kMarkSentRejectedApproval = 'The discount was not approved — reduce it before marking the quote as sent';
-const kAcceptNeedsApproval = 'The discount needs approval before this quote can be accepted.';
+const kMarkSentPendingApproval =
+    'Waiting for discount approval — it can be marked as sent once approved';
+const kMarkSentRejectedApproval =
+    'The discount was not approved — reduce it before marking the quote as sent';
+const kAcceptNeedsApproval =
+    'The discount needs approval before this quote can be accepted.';
 
 /// Why "Mark as sent" is greyed by the discount approval; '' when it is not.
 /// (The webapp shows its first-send content block — no line / no validity
@@ -74,7 +79,9 @@ String pctLabel(Object? value) {
   final n = double.tryParse(s);
   if (n == null || !n.isFinite) return '$s%';
   final fixed = double.parse(n.toStringAsFixed(2));
-  final txt = fixed == fixed.truncateToDouble() ? fixed.toInt().toString() : fixed.toString();
+  final txt = fixed == fixed.truncateToDouble()
+      ? fixed.toInt().toString()
+      : fixed.toString();
   return '$txt%';
 }
 
@@ -140,15 +147,20 @@ class DiscountApproval {
   bool get showDecide => canDecide && isPending;
 
   /// QUOTE column headline: the title, else the number.
-  String get headline => quotationTitle.isNotEmpty ? quotationTitle : quotationNumber;
+  String get headline =>
+      quotationTitle.isNotEmpty ? quotationTitle : quotationNumber;
 
   /// "Pending" / "Approved" / "Rejected" / "Cancelled".
-  String get statusLabel => status.isEmpty ? '' : status[0].toUpperCase() + status.substring(1);
+  String get statusLabel =>
+      status.isEmpty ? '' : status[0].toUpperCase() + status.substring(1);
 
   /// STATUS sub-line once decided: `Cijo G: “Keep it within 10%”`; '' otherwise.
   String get reviewLine {
-    if (isPending || (reviewedByName.isEmpty && reviewComment.isEmpty)) return '';
-    final comment = reviewComment.isEmpty ? '' : '${reviewedByName.isEmpty ? '' : ': '}“$reviewComment”';
+    if (isPending || (reviewedByName.isEmpty && reviewComment.isEmpty))
+      return '';
+    final comment = reviewComment.isEmpty
+        ? ''
+        : '${reviewedByName.isEmpty ? '' : ': '}“$reviewComment”';
     return '$reviewedByName$comment';
   }
 
@@ -156,18 +168,26 @@ class DiscountApproval {
     final status = '${r['status'] ?? ''}'.trim().toLowerCase();
     return DiscountApproval(
       id: '${r['approval_id'] ?? ''}',
-      quotationId: '${r['quotation'] ?? ''}' == 'null' ? '' : '${r['quotation'] ?? ''}',
+      quotationId:
+          '${r['quotation'] ?? ''}' == 'null' ? '' : '${r['quotation'] ?? ''}',
       quotationNumber: '${r['quotation_number'] ?? ''}',
       quotationTitle: '${r['quotation_title'] ?? ''}'.trim(),
-      status: const ['pending', 'approved', 'rejected', 'cancelled'].contains(status) ? status : 'pending',
+      status: const ['pending', 'approved', 'rejected', 'cancelled']
+              .contains(status)
+          ? status
+          : 'pending',
       discountPct: _decimal(r['discount_pct']) ?? '0.00',
       limitPct: _decimal(r['limit_pct']),
       reason: '${r['reason'] ?? ''}'.trim(),
       reviewComment: '${r['review_comment'] ?? ''}'.trim(),
       requestedByName: _name(r['requested_by']),
       reviewedByName: _name(r['reviewed_by']),
-      requestedAt: '${r['requested_at'] ?? ''}' == 'null' ? '' : '${r['requested_at'] ?? ''}',
-      reviewedAt: '${r['reviewed_at'] ?? ''}' == 'null' ? '' : '${r['reviewed_at'] ?? ''}',
+      requestedAt: '${r['requested_at'] ?? ''}' == 'null'
+          ? ''
+          : '${r['requested_at'] ?? ''}',
+      reviewedAt: '${r['reviewed_at'] ?? ''}' == 'null'
+          ? ''
+          : '${r['reviewed_at'] ?? ''}',
       canDecide: r['can_decide'] == true,
     );
   }
@@ -178,33 +198,45 @@ class DiscountApproval {
   final rows = body is Map && body['results'] is List
       ? [
           for (final r in body['results'] as List)
-            if (r is Map) DiscountApproval.fromJson(Map<String, dynamic>.from(r)),
+            if (r is Map)
+              DiscountApproval.fromJson(Map<String, dynamic>.from(r)),
         ]
       : <DiscountApproval>[];
-  final count = body is Map ? (body['count'] as num?)?.toInt() ?? rows.length : rows.length;
+  final count = body is Map
+      ? (body['count'] as num?)?.toInt() ?? rows.length
+      : rows.length;
   return (count: count, rows: rows);
 }
 
 /// The toolbar badge: pending requests (first page) this user may decide.
-int decidableCount(Iterable<DiscountApproval> rows) => rows.where((r) => r.showDecide).length;
+int decidableCount(Iterable<DiscountApproval> rows) =>
+    rows.where((r) => r.showDecide).length;
 
 /// Toolbar tooltip / semantics label.
-String discountApprovalsLabel(int decidable) =>
-    decidable > 0 ? 'Discount approvals — $decidable waiting for you' : 'Discount approvals';
+String discountApprovalsLabel(int decidable) => decidable > 0
+    ? 'Discount approvals — $decidable waiting for you'
+    : 'Discount approvals';
 
 /// Inbox empty state per tab.
-({String title, String? body}) discountApprovalsEmpty(String status) => status == 'pending'
-    ? (
-        title: 'Nothing waiting for approval',
-        body: 'Quotes whose discount is above the creator’s limit show up here until someone up the reporting line decides.',
-      )
-    : (title: 'No $status requests', body: null);
+({String title, String? body}) discountApprovalsEmpty(String status) =>
+    status == 'pending'
+        ? (
+            title: 'Nothing waiting for approval',
+            body:
+                'Quotes whose discount is above the creator’s limit show up here until someone up the reporting line decides.',
+          )
+        : (title: 'No $status requests', body: null);
 
 /// The decision dialog's lead-in, after the bold [quoteLabel]:
 /// " has a 20% discount, above the requester’s 10% limit. Once approved it can be marked as sent."
-String discountDecisionBody({required bool approve, required String discountPct, String? limitPct}) {
-  final limit = (limitPct ?? '').isEmpty ? '' : ', above the requester’s ${pctLabel(limitPct)} limit';
-  final tail = approve ? 'Once approved it can be marked as sent.' : 'It stays blocked from being sent until the discount is reduced.';
+String discountDecisionBody(
+    {required bool approve, required String discountPct, String? limitPct}) {
+  final limit = (limitPct ?? '').isEmpty
+      ? ''
+      : ', above the requester’s ${pctLabel(limitPct)} limit';
+  final tail = approve
+      ? 'Once approved it can be marked as sent.'
+      : 'It stays blocked from being sent until the discount is reduced.';
   return ' has a ${pctLabel(discountPct)} discount$limit. $tail';
 }
 
@@ -232,35 +264,47 @@ class DiscountBannerFacts {
   final bool canDecide;
 
   /// Null when the quote shows no banner (NOT_REQUIRED / APPROVED).
-  static DiscountBannerFacts? from(Map<String, dynamic>? quote, DiscountApproval? latest) {
+  static DiscountBannerFacts? from(
+      Map<String, dynamic>? quote, DiscountApproval? latest) {
     if (!isSendBlockedByApproval(quote)) return null;
     final pending = quoteApprovalStatus(quote) == 'PENDING';
-    final pend = quote?['pending_discount_approval'] is Map ? quote!['pending_discount_approval'] as Map : null;
+    final pend = quote?['pending_discount_approval'] is Map
+        ? quote!['pending_discount_approval'] as Map
+        : null;
     return DiscountBannerFacts(
       pending: pending,
-      discountPct: _decimal(pend?['discount_pct']) ?? _decimal(quote?['discount_pct']) ?? '0.00',
+      discountPct: _decimal(pend?['discount_pct']) ??
+          _decimal(quote?['discount_pct']) ??
+          '0.00',
       limitPct: _decimal(pend?['limit_pct']) ?? latest?.limitPct,
       requestedByName: _name(pend?['requested_by']),
-      requestedAt: '${pend?['requested_at'] ?? ''}' == 'null' ? '' : '${pend?['requested_at'] ?? ''}',
+      requestedAt: '${pend?['requested_at'] ?? ''}' == 'null'
+          ? ''
+          : '${pend?['requested_at'] ?? ''}',
       reviewedByName: latest?.reviewedByName ?? '',
       reviewComment: latest?.reviewComment ?? '',
       canDecide: pending && (latest?.showDecide ?? false),
     );
   }
 
-  String get title => pending ? 'Discount approval pending.' : 'Discount approval rejected.';
+  String get title =>
+      pending ? 'Discount approval pending.' : 'Discount approval rejected.';
 
   /// The sentence after the bold [title]. [dateLabel] formats `requested_at`.
   String body(String Function(String) dateLabel) {
     if (pending) {
       final b = StringBuffer(' ${pctLabel(discountPct)} discount');
-      b.write((limitPct ?? '').isNotEmpty ? ' is above the ${pctLabel(limitPct)} limit' : ' is above the limit');
-      if (requestedByName.isNotEmpty) b.write(' — requested by $requestedByName');
+      b.write((limitPct ?? '').isNotEmpty
+          ? ' is above the ${pctLabel(limitPct)} limit'
+          : ' is above the limit');
+      if (requestedByName.isNotEmpty)
+        b.write(' — requested by $requestedByName');
       if (requestedAt.isNotEmpty) b.write(' on ${dateLabel(requestedAt)}');
       b.write('. It can’t be marked as sent until it’s approved.');
       return b.toString();
     }
-    final b = StringBuffer(' The ${pctLabel(discountPct)} discount was not approved');
+    final b =
+        StringBuffer(' The ${pctLabel(discountPct)} discount was not approved');
     if (reviewedByName.isNotEmpty) b.write(' by $reviewedByName');
     if (reviewComment.isNotEmpty) b.write(' — “$reviewComment”');
     b.write('. Reduce the discount to send this quote.');

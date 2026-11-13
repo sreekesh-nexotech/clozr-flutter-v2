@@ -5,7 +5,8 @@ abstract class FollowupsRepository {
   /// [filters] are `/crm/tasks/` query params evaluated **by the server**, so
   /// an is-not is resolved over every follow-up rather than the loaded rows.
   /// Always empty in mock mode, which has no query engine.
-  Future<List<Followup>> getFollowups({Map<String, dynamic> filters = const {}});
+  Future<List<Followup>> getFollowups(
+      {Map<String, dynamic> filters = const {}});
 
   /// The follow-ups linked to one lead — the Follow-ups tab on the lead detail
   /// screen. Scoped by the backend, not by filtering the org-wide list.

@@ -11,7 +11,8 @@ import '../../domain/entities/dashboard_models.dart';
 
 /// The dashboard team picker sheet ("Filter by team"). Selecting a team updates
 /// [dashTeamProvider] (which re-labels the team chip) and closes.
-Future<void> showDashTeamPicker(BuildContext context, WidgetRef ref, List<DashTeamOption> options) {
+Future<void> showDashTeamPicker(
+    BuildContext context, WidgetRef ref, List<DashTeamOption> options) {
   final selected = ref.read(dashTeamProvider);
   return showClozrSheet<void>(
     context: context,
@@ -25,14 +26,20 @@ Future<void> showDashTeamPicker(BuildContext context, WidgetRef ref, List<DashTe
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Filter by team',
-                  style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 17,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               GestureDetector(
                 onTap: () => Navigator.of(ctx).pop(),
                 child: Container(
                   width: 32.w,
                   height: 32.w,
-                  decoration: BoxDecoration(color: DashColors.chipGrey, borderRadius: BorderRadius.circular(9.r)),
-                  child: Icon(PhosphorIconsBold.x, size: 15.sp, color: AppColors.textLabelAlt),
+                  decoration: BoxDecoration(
+                      color: DashColors.chipGrey,
+                      borderRadius: BorderRadius.circular(9.r)),
+                  child: Icon(PhosphorIconsBold.x,
+                      size: 15.sp, color: AppColors.textLabelAlt),
                 ),
               ),
             ],
@@ -56,9 +63,12 @@ Future<void> showDashTeamPicker(BuildContext context, WidgetRef ref, List<DashTe
                       Navigator.of(ctx).pop();
                     },
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 14.h),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 10.w, vertical: 14.h),
                       decoration: const BoxDecoration(
-                        border: Border(bottom: BorderSide(color: AppColors.bgLight, width: 1)),
+                        border: Border(
+                            bottom:
+                                BorderSide(color: AppColors.bgLight, width: 1)),
                       ),
                       child: Row(
                         children: [
@@ -67,15 +77,24 @@ Future<void> showDashTeamPicker(BuildContext context, WidgetRef ref, List<DashTe
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(o.name,
-                                    style: AppText.custom(size: 15, weight: FontWeight.w600, color: AppColors.textBody)),
+                                    style: AppText.custom(
+                                        size: 15,
+                                        weight: FontWeight.w600,
+                                        color: AppColors.textBody)),
                                 SizedBox(height: 1.h),
                                 Text(o.sub,
-                                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                                    style: AppText.custom(
+                                        size: 12,
+                                        weight: FontWeight.w500,
+                                        color: AppColors.textPlaceholder)),
                               ],
                             ),
                           ),
                           Icon(PhosphorIconsBold.check,
-                              size: 17.sp, color: selected == o.id ? DashColors.green : Colors.transparent),
+                              size: 17.sp,
+                              color: selected == o.id
+                                  ? DashColors.green
+                                  : Colors.transparent),
                         ],
                       ),
                     ),

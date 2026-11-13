@@ -36,11 +36,19 @@ class RewardsMockDataSource {
             rwColor: AppColors.blueBright,
             rwTitle: '₹10,000 shopping voucher',
             rwChip: '₹10,000',
-            rwDesc: 'A ₹10,000 gift voucher, settled with payroll at month end.',
+            rwDesc:
+                'A ₹10,000 gift voucher, settled with payroll at month end.',
             past: const [
-              RewardPastRow(period: 'Jun 2026', result: '5 / 5 · Reward paid', paid: true),
-              RewardPastRow(period: 'May 2026', result: '4 / 5 · Missed', paid: false),
-              RewardPastRow(period: 'Apr 2026', result: '5 / 5 · Reward paid', paid: true),
+              RewardPastRow(
+                  period: 'Jun 2026',
+                  result: '5 / 5 · Reward paid',
+                  paid: true),
+              RewardPastRow(
+                  period: 'May 2026', result: '4 / 5 · Missed', paid: false),
+              RewardPastRow(
+                  period: 'Apr 2026',
+                  result: '5 / 5 · Reward paid',
+                  paid: true),
             ],
           ),
           RewardGoal(
@@ -59,9 +67,13 @@ class RewardsMockDataSource {
             rwTitle: 'Weekend for two — Munnar',
             rwChip: 'Getaway',
             rwDesc: 'A two-night stay for two at a Munnar resort.',
-            pending: 'Pending approval — you’ll be notified once it’s approved.',
+            pending:
+                'Pending approval — you’ll be notified once it’s approved.',
             past: const [
-              RewardPastRow(period: 'Apr–Jun 2026', result: '₹41,00,000 / ₹50,00,000 · Missed', paid: false),
+              RewardPastRow(
+                  period: 'Apr–Jun 2026',
+                  result: '₹41,00,000 / ₹50,00,000 · Missed',
+                  paid: false),
             ],
           ),
           RewardGoal(
@@ -81,7 +93,10 @@ class RewardsMockDataSource {
             rwChip: '₹5,000',
             rwDesc: 'A ₹5,000 fuel card top-up.',
             past: const [
-              RewardPastRow(period: 'Jun 2026', result: '₹22,40,000 / ₹20,00,000 · Reward paid', paid: true),
+              RewardPastRow(
+                  period: 'Jun 2026',
+                  result: '₹22,40,000 / ₹20,00,000 · Reward paid',
+                  paid: true),
             ],
           ),
           RewardGoal(
@@ -99,7 +114,8 @@ class RewardsMockDataSource {
             rwColor: AppColors.pending,
             rwTitle: 'Rising Star trophy',
             rwChip: 'Recognition',
-            rwDesc: 'A Rising Star trophy and a spotlight in the monthly all-hands.',
+            rwDesc:
+                'A Rising Star trophy and a spotlight in the monthly all-hands.',
           ),
         ],
         closerTrack: const CloserTrack(

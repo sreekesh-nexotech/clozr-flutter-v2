@@ -30,7 +30,8 @@ class DashColors {
   static const tintRed = AppColors.tintRed; // #FCEBEB
   static const tintBlue = AppColors.tintBlue; // #EEF6FF
   static const tintAmber = AppColors.tintAmber; // #FFF5EB
-  static const track = AppColors.borderCardSoft; // #EEF0F3 chart track / hairline
+  static const track =
+      AppColors.borderCardSoft; // #EEF0F3 chart track / hairline
   static const rowLine = AppColors.bgLight; // #F3F4F5 list-row hairline
   static const chipGrey = AppColors.bgChipGrey; // #F1F2F4
 }

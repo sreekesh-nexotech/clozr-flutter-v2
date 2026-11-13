@@ -17,7 +17,8 @@ class AccountingDocumentsRemoteDataSource {
 
   /// One raw page. Document rows are heavy (nested lines and tax lines), so
   /// mobile pages at 25 and always sends `doc_type` where it can (§12.4).
-  Future<RawPage> fetchPage(Map<String, Object?> filters, {int page = 1, int pageSize = 25}) async {
+  Future<RawPage> fetchPage(Map<String, Object?> filters,
+      {int page = 1, int pageSize = 25}) async {
     final body = await _api.get(ApiEndpoints.accDocuments,
         query: compact({...filters, 'page': page, 'page_size': pageSize}));
     return RawPage.from(body);
@@ -29,7 +30,8 @@ class AccountingDocumentsRemoteDataSource {
   }
 
   /// DRAFT only — 409 `NOT_DRAFT` otherwise.
-  Future<AccDocument?> patchDraft(String id, Map<String, Object?> fields) async {
+  Future<AccDocument?> patchDraft(
+      String id, Map<String, Object?> fields) async {
     final body = await _api.patch(ApiEndpoints.accDocument(id), body: fields);
     return body is Map ? mapDocument(Map<String, dynamic>.from(body)) : null;
   }
@@ -63,12 +65,16 @@ class AccountingDocumentsRemoteDataSource {
 
   Future<TaxPreview> previewTax(String id) async {
     final res = await _api.post(ApiEndpoints.accPreviewTax(id));
-    return mapTaxPreview(res is Map ? Map<String, dynamic>.from(res) : const {});
+    return mapTaxPreview(
+        res is Map ? Map<String, dynamic>.from(res) : const {});
   }
 
-  Future<AccDocument?> issue(String id, {List<Map<String, String>> advanceAdjustments = const []}) async {
-    final res = await _api.post(ApiEndpoints.accIssue(id),
-        body: {if (advanceAdjustments.isNotEmpty) 'advance_adjustments': advanceAdjustments});
+  Future<AccDocument?> issue(String id,
+      {List<Map<String, String>> advanceAdjustments = const []}) async {
+    final res = await _api.post(ApiEndpoints.accIssue(id), body: {
+      if (advanceAdjustments.isNotEmpty)
+        'advance_adjustments': advanceAdjustments
+    });
     return res is Map ? mapDocument(Map<String, dynamic>.from(res)) : null;
   }
 
@@ -78,7 +84,8 @@ class AccountingDocumentsRemoteDataSource {
   }
 
   Future<AccDocument?> cancel(String id, String reason) async {
-    final res = await _api.post(ApiEndpoints.accCancel(id), body: {'reason': reason});
+    final res =
+        await _api.post(ApiEndpoints.accCancel(id), body: {'reason': reason});
     return res is Map ? mapDocument(Map<String, dynamic>.from(res)) : null;
   }
 
@@ -93,9 +100,11 @@ class AccountingDocumentsRemoteDataSource {
   }
 
   /// `GET masters/hsn-rates/` — the variant ladder for one HSN / SAC.
-  Future<List<RateVariant>> hsnRates(String hsn, {String? supplyNature, String? onDate}) async {
+  Future<List<RateVariant>> hsnRates(String hsn,
+      {String? supplyNature, String? onDate}) async {
     final res = await _api.get(ApiEndpoints.accHsnRates,
-        query: compact({'hsn': hsn, 'supply_nature': supplyNature, 'on_date': onDate}));
+        query: compact(
+            {'hsn': hsn, 'supply_nature': supplyNature, 'on_date': onDate}));
     return mapRateVariants(res is Map ? res['results'] : res);
   }
 }

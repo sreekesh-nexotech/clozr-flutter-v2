@@ -64,7 +64,8 @@ FilterSpec buildProjectsFilterSpec(
   // the org actually named its own.
   final types = typeCatalog.isNotEmpty
       ? [for (final t in typeCatalog) FilterOption(id: t.name, label: t.name)]
-      : (projects.map((p) => p.type).where((t) => t.isNotEmpty).toSet().toList()..sort())
+      : (projects.map((p) => p.type).where((t) => t.isNotEmpty).toSet().toList()
+            ..sort())
           .map((t) => FilterOption(id: t, label: t))
           .toList();
   final statuses = statusCatalog.isNotEmpty
@@ -180,12 +181,27 @@ FilterSpec buildProjectsFilterSpec(
             id: 'end',
             label: 'Expected end',
             control: FilterControl.dateRange,
-            dateChips: ['overdue', 'today', 'next7', 'next30', 'next60', 'next90']),
+            dateChips: [
+              'overdue',
+              'today',
+              'next7',
+              'next30',
+              'next60',
+              'next90'
+            ]),
         const FilterField(
             id: 'start',
             label: 'Expected start',
             control: FilterControl.dateRange,
-            dateChips: ['today', 'yesterday', 'last7', 'last30', 'last60', 'last90', 'month']),
+            dateChips: [
+              'today',
+              'yesterday',
+              'last7',
+              'last30',
+              'last60',
+              'last90',
+              'month'
+            ]),
         const FilterField(
             id: 'cost',
             label: 'Estimated cost',
@@ -199,22 +215,25 @@ FilterSpec buildProjectsFilterSpec(
               id: 'incArchived',
               label: 'Archived',
               control: FilterControl.checkboxGroup,
-              options: [FilterOption(id: 'yes', label: 'Include archived projects')]),
+              options: [
+                FilterOption(id: 'yes', label: 'Include archived projects')
+              ]),
       ]),
     ],
   );
 }
 
 /// Evaluate a project against applied filter values.
-bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = false}) {
+bool projectMatchesFilters(Project p, FilterValues v,
+    {bool serverApplied = false}) {
   // Skipped when the server already ran them. Re-applying is not merely
   // redundant: the server matched on ids, while these match on the display
   // values a row carries — so a status the org renamed, or a customer matched by
   // name, would be filtered out a second time and wrongly.
   if (!serverApplied) {
     if (!FilterMatch.matchAnyOf(v.choice('types'), [p.type])) return false;
-    if (!FilterMatch.matchAnyOf(
-        v.choice('statuses'), [p.status, if (p.statusName.isNotEmpty) p.statusName])) {
+    if (!FilterMatch.matchAnyOf(v.choice('statuses'),
+        [p.status, if (p.statusName.isNotEmpty) p.statusName])) {
       return false;
     }
     if (!FilterMatch.matchAnyOf(v.choice('pri'), [p.pri])) return false;
@@ -225,7 +244,8 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
     ])) {
       return false;
     }
-    if (!FilterMatch.matchAnyOf(v.choice('managers'), [p.manager])) return false;
+    if (!FilterMatch.matchAnyOf(v.choice('managers'), [p.manager]))
+      return false;
     // Server-side as `budget_min` / `budget_max` (`operations.md` §1), so it
     // belongs inside this guard like the facets above it. It sat outside, and
     // the `?view=list` projection carries no `estimated_costing` - so `costNum`
@@ -242,11 +262,13 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
   // nothing ran them.
   if (serverApplied) {
     if (!FilterMatch.matchDate(v.date('end'), projectEndDate(p))) return false;
-    if (!FilterMatch.matchDate(v.date('start'), opsParseDisplayDate(p.start))) return false;
+    if (!FilterMatch.matchDate(v.date('start'), opsParseDisplayDate(p.start)))
+      return false;
     return true;
   }
   if (!FilterMatch.matchAnyOf(v.choice('assignees'), p.assignees)) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('teams'), teamNamesOfProject(p))) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('teams'), teamNamesOfProject(p)))
+    return false;
 
   final health = v.radio('health');
   if (health != null && health.isActive) {
@@ -268,7 +290,8 @@ bool projectMatchesFilters(Project p, FilterValues v, {bool serverApplied = fals
   }
 
   if (!FilterMatch.matchDate(v.date('end'), projectEndDate(p))) return false;
-  if (!FilterMatch.matchDate(v.date('start'), opsParseDisplayDate(p.start))) return false;
+  if (!FilterMatch.matchDate(v.date('start'), opsParseDisplayDate(p.start)))
+    return false;
 
   return true;
 }
@@ -306,4 +329,5 @@ final projectFiltersProvider =
 
 /// Saved views for the Projects list (bookmark chips).
 final projectSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());

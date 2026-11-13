@@ -5,6 +5,12 @@
          permission and every request fails on a real install. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Push notifications (FCM). On Android 13+ the system only shows a
+         notification once the user has granted this at runtime; the app asks
+         through FirebaseMessaging.requestPermission() right after sign-in,
+         which is what raises the OS permission dialog. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Attachments are chosen through file_picker, which uses the system
          document picker (Storage Access Framework). That hands the app a
          content URI for the chosen file only, so no storage or media
@@ -48,7 +54,27 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="clozr" android:host="app" />
             </intent-filter>
+            <!-- The backend builds every push with
+                 click_action="FLUTTER_NOTIFICATION_CLICK" (crm/services/
+                 firebase.py). Android resolves a tap on that notification to
+                 an activity declaring this action; without the filter the tap
+                 does nothing. -->
+            <intent-filter>
+                <action android:name="FLUTTER_NOTIFICATION_CLICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+        <!-- The icon Firebase puts on a push shown while the app is closed.
+             Without these it ignores the adaptive launcher icon and falls back
+             to the generic system icon. Android needs a single-colour white
+             shape on transparent here (ic_stat_clozr, the Clozr mark), tinted
+             with the accent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_clozr" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

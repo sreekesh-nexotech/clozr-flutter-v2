@@ -36,20 +36,28 @@ class DetailAppBar extends StatelessWidget {
             onTap: onBack ?? () => _defaultBack(context),
             child: Padding(
               padding: EdgeInsets.only(right: 12.w),
-              child: Icon(PhosphorIconsBold.caretLeft, size: 22.sp, color: AppColors.textPrimary),
+              child: Icon(PhosphorIconsBold.caretLeft,
+                  size: 22.sp, color: AppColors.textPrimary),
             ),
           ),
           Expanded(
             child: Text.rich(
               TextSpan(
                 text: name == null ? section : '$section ',
-                style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3),
+                style: AppText.custom(
+                    size: 21,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3),
                 children: name == null
                     ? null
                     : [
                         TextSpan(
                           text: '/ $name',
-                          style: AppText.custom(size: 16, weight: FontWeight.w600, color: AppColors.textPlaceholder),
+                          style: AppText.custom(
+                              size: 16,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPlaceholder),
                         ),
                       ],
               ),
@@ -74,7 +82,11 @@ class DetailAppBar extends StatelessWidget {
 
 /// A 34×34 tappable overflow / icon button for the [DetailAppBar] trailing slot.
 class DetailIconAction extends StatelessWidget {
-  const DetailIconAction({super.key, required this.icon, required this.onTap, this.color = AppColors.textSecondary});
+  const DetailIconAction(
+      {super.key,
+      required this.icon,
+      required this.onTap,
+      this.color = AppColors.textSecondary});
   final IconData icon;
   final VoidCallback onTap;
   final Color color;

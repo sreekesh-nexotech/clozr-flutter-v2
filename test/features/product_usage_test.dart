@@ -71,7 +71,13 @@ void main() {
   });
 
   test('a junk or empty body is no activity rather than a crash', () {
-    for (final body in <Object?>[null, 'nope', 42, <dynamic>[], <String, dynamic>{}]) {
+    for (final body in <Object?>[
+      null,
+      'nope',
+      42,
+      <dynamic>[],
+      <String, dynamic>{}
+    ]) {
       final usage = ProductUsage.fromJson(body);
       expect(usage.hasActivity, isFalse, reason: '$body');
       expect(usage.quotes, 0);

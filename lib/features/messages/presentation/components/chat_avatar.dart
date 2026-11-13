@@ -32,9 +32,13 @@ class ChatAvatar extends StatelessWidget {
             width: size.w,
             height: size.w,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+                color: AppColors.navy, shape: BoxShape.circle),
             child: Text(initials,
-                style: AppText.custom(size: fontSize, weight: FontWeight.w700, color: AppColors.white)),
+                style: AppText.custom(
+                    size: fontSize,
+                    weight: FontWeight.w700,
+                    color: AppColors.white)),
           ),
           if (online)
             Positioned(

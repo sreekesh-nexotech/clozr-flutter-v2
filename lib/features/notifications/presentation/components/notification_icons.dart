@@ -24,20 +24,52 @@ import '../../domain/entities/app_notification.dart';
       );
     case 'payments':
       return urgent
-          ? (icon: PhosphorIconsFill.warningCircle, color: AppColors.error, bg: AppColors.tintRed)
-          : (icon: PhosphorIconsFill.currencyInr, color: AppColors.success, bg: AppColors.tintGreen);
+          ? (
+              icon: PhosphorIconsFill.warningCircle,
+              color: AppColors.error,
+              bg: AppColors.tintRed
+            )
+          : (
+              icon: PhosphorIconsFill.currencyInr,
+              color: AppColors.success,
+              bg: AppColors.tintGreen
+            );
     case 'tasks':
       return urgent
-          ? (icon: PhosphorIconsFill.warning, color: AppColors.warningDeep, bg: AppColors.tintAmber)
-          : (icon: PhosphorIconsFill.listChecks, color: AppColors.blueBright, bg: AppColors.tintBlue);
+          ? (
+              icon: PhosphorIconsFill.warning,
+              color: AppColors.warningDeep,
+              bg: AppColors.tintAmber
+            )
+          : (
+              icon: PhosphorIconsFill.listChecks,
+              color: AppColors.blueBright,
+              bg: AppColors.tintBlue
+            );
     case 'ops':
       return urgent
-          ? (icon: PhosphorIconsFill.kanban, color: AppColors.error, bg: AppColors.tintRed)
-          : (icon: PhosphorIconsFill.briefcase, color: AppColors.blueBright, bg: AppColors.tintBlue);
+          ? (
+              icon: PhosphorIconsFill.kanban,
+              color: AppColors.error,
+              bg: AppColors.tintRed
+            )
+          : (
+              icon: PhosphorIconsFill.briefcase,
+              color: AppColors.blueBright,
+              bg: AppColors.tintBlue
+            );
     case 'help':
       return urgent
-          ? (icon: PhosphorIconsFill.ticket, color: AppColors.error, bg: AppColors.tintRed)
-          : (icon: PhosphorIconsFill.chatCircleDots, color: AppColors.blueBright, bg: AppColors.tintBlue);
+          ? (
+              icon: PhosphorIconsFill.ticket,
+              color: AppColors.error,
+              bg: AppColors.tintRed
+            )
+          : (
+              icon: PhosphorIconsFill.chatCircleDots,
+              color: AppColors.blueBright,
+              bg: AppColors.tintBlue
+            );
     case 'training':
       return (
         icon: PhosphorIconsFill.graduationCap,
@@ -46,11 +78,23 @@ import '../../domain/entities/app_notification.dart';
       );
     default: // system
       if (type.toLowerCase().contains('user')) {
-        return (icon: PhosphorIconsFill.userCirclePlus, color: AppColors.textLabelAlt, bg: AppColors.tintGrey);
+        return (
+          icon: PhosphorIconsFill.userCirclePlus,
+          color: AppColors.textLabelAlt,
+          bg: AppColors.tintGrey
+        );
       }
       return urgent
-          ? (icon: PhosphorIconsFill.plug, color: AppColors.pending, bg: AppColors.tintPurple)
-          : (icon: PhosphorIconsFill.downloadSimple, color: AppColors.textLabelAlt, bg: AppColors.tintGrey);
+          ? (
+              icon: PhosphorIconsFill.plug,
+              color: AppColors.pending,
+              bg: AppColors.tintPurple
+            )
+          : (
+              icon: PhosphorIconsFill.downloadSimple,
+              color: AppColors.textLabelAlt,
+              bg: AppColors.tintGrey
+            );
   }
 }
 

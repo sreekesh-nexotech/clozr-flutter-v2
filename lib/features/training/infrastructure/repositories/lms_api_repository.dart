@@ -119,4 +119,44 @@ class LmsApiRepository implements LmsRepository {
       // Swallowed — progress re-syncs on the next records fetch.
     }
   }
+
+  // Every course write drops the cached course list so the next load refetches.
+  Future<T> _write<T>(Future<T> Function() call) async {
+    try {
+      return await call();
+    } finally {
+      _coursesFuture = null;
+    }
+  }
+
+  @override
+  Future<String> createCourse({required String title}) =>
+      _write(() => _remote.createCourse(title));
+
+  @override
+  Future<void> updateCourse(
+    String courseId, {
+    required String title,
+    required String description,
+    required bool sequential,
+    required bool mandatory,
+  }) =>
+      _write(() => _remote.updateCourse(courseId, {
+            'title': title,
+            'description': description,
+            'is_sequential': sequential,
+            'is_mandatory': mandatory,
+          }));
+
+  @override
+  Future<void> publishCourse(String courseId) =>
+      _write(() => _remote.publishCourse(courseId));
+
+  @override
+  Future<void> draftCourse(String courseId) =>
+      _write(() => _remote.draftCourse(courseId));
+
+  @override
+  Future<void> deleteCourse(String courseId) =>
+      _write(() => _remote.deleteCourse(courseId));
 }

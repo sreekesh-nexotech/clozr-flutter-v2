@@ -8,26 +8,37 @@ Map<String, dynamic> _row([Map<String, dynamic> extra = const {}]) => {
       'issue_id': '11111111-1111-1111-1111-111111111111',
       'reference': 'TKT-0042',
       'subject': 'Printer jams',
-      'status': {'issue_status_id': 's1', 'name': 'Open', 'is_resolved': false, 'is_on_hold': false, 'color': '#3B82F6'},
+      'status': {
+        'issue_status_id': 's1',
+        'name': 'Open',
+        'is_resolved': false,
+        'is_on_hold': false,
+        'color': '#3B82F6'
+      },
       'priority': 'High',
       'channel': 'email',
       'created_at': '2026-10-27T09:00:00+05:30',
       ...extra,
     };
 
-Ticket _t([Map<String, dynamic> extra = const {}]) => TicketsRemoteDataSource.mapTicket(_row(extra))!;
+Ticket _t([Map<String, dynamic> extra = const {}]) =>
+    TicketsRemoteDataSource.mapTicket(_row(extra))!;
 
 void main() {
   group('header and channel', () {
     test('sub-line falls back to Uncategorised / No customer', () {
       expect(ticketHeaderSubline(_t()), 'Uncategorised · No customer');
-      expect(ticketHeaderSubline(_t({'type_name': 'Bug', 'customer_name': 'Acme'})), 'Bug · Acme');
+      expect(
+          ticketHeaderSubline(
+              _t({'type_name': 'Bug', 'customer_name': 'Acme'})),
+          'Bug · Acme');
     });
 
     test('via line uses the raw channel and time ago', () {
       final now = DateTime.parse('2026-10-27T12:00:00+05:30');
       expect(ticketViaLine(_t(), now: now), 'via email · 3h ago');
-      expect(ticketViaLine(_t({'channel': null}), now: now), 'via unset · 3h ago');
+      expect(
+          ticketViaLine(_t({'channel': null}), now: now), 'via unset · 3h ago');
     });
 
     test('channel labels and reply dispatch', () {
@@ -44,7 +55,11 @@ void main() {
   group('lock and first response', () {
     test('a resolved-flag status locks the ticket', () {
       final resolved = _t({
-        'status': {'issue_status_id': 's2', 'name': 'Duplicate', 'is_resolved': true},
+        'status': {
+          'issue_status_id': 's2',
+          'name': 'Duplicate',
+          'is_resolved': true
+        },
       });
       expect(resolved.isLocked, isTrue);
       expect(_t().isLocked, isFalse);
@@ -53,7 +68,10 @@ void main() {
 
     test('log first response only while none is recorded', () {
       expect(canLogFirstResponse(_t()), isTrue);
-      expect(canLogFirstResponse(_t({'first_responded_at': '2026-10-27T10:00:00+05:30'})), isFalse);
+      expect(
+          canLogFirstResponse(
+              _t({'first_responded_at': '2026-10-27T10:00:00+05:30'})),
+          isFalse);
     });
   });
 
@@ -64,33 +82,58 @@ void main() {
 
     test('first response met / paused / breached / due', () {
       final due = {'first_response_due_at': '2026-10-27T11:00:00+05:30'};
-      expect(firstResponseSeg(_t({...due, 'first_responded_at': '2026-10-27T10:00:00+05:30'}))!.label, startsWith('Met · '));
+      expect(
+          firstResponseSeg(_t(
+                  {...due, 'first_responded_at': '2026-10-27T10:00:00+05:30'}))!
+              .label,
+          startsWith('Met · '));
       expect(
           firstResponseSeg(_t({
             ...due,
-            'status': {'issue_status_id': 's', 'name': 'On Hold', 'is_on_hold': true},
+            'status': {
+              'issue_status_id': 's',
+              'name': 'On Hold',
+              'is_on_hold': true
+            },
           }))!
               .label,
           'Paused');
-      final breached = firstResponseSeg(_t({...due, 'first_response_remaining_seconds': -60}))!;
+      final breached = firstResponseSeg(
+          _t({...due, 'first_response_remaining_seconds': -60}))!;
       expect(breached.label, startsWith('Breached · was due '));
       expect(breached.tone, SlaTone.breached);
-      expect(firstResponseSeg(_t({...due, 'first_response_remaining_seconds': 3900}))!.label, endsWith(' · 1h 5m left'));
+      expect(
+          firstResponseSeg(
+                  _t({...due, 'first_response_remaining_seconds': 3900}))!
+              .label,
+          endsWith(' · 1h 5m left'));
     });
 
     test('resolution: resolved / no SLA / paused / at risk / overdue', () {
-      expect(resolutionSeg(_t({'resolved_at': '2026-10-27T10:00:00+05:30'})).label, startsWith('Resolved · '));
+      expect(
+          resolutionSeg(_t({'resolved_at': '2026-10-27T10:00:00+05:30'})).label,
+          startsWith('Resolved · '));
       expect(resolutionSeg(_t()).label, 'No SLA');
       expect(
-          resolutionSeg(_t({'sla_remaining_seconds': 500, 'sla_hold_started_at': '2026-10-27T10:00:00+05:30'})).label,
+          resolutionSeg(_t({
+            'sla_remaining_seconds': 500,
+            'sla_hold_started_at': '2026-10-27T10:00:00+05:30'
+          })).label,
           'Paused — waiting on customer');
-      final risk = resolutionSeg(_t({'sla_remaining_seconds': 3600, 'sla_deadline': '2026-10-27T13:00:00+05:30'}));
+      final risk = resolutionSeg(_t({
+        'sla_remaining_seconds': 3600,
+        'sla_deadline': '2026-10-27T13:00:00+05:30'
+      }));
       expect(risk.label, endsWith(' · 1h 0m left'));
       expect(risk.tone, SlaTone.atRisk);
-      final late = resolutionSeg(_t({'sla_remaining_seconds': -7200, 'sla_deadline': '2026-10-27T10:00:00+05:30'}));
+      final late = resolutionSeg(_t({
+        'sla_remaining_seconds': -7200,
+        'sla_deadline': '2026-10-27T10:00:00+05:30'
+      }));
       expect(late.label, startsWith('Overdue 2h 0m · was due '));
       expect(late.tone, SlaTone.breached);
-      expect(resolutionSeg(_t({'sla_remaining_seconds': 200000})).tone, SlaTone.normal);
+      expect(resolutionSeg(_t({'sla_remaining_seconds': 200000})).tone,
+          SlaTone.normal);
     });
 
     test('SLA target wording', () {
@@ -109,11 +152,22 @@ void main() {
         'parent_subject': 'Parent',
         'child_count': 0,
         'attachments': [
-          {'attachment_id': 'a1', 'name': 'log.txt', 'file': 'x', 'file_url': 'x?token=1', 'uploaded_by': {'name': 'Sufail Salim'}},
+          {
+            'attachment_id': 'a1',
+            'name': 'log.txt',
+            'file': 'x',
+            'file_url': 'x?token=1',
+            'uploaded_by': {'name': 'Sufail Salim'}
+          },
         ],
         'notes': [
           {'note_id': 'n1', 'content': 'internal'},
-          {'note_id': 'n2', 'kind': 'reply', 'content': 'Hello', 'created_by': {'name': 'Ashish'}},
+          {
+            'note_id': 'n2',
+            'kind': 'reply',
+            'content': 'Hello',
+            'created_by': {'name': 'Ashish'}
+          },
         ],
         'custom_fields': {'form.order_id': 'UAT-1', 'qty': 3},
         'sla_value': 7,
@@ -153,8 +207,13 @@ void main() {
   test('billing row', () {
     String money(double v) => '₹${v.toStringAsFixed(0)}';
     expect(billingRowValue(_t(), money), isNull);
-    expect(billingRowValue(_t({'billable': true, 'billable_amount': '2500.00'}), money), 'Billable · ₹2500');
-    expect(billingRowValue(_t({'billable': true, 'billable_product': 'p'}), money), 'Billable · product');
+    expect(
+        billingRowValue(
+            _t({'billable': true, 'billable_amount': '2500.00'}), money),
+        'Billable · ₹2500');
+    expect(
+        billingRowValue(_t({'billable': true, 'billable_product': 'p'}), money),
+        'Billable · product');
   });
 
   test('hierarchy errors keep the webapp copy', () {
@@ -162,18 +221,22 @@ void main() {
           type: AppErrorType.validation,
           message: 'x',
           extra: {
-            'error_codes': {'parent_issue': [code]},
+            'error_codes': {
+              'parent_issue': [code]
+            },
           },
         );
     expect(hierarchyErrorCopy(err('parent_would_nest')),
         "That ticket already has children of its own, so it can't become a child.");
     expect(hierarchyErrorCopy(err('parent_depth_exceeded')),
         'That ticket is already a child of another ticket. Tickets can only nest two levels deep.');
-    expect(hierarchyErrorCopy(err('parent_self_reference')), "A ticket can't be its own parent.");
+    expect(hierarchyErrorCopy(err('parent_self_reference')),
+        "A ticket can't be its own parent.");
   });
 
   test('assignee choices keep the current assignee', () {
-    final out = assigneeChoices([(id: 'a', name: 'A')], currentId: 'z', currentName: 'Zed');
+    final out = assigneeChoices([(id: 'a', name: 'A')],
+        currentId: 'z', currentName: 'Zed');
     expect(out.map((u) => u.id), ['z', 'a']);
     expect(assigneeChoices([(id: 'a', name: 'A')], currentId: 'a').length, 1);
   });

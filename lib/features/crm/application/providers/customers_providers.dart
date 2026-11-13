@@ -49,7 +49,8 @@ class CustomerListQuery {
 /// Customers for one query — the server does the filtering.
 final customersScopedProvider =
     FutureProvider.family<List<Customer>, CustomerListQuery>(
-  (ref, q) => ref.watch(customersRepositoryProvider).getCustomers(filters: q.filters),
+  (ref, q) =>
+      ref.watch(customersRepositoryProvider).getCustomers(filters: q.filters),
 );
 
 /// The server params a given drawer state produces.
@@ -146,7 +147,9 @@ bool customerInTab(Customer c, String key) {
 /// Toggles one chip; `all` clears the selection.
 Set<String> toggleCustomerTab(Set<String> current, String key) {
   if (key == 'all') return const {};
-  return current.contains(key) ? ({...current}..remove(key)) : {...current, key};
+  return current.contains(key)
+      ? ({...current}..remove(key))
+      : {...current, key};
 }
 
 /// Search query on the Customers list.
@@ -166,11 +169,12 @@ final customersSearchedProvider = Provider<List<Customer>>((ref) {
   if (q.isEmpty) return all;
   final matches = serverSearchMatcher(
     ref,
-    ServerSearchKey(endpoint: ApiEndpoints.customers, idFields: const ['customer_id'], query: q),
+    ServerSearchKey(
+        endpoint: ApiEndpoints.customers,
+        idFields: const ['customer_id'],
+        query: q),
   );
-  return all
-      .where((c) => matches([c.id], customerMatchesQuery(c, q)))
-      .toList();
+  return all.where((c) => matches([c.id], customerMatchesQuery(c, q))).toList();
 });
 
 /// The local half of the customer search.
@@ -185,14 +189,16 @@ final visibleCustomersProvider = Provider<List<Customer>>((ref) {
   final chips = ref.watch(customerTabProvider);
 
   Iterable<Customer> out = all;
-  if (chips.isNotEmpty) out = out.where((c) => chips.any((k) => customerInTab(c, k)));
+  if (chips.isNotEmpty)
+    out = out.where((c) => chips.any((k) => customerInTab(c, k)));
   // Mock mode has no query engine behind it, so the drawer is matched here.
   // In API mode the server already ran it and re-filtering would be wrong: the
   // local matcher works off folded status keys and display names, not the ids
   // the server matched on.
   if (!ApiConfig.apiEnabled) {
     final filters = ref.watch(customerFiltersProvider);
-    if (!filters.isEmpty) out = out.where((c) => customerMatchesFilters(c, filters));
+    if (!filters.isEmpty)
+      out = out.where((c) => customerMatchesFilters(c, filters));
   }
   return out.toList();
 });

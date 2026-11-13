@@ -24,7 +24,10 @@ StatusMeta recordStatusMeta(PlanRecord r) {
   final label = recordPillLabel(r);
   final color = switch (key) {
     'paid' => AppColors.success,
-    'partly_paid' || 'PARTLY_REFUNDED' || 'PARTLY_CREDITED' => AppColors.warning,
+    'partly_paid' ||
+    'PARTLY_REFUNDED' ||
+    'PARTLY_CREDITED' =>
+      AppColors.warning,
     'RECEIPT_REVERSED' => AppColors.error,
     'cancelled' || 'REFUNDED' || 'CREDITED' => AppColors.textMuted,
     _ => r.status == 'overdue' ? AppColors.error : AppColors.warning,
@@ -34,7 +37,12 @@ StatusMeta recordStatusMeta(PlanRecord r) {
 
 /// The method's glyph (webapp `METHOD_ICON`).
 IconData planMethodIcon(String method) => switch (method.trim().toLowerCase()) {
-      'bank_transfer' || 'bank transfer' || 'neft' || 'imps' || 'rtgs' => PhosphorIconsRegular.bank,
+      'bank_transfer' ||
+      'bank transfer' ||
+      'neft' ||
+      'imps' ||
+      'rtgs' =>
+        PhosphorIconsRegular.bank,
       'cheque' => PhosphorIconsRegular.scroll,
       'upi' => PhosphorIconsRegular.deviceMobile,
       'auto_debit' || 'auto-debit' => PhosphorIconsRegular.repeat,
@@ -89,7 +97,8 @@ class PlanButton extends StatelessWidget {
                 SizedBox(
                   width: 13.sp,
                   height: 13.sp,
-                  child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(fg)),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, valueColor: AlwaysStoppedAnimation(fg)),
                 )
               else if (icon != null)
                 Icon(icon, size: 14.sp, color: fg),
@@ -98,7 +107,8 @@ class PlanButton extends StatelessWidget {
                 child: Text(label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 13, weight: FontWeight.w700, color: fg)),
+                    style: AppText.custom(
+                        size: 13, weight: FontWeight.w700, color: fg)),
               ),
             ],
           ),
@@ -118,8 +128,14 @@ class PlanInlineError extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-      decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(10.r)),
-      child: Text(message, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.error, height: 1.4)),
+      decoration: BoxDecoration(
+          color: AppColors.tintRed, borderRadius: BorderRadius.circular(10.r)),
+      child: Text(message,
+          style: AppText.custom(
+              size: 12.5,
+              weight: FontWeight.w600,
+              color: AppColors.error,
+              height: 1.4)),
     );
   }
 }
@@ -132,7 +148,11 @@ class PlanHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(text,
-      style: AppText.custom(size: 12, weight: FontWeight.w500, color: color ?? AppColors.textMuted, height: 1.45));
+      style: AppText.custom(
+          size: 12,
+          weight: FontWeight.w500,
+          color: color ?? AppColors.textMuted,
+          height: 1.45));
 }
 
 /// A tappable date box (label above, "Pick a date" when empty).
@@ -158,7 +178,11 @@ class PlanDateField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+        Text(label,
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
         SizedBox(height: 7.h),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -169,22 +193,31 @@ class PlanDateField extends StatelessWidget {
             decoration: BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.circular(11.r),
-              border: Border.all(color: errorText != null ? AppColors.error : AppColors.borderInput, width: 1.5),
+              border: Border.all(
+                  color: errorText != null
+                      ? AppColors.error
+                      : AppColors.borderInput,
+                  width: 1.5),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(text.isEmpty ? 'Pick a date' : text,
-                      style: text.isEmpty ? AppText.body(color: AppColors.textPlaceholder) : AppText.body()),
+                      style: text.isEmpty
+                          ? AppText.body(color: AppColors.textPlaceholder)
+                          : AppText.body()),
                 ),
-                Icon(PhosphorIconsRegular.calendarBlank, size: 16.sp, color: AppColors.textMuted),
+                Icon(PhosphorIconsRegular.calendarBlank,
+                    size: 16.sp, color: AppColors.textMuted),
               ],
             ),
           ),
         ),
         if (errorText != null) ...[
           SizedBox(height: 5.h),
-          Text(errorText!, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+          Text(errorText!,
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w500, color: AppColors.error)),
         ],
       ],
     );
@@ -196,7 +229,8 @@ String planIsoDay(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
 /// The platform date picker seeded from an ISO day (today when blank).
-Future<String?> pickPlanDate(BuildContext context, String currentIso, {String? firstIso}) async {
+Future<String?> pickPlanDate(BuildContext context, String currentIso,
+    {String? firstIso}) async {
   final now = DateTime.now();
   final current = DateTime.tryParse(currentIso) ?? now;
   final first = DateTime.tryParse(firstIso ?? '') ?? DateTime(now.year - 2);

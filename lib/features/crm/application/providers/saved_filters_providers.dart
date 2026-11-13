@@ -57,7 +57,8 @@ class SavedFiltersState {
 /// session, exactly as the prototype did — mock builds keep working without a
 /// server, they just do not persist.
 class SavedFiltersController extends StateNotifier<SavedFiltersState> {
-  SavedFiltersController({required this.module, SavedFiltersRemoteDataSource? remote})
+  SavedFiltersController(
+      {required this.module, SavedFiltersRemoteDataSource? remote})
       : _remote = remote,
         super(const SavedFiltersState()) {
     if (_remote != null) load();
@@ -109,7 +110,8 @@ class SavedFiltersController extends StateNotifier<SavedFiltersState> {
 
     try {
       final saved = existing == null
-          ? await remote.create(module: module, name: trimmed, definition: definition)
+          ? await remote.create(
+              module: module, name: trimmed, definition: definition)
           : await remote.update(existing.id, definition: definition);
       if (saved == null) return 'Could not save the view.';
       final list = [...state.filters];
@@ -156,7 +158,8 @@ class SavedFiltersController extends StateNotifier<SavedFiltersState> {
       e is AppError ? e.message : 'Something went wrong. Please try again.';
 }
 
-final savedFiltersRemoteProvider = Provider<SavedFiltersRemoteDataSource?>((ref) {
+final savedFiltersRemoteProvider =
+    Provider<SavedFiltersRemoteDataSource?>((ref) {
   if (!ApiConfig.apiEnabled) return null;
   return SavedFiltersRemoteDataSource(ref.watch(apiServiceProvider));
 });

@@ -15,34 +15,43 @@ class QuoteActionsRemoteDataSource {
   static const docTemplatesPath = '/sales-content/documents/templates/';
   static const generateDocPath = '/sales-content/documents/generate/';
 
-  static String _q(String id, String suffix) => '${ApiEndpoints.quotation(id)}$suffix';
+  static String _q(String id, String suffix) =>
+      '${ApiEndpoints.quotation(id)}$suffix';
 
   /// `GET /quotations/statuses/` — every row, inactive included, with
   /// `status_type`.
-  Future<List<QuoteStatusRow>> statuses() async =>
-      quoteStatusRows(await _api.get(statusesPath, query: {'page_size': 100}, quiet: true));
+  Future<List<QuoteStatusRow>> statuses() async => quoteStatusRows(
+      await _api.get(statusesPath, query: {'page_size': 100}, quiet: true));
 
   /// `GET /quotations/decline-reasons/?is_active=true` → `(id, name)`.
   Future<List<({String id, String name})>> declineReasons() async {
-    final body = await _api.get(declineReasonsPath, query: {'is_active': 'true', 'page_size': 100});
+    final body = await _api.get(declineReasonsPath,
+        query: {'is_active': 'true', 'page_size': 100});
     final list = body is Map ? body['results'] : body;
     return [
       for (final r in (list is List ? list : const []))
-        if (r is Map && r['is_active'] != false && '${r['quote_decline_reason_id'] ?? ''}'.isNotEmpty)
+        if (r is Map &&
+            r['is_active'] != false &&
+            '${r['quote_decline_reason_id'] ?? ''}'.isNotEmpty)
           (id: '${r['quote_decline_reason_id']}', name: '${r['name'] ?? ''}'),
     ];
   }
 
   /// `GET {id}/payment-instructions/` — null when none are set up.
   Future<QuotePaymentInstructions?> paymentInstructions(String id) async =>
-      QuotePaymentInstructions.fromResponse(await _api.get(_q(id, 'payment-instructions/'), quiet: true));
+      QuotePaymentInstructions.fromResponse(
+          await _api.get(_q(id, 'payment-instructions/'), quiet: true));
 
   /// `GET quotations/?search=<base number>` — candidate rows for the newest
   /// revision of a chain.
   Future<List<Map<String, dynamic>>> searchQuotes(String search) async {
-    final body = await _api.get(ApiEndpoints.quotations, query: {'search': search, 'page': 1, 'page_size': 50}, quiet: true);
+    final body = await _api.get(ApiEndpoints.quotations,
+        query: {'search': search, 'page': 1, 'page_size': 50}, quiet: true);
     final list = body is Map ? body['results'] : body;
-    return [for (final r in (list is List ? list : const [])) if (r is Map) Map<String, dynamic>.from(r)];
+    return [
+      for (final r in (list is List ? list : const []))
+        if (r is Map) Map<String, dynamic>.from(r)
+    ];
   }
 
   /// A lead's / customer's `reference` ("LD-0025" / "CUST-0002"), '' if unknown.
@@ -58,30 +67,77 @@ class QuoteActionsRemoteDataSource {
 
   /// `PATCH quotations/{id}/` — a field edit, or a status move with
   /// `status_id` (+ `decline_reason`/`decline_note`, `accepted_on`, `schedule`).
-  Future<void> patch(String id, Map<String, dynamic> body) => _api.patch(ApiEndpoints.quotation(id), body: body);
+  Future<void> patch(String id, Map<String, dynamic> body) =>
+      _api.patch(ApiEndpoints.quotation(id), body: body);
+
+  /// `GET quotations/option-groups/{id}/` — the group with every option.
+  Future<Map<String, dynamic>> group(String groupId) async =>
+      _row(await _api.get('/quotations/option-groups/$groupId/', quiet: true));
+
+  /// `POST quotations/option-groups/{id}/{action}/` — the group moves as one:
+  /// `send` / `accept` / `reject` / `revise` / `renew` / `revert-acceptance`.
+  Future<Map<String, dynamic>> groupAction(String groupId, String action,
+          [Map<String, dynamic> body = const {}]) async =>
+      _row(await _api.post('/quotations/option-groups/$groupId/$action/',
+          body: body));
 
   /// `DELETE quotations/{id}/` — 409 `QUOTE_HAS_PAYMENTS` when paid.
   Future<void> delete(String id) => _api.delete(ApiEndpoints.quotation(id));
 
-  Map<String, dynamic> _row(Object? body) => body is Map ? Map<String, dynamic>.from(body) : const {};
+  /// `DELETE quotations/option-groups/{id}/` — every option of the group.
+  Future<void> deleteGroup(String groupId) =>
+      _api.delete('/quotations/option-groups/$groupId/');
+
+  Map<String, dynamic> _row(Object? body) =>
+      body is Map ? Map<String, dynamic>.from(body) : const {};
 
   /// `POST {id}/revise/` → the new draft revision.
-  Future<Map<String, dynamic>> revise(String id) async => _row(await _api.post(_q(id, 'revise/'), body: const {}));
+  Future<Map<String, dynamic>> revise(String id) async =>
+      _row(await _api.post(_q(id, 'revise/'), body: const {}));
 
   /// `POST {id}/duplicate/` → the new draft.
-  Future<Map<String, dynamic>> duplicate(String id) async => _row(await _api.post(_q(id, 'duplicate/'), body: const {}));
+  Future<Map<String, dynamic>> duplicate(String id) async =>
+      _row(await _api.post(_q(id, 'duplicate/'), body: const {}));
 
   /// `POST {id}/renew/ {valid_until?}` → the new revision at today's prices.
-  Future<Map<String, dynamic>> renew(String id, String? validUntil) async => _row(await _api.post(_q(id, 'renew/'),
-      body: validUntil == null || validUntil.isEmpty ? const {} : {'valid_until': validUntil}));
+  Future<Map<String, dynamic>> renew(String id, String? validUntil) async =>
+      _row(await _api.post(_q(id, 'renew/'),
+          body: validUntil == null || validUntil.isEmpty
+              ? const {}
+              : {'valid_until': validUntil}));
 
   /// `GET {id}/render/?output=pdf` — the PDF bytes (auth attached).
-  Future<List<int>> pdf(String id) async => (await _api.getBytes(_q(id, 'render/?output=pdf'))).$1;
+  Future<List<int>> pdf(String id) async =>
+      (await _api.getBytes(_q(id, 'render/?output=pdf'))).$1;
 
   /// `GET /sales-content/documents/templates/`.
-  Future<List<DocTemplate>> documentTemplates() async => DocTemplate.listFrom(await _api.get(docTemplatesPath, quiet: true));
+  Future<List<DocTemplate>> documentTemplates() async =>
+      DocTemplate.listFrom(await _api.get(docTemplatesPath, quiet: true));
+
+  /// `GET /sales-content/documents/?quotation=<id>` (or `lead` / `customer`).
+  Future<List<GeneratedDoc>> documents(Map<String, String> source) async =>
+      GeneratedDoc.listFrom(await _api.get('/sales-content/documents/',
+          query: {...source, 'page': 1, 'page_size': 25}, quiet: true));
+
+  /// `POST documents/preview/` (HTML) — nothing is stored; the number prints PREVIEW.
+  Future<String> previewDocument(Map<String, dynamic> body) async {
+    final r = _row(await _api.post('/sales-content/documents/preview/',
+        body: {...body, 'output': 'html'}));
+    return '${r['html'] ?? ''}';
+  }
+
+  /// `POST documents/{id}/regenerate/` — re-render in place (same number).
+  Future<Map<String, dynamic>> regenerateDocument(
+          String id, Map<String, dynamic> fieldValues) async =>
+      _row(await _api.post('/sales-content/documents/$id/regenerate/',
+          body: {'field_values': fieldValues}));
+
+  /// `DELETE documents/{id}/`.
+  Future<void> deleteDocument(String id) =>
+      _api.delete('/sales-content/documents/$id/');
 
   /// `POST /sales-content/documents/generate/`.
-  Future<Map<String, dynamic>> generateDocument(Map<String, dynamic> body) async =>
+  Future<Map<String, dynamic>> generateDocument(
+          Map<String, dynamic> body) async =>
       _row(await _api.post(generateDocPath, body: body));
 }

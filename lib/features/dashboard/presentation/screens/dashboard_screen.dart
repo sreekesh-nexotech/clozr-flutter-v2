@@ -28,11 +28,27 @@ import '../components/scope_chips.dart';
 /// shows the panels (a genuinely empty section renders its own honest zeros).
 /// In mock mode the phase is pre-settled, so the panels paint the seed exactly
 /// as before. The header + scope chips stay visible in every phase.
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Coming back to the Dashboard after time elsewhere: refresh a bundle that
+    // has gone stale (the notifier skips a fresh one and one still loading).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !ApiConfig.apiEnabled) return;
+      ref.read(dashboardDataNotifierProvider.notifier).maybeRefresh();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Nothing here may fetch until the role is known. After sign-in the router
     // parks here while `/auth/me/modules/` is still in flight, and watching
     // the data notifier below starts ~20 admin-dashboard calls at once — for a
@@ -44,7 +60,8 @@ class DashboardScreen extends ConsumerWidget {
       final accessAsync = ref.watch(moduleAccessProvider);
       final access = accessAsync.valueOrNull;
       final unresolved = accessAsync.isLoading && !accessAsync.hasValue;
-      if (unresolved || (access != null && !access.canAny(dashboardModuleKeys))) {
+      if (unresolved ||
+          (access != null && !access.canAny(dashboardModuleKeys))) {
         return ColoredBox(
           color: AppColors.bgScreen,
           child: Padding(
@@ -56,9 +73,12 @@ class DashboardScreen extends ConsumerWidget {
     }
     // A `?tab=` the role cannot see (a stale deep link, or a module removed
     // since) falls back to the first panel it can, matching the bottom nav.
-    final tabs = visibleDashboardTabs(ref.watch(moduleAccessProvider).valueOrNull);
-    final requested = GoRouterState.of(context).uri.queryParameters['tab'] ?? 'business';
-    final tab = tabs.contains(requested) ? requested : (tabs.firstOrNull ?? 'business');
+    final tabs =
+        visibleDashboardTabs(ref.watch(moduleAccessProvider).valueOrNull);
+    final requested =
+        GoRouterState.of(context).uri.queryParameters['tab'] ?? 'business';
+    final tab =
+        tabs.contains(requested) ? requested : (tabs.firstOrNull ?? 'business');
     final phase = ref.watch(dashboardDataNotifierProvider);
 
     // The `module` the Member dropdown needs, which also decides whether the
@@ -76,45 +96,79 @@ class DashboardScreen extends ConsumerWidget {
       _ => const BusinessPanel(),
     };
 
+    // A reload over data that is already on screen (period / team / member
+    // change, refresh, return to the screen): dim the old figures and show a
+    // thin progress bar so they are not read as the new selection's numbers.
+    final refreshing = phase.loading && phase.settled && phase.error == null;
+
     final Widget body;
     if (phase.error != null) {
       body = ErrorState.forError(
         phase.error!,
-        onRetry: () => ref.read(dashboardDataNotifierProvider.notifier).reload(),
+        onRetry: () =>
+            ref.read(dashboardDataNotifierProvider.notifier).reload(),
       );
     } else if (!phase.settled && phase.loading) {
       body = const _DashboardSkeleton();
     } else {
       // A distinct key per tab so panel state (segments) resets cleanly when
       // switching panels.
-      body = KeyedSubtree(key: ValueKey(tab), child: panel);
+      body = KeyedSubtree(
+        key: ValueKey(tab),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: refreshing ? 0.4 : 1,
+          child: IgnorePointer(ignoring: refreshing, child: panel),
+        ),
+      );
     }
 
-    return ColoredBox(
-      color: AppColors.bgScreen,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const DashboardHeader(),
-          Expanded(
-            // One pull covers all four panels: the bundle behind business / crm
-            // / ops / help is a single fetch, and `reload` re-runs it against
-            // the period and team currently selected.
-            child: AppRefresh(
-              onRefresh: () => settle([
-                ref.read(dashboardDataNotifierProvider.notifier).reload(),
-              ]),
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-                children: [
-                  ScopeChips(scopeModule: scopeModule),
-                  body,
-                ],
+    // The app locks text scaling to 1.0 at the root. The Dashboard honours the
+    // system font size up to 1.3×: numbers and labels become readable for
+    // large-text users while the dense KPI grid still fits.
+    final systemScaler = MediaQueryData.fromView(View.of(context)).textScaler;
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+          textScaler:
+              systemScaler.clamp(minScaleFactor: 1, maxScaleFactor: 1.3)),
+      child: ColoredBox(
+        color: AppColors.bgScreen,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const DashboardHeader(),
+            SizedBox(
+              height: 2.h,
+              child: refreshing
+                  ? const LinearProgressIndicator(
+                      minHeight: 2,
+                      backgroundColor: AppColors.bgScreen,
+                      color: AppColors.blueBright)
+                  : null,
+            ),
+            Expanded(
+              // One pull covers all four panels: the bundle behind business / crm
+              // / ops / help is a single fetch, and `reload` re-runs it against
+              // the period and team currently selected.
+              child: AppRefresh(
+                onRefresh: () => settle([
+                  ref.read(dashboardDataNotifierProvider.notifier).reload(),
+                ]),
+                child: ListView(
+                  // A fresh scroll position per tab: Helpdesk must not open
+                  // already scrolled to wherever Operations was left.
+                  key: PageStorageKey<String>('dashboard-$tab'),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+                  children: [
+                    ScopeChips(scopeModule: scopeModule),
+                    body,
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

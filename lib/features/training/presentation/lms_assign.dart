@@ -7,8 +7,11 @@ import '../../../data/api/user_directory.dart';
 import '../../crm/domain/entities/crm_catalog.dart';
 import '../../crm/presentation/components/option_picker_sheet.dart';
 import '../../shell/application/providers/shell_providers.dart';
+import '../application/providers/course_admin_providers.dart';
 import '../application/providers/lms_providers.dart';
 import '../domain/entities/learner_record.dart';
+import '../infrastructure/data_sources/remote/course_admin_remote_ds.dart';
+import 'components/lms_assign_course_sheet.dart';
 
 /// The "Assign course" flow, shared by the course detail, the Learners list and
 /// the learner detail — every one of which used to answer the tap with a bare
@@ -40,7 +43,9 @@ Future<void> assignCourse(
     final picked = await showOptionPicker(
       context: context,
       title: 'Which course?',
-      options: [for (final c in courses) CatalogOption(id: c.id, name: c.title)],
+      options: [
+        for (final c in courses) CatalogOption(id: c.id, name: c.title)
+      ],
       selected: {courses.first.id},
     );
     if (picked == null || picked.isEmpty || !context.mounted) return;
@@ -120,6 +125,52 @@ Future<void> nudgeLearner(
         .read(lmsRepositoryProvider)
         .nudgeLearner(userId: userId, courseId: courseId);
     if (context.mounted) toast.show('Reminder sent to $firstName');
+  } on AppError catch (e) {
+    if (context.mounted) toast.showError(e.message);
+  }
+}
+
+/// The webapp's Assign course modal for the Learners list and the learner
+/// detail: published courses only, labelled "<title> · <N> modules", posted to
+/// `/lms/learners/assign/` with an optional deadline. [only] limits the
+/// learners to one person, pre-ticked (the learner detail).
+Future<void> assignFromLearners(BuildContext context, WidgetRef ref,
+    {AssignableUser? only}) async {
+  // Read fresh: the list may never have loaded on this path, and a course
+  // published or moved to draft elsewhere must show (or not) right away.
+  await ref.read(lmsCoursesControllerProvider.notifier).reload();
+  if (!context.mounted) return;
+  final published = [
+    for (final c in ref.read(lmsCoursesProvider))
+      if (c.isPublished) c
+  ];
+  final r = await showAssignCourseSheet(
+    context,
+    courses: [
+      for (final c in published) (c.id, '${c.title} · ${c.moduleTotal} modules')
+    ],
+    learners: only == null ? null : [only],
+    preselect: only?.id,
+  );
+  if (r == null) return;
+  final title = published
+          .where((c) => c.id == r.courseId)
+          .map((c) => c.title)
+          .firstOrNull ??
+      r.courseTitle;
+  ref.read(toastProvider.notifier).show(
+      '"$title" assigned to ${r.enrolled} learner${r.enrolled == 1 ? '' : 's'}');
+  reloadLms(ref);
+}
+
+/// Webapp list / detail Nudge: `POST /lms/learners/{id}/nudge/` with no course,
+/// so the learner is reminded about all of their courses.
+Future<void> nudgeAllCourses(BuildContext context, WidgetRef ref,
+    {required String userId, required String name}) async {
+  final toast = ref.read(toastProvider.notifier);
+  try {
+    await ref.read(courseAdminRemoteProvider).nudge(userId);
+    if (context.mounted) toast.show('Reminder sent to $name');
   } on AppError catch (e) {
     if (context.mounted) toast.showError(e.message);
   }

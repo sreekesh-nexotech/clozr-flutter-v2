@@ -32,7 +32,11 @@ class LmsData<T> {
   final bool loading;
   final AppError? error;
 
-  LmsData<T> copyWith({List<T>? items, bool? loading, AppError? error, bool clearError = false}) =>
+  LmsData<T> copyWith(
+          {List<T>? items,
+          bool? loading,
+          AppError? error,
+          bool clearError = false}) =>
       LmsData<T>(
         items: items ?? this.items,
         loading: loading ?? this.loading,
@@ -94,13 +98,17 @@ class LmsListNotifier<T> extends StateNotifier<LmsData<T>> {
     } on AppError catch (e) {
       if (!mounted) return;
       state = e.type == AppErrorType.forbidden
-          ? state.copyWith(loading: false, clearError: true) // no-access → graceful empty
+          ? state.copyWith(
+              loading: false, clearError: true) // no-access → graceful empty
           : state.copyWith(loading: false, error: e);
     } on Object catch (e) {
       if (mounted) {
         state = state.copyWith(
           loading: false,
-          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+          error: AppError(
+              type: AppErrorType.unknown,
+              message: 'Something went wrong. Please try again.',
+              cause: e),
         );
       }
     }
@@ -154,7 +162,8 @@ final lmsCourseLookupProvider = Provider<Course? Function(String)>((ref) {
 });
 
 final lmsActivityControllerProvider =
-    StateNotifierProvider<LmsListNotifier<LmsActivity>, LmsData<LmsActivity>>((ref) {
+    StateNotifierProvider<LmsListNotifier<LmsActivity>, LmsData<LmsActivity>>(
+        (ref) {
   final repo = ref.watch(lmsRepositoryProvider);
   final api = ApiConfig.apiEnabled;
   return LmsListNotifier<LmsActivity>(
@@ -202,13 +211,17 @@ class LmsRecordsNotifier extends StateNotifier<LmsData<LearnerRecord>> {
     } on AppError catch (e) {
       if (!mounted) return;
       state = e.type == AppErrorType.forbidden
-          ? state.copyWith(loading: false, clearError: true) // no-access → graceful empty
+          ? state.copyWith(
+              loading: false, clearError: true) // no-access → graceful empty
           : state.copyWith(loading: false, error: e);
     } on Object catch (e) {
       if (mounted) {
         state = state.copyWith(
           loading: false,
-          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+          error: AppError(
+              type: AppErrorType.unknown,
+              message: 'Something went wrong. Please try again.',
+              cause: e),
         );
       }
     }
@@ -229,7 +242,10 @@ class LmsRecordsNotifier extends StateNotifier<LmsData<LearnerRecord>> {
               else
                 c.copyWith(mods: [
                   for (int i = 0; i < c.mods.length; i++)
-                    if (i == idx) (c.mods[i] > value ? c.mods[i] : value) else c.mods[i],
+                    if (i == idx)
+                      (c.mods[i] > value ? c.mods[i] : value)
+                    else
+                      c.mods[i],
                 ]),
           ]),
     ]);
@@ -237,9 +253,10 @@ class LmsRecordsNotifier extends StateNotifier<LmsData<LearnerRecord>> {
     // swallows failures; the optimistic update above is already applied).
     if (ApiConfig.apiEnabled && rid == 'me') {
       final course = _courseOf?.call(courseId);
-      final moduleId = (course != null && idx >= 0 && idx < course.modules.length)
-          ? course.modules[idx].id
-          : '';
+      final moduleId =
+          (course != null && idx >= 0 && idx < course.modules.length)
+              ? course.modules[idx].id
+              : '';
       _repo?.setModuleProgress(
         courseId: courseId,
         moduleId: moduleId,
@@ -272,14 +289,15 @@ final lmsRecordsProvider = Provider<List<LearnerRecord>>(
 ///
 /// Refetched off the write tick so an assignment made from the course detail
 /// shows up in its own tiles and learner list without a restart.
-final lmsCourseLearnersProvider =
-    FutureProvider.autoDispose.family<List<LearnerRecord>, String>((ref, courseId) {
+final lmsCourseLearnersProvider = FutureProvider.autoDispose
+    .family<List<LearnerRecord>, String>((ref, courseId) {
   ref.watch(apiWriteTickProvider);
   return ref.watch(lmsRepositoryProvider).getCourseLearners(courseId);
 });
 
 /// Single learner record by id (empty record if none).
-final lmsRecordByIdProvider = Provider.family<LearnerRecord, String>((ref, rid) {
+final lmsRecordByIdProvider =
+    Provider.family<LearnerRecord, String>((ref, rid) {
   for (final r in ref.watch(lmsRecordsProvider)) {
     if (r.rid == rid) return r;
   }

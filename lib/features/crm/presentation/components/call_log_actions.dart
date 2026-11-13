@@ -35,13 +35,31 @@ Future<void> showCallLogActions(
     if (call.hasRecording && onPlay != null)
       ('Play recording', PhosphorIconsRegular.playCircle, () async => onPlay()),
     if (allowActivity) ...[
-      ('Add note', PhosphorIconsRegular.notePencil, () => _addNote(context, ref, call, leadId)),
-      ('Create task', PhosphorIconsRegular.checkSquare, () => _createTask(context, ref, call, leadId)),
+      (
+        'Add note',
+        PhosphorIconsRegular.notePencil,
+        () => _addNote(context, ref, call, leadId)
+      ),
+      (
+        'Create task',
+        PhosphorIconsRegular.checkSquare,
+        () => _createTask(context, ref, call, leadId)
+      ),
     ],
     if (call.hasRecording && call.transcript.isEmpty)
-      ('Transcribe', PhosphorIconsRegular.textAa, () => _start(ref, ApiEndpoints.callLogTranscribe(call.id), 'Transcription started — it will appear shortly', leadId)),
+      (
+        'Transcribe',
+        PhosphorIconsRegular.textAa,
+        () => _start(ref, ApiEndpoints.callLogTranscribe(call.id),
+            'Transcription started — it will appear shortly', leadId)
+      ),
     if (call.transcript.isNotEmpty && call.summary.isEmpty)
-      ('Summarize', PhosphorIconsRegular.sparkle, () => _start(ref, ApiEndpoints.callLogSummarize(call.id), 'Summary started — it will appear shortly', leadId)),
+      (
+        'Summarize',
+        PhosphorIconsRegular.sparkle,
+        () => _start(ref, ApiEndpoints.callLogSummarize(call.id),
+            'Summary started — it will appear shortly', leadId)
+      ),
   ];
   if (actions.isEmpty) return;
   final picked = await showClozrSheet<int>(
@@ -51,7 +69,8 @@ Future<void> showCallLogActions(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SheetHeader(title: call.outcome, onClose: () => Navigator.of(ctx).pop()),
+          SheetHeader(
+              title: call.outcome, onClose: () => Navigator.of(ctx).pop()),
           for (var i = 0; i < actions.length; i++)
             ListTile(
               leading: Icon(actions[i].$2, size: 20.sp, color: AppColors.navy),
@@ -67,22 +86,30 @@ Future<void> showCallLogActions(
   await actions[picked].$3();
 }
 
-Future<void> _addNote(BuildContext context, WidgetRef ref, CallLog call, String leadId) async {
-  final text = await _askText(context, title: 'Add note', hint: 'Note about this call…');
+Future<void> _addNote(
+    BuildContext context, WidgetRef ref, CallLog call, String leadId) async {
+  final text =
+      await _askText(context, title: 'Add note', hint: 'Note about this call…');
   if (text == null) return;
-  await _post(ref, ApiEndpoints.exotelCallNote(call.id), {'content': text}, 'Note added to call', leadId);
+  await _post(ref, ApiEndpoints.exotelCallNote(call.id), {'content': text},
+      'Note added to call', leadId);
 }
 
-Future<void> _createTask(BuildContext context, WidgetRef ref, CallLog call, String leadId) async {
-  final text = await _askText(context, title: 'Create task', hint: 'Follow-up task title…');
+Future<void> _createTask(
+    BuildContext context, WidgetRef ref, CallLog call, String leadId) async {
+  final text = await _askText(context,
+      title: 'Create task', hint: 'Follow-up task title…');
   if (text == null) return;
-  await _post(ref, ApiEndpoints.exotelCallTask(call.id), {'title': text}, 'Follow-up task created', leadId);
+  await _post(ref, ApiEndpoints.exotelCallTask(call.id), {'title': text},
+      'Follow-up task created', leadId);
 }
 
-Future<void> _start(WidgetRef ref, String path, String success, String leadId) =>
+Future<void> _start(
+        WidgetRef ref, String path, String success, String leadId) =>
     _post(ref, path, const {}, success, leadId);
 
-Future<void> _post(WidgetRef ref, String path, Map<String, dynamic> body, String success, String leadId) async {
+Future<void> _post(WidgetRef ref, String path, Map<String, dynamic> body,
+    String success, String leadId) async {
   final toast = ref.read(toastProvider.notifier);
   try {
     await ref.read(apiServiceProvider).post(path, body: body);
@@ -96,8 +123,11 @@ Future<void> _post(WidgetRef ref, String path, Map<String, dynamic> body, String
 }
 
 /// One line of text, like the webapp's inline input (Enter / Save).
-Future<String?> _askText(BuildContext context, {required String title, required String hint}) =>
-    showDialog<String>(context: context, builder: (_) => _TextDialog(title: title, hint: hint));
+Future<String?> _askText(BuildContext context,
+        {required String title, required String hint}) =>
+    showDialog<String>(
+        context: context,
+        builder: (_) => _TextDialog(title: title, hint: hint));
 
 class _TextDialog extends StatefulWidget {
   const _TextDialog({required this.title, required this.hint});
@@ -133,11 +163,16 @@ class _TextDialogState extends State<_TextDialog> {
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => _save(),
         onChanged: (_) => setState(() {}),
-        decoration: InputDecoration(hintText: widget.hint, border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+            hintText: widget.hint, border: const OutlineInputBorder()),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        TextButton(onPressed: _ctrl.text.trim().isEmpty ? null : _save, child: const Text('Save')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: _ctrl.text.trim().isEmpty ? null : _save,
+            child: const Text('Save')),
       ],
     );
   }
@@ -148,7 +183,8 @@ class _TextDialogState extends State<_TextDialog> {
 /// Webapp `ExotelSyncButton`: pulls calls made in the Exotel app into this
 /// lead's log — the last 90 days, or a chosen range — then re-reads the tab a
 /// few times while the server's job lands them.
-Future<void> showExotelSyncSheet(BuildContext context, WidgetRef ref, {required String leadId}) async {
+Future<void> showExotelSyncSheet(BuildContext context, WidgetRef ref,
+    {required String leadId}) async {
   final range = await showClozrSheet<(DateTime?, DateTime?)>(
     context: context,
     builder: (_) => const _SyncSheet(),
@@ -156,13 +192,16 @@ Future<void> showExotelSyncSheet(BuildContext context, WidgetRef ref, {required 
   if (range == null) return;
   final toast = ref.read(toastProvider.notifier);
   try {
-    final res = await ref.read(apiServiceProvider).post(ApiEndpoints.exotelSyncCalls, body: {
+    final res = await ref
+        .read(apiServiceProvider)
+        .post(ApiEndpoints.exotelSyncCalls, body: {
       'lead_id': leadId,
       if (range.$1 != null) 'from_date': sheetIsoDate(range.$1!),
       if (range.$2 != null) 'to_date': sheetIsoDate(range.$2!),
     });
     final detail = res is Map ? '${res['detail'] ?? ''}'.trim() : '';
-    toast.show(detail.isEmpty ? 'Sync started — calls will appear shortly.' : detail);
+    toast.show(
+        detail.isEmpty ? 'Sync started — calls will appear shortly.' : detail);
   } on AppError catch (e) {
     ref.read(apiServiceProvider).handled(e);
     toast.showError(e.message);
@@ -193,7 +232,11 @@ class _SyncSheetState extends State<_SyncSheet> {
   String? _error;
 
   Future<void> _pick(bool from) async {
-    final d = await pickSheetDate(context, from ? (_from == null ? '' : sheetIsoDate(_from!)) : (_to == null ? '' : sheetIsoDate(_to!)));
+    final d = await pickSheetDate(
+        context,
+        from
+            ? (_from == null ? '' : sheetIsoDate(_from!))
+            : (_to == null ? '' : sheetIsoDate(_to!)));
     if (d == null || !mounted) return;
     setState(() {
       from ? _from = d : _to = d;
@@ -211,10 +254,12 @@ class _SyncSheetState extends State<_SyncSheet> {
               border: Border.all(color: const Color(0xFFE6E7EA)),
               borderRadius: BorderRadius.circular(10.r),
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(label, style: AppText.caption()),
               SizedBox(height: 2.h),
-              Text(value == null ? 'Any' : sheetDateLabel(value), style: AppText.bodyStrong()),
+              Text(value == null ? 'Any' : sheetDateLabel(value),
+                  style: AppText.bodyStrong()),
             ]),
           ),
         ),
@@ -228,10 +273,13 @@ class _SyncSheetState extends State<_SyncSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SheetHeader(title: 'Sync from Exotel', onClose: () => Navigator.of(context).pop()),
+          SheetHeader(
+              title: 'Sync from Exotel',
+              onClose: () => Navigator.of(context).pop()),
           Padding(
             padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 12.h),
-            child: Text("Pull calls made through the Exotel app into this lead's call log (last 90 days)",
+            child: Text(
+                "Pull calls made through the Exotel app into this lead's call log (last 90 days)",
                 style: AppText.body(color: AppColors.textMuted)),
           ),
           Padding(
@@ -245,7 +293,8 @@ class _SyncSheetState extends State<_SyncSheet> {
           if (_error != null)
             Padding(
               padding: EdgeInsets.fromLTRB(20.w, 6.h, 20.w, 0),
-              child: Text(_error!, style: AppText.caption(color: AppColors.error)),
+              child:
+                  Text(_error!, style: AppText.caption(color: AppColors.error)),
             ),
           Padding(
             padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 12.h),
@@ -265,7 +314,8 @@ class _SyncSheetState extends State<_SyncSheet> {
                   height: 46,
                   onTap: () {
                     if (_from != null && _to != null && _from!.isAfter(_to!)) {
-                      setState(() => _error = '“From” must be on or before “To”.');
+                      setState(
+                          () => _error = '“From” must be on or before “To”.');
                       return;
                     }
                     Navigator.of(context).pop((_from, _to));

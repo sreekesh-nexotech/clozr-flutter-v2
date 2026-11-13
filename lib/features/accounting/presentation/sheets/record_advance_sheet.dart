@@ -21,15 +21,19 @@ import 'acc_sheet_scaffold.dart';
 /// Services are taxed at receipt, so the nature, supply and rate are asked.
 /// The response is the receipt row, not the advance (§12.12); the advance
 /// appears in the Advances list on refresh.
-Future<bool?> showRecordAdvanceSheet(BuildContext context, {String? customerId}) =>
-    showClozrSheet<bool>(context: context, builder: (_) => _RecordAdvanceSheet(customerId: customerId));
+Future<bool?> showRecordAdvanceSheet(BuildContext context,
+        {String? customerId}) =>
+    showClozrSheet<bool>(
+        context: context,
+        builder: (_) => _RecordAdvanceSheet(customerId: customerId));
 
 class _RecordAdvanceSheet extends ConsumerStatefulWidget {
   const _RecordAdvanceSheet({this.customerId});
   final String? customerId;
 
   @override
-  ConsumerState<_RecordAdvanceSheet> createState() => _RecordAdvanceSheetState();
+  ConsumerState<_RecordAdvanceSheet> createState() =>
+      _RecordAdvanceSheetState();
 }
 
 class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
@@ -54,8 +58,12 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
     super.initState();
     ref.read(bankAccountsProvider.future).then((accounts) {
       if (!mounted || _bank != null) return;
-      final banks = [for (final a in accounts) if (a.kind == 'BANK') a];
-      final def = banks.where((a) => a.isDefault).firstOrNull ?? (banks.length == 1 ? banks.first : null);
+      final banks = [
+        for (final a in accounts)
+          if (a.kind == 'BANK') a
+      ];
+      final def = banks.where((a) => a.isDefault).firstOrNull ??
+          (banks.length == 1 ? banks.first : null);
       if (def != null) setState(() => _bank = def);
     }).catchError((_) {});
   }
@@ -73,9 +81,12 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
   Future<void> _submit() async {
     final amount = moneyInput(_amount.text);
     if (_customerId == null) return _fail('Pick the customer who paid');
-    if (amount == null || moneyIsZero(amount)) return _fail('Enter the amount received');
-    if (_source == 'BANK' && _bank == null) return _fail('Pick the bank account it came into');
-    if (_source == 'GATEWAY' && _gateway.text.trim().isEmpty) return _fail('Say which gateway collected it');
+    if (amount == null || moneyIsZero(amount))
+      return _fail('Enter the amount received');
+    if (_source == 'BANK' && _bank == null)
+      return _fail('Pick the bank account it came into');
+    if (_source == 'GATEWAY' && _gateway.text.trim().isEmpty)
+      return _fail('Say which gateway collected it');
     setState(() {
       _busy = true;
       _error = null;
@@ -98,8 +109,9 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
       });
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(
-          out.skipped ? (out.skipReason ?? 'Already recorded — nothing new was posted') : 'Advance posted');
+      ref.read(toastProvider.notifier).show(out.skipped
+          ? (out.skipReason ?? 'Already recorded — nothing new was posted')
+          : 'Advance posted');
       Navigator.of(context).pop(true);
     } on AppError catch (e) {
       _eventId = nextEventId(_eventId, e);
@@ -137,10 +149,17 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: MoneyField(label: 'Amount received', required: true, controller: _amount)),
+            Expanded(
+                child: MoneyField(
+                    label: 'Amount received',
+                    required: true,
+                    controller: _amount)),
             SizedBox(width: 9.w),
             Expanded(
-              child: AccDateBox(label: 'Received on', value: _date, showIstHint: true,
+              child: AccDateBox(
+                  label: 'Received on',
+                  value: _date,
+                  showIstHint: true,
                   onChanged: (d) => setState(() => _date = d ?? _date)),
             ),
           ],
@@ -159,15 +178,24 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
             value: _bank?.label,
             hint: 'Select account…',
             onTap: () async {
-              final b = await pickBankAccount(context, ref, selectedId: _bank?.id);
+              final b =
+                  await pickBankAccount(context, ref, selectedId: _bank?.id);
               if (b != null) setState(() => _bank = b);
             },
           ),
-        if (_source == 'GATEWAY') AccInput(label: 'Gateway', required: true, controller: _gateway, hint: 'e.g. razorpay'),
+        if (_source == 'GATEWAY')
+          AccInput(
+              label: 'Gateway',
+              required: true,
+              controller: _gateway,
+              hint: 'e.g. razorpay'),
         if (_source != 'CASH')
           AccChoiceChips(
             label: 'Method',
-            options: {for (final e in paymentMethods.entries) if (e.key != 'cash') e.key: e.value},
+            options: {
+              for (final e in paymentMethods.entries)
+                if (e.key != 'cash') e.key: e.value
+            },
             selected: _method,
             onSelected: (v) => setState(() => _method = v),
           ),
@@ -181,7 +209,10 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
         AccChoiceChips(
           label: 'Supply',
           required: true,
-          options: const {'INTRA': 'Within the state', 'INTER': 'Another state'},
+          options: const {
+            'INTRA': 'Within the state',
+            'INTER': 'Another state'
+          },
           selected: _supply,
           onSelected: (v) => setState(() => _supply = v),
         ),
@@ -190,7 +221,9 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
           controller: _rate,
           hint: 'e.g. 18',
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))],
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))
+          ],
         ),
         AccCheckRow(
           label: 'Taxable supply',
@@ -198,8 +231,12 @@ class _RecordAdvanceSheetState extends ConsumerState<_RecordAdvanceSheet> {
           hint: 'Untick for nil-rated or exempt supplies.',
           onChanged: (v) => setState(() => _taxable = v),
         ),
-        AccInput(label: 'Reference', controller: _reference, hint: 'UTR, cheque no…'),
-        const AccInfoBanner('The advance is set off against the invoice when it is issued.'),
+        AccInput(
+            label: 'Reference',
+            controller: _reference,
+            hint: 'UTR, cheque no…'),
+        const AccInfoBanner(
+            'The advance is set off against the invoice when it is issued.'),
       ],
     );
   }

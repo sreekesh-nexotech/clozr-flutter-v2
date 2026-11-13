@@ -43,7 +43,8 @@ class TaxSummary {
       roundOff: _dec(j['round_off']),
       grandTotal: _dec(j['grand_total']),
       warnings: [
-        for (final w in (j['warnings'] is List ? j['warnings'] as List : const []))
+        for (final w
+            in (j['warnings'] is List ? j['warnings'] as List : const []))
           if (w is Map && _dec(w['message']).isNotEmpty) _dec(w['message']),
       ],
     );
@@ -115,11 +116,14 @@ class ChargeSummary {
     return ChargeSummary(
       oneTime: ChargePart(
         grandTotal: total(one['grand_total']),
-        lineCount: one['line_count'] is num ? (one['line_count'] as num).toInt() : 0,
+        lineCount:
+            one['line_count'] is num ? (one['line_count'] as num).toInt() : 0,
       ),
       recurringGrandTotal: total(rec['grand_total']),
       periodLabel: _dec(rec['period_label']),
-      termPeriods: rec['term_periods'] is num ? (rec['term_periods'] as num).toInt() : null,
+      termPeriods: rec['term_periods'] is num
+          ? (rec['term_periods'] as num).toInt()
+          : null,
     );
   }
 
@@ -145,7 +149,8 @@ class TaxPreview {
         taxableTotal: _dec(j['taxable_total']),
         grandTotal: _dec(j['grand_total']),
         lines: [
-          for (final l in (j['line_items'] is List ? j['line_items'] as List : const []))
+          for (final l
+              in (j['line_items'] is List ? j['line_items'] as List : const []))
             if (l is Map) PricedLine.fromJson(Map<String, dynamic>.from(l)),
         ],
         summary: TaxSummary.fromJson(j['tax_summary']),
@@ -200,12 +205,14 @@ Map<String, dynamic> _base(PreviewContext c) => {
       if (c.quotationId != null) 'quotation': c.quotationId,
       if (c.leadId != null) 'lead': c.leadId,
       if (c.customerId != null) 'customer': c.customerId,
-      'place_of_supply_state_code': c.placeOfSupply.isEmpty ? null : c.placeOfSupply,
+      'place_of_supply_state_code':
+          c.placeOfSupply.isEmpty ? null : c.placeOfSupply,
     };
 
 /// The live preview for the form as it stands, or null when there is nothing
 /// valid to price (a half-typed line keeps the last answer on screen).
-PreviewRequest? livePreviewRequest(PreviewContext c, List<QuoteFormItem> items, String mode, String? serverFlip) {
+PreviewRequest? livePreviewRequest(PreviewContext c, List<QuoteFormItem> items,
+    String mode, String? serverFlip) {
   if (items.any((it) => lineProblem(it) != null)) return null;
   if (c.isEdit && !c.linesDirty) {
     return PreviewRequest({
@@ -228,20 +235,27 @@ enum FlipPlan { serverFlip, resetToSaved, rewriteLines, rewriteLinesDirty }
 
 FlipPlan planFlip(PreviewContext c, String to, String choice) {
   if (c.isEdit && !c.linesDirty) {
-    if (to == c.savedMode) return choice == 'convert' ? FlipPlan.resetToSaved : FlipPlan.rewriteLinesDirty;
+    if (to == c.savedMode)
+      return choice == 'convert'
+          ? FlipPlan.resetToSaved
+          : FlipPlan.rewriteLinesDirty;
     return FlipPlan.serverFlip;
   }
   return FlipPlan.rewriteLines;
 }
 
 /// The preview that shows what the flip would do, for the Convert / Keep sheet.
-PreviewRequest flipPreviewRequest(PreviewContext c, List<QuoteFormItem> items, String from, String to, String choice) {
+PreviewRequest flipPreviewRequest(PreviewContext c, List<QuoteFormItem> items,
+    String from, String to, String choice) {
   final plan = planFlip(c, to, choice);
   if (plan == FlipPlan.serverFlip) {
-    return PreviewRequest({..._base(c), 'amounts_are': to, 'price_conversion': choice}, previewRowRefs(items));
+    return PreviewRequest(
+        {..._base(c), 'amounts_are': to, 'price_conversion': choice},
+        previewRowRefs(items));
   }
   if (plan == FlipPlan.resetToSaved) {
-    return PreviewRequest({..._base(c), 'amounts_are': to}, previewRowRefs(items));
+    return PreviewRequest(
+        {..._base(c), 'amounts_are': to}, previewRowRefs(items));
   }
   return PreviewRequest({
     ..._base(c),
@@ -258,4 +272,7 @@ String previewErrorCopy(bool isValidation, String message) => isValidation
     ? message
     : 'The tax estimate is unavailable right now. Totals are calculated again when you save.';
 
-const quoteAmountsAreLabels =<String, String>{'EXCLUSIVE': 'Tax exclusive', 'INCLUSIVE': 'Tax inclusive'};
+const quoteAmountsAreLabels = <String, String>{
+  'EXCLUSIVE': 'Tax exclusive',
+  'INCLUSIVE': 'Tax inclusive'
+};

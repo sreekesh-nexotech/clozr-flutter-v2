@@ -23,7 +23,8 @@ class NotesRemoteDataSource {
   /// visible until the app restarted and then gone, which reads as data loss.
   /// Only notes the list says have replies are fetched, and they go out
   /// concurrently.
-  Future<List<NoteEntry>> fetchNotes(String relatedTo, String relatedToId) async {
+  Future<List<NoteEntry>> fetchNotes(
+      String relatedTo, String relatedToId) async {
     final body = await _api.get(ApiEndpoints.notes, query: {
       'related_to': relatedTo,
       'related_to_id': relatedToId,
@@ -58,8 +59,8 @@ class NotesRemoteDataSource {
   /// replies it could not load.
   Future<List<NoteReply>> fetchReplies(String noteId) async {
     try {
-      final body = await _api.get(ApiEndpoints.noteReplies(noteId),
-          query: {'page_size': 100});
+      final body = await _api
+          .get(ApiEndpoints.noteReplies(noteId), query: {'page_size': 100});
       final page = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
       return [for (final row in page.results) replyFromJson(row)];
     } on Object {
@@ -90,27 +91,34 @@ class NotesRemoteDataSource {
   }
 
   /// `PATCH /crm/notes/{id}/` with the new content (webapp "Edit note").
-  Future<void> updateNote(String noteId, String content, {List<String> mentionedUserIds = const []}) =>
+  Future<void> updateNote(String noteId, String content,
+          {List<String> mentionedUserIds = const []}) =>
       _api.patch(ApiEndpoints.note(noteId), body: {
         'content': content,
         if (mentionedUserIds.isNotEmpty) 'mentioned_user_ids': mentionedUserIds,
       });
 
   /// `DELETE /crm/notes/{id}/` — removes the note and its replies.
-  Future<void> deleteNote(String noteId) => _api.delete(ApiEndpoints.note(noteId));
+  Future<void> deleteNote(String noteId) =>
+      _api.delete(ApiEndpoints.note(noteId));
 
   /// `GET /crm/note-types/` — active types, in the org's order.
   Future<List<NoteTypeOption>> fetchNoteTypes() async {
-    final body = await _api.get(ApiEndpoints.noteTypes, query: {'page_size': 100}, quiet: true);
-    final rows = body is Map && body['results'] is List ? body['results'] as List : (body is List ? body : const []);
+    final body = await _api.get(ApiEndpoints.noteTypes,
+        query: {'page_size': 100}, quiet: true);
+    final rows = body is Map && body['results'] is List
+        ? body['results'] as List
+        : (body is List ? body : const []);
     final out = <({String id, String name, String color, int pos})>[];
     for (final r in rows) {
-      if (r is! Map || r['is_active'] == false || r['note_type_id'] == null) continue;
+      if (r is! Map || r['is_active'] == false || r['note_type_id'] == null)
+        continue;
       out.add((
-          id: '${r['note_type_id']}',
-          name: '${r['name'] ?? ''}',
-          color: '${r['color'] ?? ''}',
-          pos: (r['position'] as num?)?.toInt() ?? 0));
+        id: '${r['note_type_id']}',
+        name: '${r['name'] ?? ''}',
+        color: '${r['color'] ?? ''}',
+        pos: (r['position'] as num?)?.toInt() ?? 0
+      ));
     }
     out.sort((a, b) => a.pos.compareTo(b.pos));
     return [for (final t in out) (id: t.id, name: t.name, color: t.color)];
@@ -135,7 +143,8 @@ class NotesRemoteDataSource {
       'related_to': 'note',
       'related_to_id': noteId,
       'name': attachment.name,
-      'file_upload': await MultipartFile.fromFile(path, filename: path.split('/').last),
+      'file_upload':
+          await MultipartFile.fromFile(path, filename: path.split('/').last),
     });
     final res = await _api.postForm(ApiEndpoints.attachments, form);
     if (res is! Map<String, dynamic>) return null;
@@ -145,13 +154,13 @@ class NotesRemoteDataSource {
     // the fallback for a serializer that does not send `file_url`.
     final url = _str(res['file_url']) ?? _str(res['file']);
     if (url == null) return null;
-    return attachment.copyWith(url: url);
+    return attachment.copyWith(url: url, id: _str(res['attachment_id']));
   }
 
   /// Posts a reply under [noteId]; returns the mapped reply.
   Future<NoteReply> addReply(String noteId, String body) async {
-    final res =
-        await _api.post(ApiEndpoints.noteReplies(noteId), body: {'content': body});
+    final res = await _api
+        .post(ApiEndpoints.noteReplies(noteId), body: {'content': body});
     return replyFromJson(
         res is Map<String, dynamic> ? res : const <String, dynamic>{},
         fallbackBody: body);
@@ -250,11 +259,18 @@ class NotesRemoteDataSource {
       kind: _isImage(probe) ? 'image' : 'file',
       name: name,
       url: url,
+      id: _str(json['attachment_id']),
     );
   }
 
   static const _imageExts = {
-    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic',
+    'png',
+    'jpg',
+    'jpeg',
+    'gif',
+    'webp',
+    'bmp',
+    'heic',
   };
 
   static bool _isImage(String path) {

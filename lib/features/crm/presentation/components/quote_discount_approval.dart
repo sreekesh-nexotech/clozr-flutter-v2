@@ -16,7 +16,10 @@ import 'due_date_change.dart' show dueDateLabel;
 // import gives the detail screen and the list toolbar everything they need:
 // the banner, the dialogs, the badge provider and the gating helpers.
 export '../../application/providers/quote_discount_approvals_providers.dart'
-    show quoteDiscountApprovalsBadgeProvider, quoteLatestDiscountApprovalProvider, invalidateAfterDiscountDecision;
+    show
+        quoteDiscountApprovalsBadgeProvider,
+        quoteLatestDiscountApprovalProvider,
+        invalidateAfterDiscountDecision;
 export '../../application/quote_discount_approval_rules.dart'
     show
         markSentBlockedReason,
@@ -35,7 +38,8 @@ export '../../application/quote_discount_approval_rules.dart'
 /// for NOT_REQUIRED / APPROVED. [onChanged] runs after a decision (the
 /// record, inbox, badge and quote list are already invalidated).
 class DiscountApprovalBanner extends ConsumerWidget {
-  const DiscountApprovalBanner({super.key, required this.row, required this.onChanged});
+  const DiscountApprovalBanner(
+      {super.key, required this.row, required this.onChanged});
 
   final Map<String, dynamic>? row;
   final VoidCallback onChanged;
@@ -44,7 +48,8 @@ class DiscountApprovalBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (!isSendBlockedByApproval(row)) return const SizedBox.shrink();
     final uuid = '${row?['quotation_id'] ?? ''}';
-    final latest = ref.watch(quoteLatestDiscountApprovalProvider(uuid)).valueOrNull;
+    final latest =
+        ref.watch(quoteLatestDiscountApprovalProvider(uuid)).valueOrNull;
     final f = DiscountBannerFacts.from(row, latest);
     if (f == null) return const SizedBox.shrink();
     final number = '${row?['quotation_number'] ?? ''}'.trim();
@@ -75,14 +80,20 @@ class DiscountApprovalBanner extends ConsumerWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(
-            f.pending ? PhosphorIconsRegular.hourglassMedium : PhosphorIconsRegular.xCircle,
+            f.pending
+                ? PhosphorIconsRegular.hourglassMedium
+                : PhosphorIconsRegular.xCircle,
             size: 16.sp,
             color: f.pending ? AppColors.warningDeep : AppColors.error,
           ),
           SizedBox(width: 8.w),
           Expanded(
             child: Text.rich(TextSpan(style: AppText.body(), children: [
-              TextSpan(text: f.title, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              TextSpan(
+                  text: f.title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               TextSpan(text: f.body(dueDateLabel)),
             ])),
           ),
@@ -215,7 +226,8 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
     });
     final api = ref.read(apiServiceProvider);
     try {
-      await postQuoteDiscountDecision(api, widget.quotationUuid, approve: widget.approve, comment: _comment.text);
+      await postQuoteDiscountDecision(api, widget.quotationUuid,
+          approve: widget.approve, comment: _comment.text);
     } on AppError catch (e) {
       api.handled(e);
       if (mounted) {
@@ -235,35 +247,52 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
     return AlertDialog(
       title: Text(approve ? 'Approve this discount?' : 'Reject this discount?'),
       content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text.rich(TextSpan(style: AppText.body(), children: [
-            TextSpan(text: widget.quoteLabel, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            TextSpan(
-              text: discountDecisionBody(approve: approve, discountPct: widget.discountPct, limitPct: widget.limitPct),
-            ),
-          ])),
-          SizedBox(height: 12.h),
-          TextField(
-            controller: _comment,
-            enabled: !_busy,
-            maxLength: 1000,
-            minLines: 2,
-            maxLines: 4,
-            decoration: InputDecoration(
-              labelText: 'Comment (optional)',
-              hintText: approve ? 'e.g. OK for this strategic account' : 'e.g. Keep it within 10% — offer free onboarding instead',
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          if (_error != null) Text(_error!, style: AppText.caption(color: AppColors.error)),
-        ]),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text.rich(TextSpan(style: AppText.body(), children: [
+                TextSpan(
+                    text: widget.quoteLabel,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                TextSpan(
+                  text: discountDecisionBody(
+                      approve: approve,
+                      discountPct: widget.discountPct,
+                      limitPct: widget.limitPct),
+                ),
+              ])),
+              SizedBox(height: 12.h),
+              TextField(
+                controller: _comment,
+                enabled: !_busy,
+                maxLength: 1000,
+                minLines: 2,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  labelText: 'Comment (optional)',
+                  hintText: approve
+                      ? 'e.g. OK for this strategic account'
+                      : 'e.g. Keep it within 10% — offer free onboarding instead',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              if (_error != null)
+                Text(_error!, style: AppText.caption(color: AppColors.error)),
+            ]),
       ),
       actions: [
-        TextButton(onPressed: _busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+            child: const Text('Cancel')),
         TextButton(
           onPressed: _busy ? null : _submit,
           child: Text(
-            _busy ? 'Saving…' : (approve ? 'Approve discount' : 'Reject discount'),
+            _busy
+                ? 'Saving…'
+                : (approve ? 'Approve discount' : 'Reject discount'),
             style: TextStyle(color: approve ? null : AppColors.error),
           ),
         ),
@@ -275,7 +304,8 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
 /// Optional toolbar entry for the Quotes list: a seal-check icon with a red
 /// count badge (requests this user may decide) and the webapp tooltip.
 class DiscountApprovalsToolbarButton extends ConsumerWidget {
-  const DiscountApprovalsToolbarButton({super.key, required this.onTap, this.size = 40});
+  const DiscountApprovalsToolbarButton(
+      {super.key, required this.onTap, this.size = 40});
 
   final VoidCallback onTap;
   final double size;
@@ -295,26 +325,35 @@ class DiscountApprovalsToolbarButton extends ConsumerWidget {
           child: SizedBox(
             width: size.w,
             height: size.w,
-            child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-              Icon(PhosphorIconsRegular.sealCheck, size: 22.sp, color: AppColors.navy),
-              if (n > 0)
-                Positioned(
-                  top: 2.h,
-                  right: 2.w,
-                  child: Container(
-                    constraints: BoxConstraints(minWidth: 17.w),
-                    height: 17.w,
-                    padding: EdgeInsets.symmetric(horizontal: 4.w),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.error,
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: AppColors.white, width: 1.5),
+            child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Icon(PhosphorIconsRegular.sealCheck,
+                      size: 22.sp, color: AppColors.navy),
+                  if (n > 0)
+                    Positioned(
+                      top: 2.h,
+                      right: 2.w,
+                      child: Container(
+                        constraints: BoxConstraints(minWidth: 17.w),
+                        height: 17.w,
+                        padding: EdgeInsets.symmetric(horizontal: 4.w),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.error,
+                          borderRadius: BorderRadius.circular(99),
+                          border:
+                              Border.all(color: AppColors.white, width: 1.5),
+                        ),
+                        child: Text('$n',
+                            style: AppText.custom(
+                                size: 10,
+                                weight: FontWeight.w700,
+                                color: AppColors.white)),
+                      ),
                     ),
-                    child: Text('$n', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
-                  ),
-                ),
-            ]),
+                ]),
           ),
         ),
       ),

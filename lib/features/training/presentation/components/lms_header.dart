@@ -48,7 +48,8 @@ class LmsHeader extends StatelessWidget {
                 child: SizedBox(
                   width: 34.w,
                   height: 34.w,
-                  child: Icon(PhosphorIconsBold.caretLeft, size: 22.sp, color: AppColors.textPrimary),
+                  child: Icon(PhosphorIconsBold.caretLeft,
+                      size: 22.sp, color: AppColors.textPrimary),
                 ),
               ),
               if (leading != null) ...[

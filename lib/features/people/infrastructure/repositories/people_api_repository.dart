@@ -186,8 +186,10 @@ class PeopleApiRepository implements PeopleRepository {
   }
 
   @override
-  Future<Member> withPerformance(Member member, {String period = 'all_time'}) async {
-    final json = await _remote.fetchMemberPerformance(member.id, period: period);
+  Future<Member> withPerformance(Member member,
+      {String period = 'all_time'}) async {
+    final json =
+        await _remote.fetchMemberPerformance(member.id, period: period);
     return json == null
         ? member
         : PeopleRemoteDataSource.applyPerformance(member, json);

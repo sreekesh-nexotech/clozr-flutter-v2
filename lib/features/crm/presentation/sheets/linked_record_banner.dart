@@ -25,7 +25,8 @@ class LinkedRecordBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(PhosphorIconsRegular.link, size: 15.sp, color: AppColors.textMuted),
+          Icon(PhosphorIconsRegular.link,
+              size: 15.sp, color: AppColors.textMuted),
           SizedBox(width: 8.w),
           Expanded(
             child: Text.rich(
@@ -33,12 +34,18 @@ class LinkedRecordBanner extends StatelessWidget {
                 const TextSpan(text: 'Linked to '),
                 TextSpan(
                   text: label,
-                  style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary),
                 ),
               ]),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted),
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted),
             ),
           ),
         ],

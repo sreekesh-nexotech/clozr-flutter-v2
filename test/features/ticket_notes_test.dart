@@ -6,7 +6,8 @@ import 'package:clozrapp/features/helpdesk/application/providers/ticket_notes_pr
 
 /// Any author will do here — these tests are about thread behaviour, not the
 /// byline. The real one comes from `noteAuthorProvider`.
-const _author = NoteAuthor(initials: 'TU', name: 'Test User', color: Color(0xFF00113B));
+const _author =
+    NoteAuthor(initials: 'TU', name: 'Test User', color: Color(0xFF00113B));
 
 void main() {
   group('TicketNotesController (mock mode — no remote wired)', () {

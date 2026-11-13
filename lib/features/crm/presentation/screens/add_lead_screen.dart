@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -94,6 +96,61 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   String get _editingId =>
       GoRouterState.of(context).uri.queryParameters['id'] ?? '';
 
+  /// The form's values (JSON) the moment the user first touched it. Compared
+  /// with the current values on system back to tell whether anything was
+  /// typed — taken at the first touch so a late-arriving default or prefill is
+  /// not mistaken for an edit.
+  String? _baseline;
+
+  String _snapshot() {
+    try {
+      return jsonEncode(
+          _formKey.currentState?.payload ?? const <String, dynamic>{});
+    } on Object {
+      return '';
+    }
+  }
+
+  bool get _dirty => _baseline != null && _snapshot() != _baseline;
+
+  /// System back / swipe, as the webapp's Modal on an accidental dismissal:
+  /// asks "Discard changes?" when something was typed. UAT: Cancel and the
+  /// header arrow go through the same guard (they used to close at once).
+  Future<void> _onSystemBack() async {
+    if (_saving) return;
+    if (!_dirty) {
+      context.pop();
+      return;
+    }
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text('Discard changes?',
+            style: AppText.custom(
+                size: 17,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
+        content: Text(
+            'You have unsaved changes. If you close now, they will be lost.',
+            style: AppText.body(color: AppColors.textMuted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Keep editing',
+                  style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Discard',
+                  style: AppText.bodyStrong(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (discard == true && mounted) context.pop();
+  }
+
   /// Copies the record into the form, once.
   ///
   /// Runs from build rather than initState because the lead comes from a
@@ -131,7 +188,13 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     // status, territory, product) added since was missing until a restart.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      for (final p in [teamCatalogProvider, leadSourceCatalogProvider, leadStatusCatalogProvider, territoryCatalogProvider, productCatalogProvider]) {
+      for (final p in [
+        teamCatalogProvider,
+        leadSourceCatalogProvider,
+        leadStatusCatalogProvider,
+        territoryCatalogProvider,
+        productCatalogProvider
+      ]) {
         ref.invalidate(p);
       }
     });
@@ -139,7 +202,23 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _email, _company, _project, _value, _industry, _website, _employees, _revenue, _territory, _fitout, _nextFu, _expClose, _source, _note]) {
+    for (final c in [
+      _name,
+      _email,
+      _company,
+      _project,
+      _value,
+      _industry,
+      _website,
+      _employees,
+      _revenue,
+      _territory,
+      _fitout,
+      _nextFu,
+      _expClose,
+      _source,
+      _note
+    ]) {
       c.dispose();
     }
     _phone.dispose();
@@ -148,6 +227,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
   }
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
+
   /// Required here, so a complete number for whichever country is selected —
   /// see [PhoneController.isComplete] / [PhoneRules].
   bool get _phoneOk => _phone.isComplete;
@@ -169,7 +249,9 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     // is the only thing that actually knows — so let it answer and surface the
     // field error rather than inventing rules the org never set.
     if (!dynamicForm && (!_nameOk || !_phoneOk || !_projectOk)) {
-      ref.read(toastProvider.notifier).show('Please complete the required fields');
+      ref
+          .read(toastProvider.notifier)
+          .show('Please complete the required fields');
       return;
     }
     // The schema-driven layout has no boxes of its own to validate — it just
@@ -215,7 +297,10 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     // status on Add lead) — asked here rather than letting the server refuse.
     final statusValue = fields['status_id'] ?? fields['status'];
     if (statusValue != null && fields['lost_reason'] == null) {
-      final stage = ref.read(leadStatusesProvider).where((s) => s.id == '$statusValue').firstOrNull;
+      final stage = ref
+          .read(leadStatusesProvider)
+          .where((s) => s.id == '$statusValue')
+          .firstOrNull;
       if (stage?.statusType == 'lost') {
         final lost = await showLostReasonSheet(context,
             kind: 'lead', recordId: editingId, statusName: stage!.name);
@@ -232,7 +317,8 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
       if (editing) {
         // The version the form was filled from goes out as `If-Match`, so a
         // lead changed elsewhere since is refused rather than overwritten.
-        await repo.updateLead(editingId, fields, version: _version ?? _rowVersion(editingId));
+        await repo.updateLead(editingId, fields,
+            version: _version ?? _rowVersion(editingId));
       } else {
         final created = await repo.createLead(fields);
         // Webapp `warn` policy: the 201 carries the match under `warnings`.
@@ -251,12 +337,26 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
           _createdId = createdId;
         });
         _scrollToTop();
-        ref.read(toastProvider.notifier).show('Lead created — possible duplicate');
+        ref
+            .read(toastProvider.notifier)
+            .show('Lead created — possible duplicate');
         return;
       }
       // An edit also moves the record the detail screen is showing behind us.
-      if (editing) ref.invalidate(leadDetailProvider(editingId));
+      if (editing) {
+        ref.invalidate(leadDetailProvider(editingId));
+        // The edit form seeds its boxes from the record row; without this the
+        // next "Edit lead" still showed the pre-save values and saving them
+        // failed as a stale write (UAT: rename "T" -> "UAT test duplicate").
+        ref.invalidate(leadRowProvider(editingId));
+      }
       ref.read(toastProvider.notifier).show(done);
+      // A new lead opens on its detail page (UI/UX audit #32), as a new
+      // project does; an edit returns to where it came from.
+      if (!editing && createdId != null && createdId.isNotEmpty) {
+        context.pushReplacement('${Routes.leadDetail}?id=$createdId');
+        return;
+      }
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
@@ -268,7 +368,9 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
         final current = e.extra?['current_updated_at'];
         if (current is String && current.isNotEmpty) _version = current;
         ref.invalidate(leadDetailProvider(editingId));
-        ref.read(toastProvider.notifier).showError('Changed elsewhere — ${e.message}');
+        ref
+            .read(toastProvider.notifier)
+            .showError('Changed elsewhere — ${e.message}');
         return;
       }
       final dup = LeadDuplicate.parse(e.extra?['duplicate']);
@@ -295,13 +397,18 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
       ref.read(apiServiceProvider).handled(e);
       ref.read(toastProvider.notifier).showError(firsts.isNotEmpty
           ? firsts.values.first
-          : (e.message.isEmpty ? (editing ? 'Could not save your change.' : 'Could not create the lead.') : e.message));
+          : (e.message.isEmpty
+              ? (editing
+                  ? 'Could not save your change.'
+                  : 'Could not create the lead.')
+              : e.message));
     }
   }
 
   void _scrollToTop() {
     if (_scroll.hasClients) {
-      _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     }
   }
 
@@ -324,7 +431,8 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
       builder: (ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SheetHeader(title: 'Assign to', onClose: () => Navigator.of(ctx).pop()),
+          SheetHeader(
+              title: 'Assign to', onClose: () => Navigator.of(ctx).pop()),
           Flexible(
             child: ListView(
               shrinkWrap: true,
@@ -338,15 +446,22 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                       Navigator.of(ctx).pop();
                     },
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 6.h, horizontal: 6.w),
                       child: Row(
                         children: [
                           Container(
                             width: 38.w,
                             height: 38.w,
                             alignment: Alignment.center,
-                            decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(11.r)),
-                            child: Text(r.initials, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFEEF1F4),
+                                borderRadius: BorderRadius.circular(11.r)),
+                            child: Text(r.initials,
+                                style: AppText.custom(
+                                    size: 13,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.navy)),
                           ),
                           SizedBox(width: 12.w),
                           Expanded(
@@ -359,7 +474,9 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                               ],
                             ),
                           ),
-                          if (_owner == r.id) Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                          if (_owner == r.id)
+                            Icon(PhosphorIconsBold.check,
+                                size: 19.sp, color: AppColors.success),
                         ],
                       ),
                     ),
@@ -386,91 +503,108 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     // An edit must not paint its boxes before the record lands — an empty box
     // is indistinguishable from a cleared one, and saving would persist the
     // difference.
-    final waiting = editing && rowAsync.valueOrNull == null && !rowAsync.hasError;
+    final waiting =
+        editing && rowAsync.valueOrNull == null && !rowAsync.hasError;
 
-    return Container(
-      color: AppColors.bgDetail,
-      child: Column(
-        children: [
-          DetailAppBar(
-              section: editing ? 'Edit lead' : 'Add lead',
-              onBack: () => context.pop()),
-          Expanded(
-            child: waiting
-                ? const DetailSkeleton()
-                : rowAsync.hasError && editing
-                    ? ErrorState.forError(
-                        crmAppError(rowAsync.error!),
-                        onRetry: () => ref.invalidate(leadRowProvider(editingId)),
-                      )
-                    : ListView(
-                        controller: _scroll,
-                        padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
-                        children: [
-                          if (_dup != null)
-                            DuplicateNotice(
-                              duplicate: _dup!,
-                              blocked: _dupBlocked,
-                              newLeadId: _createdId,
-                              onOpenLead: (id) => _openFromNotice('${Routes.leadDetail}?id=$id'),
-                              onOpenCustomer: (id) => _openFromNotice('${Routes.customerDetail}?id=$id'),
-                            ),
-                          FormSection(
-                            title: 'Lead',
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onSystemBack();
+      },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _baseline ??= _snapshot(),
+        child: Container(
+          color: AppColors.bgDetail,
+          child: Column(
+            children: [
+              DetailAppBar(
+                  section: editing ? 'Edit lead' : 'Add lead',
+                  onBack: _onSystemBack),
+              Expanded(
+                child: waiting
+                    ? const DetailSkeleton()
+                    : rowAsync.hasError && editing
+                        ? ErrorState.forError(
+                            crmAppError(rowAsync.error!),
+                            onRetry: () =>
+                                ref.invalidate(leadRowProvider(editingId)),
+                          )
+                        : ListView(
+                            controller: _scroll,
+                            padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
                             children: [
-                              LeadSchemaForm(
-                                key: _formKey,
-                                schema: schema,
-                                row: rowAsync.valueOrNull ?? const {},
-                                // Edits send only what changed: resending every
-                                // field undid concurrent changes and cleared
-                                // assignees the form never showed.
-                                diffAgainstRow: editing,
-                                includeCustomFields: true,
-                                // Webapp: only the contact name is required; the
-                                // phone is optional unless the org makes it so.
-                                mobileRequired: false,
-                                webAddLeadForm: !editing,
+                              if (_dup != null)
+                                DuplicateNotice(
+                                  duplicate: _dup!,
+                                  blocked: _dupBlocked,
+                                  newLeadId: _createdId,
+                                  onOpenLead: (id) => _openFromNotice(
+                                      '${Routes.leadDetail}?id=$id'),
+                                  onOpenCustomer: (id) => _openFromNotice(
+                                      '${Routes.customerDetail}?id=$id'),
+                                ),
+                              FormSection(
+                                title: 'Lead',
+                                children: [
+                                  LeadSchemaForm(
+                                    key: _formKey,
+                                    schema: schema,
+                                    row: rowAsync.valueOrNull ?? const {},
+                                    // Edits send only what changed: resending every
+                                    // field undid concurrent changes and cleared
+                                    // assignees the form never showed.
+                                    diffAgainstRow: editing,
+                                    includeCustomFields: true,
+                                    // Webapp: only the contact name is required; the
+                                    // phone is optional unless the org makes it so.
+                                    mobileRequired: false,
+                                    // Email is never mandatory on a lead.
+                                    optionalColumns: const {'email'},
+                                    webAddLeadForm: !editing,
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
-                      ),
-          ),
-          StickyActionBar(
-            children: _dup != null && !_dupBlocked
-                ? [
-                    // Webapp: a warned create is already saved — only "Done".
-                    Expanded(
-                      child: PrimaryButton(
-                        label: 'Done',
-                        icon: PhosphorIconsBold.check,
-                        height: 48,
-                        onTap: () => context.pop(),
-                      ),
-                    ),
-                  ]
-                : [
-              PrimaryButton(
-                  label: 'Cancel',
-                  ghost: true,
-                  expand: false,
-                  height: 48,
-                  onTap: () => context.pop()),
-              SizedBox(width: 10.w),
-              Expanded(
-                child: PrimaryButton(
-                  label: _saving
-                      ? 'Saving…'
-                      : (editing ? 'Save changes' : 'Add lead'),
-                  icon: PhosphorIconsBold.check,
-                  height: 48,
-                  onTap: waiting ? () {} : _submit,
-                ),
+              ),
+              StickyActionBar(
+                children: _dup != null && !_dupBlocked
+                    ? [
+                        // Webapp: a warned create is already saved — only "Done".
+                        Expanded(
+                          child: PrimaryButton(
+                            label: 'Done',
+                            icon: PhosphorIconsBold.check,
+                            height: 48,
+                            // Already saved — nothing to discard.
+                            onTap: () => context.pop(),
+                          ),
+                        ),
+                      ]
+                    : [
+                        PrimaryButton(
+                            label: 'Cancel',
+                            ghost: true,
+                            expand: false,
+                            height: 48,
+                            onTap: _onSystemBack),
+                        SizedBox(width: 10.w),
+                        Expanded(
+                          child: PrimaryButton(
+                            label: _saving
+                                ? 'Saving…'
+                                : (editing ? 'Save changes' : 'Add lead'),
+                            icon: PhosphorIconsBold.check,
+                            height: 48,
+                            onTap: waiting ? () {} : _submit,
+                          ),
+                        ),
+                      ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -485,7 +619,8 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     // "empty schema is no opinion" contract the list and detail screens use.
     final schema = ref.watch(leadDetailSchemaProvider);
     if (schema.editableColumns.isNotEmpty) {
-      return _schemaForm(context, editing: editing, editingId: editingId, schema: schema);
+      return _schemaForm(context,
+          editing: editing, editingId: editingId, schema: schema);
     }
 
     if (editing) {
@@ -501,7 +636,7 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
         children: [
           DetailAppBar(
               section: editing ? 'Edit lead' : 'Add lead',
-              onBack: () => context.pop()),
+              onBack: _onSystemBack),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
@@ -509,45 +644,106 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                 FormSection(
                   title: 'Contact',
                   children: [
-                    AppTextField(label: 'Full name', required: true, controller: _name, hint: 'e.g. Anagha Menon', errorText: _showErrors && !_nameOk ? "Please enter the contact's name" : null, onChanged: (_) => setState(() {})),
-                    PhoneInputField(label: 'Phone', required: true, controller: _phone, hint: '98470 00000', errorText: _showErrors && !_phoneOk ? phoneDigitsMessage(_phone.rule) : null, onChanged: () => setState(() {})),
-                    AppTextField(label: 'Email', controller: _email, hint: 'name@email.com', keyboardType: TextInputType.emailAddress),
-                    AppTextField(label: 'Company', controller: _company, hint: 'e.g. Kalyan Silks'),
+                    AppTextField(
+                        label: 'Full name',
+                        required: true,
+                        controller: _name,
+                        hint: 'e.g. Anagha Menon',
+                        errorText: _showErrors && !_nameOk
+                            ? "Please enter the contact's name"
+                            : null,
+                        onChanged: (_) => setState(() {})),
+                    PhoneInputField(
+                        label: 'Phone',
+                        required: true,
+                        controller: _phone,
+                        hint: '98470 00000',
+                        errorText: _showErrors && !_phoneOk
+                            ? phoneDigitsMessage(_phone.rule)
+                            : null,
+                        onChanged: () => setState(() {})),
+                    AppTextField(
+                        label: 'Email',
+                        controller: _email,
+                        hint: 'name@email.com',
+                        keyboardType: TextInputType.emailAddress),
+                    AppTextField(
+                        label: 'Company',
+                        controller: _company,
+                        hint: 'e.g. Kalyan Silks'),
                   ],
                 ),
                 SizedBox(height: 22.h),
                 FormSection(
                   title: 'Deal',
                   children: [
-                    AppTextField(label: 'Product / Need', required: true, controller: _project, hint: 'e.g. Showroom interiors', errorText: _showErrors && !_projectOk ? 'Select the product or need' : null, onChanged: (_) => setState(() {})),
-                    AppTextField(label: 'Deal value (₹)', controller: _value, hint: 'e.g. ₹36.5L or ₹1.2Cr'),
-                    AppTextField(label: 'Industry', controller: _industry, hint: 'Select industry…'),
-                    AppTextField(label: 'Website', controller: _website, hint: 'e.g. www.company.in'),
+                    AppTextField(
+                        label: 'Product / Need',
+                        required: true,
+                        controller: _project,
+                        hint: 'e.g. Showroom interiors',
+                        errorText: _showErrors && !_projectOk
+                            ? 'Select the product or need'
+                            : null,
+                        onChanged: (_) => setState(() {})),
+                    AppTextField(
+                        label: 'Deal value (₹)',
+                        controller: _value,
+                        hint: 'e.g. ₹36.5L or ₹1.2Cr'),
+                    AppTextField(
+                        label: 'Industry',
+                        controller: _industry,
+                        hint: 'Select industry…'),
+                    AppTextField(
+                        label: 'Website',
+                        controller: _website,
+                        hint: 'e.g. www.company.in'),
                   ],
                 ),
                 SizedBox(height: 22.h),
                 FormSection(
                   title: 'Qualification',
                   children: [
-                    AppTextField(label: 'Employees', controller: _employees, hint: 'Select employees…'),
-                    AppTextField(label: 'Annual revenue', controller: _revenue, hint: 'Select annual revenue…'),
-                    AppTextField(label: 'Territory', controller: _territory, hint: 'Select territory…'),
-                    AppTextField(label: 'Fit-out type', controller: _fitout, hint: 'Select fit-out type…'),
+                    AppTextField(
+                        label: 'Employees',
+                        controller: _employees,
+                        hint: 'Select employees…'),
+                    AppTextField(
+                        label: 'Annual revenue',
+                        controller: _revenue,
+                        hint: 'Select annual revenue…'),
+                    AppTextField(
+                        label: 'Territory',
+                        controller: _territory,
+                        hint: 'Select territory…'),
+                    AppTextField(
+                        label: 'Fit-out type',
+                        controller: _fitout,
+                        hint: 'Select fit-out type…'),
                   ],
                 ),
                 SizedBox(height: 22.h),
                 FormSection(
                   title: 'Schedule',
                   children: [
-                    AppTextField(label: 'Next follow-up', controller: _nextFu, hint: 'e.g. 22 Jun 2026'),
-                    AppTextField(label: 'Expected close', controller: _expClose, hint: 'e.g. 30 Aug 2026'),
+                    AppTextField(
+                        label: 'Next follow-up',
+                        controller: _nextFu,
+                        hint: 'e.g. 22 Jun 2026'),
+                    AppTextField(
+                        label: 'Expected close',
+                        controller: _expClose,
+                        hint: 'e.g. 30 Aug 2026'),
                   ],
                 ),
                 SizedBox(height: 22.h),
                 FormSection(
                   title: 'Pipeline',
                   children: [
-                    AppTextField(label: 'Source', controller: _source, hint: 'e.g. Website'),
+                    AppTextField(
+                        label: 'Source',
+                        controller: _source,
+                        hint: 'e.g. Website'),
                     AppTextField(
                       label: 'Assign to',
                       readOnly: true,
@@ -555,7 +751,11 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
                       value: MockUsers.of(_owner).name,
                     ),
                     _statusPicker(),
-                    AppTextField(label: 'First note', controller: _note, hint: 'Add context about this enquiry…', multiline: true),
+                    AppTextField(
+                        label: 'First note',
+                        controller: _note,
+                        hint: 'Add context about this enquiry…',
+                        multiline: true),
                   ],
                 ),
               ],
@@ -563,7 +763,12 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
           ),
           StickyActionBar(
             children: [
-              PrimaryButton(label: 'Cancel', ghost: true, expand: false, height: 48, onTap: () => context.pop()),
+              PrimaryButton(
+                  label: 'Cancel',
+                  ghost: true,
+                  expand: false,
+                  height: 48,
+                  onTap: _onSystemBack),
               SizedBox(width: 10.w),
               Expanded(
                 child: PrimaryButton(
@@ -587,7 +792,11 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Status', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+        Text('Status',
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
         SizedBox(height: 8.h),
         Wrap(
           spacing: 8.w,
@@ -597,25 +806,38 @@ class _AddLeadScreenState extends ConsumerState<AddLeadScreen> {
               GestureDetector(
                 onTap: () => setState(() => _status = k),
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
                   decoration: BoxDecoration(
-                    color: _status == k ? AppColors.blueSubtle : AppColors.white,
+                    color:
+                        _status == k ? AppColors.blueSubtle : AppColors.white,
                     borderRadius: BorderRadius.circular(10.r),
                     border: Border.all(
-                      color: _status == k ? const Color(0xFFA6D1FF) : const Color(0xFFE6E7EA),
+                      color: _status == k
+                          ? const Color(0xFFA6D1FF)
+                          : const Color(0xFFE6E7EA),
                       width: _status == k ? 1.5 : 1,
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: StatusMeta$.lead[k]!.color, shape: BoxShape.circle)),
+                      Container(
+                          width: 9.w,
+                          height: 9.w,
+                          decoration: BoxDecoration(
+                              color: StatusMeta$.lead[k]!.color,
+                              shape: BoxShape.circle)),
                       SizedBox(width: 7.w),
                       Text(StatusMeta$.lead[k]!.label,
                           style: AppText.custom(
                             size: 13,
-                            weight: _status == k ? FontWeight.w700 : FontWeight.w500,
-                            color: _status == k ? AppColors.navy : AppColors.textLabelAlt,
+                            weight: _status == k
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: _status == k
+                                ? AppColors.navy
+                                : AppColors.textLabelAlt,
                           )),
                     ],
                   ),

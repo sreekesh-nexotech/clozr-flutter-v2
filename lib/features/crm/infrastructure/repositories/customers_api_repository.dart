@@ -30,8 +30,9 @@ class CustomersApiRepository implements CustomersRepository {
       if (e.type != AppErrorType.network && e.type != AppErrorType.timeout) {
         rethrow;
       }
-      final cached =
-          filters.isEmpty ? AppCache.get(AppCache.crmCache, _cacheKey)?.data : null;
+      final cached = filters.isEmpty
+          ? AppCache.get(AppCache.crmCache, _cacheKey)?.data
+          : null;
       if (cached is List) {
         return CustomersRemoteDataSource.mapCustomerRows(cached);
       }
@@ -48,7 +49,8 @@ class CustomersApiRepository implements CustomersRepository {
 
   /// Writes are remote-only and drop the cached list so the next read refetches.
   @override
-  Future<void> updateCustomer(String id, Map<String, dynamic> fields, {String? version}) async {
+  Future<void> updateCustomer(String id, Map<String, dynamic> fields,
+      {String? version}) async {
     await _remote.updateCustomer(id, fields, version: version);
     await AppCache.remove(AppCache.crmCache, _cacheKey);
   }
@@ -68,7 +70,8 @@ class CustomersApiRepository implements CustomersRepository {
       final rows = await _remote.fetchCustomerStatusRows();
       return [
         for (final row in rows)
-          if ((row['customer_status_id'] ?? row['id'])?.toString().isNotEmpty ?? false)
+          if ((row['customer_status_id'] ?? row['id'])?.toString().isNotEmpty ??
+              false)
             CustomerStatus(
               id: (row['customer_status_id'] ?? row['id']).toString(),
               name: (row['name'] ?? '').toString(),

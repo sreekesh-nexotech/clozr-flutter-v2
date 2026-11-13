@@ -5,13 +5,17 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../app/config/constants.dart';
+import '../../../app/router/routes.dart';
 import '../../../core/config/api_config.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_text_styles.dart';
 import '../../../core/widgets/list_skeleton.dart';
 import '../../../data/api/user_directory.dart';
 import '../../accounting/application/providers/accounting_providers.dart';
+import '../../approvals/application/providers/approvals_providers.dart';
+import '../../approvals/presentation/components/approval_parts.dart';
 import '../../auth/application/providers/auth_providers.dart';
+import '../../onboarding/application/tour_controller.dart';
 import '../application/providers/shell_providers.dart';
 import '../domain/nav_catalog.dart';
 
@@ -28,7 +32,8 @@ class AppDrawer extends ConsumerWidget {
 
   final String location;
 
-  void _close(WidgetRef ref) => ref.read(drawerOpenProvider.notifier).state = false;
+  void _close(WidgetRef ref) =>
+      ref.read(drawerOpenProvider.notifier).state = false;
 
   void _navigate(BuildContext context, WidgetRef ref, String path) {
     _close(ref);
@@ -57,7 +62,9 @@ class AppDrawer extends ConsumerWidget {
     // fail-open rule as [access].
     final features = ref.watch(planFeaturesProvider).valueOrNull;
     bool inPlan(NavEntry e) =>
-        e.planFeature == null || features == null || features.contains(e.planFeature);
+        e.planFeature == null ||
+        features == null ||
+        features.contains(e.planFeature);
 
     return Stack(
       children: [
@@ -81,7 +88,8 @@ class AppDrawer extends ConsumerWidget {
                 _header(ref),
                 Expanded(
                   child: ListView(
-                    padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 16.h),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 14.w, vertical: 16.h),
                     children: [
                       Padding(
                         padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 10.h),
@@ -129,8 +137,11 @@ class AppDrawer extends ConsumerWidget {
           Container(
             width: 44.w,
             height: 44.w,
-            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(13.r)),
-            child: Icon(PhosphorIconsFill.buildings, size: 22.sp, color: AppColors.white),
+            decoration: BoxDecoration(
+                color: AppColors.navy,
+                borderRadius: BorderRadius.circular(13.r)),
+            child: Icon(PhosphorIconsFill.buildings,
+                size: 22.sp, color: AppColors.white),
           ),
           SizedBox(width: 11.w),
           Expanded(
@@ -140,11 +151,15 @@ class AppDrawer extends ConsumerWidget {
                 Text(workspace,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 16,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 Text(workspaceSub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.captionStrong(color: AppColors.textPlaceholder)),
+                    style: AppText.captionStrong(
+                        color: AppColors.textPlaceholder)),
               ],
             ),
           ),
@@ -153,8 +168,11 @@ class AppDrawer extends ConsumerWidget {
             child: Container(
               width: 32.w,
               height: 32.w,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
-              child: Icon(PhosphorIconsBold.x, size: 15.sp, color: AppColors.textLabelAlt),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(9.r)),
+              child: Icon(PhosphorIconsBold.x,
+                  size: 15.sp, color: AppColors.textLabelAlt),
             ),
           ),
         ],
@@ -171,8 +189,8 @@ class AppDrawer extends ConsumerWidget {
   ) {
     final open = expanded[e.key] ?? false;
     final children = e.children.where((c) => visible(c.modules)).toList();
-    final anyChildActive =
-        children.any((c) => _childActive(c.path)) || (e.path != null && _childActive(e.path!));
+    final anyChildActive = children.any((c) => _childActive(c.path)) ||
+        (e.path != null && _childActive(e.path!));
     final active = anyChildActive;
     // Gated against the *visible* children: a group whose rows are all hidden
     // stops behaving like a group (no caret, no expand).
@@ -207,27 +225,38 @@ class AppDrawer extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              Icon(e.icon, size: 19.sp, color: active ? AppColors.navy : AppColors.textLabelAlt),
+              Icon(e.icon,
+                  size: 19.sp,
+                  color: active ? AppColors.navy : AppColors.textLabelAlt),
               SizedBox(width: 12.w),
               Expanded(
                 child: Text(e.label,
                     style: AppText.custom(
                         size: 14.5,
                         weight: active ? FontWeight.w700 : FontWeight.w600,
-                        color: active ? AppColors.navy : AppColors.textSecondary)),
+                        color:
+                            active ? AppColors.navy : AppColors.textSecondary)),
               ),
+              if (e.key == approvalsNavKey) const _ApprovalsBadge(),
               if (isGroup)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   // The arrow only opens / closes the group; a finger-sized
                   // target so a tap near it doesn't land on the row instead.
-                  onTap: () => ref.read(drawerExpandedProvider.notifier).update((m) => open ? {...m, e.key: false} : {e.key: true}),
+                  onTap: () => ref.read(drawerExpandedProvider.notifier).update(
+                      (m) => open ? {...m, e.key: false} : {e.key: true}),
                   child: SizedBox(
                     width: 44.w,
                     height: 44.h,
                     child: Center(
-                      child: Icon(open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
-                          size: 12.sp, color: anyChildActive ? AppColors.navy : AppColors.textPlaceholder),
+                      child: Icon(
+                          open
+                              ? PhosphorIconsBold.caretUp
+                              : PhosphorIconsBold.caretDown,
+                          size: 12.sp,
+                          color: anyChildActive
+                              ? AppColors.navy
+                              : AppColors.textPlaceholder),
                     ),
                   ),
                 ),
@@ -268,13 +297,16 @@ class AppDrawer extends ConsumerWidget {
   Widget _footer(BuildContext context, WidgetRef ref) {
     final user = ref.watch(sessionControllerProvider).user;
     final hasName = user?.fullName.trim().isNotEmpty ?? false;
-    final name = hasName ? user!.fullName : _seedName;
-    final initials =
-        hasName ? UserDirectory.initialsOf(user!.fullName) : _seedInitials;
+    // Seed identity is mock-mode only; the live API never shows it.
+    final seed = !ApiConfig.apiEnabled;
+    final name = hasName ? user!.fullName : (seed ? _seedName : '');
+    final initials = hasName
+        ? UserDirectory.initialsOf(user!.fullName)
+        : (seed ? _seedInitials : '');
     // Only the true no-session state (mock mode / not yet resolved) gets the
     // seed placeholder. A resolved session with no assigned role is a real,
     // meaningful empty state — showing "System Admin" there would be a lie.
-    final roleLabel = user == null ? _seedRole : user.roleLabel;
+    final roleLabel = user == null ? (seed ? _seedRole : '') : user.roleLabel;
     final avatarUrl = user?.avatarUrl ?? '';
 
     return Container(
@@ -293,7 +325,8 @@ class AppDrawer extends ConsumerWidget {
                 Text(name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.bodyStrong().copyWith(fontWeight: FontWeight.w700)),
+                    style: AppText.bodyStrong()
+                        .copyWith(fontWeight: FontWeight.w700)),
                 if (roleLabel.isNotEmpty)
                   Text(roleLabel,
                       maxLines: 1,
@@ -314,6 +347,22 @@ class AppDrawer extends ConsumerWidget {
           //   },
           // ),
           // SizedBox(width: 8.w),
+          // Product tours — only when the tours switch is on in this build.
+          if (onboardingToursEnabled) ...[
+            Semantics(
+              button: true,
+              label: 'Product tours',
+              child: _footerIcon(
+                PhosphorIconsRegular.compass,
+                AppColors.textLabelAlt,
+                () {
+                  _close(ref);
+                  context.push(Routes.productTours);
+                },
+              ),
+            ),
+            SizedBox(width: 8.w),
+          ],
           _footerIcon(
             PhosphorIconsRegular.signOut,
             AppColors.error,
@@ -366,10 +415,13 @@ class AppDrawer extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
         title: Text('Log out?',
             style: AppText.custom(
-                size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                size: 17,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
         content: Text('You will need to sign in again to get back in.',
             style: AppText.body(color: AppColors.textMuted)),
         actions: [
@@ -380,7 +432,8 @@ class AppDrawer extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Log out', style: AppText.bodyStrong(color: AppColors.error)),
+            child: Text('Log out',
+                style: AppText.bodyStrong(color: AppColors.error)),
           ),
         ],
       ),
@@ -411,6 +464,16 @@ class AppDrawer extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Requests waiting for this user (webapp sidebar badge). Nothing while the
+/// count is unknown or zero.
+class _ApprovalsBadge extends ConsumerWidget {
+  const _ApprovalsBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ApprovalCountDot(
+      count: ref.watch(approvalCountsProvider).valueOrNull?.pendingForMe ?? 0);
 }
 
 /// Placeholder rows shown only while the very first `/auth/me/modules/` fetch

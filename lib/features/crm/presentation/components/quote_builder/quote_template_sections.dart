@@ -57,10 +57,12 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
   @override
   Widget build(BuildContext context) {
     if (widget.loading) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
-        QbSectionLabel('Template fields'),
-        QbHint('Loading…'),
-      ]);
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            QbSectionLabel('Template fields'),
+            QbHint('Loading…'),
+          ]);
     }
     if (widget.error != null) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -72,7 +74,8 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const QbSectionLabel('Template fields · printed by the selected template'),
+        const QbSectionLabel(
+            'Template fields · printed by the selected template'),
         for (final f in widget.fields) ...[
           _field(f),
           SizedBox(height: 12.h),
@@ -93,10 +96,17 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
     if (f.type == TemplateFieldType.boolean) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.disabled ? null : () => widget.onChange(f.key, value != true),
+        onTap: widget.disabled
+            ? null
+            : () => widget.onChange(f.key, value != true),
         child: Row(children: [
-          Icon(value == true ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.square,
-              size: 20.sp, color: value == true ? AppColors.navy : AppColors.textPlaceholder),
+          Icon(
+              value == true
+                  ? PhosphorIconsFill.checkSquare
+                  : PhosphorIconsRegular.square,
+              size: 20.sp,
+              color:
+                  value == true ? AppColors.navy : AppColors.textPlaceholder),
           SizedBox(width: 8.w),
           Expanded(child: QbFieldLabel(f.label, required: f.required)),
         ]),
@@ -112,7 +122,12 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
             ? null
             : () async {
                 final v = await qbPickOne(context,
-                    title: f.label, options: [('', 'Select…'), for (final o in f.options) (o, o)], selected: value.toString());
+                    title: f.label,
+                    options: [
+                      ('', 'Select…'),
+                      for (final o in f.options) (o, o)
+                    ],
+                    selected: value.toString());
                 if (v != null) widget.onChange(f.key, v);
               },
       );
@@ -125,9 +140,13 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
         onTap: widget.disabled
             ? null
             : () async {
-                final init = DateTime.tryParse(value.toString()) ?? DateTime.now();
+                final init =
+                    DateTime.tryParse(value.toString()) ?? DateTime.now();
                 final d = await showDatePicker(
-                    context: context, initialDate: init, firstDate: DateTime(init.year - 5), lastDate: DateTime(init.year + 10));
+                    context: context,
+                    initialDate: init,
+                    firstDate: DateTime(init.year - 5),
+                    lastDate: DateTime(init.year + 10));
                 if (d != null) {
                   widget.onChange(f.key,
                       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}');
@@ -143,7 +162,9 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
               decoration: BoxDecoration(
                 color: widget.disabled ? AppColors.bgChipGrey : AppColors.white,
                 borderRadius: BorderRadius.circular(11.r),
-                border: Border.all(color: missing ? AppColors.error : AppColors.borderInput, width: 1.5),
+                border: Border.all(
+                    color: missing ? AppColors.error : AppColors.borderInput,
+                    width: 1.5),
               ),
               child: TextField(
                 controller: c,
@@ -151,8 +172,12 @@ class _TemplateFieldsSectionState extends State<TemplateFieldsSection> {
                 minLines: 3,
                 maxLines: 6,
                 onChanged: (v) => widget.onChange(f.key, v),
-                style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
-                decoration: const InputDecoration(isDense: true, border: InputBorder.none),
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody),
+                decoration: const InputDecoration(
+                    isDense: true, border: InputBorder.none),
               ),
             )
           : QbBox(
@@ -197,10 +222,12 @@ class QuoteSectionsEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
-        QbSectionLabel('Quote sections'),
-        QbHint('Loading sections…'),
-      ]);
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            QbSectionLabel('Quote sections'),
+            QbHint('Loading sections…'),
+          ]);
     }
     if (error != null) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -212,7 +239,8 @@ class QuoteSectionsEditor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const QbSectionLabel('Quote sections · printed under the items, one heading each'),
+        const QbSectionLabel(
+            'Quote sections · printed under the items, one heading each'),
         for (final h in headings) ...[
           _heading(context, h),
           SizedBox(height: 12.h),
@@ -237,8 +265,10 @@ class QuoteSectionsEditor extends StatelessWidget {
         if (h.isMandatory) ...[
           SizedBox(width: 6.w),
           Tooltip(
-            message: 'Mandatory heading — the quote can’t be sent without an option here',
-            child: Icon(PhosphorIconsFill.lock, size: 12.sp, color: AppColors.error),
+            message:
+                'Mandatory heading — the quote can’t be sent without an option here',
+            child: Icon(PhosphorIconsFill.lock,
+                size: 12.sp, color: AppColors.error),
           ),
         ],
       ]),
@@ -254,13 +284,15 @@ class QuoteSectionsEditor extends StatelessWidget {
                     title: h.label,
                     options: [
                       ('', h.isMandatory ? 'Choose an option…' : 'Not printed'),
-                      for (final o in h.options) (o.id, '${o.title}${o.isDefault ? ' (default)' : ''}'),
+                      for (final o in h.options)
+                        (o.id, '${o.title}${o.isDefault ? ' (default)' : ''}'),
                     ],
                     selected: value);
                 if (v != null) onPicksChange(withPick(picks, h.id, v));
               },
       ),
-      if (missing) const QbHint('Required before the quote can be sent.', error: true),
+      if (missing)
+        const QbHint('Required before the quote can be sent.', error: true),
     ]);
   }
 }
@@ -282,12 +314,14 @@ Future<Map<String, String>?> showSpotInputsSheet(
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: AppColors.scrim,
-    builder: (_) => _SpotInputsSheet(fields: fields, values: values, confirmLabel: confirmLabel),
+    builder: (_) => _SpotInputsSheet(
+        fields: fields, values: values, confirmLabel: confirmLabel),
   );
 }
 
 class _SpotInputsSheet extends StatefulWidget {
-  const _SpotInputsSheet({required this.fields, required this.values, required this.confirmLabel});
+  const _SpotInputsSheet(
+      {required this.fields, required this.values, required this.confirmLabel});
   final Future<List<SpotInputField>> fields;
   final Map<String, String> values;
   final String confirmLabel;
@@ -308,8 +342,8 @@ class _SpotInputsSheetState extends State<_SpotInputsSheet> {
     super.dispose();
   }
 
-  TextEditingController _c(SpotInputField f) =>
-      _ctrls.putIfAbsent(f.key, () => TextEditingController(text: widget.values[f.key] ?? f.spotValue));
+  TextEditingController _c(SpotInputField f) => _ctrls.putIfAbsent(f.key,
+      () => TextEditingController(text: widget.values[f.key] ?? f.spotValue));
 
   @override
   Widget build(BuildContext context) {
@@ -317,23 +351,33 @@ class _SpotInputsSheetState extends State<_SpotInputsSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: keyboard),
       child: Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88 - keyboard),
-        decoration:
-            BoxDecoration(color: AppColors.bgApp, borderRadius: BorderRadius.vertical(top: Radius.circular(24.r))),
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.88 - keyboard),
+        decoration: BoxDecoration(
+            color: AppColors.bgApp,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24.r))),
         padding: EdgeInsets.fromLTRB(18.w, 18.h, 18.w, 22.h),
         child: FutureBuilder<List<SpotInputField>>(
           future: widget.fields,
           builder: (context, snap) {
             final ask = fieldsNeedingInput(snap.data ?? const []);
-            final filled = [for (final f in snap.data ?? const <SpotInputField>[]) if (!f.needsInput && f.modelValue.isNotEmpty) f];
+            final filled = [
+              for (final f in snap.data ?? const <SpotInputField>[])
+                if (!f.needsInput && f.modelValue.isNotEmpty) f
+            ];
             final current = {for (final f in ask) f.key: _c(f).text};
             final missing = missingRequiredSpot(ask, current);
+            final notNumbers = invalidSpotNumbers(ask, current);
             final loading = snap.connectionState != ConnectionState.done;
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Quote details', style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                Text('Quote details',
+                    style: AppText.custom(
+                        size: 17,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 10.h),
                 Flexible(
                   child: loading
@@ -341,10 +385,17 @@ class _SpotInputsSheetState extends State<_SpotInputsSheet> {
                           padding: EdgeInsets.symmetric(vertical: 20.h),
                           child: Text('Looking up the record details…',
                               textAlign: TextAlign.center,
-                              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                              style: AppText.custom(
+                                  size: 13,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted)),
                         )
                       : snap.hasError
-                          ? QbHint(snap.error is AppError ? (snap.error as AppError).bareMessage : 'Could not load the quote details.', error: true)
+                          ? QbHint(
+                              snap.error is AppError
+                                  ? (snap.error as AppError).bareMessage
+                                  : 'Could not load the quote details.',
+                              error: true)
                           : ListView(
                               shrinkWrap: true,
                               children: [
@@ -352,40 +403,79 @@ class _SpotInputsSheetState extends State<_SpotInputsSheet> {
                                     'These details are printed on the quote. Fields your records already fill are shown for reference; the rest are typed here (and used as the fallback when a record field is empty).'),
                                 SizedBox(height: 12.h),
                                 for (final f in ask) ...[
-                                  QbFieldLabel(f.label, required: f.required),
+                                  QbFieldLabel(
+                                      '${f.label}${f.input == 'money' && !f.label.contains('₹') ? ' (₹)' : ''}',
+                                      required: f.required),
                                   SizedBox(height: 6.h),
-                                  _box(f, missing.any((m) => m.key == f.key) && _attempted),
+                                  _box(
+                                      f,
+                                      (missing.any((m) => m.key == f.key) ||
+                                              notNumbers.any(
+                                                  (m) => m.key == f.key)) &&
+                                          _attempted),
                                   if (f.boxHint.isNotEmpty) QbHint(f.boxHint),
                                   SizedBox(height: 12.h),
                                 ],
-                                if (ask.isEmpty) const QbHint('Nothing to type — every field is filled from your records.'),
+                                if (ask.isEmpty)
+                                  const QbHint(
+                                      'Nothing to type — every field is filled from your records.'),
                                 if (filled.isNotEmpty) ...[
                                   SizedBox(height: 6.h),
                                   Row(children: [
-                                    Icon(PhosphorIconsRegular.database, size: 13.sp, color: AppColors.textLabelAlt),
+                                    Icon(PhosphorIconsRegular.database,
+                                        size: 13.sp,
+                                        color: AppColors.textLabelAlt),
                                     SizedBox(width: 6.w),
-                                    const QbFieldLabel('Filled from your records'),
+                                    // QbFieldLabel is itself a Row with an
+                                    // Expanded: unbounded here, it threw
+                                    // "non-zero flex but incoming width
+                                    // constraints are unbounded" and the
+                                    // whole "Quote details" sheet painted
+                                    // empty (UAT).
+                                    const Expanded(
+                                        child: QbFieldLabel(
+                                            'Filled from your records')),
                                   ]),
                                   SizedBox(height: 8.h),
                                   for (final f in filled)
                                     Padding(
                                       padding: EdgeInsets.only(bottom: 8.h),
-                                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                        Text(f.label,
-                                            style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textMuted)),
-                                        Text(f.modelValue,
-                                            style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textBody)),
-                                      ]),
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(f.label,
+                                                style: AppText.custom(
+                                                    size: 11.5,
+                                                    weight: FontWeight.w600,
+                                                    color:
+                                                        AppColors.textMuted)),
+                                            Text(f.modelValue,
+                                                style: AppText.custom(
+                                                    size: 13,
+                                                    weight: FontWeight.w600,
+                                                    color: AppColors.textBody)),
+                                          ]),
                                     ),
                                 ],
                               ],
                             ),
                 ),
-                if (_attempted && missing.isNotEmpty)
-                  QbHint('Fill in ${missing.map((f) => f.label).join(', ')}.', error: true),
+                if (_attempted && (missing.isNotEmpty || notNumbers.isNotEmpty))
+                  QbHint(
+                      [
+                        if (missing.isNotEmpty)
+                          'Fill in ${missing.map((f) => f.label).join(', ')}.',
+                        if (notNumbers.isNotEmpty)
+                          'Enter a number for ${notNumbers.map((f) => f.label).join(', ')}.',
+                      ].join(' '),
+                      error: true),
                 SizedBox(height: 14.h),
                 Row(children: [
-                  Expanded(child: qbSheetButton('Cancel', primary: false, onTap: () => Navigator.of(context).pop())),
+                  Expanded(
+                      child: qbSheetButton('Cancel',
+                          primary: false,
+                          onTap: () => Navigator.of(context).pop())),
                   SizedBox(width: 10.w),
                   Expanded(
                     child: qbSheetButton(widget.confirmLabel,
@@ -394,10 +484,14 @@ class _SpotInputsSheetState extends State<_SpotInputsSheet> {
                             ? null
                             : () {
                                 setState(() => _attempted = true);
-                                if (missing.isNotEmpty) return;
+                                if (missing.isNotEmpty || notNumbers.isNotEmpty)
+                                  return;
                                 Navigator.of(context).pop({
                                   for (final f in ask)
-                                    if (_c(f).text.trim().isNotEmpty) f.key: _c(f).text.trim(),
+                                    if ((normalizeSpotValue(f, _c(f).text) ??
+                                            '')
+                                        .isNotEmpty)
+                                      f.key: normalizeSpotValue(f, _c(f).text)!,
                                 });
                               }),
                   ),
@@ -413,21 +507,28 @@ class _SpotInputsSheetState extends State<_SpotInputsSheet> {
   Widget _box(SpotInputField f, bool error) {
     final c = _c(f);
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: f.multiline ? 8.h : 0),
+      padding: EdgeInsets.symmetric(
+          horizontal: 12.w, vertical: f.multiline ? 8.h : 0),
       constraints: BoxConstraints(minHeight: 44.h),
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(11.r),
-        border: Border.all(color: error ? AppColors.error : AppColors.borderInput, width: 1.5),
+        border: Border.all(
+            color: error ? AppColors.error : AppColors.borderInput, width: 1.5),
       ),
       child: TextField(
         controller: c,
         minLines: f.multiline ? 2 : 1,
         maxLines: f.multiline ? 4 : 1,
+        keyboardType: f.isNumeric
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : null,
         onChanged: (_) => setState(() {}),
-        style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
-        decoration: const InputDecoration(isDense: true, border: InputBorder.none),
+        style: AppText.custom(
+            size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
+        decoration:
+            const InputDecoration(isDense: true, border: InputBorder.none),
       ),
     );
   }
@@ -495,16 +596,25 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
                     onTap: widget.libraryLoading || addable.isEmpty
                         ? null
                         : () async {
-                            final id = await qbPickOne(context, title: 'Add a clause…', options: [
-                              for (final c in addable) (c.id, '${c.title}${c.isMandatory ? ' (mandatory)' : ''}'),
-                            ]);
+                            final id = await qbPickOne(context,
+                                title: 'Add a clause…',
+                                options: [
+                                  for (final c in addable)
+                                    (
+                                      c.id,
+                                      '${c.title}${c.isMandatory ? ' (mandatory)' : ''}'
+                                    ),
+                                ]);
                             if (id == null) return;
-                            widget.onRowsChange(addLibraryClause(rows, addable.firstWhere((c) => c.id == id)));
+                            widget.onRowsChange(addLibraryClause(
+                                rows, addable.firstWhere((c) => c.id == id)));
                           },
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(PhosphorIconsBold.plus,
                           size: 12.sp,
-                          color: addable.isEmpty ? AppColors.textPlaceholder : AppColors.blueBright),
+                          color: addable.isEmpty
+                              ? AppColors.textPlaceholder
+                              : AppColors.blueBright),
                       SizedBox(width: 4.w),
                       Text(
                           widget.libraryLoading
@@ -515,10 +625,13 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
                           style: AppText.custom(
                               size: 12,
                               weight: FontWeight.w700,
-                              color: addable.isEmpty ? AppColors.textPlaceholder : AppColors.blueBright)),
+                              color: addable.isEmpty
+                                  ? AppColors.textPlaceholder
+                                  : AppColors.blueBright)),
                     ]),
                   )),
-        if (widget.libraryError != null) QbHint(widget.libraryError!, error: true),
+        if (widget.libraryError != null)
+          QbHint(widget.libraryError!, error: true),
         if (rows.isNotEmpty)
           Container(
             decoration: BoxDecoration(
@@ -535,7 +648,8 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
               ? 'This quote’s terms are not included in your workspace’s quote fields.'
               : 'No clauses on this quote yet.'),
         if (rows.isNotEmpty && !widget.legacy)
-          const QbHint('Mandatory clauses are marked with a lock and stay on the quote. The order here is the order printed.'),
+          const QbHint(
+              'Mandatory clauses are marked with a lock and stay on the quote. The order here is the order printed.'),
         if (showTermsBox) ...[
           Builder(builder: (_) {
             qbSync(_terms, widget.terms);
@@ -552,18 +666,25 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
                 minLines: 3,
                 maxLines: 8,
                 onChanged: widget.onTermsChange,
-                style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody),
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody),
                 decoration: InputDecoration(
                   isDense: true,
                   border: InputBorder.none,
                   hintText: 'T&C printed on the quote..',
-                  hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                  hintStyle: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder),
                 ),
               ),
             );
           }),
           if (rows.isNotEmpty && widget.terms.trim().isNotEmpty)
-            const QbHint('This text is kept as the last clause once the quote is saved with clauses.'),
+            const QbHint(
+                'This text is kept as the last clause once the quote is saved with clauses.'),
         ],
       ],
     );
@@ -576,25 +697,37 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
       decoration: BoxDecoration(
-        border: i == 0 ? null : const Border(top: BorderSide(color: Color(0xFFF3F4F5))),
+        border: i == 0
+            ? null
+            : const Border(top: BorderSide(color: Color(0xFFF3F4F5))),
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SizedBox(
           width: 20.w,
-          child: Text('${i + 1}.', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textMuted)),
+          child: Text('${i + 1}.',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w700,
+                  color: AppColors.textMuted)),
         ),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Flexible(
                 child: Text(row.title.isEmpty ? 'Untitled clause' : row.title,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
               ),
               if (row.isMandatory) ...[
                 SizedBox(width: 6.w),
                 Tooltip(
-                  message: 'Mandatory clause — it can’t be removed from the quote',
-                  child: Icon(PhosphorIconsFill.lock, size: 12.sp, color: AppColors.textMuted),
+                  message:
+                      'Mandatory clause — it can’t be removed from the quote',
+                  child: Icon(PhosphorIconsFill.lock,
+                      size: 12.sp, color: AppColors.textMuted),
                 ),
               ],
             ]),
@@ -603,15 +736,22 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
               Text(text,
                   maxLines: open ? null : 2,
                   overflow: open ? null : TextOverflow.ellipsis,
-                  style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textSecondary)),
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textSecondary)),
             ],
             if (text.length > 140)
               GestureDetector(
-                onTap: () => setState(() => open ? _expanded.remove(row.key) : _expanded.add(row.key)),
+                onTap: () => setState(() =>
+                    open ? _expanded.remove(row.key) : _expanded.add(row.key)),
                 child: Padding(
                   padding: EdgeInsets.only(top: 3.h),
                   child: Text(open ? 'Show less' : 'Show more',
-                      style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.blueBright)),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w700,
+                          color: AppColors.blueBright)),
                 ),
               ),
           ]),
@@ -621,13 +761,17 @@ class _QuoteClausesEditorState extends State<QuoteClausesEditor> {
           QbIconButton(
             icon: PhosphorIconsRegular.arrowUp,
             size: 28.w,
-            onTap: i == 0 ? null : () => widget.onRowsChange(moveClause(rows, row.key, -1)),
+            onTap: i == 0
+                ? null
+                : () => widget.onRowsChange(moveClause(rows, row.key, -1)),
           ),
           SizedBox(width: 3.w),
           QbIconButton(
             icon: PhosphorIconsRegular.arrowDown,
             size: 28.w,
-            onTap: i == rows.length - 1 ? null : () => widget.onRowsChange(moveClause(rows, row.key, 1)),
+            onTap: i == rows.length - 1
+                ? null
+                : () => widget.onRowsChange(moveClause(rows, row.key, 1)),
           ),
           SizedBox(width: 3.w),
           canRemoveClause(row)

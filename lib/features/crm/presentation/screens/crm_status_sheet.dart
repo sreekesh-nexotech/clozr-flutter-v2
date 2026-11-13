@@ -41,21 +41,34 @@ void showCrmStatusSheet({
                     if (onSelect != null) {
                       onSelect(k);
                     } else {
-                      ref.read(toastProvider.notifier).show('Status set to ${meta[k]!.label}');
+                      ref
+                          .read(toastProvider.notifier)
+                          .show('Status set to ${meta[k]!.label}');
                     }
                   },
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 10.w, vertical: 13.h),
                     decoration: BoxDecoration(
-                      color: current == k ? const Color(0xFFF6F8FB) : Colors.transparent,
+                      color: current == k
+                          ? const Color(0xFFF6F8FB)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(12.r),
                     ),
                     child: Row(
                       children: [
-                        Container(width: 11.w, height: 11.w, decoration: BoxDecoration(color: meta[k]!.color, shape: BoxShape.circle)),
+                        Container(
+                            width: 11.w,
+                            height: 11.w,
+                            decoration: BoxDecoration(
+                                color: meta[k]!.color, shape: BoxShape.circle)),
                         SizedBox(width: 12.w),
-                        Expanded(child: Text(meta[k]!.label, style: AppText.bodyStrong())),
-                        if (current == k) Icon(PhosphorIconsBold.check, size: 18.sp, color: AppColors.success),
+                        Expanded(
+                            child: Text(meta[k]!.label,
+                                style: AppText.bodyStrong())),
+                        if (current == k)
+                          Icon(PhosphorIconsBold.check,
+                              size: 18.sp, color: AppColors.success),
                       ],
                     ),
                   ),

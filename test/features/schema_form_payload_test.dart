@@ -68,7 +68,8 @@ void main() {
     test('is distinct from null, which means clear', () {
       expect(absentValue, isNot(isNull));
       expect(identical(schemaWriteValue('integer', ''), absentValue), isFalse);
-      expect(identical(schemaWriteValue('integer', 'abc'), absentValue), isTrue);
+      expect(
+          identical(schemaWriteValue('integer', 'abc'), absentValue), isTrue);
     });
   });
 }

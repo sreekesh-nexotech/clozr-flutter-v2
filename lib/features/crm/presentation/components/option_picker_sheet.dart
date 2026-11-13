@@ -66,7 +66,8 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: widget.title, onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: widget.title, onClose: () => Navigator.of(context).pop()),
         if (empty)
           Padding(
             padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 32.h),
@@ -74,7 +75,9 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
               widget.emptyNote ?? 'Nothing to choose from yet.',
               textAlign: TextAlign.center,
               style: AppText.custom(
-                      size: 13, weight: FontWeight.w500, color: AppColors.textMuted)
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)
                   .copyWith(height: 1.5),
             ),
           )
@@ -87,17 +90,20 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
                 for (final o in widget.options)
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: o.disabled ? null : () {
-                      if (widget.multi) {
-                        setState(() => _picked.contains(o.id)
-                            ? _picked.remove(o.id)
-                            : _picked.add(o.id));
-                        return;
-                      }
-                      Navigator.of(context).pop({o.id});
-                    },
+                    onTap: o.disabled
+                        ? null
+                        : () {
+                            if (widget.multi) {
+                              setState(() => _picked.contains(o.id)
+                                  ? _picked.remove(o.id)
+                                  : _picked.add(o.id));
+                              return;
+                            }
+                            Navigator.of(context).pop({o.id});
+                          },
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(6.w + o.depth * 16.w, 11.h, 6.w, 11.h),
+                      padding: EdgeInsets.fromLTRB(
+                          6.w + o.depth * 16.w, 11.h, 6.w, 11.h),
                       child: Row(
                         children: [
                           if (o.color != null) ...[
@@ -112,7 +118,8 @@ class _OptionPickerSheetState extends State<_OptionPickerSheet> {
                           Expanded(
                             child: Text(o.name,
                                 style: o.disabled
-                                    ? AppText.body(color: AppColors.textPlaceholder)
+                                    ? AppText.body(
+                                        color: AppColors.textPlaceholder)
                                     : AppText.bodyStrong()),
                           ),
                           if (_picked.contains(o.id))

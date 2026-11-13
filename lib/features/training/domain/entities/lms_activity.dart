@@ -9,11 +9,16 @@ class LmsActivity extends Equatable {
   final String what;
   final String time;
 
+  /// The course the event is about (`course_title`), for the course detail's
+  /// per-course feed. Empty when the row does not say.
+  final String courseTitle;
+
   const LmsActivity({
     required this.dot,
     required this.who,
     required this.what,
     required this.time,
+    this.courseTitle = '',
   });
 
   @override

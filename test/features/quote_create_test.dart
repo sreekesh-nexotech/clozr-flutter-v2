@@ -144,7 +144,7 @@ void main() {
       })!;
 
       expect(mapped.priceNum, 4999);
-      expect(mapped.price, '₹5K', reason: 'display is still abbreviated');
+      expect(mapped.price, '₹4,999.00', reason: 'display is exact (UI/UX #45)');
     });
   });
 
@@ -195,15 +195,17 @@ void main() {
         QuotePaymentType.subscription,
         QuotePaymentType.installmentCustom,
       ]) {
-        final json = QuoteDraft(leadId: 'l', paymentType: type, lines: const [_line])
-            .toCreateJson(schema: schema);
+        final json =
+            QuoteDraft(leadId: 'l', paymentType: type, lines: const [_line])
+                .toCreateJson(schema: schema);
         expect(json.containsKey('num_installments'), isFalse,
             reason: '${type.value} must not send a count');
       }
     });
 
     test('blank optionals are omitted rather than sent empty', () {
-      const draft = QuoteDraft(leadId: 'l', title: '   ', notes: '', lines: [_line]);
+      const draft =
+          QuoteDraft(leadId: 'l', title: '   ', notes: '', lines: [_line]);
 
       final json = draft.toCreateJson(schema: schema);
 
@@ -281,11 +283,16 @@ void main() {
       final withCustom = ViewSchema.fromResponse({
         'has_org_config': true,
         'all_fields': {
-          'columns': [_col('site_contact', 'Site contact', 1), _col('lead', 'Lead', 2)],
+          'columns': [
+            _col('site_contact', 'Site contact', 1),
+            _col('lead', 'Lead', 2)
+          ],
         },
       });
 
-      final names = [for (final c in quoteFormSchema(withCustom).columns) c.name];
+      final names = [
+        for (final c in quoteFormSchema(withCustom).columns) c.name
+      ];
 
       expect(names, ['site_contact']);
     });
@@ -335,9 +342,11 @@ void main() {
 
   group('submittability', () {
     test('needs both a lead and at least one line', () {
-      expect(const QuoteDraft(leadId: '', lines: [_line]).isSubmittable, isFalse);
+      expect(
+          const QuoteDraft(leadId: '', lines: [_line]).isSubmittable, isFalse);
       expect(const QuoteDraft(leadId: 'l').isSubmittable, isFalse);
-      expect(const QuoteDraft(leadId: 'l', lines: [_line]).isSubmittable, isTrue);
+      expect(
+          const QuoteDraft(leadId: 'l', lines: [_line]).isSubmittable, isTrue);
     });
   });
 
@@ -360,7 +369,11 @@ void main() {
         'count': 2,
         'results': [
           {'template_id': 't1', 'template_name': 'Modern', 'is_default': false},
-          {'template_id': 't2', 'template_name': 'Standard', 'is_default': true},
+          {
+            'template_id': 't2',
+            'template_name': 'Standard',
+            'is_default': true
+          },
         ],
       });
 
@@ -379,8 +392,8 @@ void main() {
         'total_amount': '4800.00',
       });
 
-      final quote = await _dsWith(adapter)
-          .createQuote(const QuoteDraft(leadId: 'l', lines: [_line]).toCreateJson());
+      final quote = await _dsWith(adapter).createQuote(
+          const QuoteDraft(leadId: 'l', lines: [_line]).toCreateJson());
 
       final req = adapter.requests.single;
       expect(req.method, 'POST');

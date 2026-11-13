@@ -53,9 +53,15 @@ class AccMoneyScreen extends ConsumerWidget {
       !canPost
           ? null
           : switch (tab) {
-              'payments' => AddAction(label: 'Pay vendor', run: (ctx) => showVendorPaymentSheet(ctx)),
-              'advances' => AddAction(label: 'Record advance', run: (ctx) => showRecordAdvanceSheet(ctx)),
-              'receipts' => AddAction(label: 'Record receipt', run: (ctx) => showRecordReceiptSheet(ctx)),
+              'payments' => AddAction(
+                  label: 'Pay vendor',
+                  run: (ctx) => showVendorPaymentSheet(ctx)),
+              'advances' => AddAction(
+                  label: 'Record advance',
+                  run: (ctx) => showRecordAdvanceSheet(ctx)),
+              'receipts' => AddAction(
+                  label: 'Record receipt',
+                  run: (ctx) => showRecordReceiptSheet(ctx)),
               _ => null,
             },
     );
@@ -77,7 +83,8 @@ class AccMoneyScreen extends ConsumerWidget {
                     TabChip(
                       label: e.value,
                       active: tab == e.key,
-                      onTap: () => ref.read(_moneyTabProvider.notifier).state = e.key,
+                      onTap: () =>
+                          ref.read(_moneyTabProvider.notifier).state = e.key,
                     ),
                 ],
               ),
@@ -91,30 +98,56 @@ class AccMoneyScreen extends ConsumerWidget {
               'payments' => _list<AccVendorPayment>(
                   ref,
                   vendorPaymentsProvider(null),
-                  empty: _empty('No vendor payments', 'Payments to vendors show up here.', PhosphorIconsRegular.arrowUp,
-                      canPost ? ('Pay vendor', () => showVendorPaymentSheet(context)) : null),
+                  empty: _empty(
+                      'No vendor payments',
+                      'Payments to vendors show up here.',
+                      PhosphorIconsRegular.arrowUp,
+                      canPost
+                          ? (
+                              'Pay vendor',
+                              () => showVendorPaymentSheet(context)
+                            )
+                          : null),
                   row: (p) => _VendorPaymentRow(payment: p),
                 ),
               'advances' => _list<AccAdvance>(
                   ref,
                   advancesProvider(null),
-                  empty: _empty('No advances', 'Money received before an invoice shows up here.',
+                  empty: _empty(
+                      'No advances',
+                      'Money received before an invoice shows up here.',
                       PhosphorIconsRegular.hourglassMedium,
-                      canPost ? ('Record advance', () => showRecordAdvanceSheet(context)) : null),
+                      canPost
+                          ? (
+                              'Record advance',
+                              () => showRecordAdvanceSheet(context)
+                            )
+                          : null),
                   row: (a) => _AdvanceRow(advance: a),
                 ),
               'credits' => _list<AccCustomerCredit>(
                   ref,
                   customerCreditsProvider(null),
-                  empty: _empty('No customer credits',
-                      'Overpayments and credit notes held for a customer show up here.', PhosphorIconsRegular.coins, null),
+                  empty: _empty(
+                      'No customer credits',
+                      'Overpayments and credit notes held for a customer show up here.',
+                      PhosphorIconsRegular.coins,
+                      null),
                   row: (c) => _CreditRow(credit: c),
                 ),
               _ => _list<AccReceipt>(
                   ref,
                   receiptsProvider(null),
-                  empty: _empty('No receipts', 'Money received from customers shows up here.', PhosphorIconsRegular.arrowDown,
-                      canPost ? ('Record receipt', () => showRecordReceiptSheet(context)) : null),
+                  empty: _empty(
+                      'No receipts',
+                      'Money received from customers shows up here.',
+                      PhosphorIconsRegular.arrowDown,
+                      canPost
+                          ? (
+                              'Record receipt',
+                              () => showRecordReceiptSheet(context)
+                            )
+                          : null),
                   row: (r) => _ReceiptRow(receipt: r),
                 ),
             },
@@ -124,7 +157,9 @@ class AccMoneyScreen extends ConsumerWidget {
     );
   }
 
-  Widget _empty(String title, String body, IconData icon, (String, VoidCallback)? cta) => EmptyState(
+  Widget _empty(String title, String body, IconData icon,
+          (String, VoidCallback)? cta) =>
+      EmptyState(
         icon: icon,
         title: title,
         body: body,
@@ -154,12 +189,15 @@ class AccMoneyScreen extends ConsumerWidget {
       onRefresh: refresh,
       error: (e, retry) {
         if (e.isAccountingInactive) ref.invalidate(accountingStatusProvider);
-        return ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
-          ErrorState.forError(e, onRetry: retry),
-        ]);
+        return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              ErrorState.forError(e, onRetry: retry),
+            ]);
       },
       data: (items) => items.isEmpty
-          ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [empty])
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(), children: [empty])
           : ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
@@ -215,12 +253,18 @@ class _MoneyCard extends StatelessWidget {
                     Text(title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 3.h),
                     Text(sub,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -230,7 +274,11 @@ class _MoneyCard extends StatelessWidget {
                 children: [
                   pill,
                   SizedBox(height: 5.h),
-                  Text(amount, style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text(amount,
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ],
@@ -242,10 +290,17 @@ class _MoneyCard extends StatelessWidget {
                 child: Text(footLeft,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ),
               if (footRight != null)
-                Text(footRight!, style: AppText.custom(size: 12, weight: FontWeight.w600, color: footRightColor)),
+                Text(footRight!,
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: footRightColor)),
             ],
           ),
         ],
@@ -265,12 +320,17 @@ class _ReceiptRow extends ConsumerWidget {
     return _MoneyCard(
       icon: PhosphorIconsRegular.arrowDown,
       title: party?.name ?? 'Customer',
-      sub: '${formatApiDay(r.date)} · ${label(sourceAccountLabels, r.sourceAccountKind)}'
+      sub:
+          '${formatApiDay(r.date)} · ${label(sourceAccountLabels, r.sourceAccountKind)}'
           '${(r.reference ?? '').isEmpty ? '' : ' · ${r.reference}'}',
       pill: AccPill(StatusMeta$.accPosting, r.status),
       amount: formatMoneyStr(r.amount),
-      footLeft: moneyIsZero(r.tdsDeducted) ? label(paymentMethods, r.method) : 'TDS ${formatMoneyStr(r.tdsDeducted)}',
-      footRight: moneyIsZero(r.unallocated) ? null : '${formatMoneyStr(r.unallocated)} as credit',
+      footLeft: moneyIsZero(r.tdsDeducted)
+          ? label(paymentMethods, r.method)
+          : 'TDS ${formatMoneyStr(r.tdsDeducted)}',
+      footRight: moneyIsZero(r.unallocated)
+          ? null
+          : '${formatMoneyStr(r.unallocated)} as credit',
       footRightColor: AppColors.warningDeep,
       onTap: () => showReceiptDetailSheet(context, r),
     );
@@ -287,11 +347,13 @@ class _VendorPaymentRow extends ConsumerWidget {
     return _MoneyCard(
       icon: PhosphorIconsRegular.arrowUp,
       title: ref.watch(vendorNameProvider)(p.vendorId) ?? 'Vendor',
-      sub: '${formatApiDay(p.date)} · ${label(sourceAccountLabels, p.sourceAccountKind)}'
+      sub:
+          '${formatApiDay(p.date)} · ${label(sourceAccountLabels, p.sourceAccountKind)}'
           '${(p.reference ?? '').isEmpty ? '' : ' · ${p.reference}'}',
       pill: AccPill(StatusMeta$.accPosting, p.status),
       amount: formatMoneyStr(p.amount),
-      footLeft: moneyIsZero(p.tdsNow) ? 'No TDS' : 'TDS ${formatMoneyStr(p.tdsNow)}',
+      footLeft:
+          moneyIsZero(p.tdsNow) ? 'No TDS' : 'TDS ${formatMoneyStr(p.tdsNow)}',
       onTap: () => showVendorPaymentDetailSheet(context, p),
     );
   }
@@ -308,8 +370,12 @@ class _AdvanceRow extends ConsumerWidget {
     return _MoneyCard(
       icon: PhosphorIconsRegular.hourglassMedium,
       title: party?.name ?? 'Customer',
-      sub: [label(supplyNatureLabels, a.supplyNature), if (a.ratePct != null) '${a.ratePct}%', if (a.supply != null) a.supply == 'INTER' ? 'Inter-state' : 'Intra-state']
-          .join(' · '),
+      sub: [
+        label(supplyNatureLabels, a.supplyNature),
+        if (a.ratePct != null) '${a.ratePct}%',
+        if (a.supply != null)
+          a.supply == 'INTER' ? 'Inter-state' : 'Intra-state'
+      ].join(' · '),
       pill: AccPill(StatusMeta$.accBalance, a.status),
       amount: formatMoneyStr(a.taxable),
       footLeft: 'Taxable value',

@@ -53,9 +53,11 @@ class _LogCallSheet extends StatefulWidget {
 class _LogCallSheetState extends State<_LogCallSheet> {
   final _minutes = TextEditingController();
   final _seconds = TextEditingController();
+
   /// Prefilled with the lead's own country + national digits, split from the
   /// stored E.164 value.
-  late final PhoneController _toNumber = PhoneController(initialE164: widget.lead.phone);
+  late final PhoneController _toNumber =
+      PhoneController(initialE164: widget.lead.phone);
 
   /// The caller's own number, typed — only asked for when the profile has
   /// none (webapp: From is a plain input).
@@ -94,7 +96,8 @@ class _LogCallSheetState extends State<_LogCallSheet> {
     setState(() => _showErrors = true);
 
     final toast = widget.ref.read(toastProvider.notifier);
-    final from = _myNumber.isNotEmpty ? _myNumber : (_fromNumber.toE164() ?? '');
+    final from =
+        _myNumber.isNotEmpty ? _myNumber : (_fromNumber.toE164() ?? '');
     if (!_toOk || (ApiConfig.apiEnabled && from.isEmpty)) {
       toast.showError('From and To numbers are required.');
       return;
@@ -113,7 +116,8 @@ class _LogCallSheetState extends State<_LogCallSheet> {
             isMissed: _outcome == _Outcome.missed,
             // A call that never connected has no duration to report, whatever
             // is sitting in the fields.
-            duration: _outcome == _Outcome.connected ? _duration : Duration.zero,
+            duration:
+                _outcome == _Outcome.connected ? _duration : Duration.zero,
           );
     } on AppError catch (e) {
       if (mounted) setState(() => _saving = false);
@@ -135,7 +139,8 @@ class _LogCallSheetState extends State<_LogCallSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Log call', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Log call', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: SingleChildScrollView(
             // The number field is the last one; typing there hides the
@@ -154,7 +159,9 @@ class _LogCallSheetState extends State<_LogCallSheet> {
                     required: true,
                     controller: _fromNumber,
                     hint: '98470 00000',
-                    errorText: _showErrors && _fromNumber.toE164() == null ? 'From and To numbers are required.' : null,
+                    errorText: _showErrors && _fromNumber.toE164() == null
+                        ? 'From and To numbers are required.'
+                        : null,
                     onChanged: () => setState(() {}),
                   ),
                 ],
@@ -186,7 +193,8 @@ class _LogCallSheetState extends State<_LogCallSheet> {
                       label: 'Connected',
                       selected: _outcome == _Outcome.connected,
                       dot: AppColors.success,
-                      onTap: () => setState(() => _outcome = _Outcome.connected),
+                      onTap: () =>
+                          setState(() => _outcome = _Outcome.connected),
                     ),
                     SelectChip(
                       label: 'No answer',
@@ -235,7 +243,9 @@ class _LogCallSheetState extends State<_LogCallSheet> {
                   required: true,
                   controller: _toNumber,
                   hint: '98470 00000',
-                  errorText: _showErrors && !_toOk ? phoneDigitsMessage(_toNumber.rule) : null,
+                  errorText: _showErrors && !_toOk
+                      ? phoneDigitsMessage(_toNumber.rule)
+                      : null,
                   onChanged: () => setState(() {}),
                 ),
                 SizedBox(height: 8.h),
@@ -243,7 +253,9 @@ class _LogCallSheetState extends State<_LogCallSheet> {
                   'Notes about a call go on a note — the call record itself only '
                   'stores what happened and for how long.',
                   style: AppText.custom(
-                          size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)
+                          size: 11,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)
                       .copyWith(height: 1.4),
                 ),
               ],

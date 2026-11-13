@@ -77,15 +77,19 @@ class SavedChipRow extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(webappStyle ? 'Delete “${v.label}”?' : 'Remove saved view?'),
+        title:
+            Text(webappStyle ? 'Delete “${v.label}”?' : 'Remove saved view?'),
         content: Text(webappStyle
             ? 'This permanently deletes this saved filter. This can’t be undone.'
             : '"${v.label}" will be removed from your saved filters.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(webappStyle ? 'Delete' : 'Remove', style: TextStyle(color: AppColors.error)),
+            child: Text(webappStyle ? 'Delete' : 'Remove',
+                style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -95,26 +99,36 @@ class SavedChipRow extends StatelessWidget {
 
   Widget _chip(BuildContext context, SavedView v) {
     final on = !v.invalid && active.contains(v.key);
-    final fg = v.invalid ? AppColors.textPlaceholder : (on ? AppColors.blueBright : AppColors.textLabelAlt);
+    final fg = v.invalid
+        ? AppColors.textPlaceholder
+        : (on ? AppColors.blueBright : AppColors.textLabelAlt);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onToggle(v.key),
-      onLongPress: onRemove == null || webappStyle ? null : () => _confirmRemove(context, v),
+      onLongPress: onRemove == null || webappStyle
+          ? null
+          : () => _confirmRemove(context, v),
       child: Container(
         height: 34.h,
         padding: EdgeInsets.symmetric(horizontal: 11.w),
         decoration: BoxDecoration(
-          color: v.invalid ? AppColors.bgLight : (on ? AppColors.blueSubtle : AppColors.bgChipGrey),
+          color: v.invalid
+              ? AppColors.bgLight
+              : (on ? AppColors.blueSubtle : AppColors.bgChipGrey),
           borderRadius: BorderRadius.circular(10.r),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             v.invalid
-                ? Icon(PhosphorIconsFill.warning, size: 13.sp, color: AppColors.warning)
-                : Icon(PhosphorIconsFill.bookmarkSimple, size: 13.sp, color: fg),
+                ? Icon(PhosphorIconsFill.warning,
+                    size: 13.sp, color: AppColors.warning)
+                : Icon(PhosphorIconsFill.bookmarkSimple,
+                    size: 13.sp, color: fg),
             SizedBox(width: 5.w),
-            Text(v.label, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: fg)),
+            Text(v.label,
+                style: AppText.custom(
+                    size: 12.5, weight: FontWeight.w700, color: fg)),
             // Webapp: every chip carries an × that deletes the saved filter.
             if (webappStyle && onRemove != null) ...[
               SizedBox(width: 4.w),
@@ -123,12 +137,16 @@ class SavedChipRow extends StatelessWidget {
                 onTap: () => _confirmRemove(context, v),
                 child: Padding(
                   padding: EdgeInsets.all(4.r),
-                  child: Icon(PhosphorIconsBold.x, size: 11.sp, color: on ? AppColors.blueBright : AppColors.textLabelAlt),
+                  child: Icon(PhosphorIconsBold.x,
+                      size: 11.sp,
+                      color:
+                          on ? AppColors.blueBright : AppColors.textLabelAlt),
                 ),
               ),
             ] else if (on) ...[
               SizedBox(width: 6.w),
-              Icon(PhosphorIconsBold.x, size: 11.sp, color: AppColors.blueBright),
+              Icon(PhosphorIconsBold.x,
+                  size: 11.sp, color: AppColors.blueBright),
             ],
           ],
         ),
@@ -150,11 +168,14 @@ class SavedChipRow extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(PhosphorIconsBold.xCircle, size: 13.sp, color: AppColors.blueBright),
+            Icon(PhosphorIconsBold.xCircle,
+                size: 13.sp, color: AppColors.blueBright),
             SizedBox(width: 5.w),
             Text('Clear filters',
                 style: AppText.custom(
-                    size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                    size: 12.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.blueBright)),
           ],
         ),
       ),

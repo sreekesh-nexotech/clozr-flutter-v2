@@ -46,8 +46,17 @@ class DocQuery extends Equatable {
       };
 
   @override
-  List<Object?> get props =>
-      [docType, status, paymentState, customer, vendor, sourceType, dateFrom, dateTo, search];
+  List<Object?> get props => [
+        docType,
+        status,
+        paymentState,
+        customer,
+        vendor,
+        sourceType,
+        dateFrom,
+        dateTo,
+        search
+      ];
 }
 
 class DocListState {
@@ -100,10 +109,16 @@ class DocListController extends StateNotifier<DocListState> {
   Future<void> refresh() async {
     state = state.copyWith(loading: state.items.isEmpty, clearError: true);
     try {
-      final page = await _ref.read(accountingRepositoryProvider).documents(query.toParams());
+      final page = await _ref
+          .read(accountingRepositoryProvider)
+          .documents(query.toParams());
       if (!mounted) return;
       _page = 1;
-      state = DocListState(items: page.results, count: page.count, hasMore: page.hasMore, loading: false);
+      state = DocListState(
+          items: page.results,
+          count: page.count,
+          hasMore: page.hasMore,
+          loading: false);
     } on AppError catch (e) {
       if (!mounted) return;
       if (e.isAccountingInactive) _ref.invalidate(accountingStatusProvider);
@@ -115,7 +130,9 @@ class DocListController extends StateNotifier<DocListState> {
     if (!state.hasMore || state.loadingMore || state.loading) return;
     state = state.copyWith(loadingMore: true);
     try {
-      final page = await _ref.read(accountingRepositoryProvider).documents(query.toParams(), page: _page + 1);
+      final page = await _ref
+          .read(accountingRepositoryProvider)
+          .documents(query.toParams(), page: _page + 1);
       if (!mounted) return;
       _page++;
       state = state.copyWith(
@@ -131,25 +148,27 @@ class DocListController extends StateNotifier<DocListState> {
   }
 }
 
-final docListProvider =
-    StateNotifierProvider.autoDispose.family<DocListController, DocListState, DocQuery>(
+final docListProvider = StateNotifierProvider.autoDispose
+    .family<DocListController, DocListState, DocQuery>(
   (ref, q) => DocListController(ref, q),
 );
 
 /// One document, fresh from the server.
-final accDocumentProvider = FutureProvider.autoDispose.family<AccDocument?, String>(
+final accDocumentProvider =
+    FutureProvider.autoDispose.family<AccDocument?, String>(
   (ref, id) => ref.watch(accountingRepositoryProvider).document(id),
 );
 
 /// The posted journal behind a document.
-final documentJournalProvider = FutureProvider.autoDispose.family<List<JournalEntry>, String>(
+final documentJournalProvider =
+    FutureProvider.autoDispose.family<List<JournalEntry>, String>(
   (ref, id) => ref.watch(accountingRepositoryProvider).journalForDocument(id),
 );
 
 /// A customer's open, issued invoices — what a receipt can be targeted at and
 /// what a statement tab lists.
-final openInvoicesForCustomerProvider =
-    FutureProvider.autoDispose.family<List<AccDocument>, String>((ref, customerId) async {
+final openInvoicesForCustomerProvider = FutureProvider.autoDispose
+    .family<List<AccDocument>, String>((ref, customerId) async {
   final repo = ref.watch(accountingRepositoryProvider);
   final page = await repo.documents(DocQuery(
     docType: 'TAX_INVOICE',
@@ -163,17 +182,16 @@ final openInvoicesForCustomerProvider =
 });
 
 /// Every document for one customer (the customer Accounting tab).
-final documentsForCustomerProvider =
-    FutureProvider.autoDispose.family<List<AccDocument>, String>((ref, customerId) async {
-  final page = await ref
-      .watch(accountingRepositoryProvider)
-      .documents(DocQuery(docType: 'TAX_INVOICE', customer: customerId).toParams());
+final documentsForCustomerProvider = FutureProvider.autoDispose
+    .family<List<AccDocument>, String>((ref, customerId) async {
+  final page = await ref.watch(accountingRepositoryProvider).documents(
+      DocQuery(docType: 'TAX_INVOICE', customer: customerId).toParams());
   return page.results;
 });
 
 /// A vendor's bills — the documents list now filters by `vendor` server-side.
-final billsForVendorProvider =
-    FutureProvider.autoDispose.family<List<AccDocument>, String>((ref, vendorId) async {
+final billsForVendorProvider = FutureProvider.autoDispose
+    .family<List<AccDocument>, String>((ref, vendorId) async {
   final page = await ref
       .watch(accountingRepositoryProvider)
       .documents(DocQuery(docType: 'VENDOR_BILL', vendor: vendorId).toParams());
@@ -184,20 +202,23 @@ final billsForVendorProvider =
 /// looked up **before** offering "Issue invoice", because every create call
 /// makes a new draft and plans on `INVOICE_ON_DUE` pre-create one (§12.1).
 final draftsForPaymentRecordProvider = FutureProvider.autoDispose
-    .family<List<AccDocument>, ({String recordId, String? customerId})>((ref, key) async {
+    .family<List<AccDocument>, ({String recordId, String? customerId})>(
+        (ref, key) async {
   final page = await ref.watch(accountingRepositoryProvider).documents(DocQuery(
         docType: 'TAX_INVOICE',
         status: 'DRAFT',
         sourceType: 'PLAN_RECORD',
         customer: key.customerId,
       ).toParams());
-  return [for (final d in page.results) if (d.paymentRecordId == key.recordId) d];
+  return [
+    for (final d in page.results)
+      if (d.paymentRecordId == key.recordId) d
+  ];
 });
 
 /// Sales drafts waiting to be issued — the count and the first page, for the
 /// home's "needs attention" list.
 final draftInvoicesProvider = FutureProvider.autoDispose<AccDocumentPage>(
-  (ref) => ref
-      .watch(accountingRepositoryProvider)
-      .documents(const DocQuery(docType: 'TAX_INVOICE', status: 'DRAFT').toParams()),
+  (ref) => ref.watch(accountingRepositoryProvider).documents(
+      const DocQuery(docType: 'TAX_INVOICE', status: 'DRAFT').toParams()),
 );

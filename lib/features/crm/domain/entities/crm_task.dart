@@ -15,7 +15,8 @@ class CrmTask extends Equatable {
   final String description;
   final String type; // key into TASKTYPES — Call / Email / Meeting / …
   final String? leadId;
-  final String status; // key into StatusMeta$.task — todo / inprogress / blocked / done
+  final String
+      status; // key into StatusMeta$.task — todo / inprogress / blocked / done
 
   /// The org's own name for the status ("Open", "Cancelled"), kept verbatim
   /// alongside the folded [status] key.
@@ -32,7 +33,7 @@ class CrmTask extends Equatable {
   final String due; // "16 Jun 2026"
   final String dueNote; // "2d overdue" / "Today" / "In 2d" / ""
 
-    /// The row exactly as the API sent it.
+  /// The row exactly as the API sent it.
   ///
   /// The typed fields cover the card's fixed frame; this is what makes the rest
   /// dynamic — a column the org adds to its layout is read from here by name,

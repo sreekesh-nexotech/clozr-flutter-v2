@@ -17,8 +17,10 @@ import 'acc_sheet_scaffold.dart';
 /// "Edit draft" (plan §4.3) — the eight header fields the API lets a draft
 /// change. Lines are not among them (handover §12.8), and neither is the
 /// customer; both need the draft voided and raised again.
-Future<AccDocument?> showEditDraftSheet(BuildContext context, AccDocument doc) =>
-    showClozrSheet<AccDocument>(context: context, builder: (_) => _EditDraftSheet(doc: doc));
+Future<AccDocument?> showEditDraftSheet(
+        BuildContext context, AccDocument doc) =>
+    showClozrSheet<AccDocument>(
+        context: context, builder: (_) => _EditDraftSheet(doc: doc));
 
 class _EditDraftSheet extends ConsumerStatefulWidget {
   const _EditDraftSheet({required this.doc});
@@ -34,7 +36,8 @@ class _EditDraftSheetState extends ConsumerState<_EditDraftSheet> {
   late DateTime? _dueDate = DateTime.tryParse(widget.doc.dueDate ?? '');
   late String? _pos = widget.doc.placeOfSupply;
   late String? _amountsAre = widget.doc.amountsAre;
-  late final _narration = TextEditingController(text: widget.doc.narration ?? '');
+  late final _narration =
+      TextEditingController(text: widget.doc.narration ?? '');
   late final _terms = TextEditingController(text: widget.doc.terms ?? '');
   late final _notes = TextEditingController(text: widget.doc.notes ?? '');
   bool _busy = false;
@@ -55,7 +58,9 @@ class _EditDraftSheetState extends ConsumerState<_EditDraftSheet> {
     final original = DateTime.tryParse(widget.doc.documentDate ?? '');
     // The number is taken from the series of the draft's *creation* date, so a
     // draft moved across 1 April would issue with last year's number (§12.23).
-    if (original != null && _docDate != null && _fy(original) != _fy(_docDate!)) {
+    if (original != null &&
+        _docDate != null &&
+        _fy(original) != _fy(_docDate!)) {
       ref.read(toastProvider.notifier).showError(
           'Moving the date into another financial year needs a new draft — void this one and create it again.');
       return;
@@ -65,7 +70,9 @@ class _EditDraftSheetState extends ConsumerState<_EditDraftSheet> {
       _error = null;
     });
     try {
-      final saved = await ref.read(accountingRepositoryProvider).patchDraft(widget.doc.id, {
+      final saved = await ref
+          .read(accountingRepositoryProvider)
+          .patchDraft(widget.doc.id, {
         if (_docDate != null) 'document_date': isoDay(_docDate!),
         'supply_date': _supplyDate == null ? null : isoDay(_supplyDate!),
         'due_date': _dueDate == null ? null : isoDay(_dueDate!),
@@ -100,11 +107,21 @@ class _EditDraftSheetState extends ConsumerState<_EditDraftSheet> {
       error: _error,
       onSubmit: _save,
       children: [
-        AccDateBox(label: 'Invoice date', required: true, value: _docDate, showIstHint: true,
+        AccDateBox(
+            label: 'Invoice date',
+            required: true,
+            value: _docDate,
+            showIstHint: true,
             onChanged: (d) => setState(() => _docDate = d)),
-        AccDateBox(label: 'Supply date', value: _supplyDate, clearable: true,
+        AccDateBox(
+            label: 'Supply date',
+            value: _supplyDate,
+            clearable: true,
             onChanged: (d) => setState(() => _supplyDate = d)),
-        AccDateBox(label: 'Due date', value: _dueDate, clearable: true,
+        AccDateBox(
+            label: 'Due date',
+            value: _dueDate,
+            clearable: true,
             onChanged: (d) => setState(() => _dueDate = d)),
         AccPickerBox(
           label: 'Place of supply',
@@ -122,10 +139,23 @@ class _EditDraftSheetState extends ConsumerState<_EditDraftSheet> {
           selected: _amountsAre,
           onSelected: (v) => setState(() => _amountsAre = v),
         ),
-        AccInput(label: 'Narration', controller: _narration, hint: 'Shown on the invoice', maxLines: 3),
-        AccInput(label: 'Terms', controller: _terms, hint: 'Payment terms', maxLines: 3),
-        AccInput(label: 'Notes', controller: _notes, hint: 'Internal note', maxLines: 3),
-        const AccInfoBanner('Items and the customer cannot be changed on a draft. To change them, void it and create a new one.'),
+        AccInput(
+            label: 'Narration',
+            controller: _narration,
+            hint: 'Shown on the invoice',
+            maxLines: 3),
+        AccInput(
+            label: 'Terms',
+            controller: _terms,
+            hint: 'Payment terms',
+            maxLines: 3),
+        AccInput(
+            label: 'Notes',
+            controller: _notes,
+            hint: 'Internal note',
+            maxLines: 3),
+        const AccInfoBanner(
+            'Items and the customer cannot be changed on a draft. To change them, void it and create a new one.'),
       ],
     );
   }

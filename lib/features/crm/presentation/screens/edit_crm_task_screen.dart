@@ -1,3 +1,4 @@
+import '../../../../core/utils/relative_time.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -26,24 +27,34 @@ import '../sheets/add_sheet_kit.dart';
 
 /// The org's default task status and priority, and the statuses a new task
 /// may start in (webapp `creatableStatuses` / `defaultStatusId`).
-final taskFormDefaultsProvider =
-    FutureProvider.autoDispose<({String? status, String? priority, Set<String> creatable})>((ref) async {
+final taskFormDefaultsProvider = FutureProvider.autoDispose<
+    ({String? status, String? priority, Set<String> creatable})>((ref) async {
   final api = ref.read(apiServiceProvider);
   String? status;
   String? priority;
   final creatable = <String>{};
   try {
-    final body = await api.get(ApiEndpoints.crmTaskStatuses, query: {'page_size': 100}, quiet: true);
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results
+    final body = await api.get(ApiEndpoints.crmTaskStatuses,
+        query: {'page_size': 100}, quiet: true);
+    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m)
+        .results
         .where((s) => s['is_active'] != false)
         .toList()
-      ..sort((a, b) => ((a['position'] as num?) ?? 0).compareTo((b['position'] as num?) ?? 0));
+      ..sort((a, b) => ((a['position'] as num?) ?? 0)
+          .compareTo((b['position'] as num?) ?? 0));
     bool closed(Map s) =>
-        s['is_completed'] == true || s['is_cancelled'] == true || s['status_type'] == 'completed' || s['status_type'] == 'cancelled';
+        s['is_completed'] == true ||
+        s['is_cancelled'] == true ||
+        s['status_type'] == 'completed' ||
+        s['status_type'] == 'cancelled';
     for (final s in rows) {
       if (!closed(s)) creatable.add('${s['crm_task_status_id']}');
     }
-    final def = rows.where((s) => s['is_default'] == true && const {'open', 'in_progress', null}.contains(s['status_type'])).firstOrNull ??
+    final def = rows
+            .where((s) =>
+                s['is_default'] == true &&
+                const {'open', 'in_progress', null}.contains(s['status_type']))
+            .firstOrNull ??
         rows.where((s) => s['status_type'] == 'open').firstOrNull ??
         rows.where((s) => s['status_type'] == null).firstOrNull;
     status = def == null ? null : '${def['crm_task_status_id']}';
@@ -51,7 +62,8 @@ final taskFormDefaultsProvider =
     // No defaults — the server picks.
   }
   try {
-    final body = await api.get(ApiEndpoints.taskPriorities, query: {'page_size': 100}, quiet: true);
+    final body = await api.get(ApiEndpoints.taskPriorities,
+        query: {'page_size': 100}, quiet: true);
     final p = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m)
         .results
         .where((p) => p['is_default'] == true && p['is_active'] != false)
@@ -68,18 +80,17 @@ String? taskDueDateProblem(String iso) {
   if (iso.isEmpty) return null;
   final d = DateTime.tryParse(iso);
   if (d == null) return 'Enter a valid date.';
-  if (d.isBefore(DateTime(2000, 1, 1))) return "The due date can't be before 01-Jan-2000.";
+  if (d.isBefore(DateTime(2000, 1, 1)))
+    return "The due date can't be before 01-Jan-2000.";
   final now = DateTime.now();
   final max = DateTime(now.year + 5, now.month, now.day);
-  if (d.isAfter(max)) return "The due date can't be more than 5 years ahead (latest ${dmyLabel(max)}).";
+  if (d.isAfter(max))
+    return "The due date can't be more than 5 years ahead (latest ${dmyLabel(max)}).";
   return null;
 }
 
-/// `08-Dec-2025`.
-String dmyLabel(DateTime d) {
-  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return '${d.day.toString().padLeft(2, '0')}-${m[d.month - 1]}-${d.year}';
-}
+/// `08/12/2025` — the app's date style (webapp parity C17).
+String dmyLabel(DateTime d) => fmtDay(d);
 
 /// Edit task — the org's own Task layout, rendered as a form.
 ///
@@ -147,7 +158,8 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
   void _onFormChanged() {
     final type = _formKey.currentState?.valueOf('task_type') ?? '';
     setState(() {
-      if (RegExp('meet', caseSensitive: false).hasMatch(type)) _meetingOpen = true;
+      if (RegExp('meet', caseSensitive: false).hasMatch(type))
+        _meetingOpen = true;
     });
   }
 
@@ -166,8 +178,11 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
       ref.read(toastProvider.notifier).showError(errors.first);
       return;
     }
-    if (_meetingFrom != null && _meetingTo != null && _meetingTo!.isBefore(_meetingFrom!)) {
-      setState(() => _meetingError = 'Meeting end cannot be before the meeting start.');
+    if (_meetingFrom != null &&
+        _meetingTo != null &&
+        _meetingTo!.isBefore(_meetingFrom!)) {
+      setState(() =>
+          _meetingError = 'Meeting end cannot be before the meeting start.');
       return;
     }
     final payload = {...?form?.payload};
@@ -176,9 +191,12 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
         payload['related_to'] = _relatedKind;
         payload['related_to_id'] = _related!.id;
       }
-      if (_meetingFrom != null) payload['meeting_from'] = _meetingFrom!.toUtc().toIso8601String();
-      if (_meetingTo != null) payload['meeting_to'] = _meetingTo!.toUtc().toIso8601String();
-      if (_location.text.trim().isNotEmpty) payload['location'] = _location.text.trim();
+      if (_meetingFrom != null)
+        payload['meeting_from'] = _meetingFrom!.toUtc().toIso8601String();
+      if (_meetingTo != null)
+        payload['meeting_to'] = _meetingTo!.toUtc().toIso8601String();
+      if (_location.text.trim().isNotEmpty)
+        payload['location'] = _location.text.trim();
     }
     if (payload.isEmpty) {
       ref.read(toastProvider.notifier).show('Nothing to save');
@@ -190,10 +208,15 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Create an overdue task?'),
-          content: Text('The due date ${_dmy(DateTime.parse(_dueIso))} has already passed, so this task will be overdue as soon as it is created.'),
+          content: Text(
+              'The due date ${_dmy(DateTime.parse(_dueIso))} has already passed, so this task will be overdue as soon as it is created.'),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Change date')),
-            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Create task')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Change date')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Create task')),
           ],
         ),
       );
@@ -207,12 +230,31 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
     var pending = false;
     try {
       if (creating) {
-        await ref.read(crmTasksRepositoryProvider).createTask({...payload, 'is_followup': widget.isFollowup});
+        await ref
+            .read(crmTasksRepositoryProvider)
+            .createTask({...payload, 'is_followup': widget.isFollowup});
       } else {
         // Moving the due date goes through the reason / approval flow.
-        final hadDate = '${ref.read(_rowProvider(id)).valueOrNull?['due_date'] ?? ''}'.isNotEmpty;
-        final path = widget.isFollowup ? '${ApiEndpoints.crmTask(id)}?is_followup=true' : ApiEndpoints.crmTask(id);
-        final r = await writeWithDueDateFlow(context, ref, path: path, fields: payload, hadDate: hadDate);
+        final storedDue =
+            '${ref.read(_rowProvider(id)).valueOrNull?['due_date'] ?? ''}';
+        final hadDate = storedDue.isNotEmpty;
+        // Saving with the date untouched is not a move: sending it back would
+        // ask "Why is the due date moving?" for the same date.
+        if (hadDate && '${payload['due_date'] ?? ''}' == storedDue) {
+          payload.remove('due_date');
+        }
+        if (payload.isEmpty) {
+          if (mounted) {
+            setState(() => _saving = false);
+            ref.read(toastProvider.notifier).show('Nothing to save');
+          }
+          return;
+        }
+        final path = widget.isFollowup
+            ? '${ApiEndpoints.crmTask(id)}?is_followup=true'
+            : ApiEndpoints.crmTask(id);
+        final r = await writeWithDueDateFlow(context, ref,
+            path: path, fields: payload, hadDate: hadDate);
         if (r == DueDateWrite.cancelled) {
           if (mounted) setState(() => _saving = false);
           return;
@@ -229,12 +271,14 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
         ref.invalidate(leadTasksProvider);
       }
       if (!pending) {
-        ref.read(toastProvider.notifier).show(switch ((creating, widget.isFollowup)) {
-          (true, true) => 'Follow-up created',
-          (true, false) => 'Task created',
-          (false, true) => 'Follow-up updated',
-          (false, false) => 'Task updated',
-        });
+        ref
+            .read(toastProvider.notifier)
+            .show(switch ((creating, widget.isFollowup)) {
+              (true, true) => 'Follow-up created',
+              (true, false) => 'Task created',
+              (false, true) => 'Follow-up updated',
+              (false, false) => 'Task updated',
+            });
       }
       context.pop();
     } on AppError catch (e) {
@@ -242,19 +286,45 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
       // Webapp: field errors under their inputs, the message as an alert at
       // the bottom of the form and a toast — without the `field:` prefix.
       final firsts = {
-        for (final f in (e.fieldErrors ?? const <String, List<String>>{}).entries)
+        for (final f
+            in (e.fieldErrors ?? const <String, List<String>>{}).entries)
           if (f.value.isNotEmpty) f.key: f.value.first,
       };
       if (firsts.isNotEmpty) form?.showErrors(firsts);
       ref.read(apiServiceProvider).handled(e);
       final msg = firsts.isNotEmpty
           ? firsts.values.first
-          : (e.message.isEmpty ? (creating ? 'Could not create the $_noun.' : 'Could not save your change.') : e.message);
+          : (e.message.isEmpty
+              ? (creating
+                  ? 'Could not create the $_noun.'
+                  : 'Could not save your change.')
+              : e.message);
       setState(() {
         _saving = false;
         _formError = msg;
       });
       ref.read(toastProvider.notifier).showError(msg);
+    }
+  }
+
+  /// System back, the header arrow and Cancel: asks "Discard changes?" when
+  /// something was edited (UAT). On an edit the form diffs against the record,
+  /// so a non-empty payload is exactly "something changed"; on a create any
+  /// typed value counts.
+  Future<void> _onLeave(bool creating) async {
+    final payload = _formKey.currentState?.payload ?? const {};
+    final dirty = !_saving &&
+        (payload.values.any((v) =>
+                v != null &&
+                !(v is String && v.trim().isEmpty) &&
+                !(v is Map && v.isEmpty) &&
+                !(v is List && v.isEmpty)) ||
+            (creating &&
+                (_related != null ||
+                    _meetingFrom != null ||
+                    _location.text.trim().isNotEmpty)));
+    if (!dirty || await confirmDiscardChanges(context)) {
+      if (mounted) context.pop();
     }
   }
 
@@ -280,96 +350,125 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
     ref.watch(taskPriorityOptionsProvider);
     ref.watch(teamOptionsProvider);
     final defaults = ref.watch(taskFormDefaultsProvider).valueOrNull;
-    final users = ref.watch(assignableUsersForModuleProvider(widget.isFollowup ? 'followup' : 'task')).valueOrNull;
+    final users = ref
+        .watch(assignableUsersForModuleProvider(
+            widget.isFollowup ? 'followup' : 'task'))
+        .valueOrNull;
 
-    return Container(
-      color: AppColors.bgDetail,
-      child: Column(
-        children: [
-          DetailAppBar(
-            section: widget.isFollowup ? 'Follow-up' : 'Task',
-            name: switch ((creating, widget.isFollowup)) {
-              (true, true) => 'New follow-up',
-              (true, false) => 'New task',
-              (false, true) => 'Edit follow-up',
-              (false, false) => 'Edit task',
-            },
-            onBack: () => context.pop(),
-          ),
-          Expanded(
-            child: switch (row) {
-              AsyncValue(hasError: true) => Center(
-                  child: Text('Could not load this $_noun',
-                      style: AppText.body(color: AppColors.textMuted)),
-                ),
-              AsyncValue(value: null, isLoading: true) => const DetailSkeleton(),
-              _ => ListView(
-                  padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 24.h),
-                  children: [
-                    if (schema.editableColumns.isEmpty)
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32.h),
-                        child: Text(
-                          'This workspace has not configured any editable '
-                          '$_noun fields yet.',
-                          textAlign: TextAlign.center,
-                          style: AppText.body(color: AppColors.textMuted),
-                        ),
-                      )
-                    else ...[
-                      if (creating && !widget.isFollowup) ...[_relatedPicker(), SizedBox(height: 14.h)],
-                      LeadSchemaForm(
-                        key: _formKey,
-                        schema: schema,
-                        row: row.valueOrNull,
-                        includeCustomFields: true,
-                        alwaysSendCustomBooleans: true,
-                        hiddenColumns: const {'committed_due_date'},
-                        onValueChanged: _onFormChanged,
-                        initialChoices: creating && defaults != null
-                            ? {
-                                if (defaults.status != null) 'status': defaults.status!,
-                                if (defaults.priority != null) 'priority': defaults.priority!,
-                              }
-                            : const {},
-                        // `task_type` is typed `string` in the schema but is
-                        // really a choice — the org's own type list, which no
-                        // `related_model` names. Without these it renders as a
-                        // free-text box and a typo is a rejected save.
-                        optionsByColumn: {
-                          'task_type': widget.isFollowup
-                              ? ref.watch(followupTypeOptionsProvider)
-                              : ref.watch(taskTypeOptionsProvider),
-                          // Webapp: a new task starts only in an open lane.
-                          if (creating && defaults != null && defaults.creatable.isNotEmpty)
-                            'status': [for (final s in statuses) if (defaults.creatable.contains(s.id)) s],
-                          // The users the server lets own a task — not the
-                          // whole roster.
-                          if (users != null && users.isNotEmpty) ...{
-                            'assigned_to': users,
-                            'assignees': users,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onLeave(creating);
+      },
+      child: Container(
+        color: AppColors.bgDetail,
+        child: Column(
+          children: [
+            DetailAppBar(
+              section: widget.isFollowup ? 'Follow-up' : 'Task',
+              name: switch ((creating, widget.isFollowup)) {
+                (true, true) => 'New follow-up',
+                (true, false) => 'New task',
+                (false, true) => 'Edit follow-up',
+                (false, false) => 'Edit task',
+              },
+              onBack: () => _onLeave(creating),
+            ),
+            Expanded(
+              child: switch (row) {
+                AsyncValue(hasError: true) => Center(
+                    child: Text('Could not load this $_noun',
+                        style: AppText.body(color: AppColors.textMuted)),
+                  ),
+                AsyncValue(value: null, isLoading: true) =>
+                  const DetailSkeleton(),
+                _ => ListView(
+                    padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 24.h),
+                    children: [
+                      if (schema.editableColumns.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.symmetric(vertical: 32.h),
+                          child: Text(
+                            'This workspace has not configured any editable '
+                            '$_noun fields yet.',
+                            textAlign: TextAlign.center,
+                            style: AppText.body(color: AppColors.textMuted),
+                          ),
+                        )
+                      else ...[
+                        if (creating && !widget.isFollowup) ...[
+                          _relatedPicker(),
+                          SizedBox(height: 14.h)
+                        ],
+                        LeadSchemaForm(
+                          key: _formKey,
+                          schema: schema,
+                          row: row.valueOrNull,
+                          // Edit: only what changed, like the lead and customer
+                          // forms. Re-sending every field also re-sent a stored
+                          // `task_type` the org no longer offers (e.g. a
+                          // system-raised "Deadline" follow-up) and every save
+                          // failed with a 400 (UAT).
+                          diffAgainstRow: !creating,
+                          includeCustomFields: true,
+                          alwaysSendCustomBooleans: true,
+                          hiddenColumns: const {'committed_due_date'},
+                          onValueChanged: _onFormChanged,
+                          initialChoices: creating && defaults != null
+                              ? {
+                                  if (defaults.status != null)
+                                    'status': defaults.status!,
+                                  if (defaults.priority != null)
+                                    'priority': defaults.priority!,
+                                }
+                              : const {},
+                          // `task_type` is typed `string` in the schema but is
+                          // really a choice — the org's own type list, which no
+                          // `related_model` names. Without these it renders as a
+                          // free-text box and a typo is a rejected save.
+                          optionsByColumn: {
+                            'task_type': widget.isFollowup
+                                ? ref.watch(followupTypeOptionsProvider)
+                                : ref.watch(taskTypeOptionsProvider),
+                            // Webapp: a new task starts only in an open lane.
+                            if (creating &&
+                                defaults != null &&
+                                defaults.creatable.isNotEmpty)
+                              'status': [
+                                for (final s in statuses)
+                                  if (defaults.creatable.contains(s.id)) s
+                              ],
+                            // The users the server lets own a task — not the
+                            // whole roster.
+                            if (users != null && users.isNotEmpty) ...{
+                              'assigned_to': users,
+                              'assignees': users,
+                            },
                           },
-                        },
-                      ),
-                      if (creating && _overdue)
-                        Padding(
-                          padding: EdgeInsets.only(top: 6.h),
-                          child: Text('This task will be overdue — ${_dmy(DateTime.parse(_dueIso))} has already passed.',
-                              style: AppText.caption(color: AppColors.warningDeep)),
                         ),
-                      if (creating && !widget.isFollowup) _meetingSection(),
-                      if (_formError != null)
-                        Padding(
-                          padding: EdgeInsets.only(top: 12.h),
-                          child: Text(_formError!, style: AppText.caption(color: AppColors.error)),
-                        ),
+                        if (creating && _overdue)
+                          Padding(
+                            padding: EdgeInsets.only(top: 6.h),
+                            child: Text(
+                                'This task will be overdue — ${_dmy(DateTime.parse(_dueIso))} has already passed.',
+                                style: AppText.caption(
+                                    color: AppColors.warningDeep)),
+                          ),
+                        if (creating && !widget.isFollowup) _meetingSection(),
+                        if (_formError != null)
+                          Padding(
+                            padding: EdgeInsets.only(top: 12.h),
+                            child: Text(_formError!,
+                                style: AppText.caption(color: AppColors.error)),
+                          ),
+                      ],
                     ],
-                  ],
-                ),
-            },
-          ),
-          _actionBar(id),
-        ],
+                  ),
+              },
+            ),
+            _actionBar(id),
+          ],
+        ),
       ),
     );
   }
@@ -395,15 +494,20 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
         label: lead ? 'Lead' : 'Customer',
         readOnly: true,
         value: _related?.label ?? '',
-        hint: lead ? 'Search leads by name, company, email or phone…' : 'Search customers by name, company, email…',
-        suffixIcon: _related == null ? PhosphorIconsRegular.magnifyingGlass : PhosphorIconsRegular.x,
+        hint: lead
+            ? 'Search leads by name, company, email or phone…'
+            : 'Search customers by name, company, email…',
+        suffixIcon: _related == null
+            ? PhosphorIconsRegular.magnifyingGlass
+            : PhosphorIconsRegular.x,
         onTap: () async {
           FocusManager.instance.primaryFocus?.unfocus();
           if (_related != null) {
             setState(() => _related = null);
             return;
           }
-          final picked = await showModalBottomSheet<({String id, String label})>(
+          final picked =
+              await showModalBottomSheet<({String id, String label})>(
             context: context,
             isScrollControlled: true,
             builder: (_) => RecordSearchSheet(kind: _relatedKind),
@@ -413,7 +517,8 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
       ),
       Padding(
         padding: EdgeInsets.only(top: 6.h, left: 2.w),
-        child: Text("Optional — shows on that record's activity.", style: AppText.caption()),
+        child: Text("Optional — shows on that record's activity.",
+            style: AppText.caption()),
       ),
     ]);
   }
@@ -432,14 +537,21 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
     }
     Future<DateTime?> pick(DateTime? current) async {
       FocusManager.instance.primaryFocus?.unfocus();
-      final d = await pickSheetDate(context, current == null ? '' : sheetIsoDate(current));
+      final d = await pickSheetDate(
+          context, current == null ? '' : sheetIsoDate(current));
       if (d == null || !mounted) return null;
-      final t = await pickSheetTime(context, current == null ? '' : sheetTimeLabel(TimeOfDay.fromDateTime(current)));
+      final t = await pickSheetTime(
+          context,
+          current == null
+              ? ''
+              : sheetTimeLabel(TimeOfDay.fromDateTime(current)));
       final time = t ?? const TimeOfDay(hour: 9, minute: 0);
       return DateTime(d.year, d.month, d.day, time.hour, time.minute);
     }
 
-    String show(DateTime? d) => d == null ? '' : '${sheetDateLabel(d)} · ${sheetTimeLabel(TimeOfDay.fromDateTime(d))}';
+    String show(DateTime? d) => d == null
+        ? ''
+        : '${sheetDateLabel(d)} · ${sheetTimeLabel(TimeOfDay.fromDateTime(d))}';
     return Padding(
       padding: EdgeInsets.only(top: 14.h),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -473,7 +585,10 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
           },
         ),
         SizedBox(height: 14.h),
-        AppTextField(label: 'Location', controller: _location, hint: 'e.g. Client office, Zoom link'),
+        AppTextField(
+            label: 'Location',
+            controller: _location,
+            hint: 'e.g. Client office, Zoom link'),
       ]),
     );
   }
@@ -489,7 +604,8 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => context.pop(),
+            // UAT: Cancel asks "Discard changes?" like back does.
+            onTap: () => _onLeave(id.isEmpty),
             child: Container(
               width: 100.w,
               height: 48.h,
@@ -501,7 +617,9 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
               ),
               child: Text('Cancel',
                   style: AppText.custom(
-                      size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                      size: 14,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
             ),
           ),
           SizedBox(width: 10.w),
@@ -525,11 +643,14 @@ class _EditCrmTaskScreenState extends ConsumerState<EditCrmTaskScreen> {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
+                          Icon(PhosphorIconsBold.check,
+                              size: 16.sp, color: AppColors.white),
                           SizedBox(width: 8.w),
                           Text(creating ? 'Add $_noun' : 'Save changes',
                               style: AppText.custom(
-                                  size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                                  size: 15,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.white)),
                         ],
                       ),
               ),
@@ -576,10 +697,10 @@ class _RecordSearchSheetState extends ConsumerState<RecordSearchSheet> {
     final q = _q.text.trim();
     try {
       final body = await ref.read(apiServiceProvider).get(
-        _lead ? ApiEndpoints.leads : ApiEndpoints.customers,
-        query: {if (q.isNotEmpty) 'search': q, 'page': 1, 'page_size': 20},
-        quiet: true,
-      );
+            _lead ? ApiEndpoints.leads : ApiEndpoints.customers,
+            query: {if (q.isNotEmpty) 'search': q, 'page': 1, 'page_size': 20},
+            quiet: true,
+          );
       String first(Map r, List<String> keys) {
         for (final k in keys) {
           final v = '${r[k] ?? ''}'.trim();
@@ -589,12 +710,27 @@ class _RecordSearchSheetState extends ConsumerState<RecordSearchSheet> {
       }
 
       final rows = [
-        for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+        for (final r
+            in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
           (
             id: '${r[_lead ? 'lead_id' : 'customer_id'] ?? r['id'] ?? ''}',
             label: _lead
-                ? first(r, const ['lead_name', 'name', 'company', 'company_name', 'full_name', 'email'])
-                : first(r, const ['name', 'customer_name', 'company', 'company_name', 'contact_name', 'email']),
+                ? first(r, const [
+                    'lead_name',
+                    'name',
+                    'company',
+                    'company_name',
+                    'full_name',
+                    'email'
+                  ])
+                : first(r, const [
+                    'name',
+                    'customer_name',
+                    'company',
+                    'company_name',
+                    'contact_name',
+                    'email'
+                  ]),
             sub: first(r, const ['reference']),
           ),
       ];
@@ -609,7 +745,8 @@ class _RecordSearchSheetState extends ConsumerState<RecordSearchSheet> {
     final q = _q.text.trim();
     final noun = _lead ? 'leads' : 'customers';
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.7,
         child: Column(children: [
@@ -624,7 +761,9 @@ class _RecordSearchSheetState extends ConsumerState<RecordSearchSheet> {
                 setState(() {});
               },
               decoration: InputDecoration(
-                hintText: _lead ? 'Search leads by name, company, email or phone…' : 'Search customers by name, company, email…',
+                hintText: _lead
+                    ? 'Search leads by name, company, email or phone…'
+                    : 'Search customers by name, company, email…',
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),
@@ -634,14 +773,18 @@ class _RecordSearchSheetState extends ConsumerState<RecordSearchSheet> {
             child: _rows == null
                 ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                 : _rows!.isEmpty
-                    ? Center(child: Text(q.isEmpty ? 'No $noun yet' : 'No $noun match “$q”', style: AppText.body(color: AppColors.textMuted)))
+                    ? Center(
+                        child: Text(
+                            q.isEmpty ? 'No $noun yet' : 'No $noun match “$q”',
+                            style: AppText.body(color: AppColors.textMuted)))
                     : ListView(children: [
                         for (final r in _rows!)
                           if (r.id.isNotEmpty)
                             ListTile(
                               title: Text(r.label, style: AppText.bodyStrong()),
                               subtitle: r.sub.isEmpty ? null : Text(r.sub),
-                              onTap: () => Navigator.of(context).pop((id: r.id, label: r.label)),
+                              onTap: () => Navigator.of(context)
+                                  .pop((id: r.id, label: r.label)),
                             ),
                       ]),
           ),

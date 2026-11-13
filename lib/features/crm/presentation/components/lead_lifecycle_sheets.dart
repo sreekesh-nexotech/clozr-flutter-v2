@@ -25,12 +25,14 @@ Future<LostChoice?> showLostReasonSheet(
 }) {
   return showClozrSheet<LostChoice>(
     context: context,
-    builder: (_) => _LostReasonSheet(kind: kind, recordId: recordId, statusName: statusName),
+    builder: (_) => _LostReasonSheet(
+        kind: kind, recordId: recordId, statusName: statusName),
   );
 }
 
 class _LostReasonSheet extends ConsumerStatefulWidget {
-  const _LostReasonSheet({required this.kind, required this.recordId, required this.statusName});
+  const _LostReasonSheet(
+      {required this.kind, required this.recordId, required this.statusName});
 
   final String kind;
   final String recordId;
@@ -55,7 +57,8 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
   @override
   Widget build(BuildContext context) {
     final reasons = ref.watch(leadLostReasonsProvider);
-    final impactAsync = ref.watch(lostImpactProvider((widget.kind, widget.recordId)));
+    final impactAsync =
+        ref.watch(lostImpactProvider((widget.kind, widget.recordId)));
     final impact = impactAsync.valueOrNull;
     final checking = impactAsync.isLoading;
     final options = reasons.valueOrNull ?? const [];
@@ -82,10 +85,13 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Why was this $noun lost? The reason shows on the $noun and in reports.',
+                  Text(
+                      'Why was this $noun lost? The reason shows on the $noun and in reports.',
                       style: AppText.body(color: AppColors.textMuted)),
                   SizedBox(height: 14.h),
-                  Text('Lost reason (required)', style: AppText.captionStrong(color: AppColors.textSecondary)),
+                  Text('Lost reason (required)',
+                      style: AppText.captionStrong(
+                          color: AppColors.textSecondary)),
                   SizedBox(height: 8.h),
                   if (reasons.isLoading)
                     Text('Loading reasons…', style: AppText.caption())
@@ -128,7 +134,10 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
             child: Row(
               children: [
                 Expanded(
-                  child: PrimaryButton(label: 'Cancel', ghost: true, onTap: () => Navigator.of(context).pop()),
+                  child: PrimaryButton(
+                      label: 'Cancel',
+                      ghost: true,
+                      onTap: () => Navigator.of(context).pop()),
                 ),
                 SizedBox(width: 10.w),
                 Expanded(
@@ -155,12 +164,15 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
 
   List<Widget> _impactNotice(LostImpact impact) {
     final out = <Widget>[];
-    Widget box(List<Widget> children, {Color bg = AppColors.tintAmber}) => Container(
+    Widget box(List<Widget> children, {Color bg = AppColors.tintAmber}) =>
+        Container(
           width: double.infinity,
           margin: EdgeInsets.only(top: 14.h),
           padding: EdgeInsets.all(12.r),
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10.r)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+          decoration: BoxDecoration(
+              color: bg, borderRadius: BorderRadius.circular(10.r)),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: children),
         );
     final caption = AppText.caption(color: AppColors.textSecondary);
 
@@ -174,8 +186,10 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
             style: AppText.captionStrong(color: AppColors.textPrimary)),
         SizedBox(height: 6.h),
         for (final inv in impact.openInvoices)
-          Text('${inv.leadName != null ? '${inv.leadName}: ' : ''}${inv.number} · ${inv.date} · '
-              '${formatMoneyStr(inv.amountDue)} due', style: caption),
+          Text(
+              '${inv.leadName != null ? '${inv.leadName}: ' : ''}${inv.number} · ${inv.date} · '
+              '${formatMoneyStr(inv.amountDue)} due',
+              style: caption),
         if (!impact.canCredit) ...[
           SizedBox(height: 6.h),
           Text(
@@ -192,7 +206,9 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
           '${impact.openInstalments} open instalment${impact.openInstalments == 1 ? '' : 's'} '
               '(${formatMoneyStr(impact.openInstalmentsAmount)}) and their follow-up tasks are cancelled',
         if (impact.draftInvoices > 0)
-          impact.draftInvoices == 1 ? '1 draft invoice is voided' : '${impact.draftInvoices} draft invoices are voided',
+          impact.draftInvoices == 1
+              ? '1 draft invoice is voided'
+              : '${impact.draftInvoices} draft invoices are voided',
         if (impact.otherQuotes.isNotEmpty)
           '${impact.otherQuotes.length} other quote${impact.otherQuotes.length == 1 ? ' of this customer is' : 's of this customer are'} '
               'closed the same way: ${impact.otherQuotes.join(', ')}',
@@ -217,8 +233,12 @@ class _LostReasonSheetState extends ConsumerState<_LostReasonSheet> {
                 style: caption),
             SizedBox(height: 4.h),
             Text.rich(TextSpan(children: [
-              TextSpan(text: 'Next step: Refund via Accounts', style: AppText.captionStrong(color: AppColors.textPrimary)),
-              TextSpan(text: ' — only if the customer asks for the money back.', style: caption),
+              TextSpan(
+                  text: 'Next step: Refund via Accounts',
+                  style: AppText.captionStrong(color: AppColors.textPrimary)),
+              TextSpan(
+                  text: ' — only if the customer asks for the money back.',
+                  style: caption),
             ])),
           ],
         ], bg: AppColors.bgLight));
@@ -234,11 +254,16 @@ Future<bool> confirmConvertLead(BuildContext context) async {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Convert to customer?'),
-      content: const Text('A customer record is created from this lead. The lead is then frozen — '
+      content: const Text(
+          'A customer record is created from this lead. The lead is then frozen — '
           'its fields are edited on the customer from that point on.'),
       actions: [
-        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-        TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Convert')),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Convert')),
       ],
     ),
   );
@@ -247,7 +272,8 @@ Future<bool> confirmConvertLead(BuildContext context) async {
 
 /// The user's answer to a `CUSTOMER_MATCH`: attach to an existing customer or
 /// create a new one under a fresh name — exactly the convert body to resend.
-Future<Map<String, dynamic>?> showCustomerMatchSheet(BuildContext context, CustomerMatch match) {
+Future<Map<String, dynamic>?> showCustomerMatchSheet(
+    BuildContext context, CustomerMatch match) {
   return showClozrSheet<Map<String, dynamic>>(
     context: context,
     builder: (_) => _CustomerMatchSheet(match: match),
@@ -295,10 +321,12 @@ class _CustomerMatchSheetState extends State<_CustomerMatchSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(m.message, style: AppText.body(color: AppColors.textMuted)),
+                  Text(m.message,
+                      style: AppText.body(color: AppColors.textMuted)),
                   if (m.candidates.isNotEmpty) ...[
                     SizedBox(height: 14.h),
-                    Text('Attach this lead to an existing customer', style: AppText.sectionTitle()),
+                    Text('Attach this lead to an existing customer',
+                        style: AppText.sectionTitle()),
                     SizedBox(height: 8.h),
                     for (final c in m.candidates)
                       Container(
@@ -315,24 +343,34 @@ class _CustomerMatchSheetState extends State<_CustomerMatchSheet> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('${c.name}${c.reference.isNotEmpty ? ' · ${c.reference}' : ''}',
+                                  Text(
+                                      '${c.name}${c.reference.isNotEmpty ? ' · ${c.reference}' : ''}',
                                       style: AppText.bodyStrong()),
                                   if (c.email.isNotEmpty || c.phone.isNotEmpty)
-                                    Text([c.email, c.phone].where((s) => s.isNotEmpty).join(' · '), style: caption),
+                                    Text(
+                                        [c.email, c.phone]
+                                            .where((s) => s.isNotEmpty)
+                                            .join(' · '),
+                                        style: caption),
                                   SizedBox(height: 4.h),
-                                  Text(c.matchLabel, style: AppText.captionStrong(color: AppColors.blueBright)),
+                                  Text(c.matchLabel,
+                                      style: AppText.captionStrong(
+                                          color: AppColors.blueBright)),
                                 ],
                               ),
                             ),
                             TextButton(
-                              onPressed: () => Navigator.of(context).pop({'attach_to_customer_id': c.id}),
+                              onPressed: () => Navigator.of(context)
+                                  .pop({'attach_to_customer_id': c.id}),
                               child: const Text('Attach'),
                             ),
                           ],
                         ),
                       ),
-                    Text('The lead becomes a new deal of that customer: its products and quotes move there, '
-                        'and the customer keeps its own details.', style: caption),
+                    Text(
+                        'The lead becomes a new deal of that customer: its products and quotes move there, '
+                        'and the customer keeps its own details.',
+                        style: caption),
                   ],
                   if (m.hiddenCount > 0) ...[
                     SizedBox(height: 8.h),
@@ -343,7 +381,8 @@ class _CustomerMatchSheetState extends State<_CustomerMatchSheet> {
                         style: caption),
                   ],
                   SizedBox(height: 18.h),
-                  Text('Or create a new customer', style: AppText.sectionTitle()),
+                  Text('Or create a new customer',
+                      style: AppText.sectionTitle()),
                   SizedBox(height: 8.h),
                   AppTextField(
                     label: 'New customer name',
@@ -362,7 +401,10 @@ class _CustomerMatchSheetState extends State<_CustomerMatchSheet> {
                         : null,
                   ),
                   SizedBox(height: 8.h),
-                  PrimaryButton(label: 'Cancel', ghost: true, onTap: () => Navigator.of(context).pop()),
+                  PrimaryButton(
+                      label: 'Cancel',
+                      ghost: true,
+                      onTap: () => Navigator.of(context).pop()),
                 ],
               ),
             ),

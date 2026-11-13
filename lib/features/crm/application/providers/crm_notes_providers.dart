@@ -35,7 +35,8 @@ class CrmNotesSeed {
   }
 
   @override
-  bool operator ==(Object other) => other is CrmNotesSeed && other.recordId == recordId;
+  bool operator ==(Object other) =>
+      other is CrmNotesSeed && other.recordId == recordId;
 
   @override
   int get hashCode => recordId.hashCode;
@@ -123,7 +124,10 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
 
   /// Prepends a note authored by [author] with any pending [attachments].
   void addNote(String body, List<NoteAttachment> attachments, NoteAuthor author,
-      {String? noteTypeId, String? noteTypeName, List<String> mentionedUserIds = const [], String? authorId}) {
+      {String? noteTypeId,
+      String? noteTypeName,
+      List<String> mentionedUserIds = const [],
+      String? authorId}) {
     // An image posted with no caption still needs non-blank content, or the
     // POST 400s and the attachment — which uploads against the created note —
     // never goes out at all. See [noteBodyForApi].
@@ -156,6 +160,19 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
         // Attachments are a second call — the upload points at a note_id, so
         // it can only happen now that the note exists.
         final uploaded = await _uploadAttachments(created.id, attachments);
+        // The text was posted with temporary `[[att:local-…]]` markers; now
+        // the files have real ids, write those into the note (webapp flow).
+        final resolved = bodyAfterUploads(body, uploaded, attachments);
+        if (resolved != null) {
+          try {
+            await _repo.updateNote(
+                noteId: created.id,
+                body: resolved,
+                mentionedUserIds: mentionedUserIds);
+          } on Object {
+            // The note and its files are saved; only their placement is lost.
+          }
+        }
         if (!mounted) return;
         // Swap in the server id so replies to this note hit the real thread.
         state = [
@@ -165,7 +182,7 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
                     id: created.id,
                     author: n.author,
                     time: n.time,
-                    body: n.body,
+                    body: resolved ?? n.body,
                     via: n.via,
                     avatarColor: n.avatarColor,
                     replies: n.replies,
@@ -239,12 +256,16 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
 
   /// Webapp "Edit note": saves the new text, keeping the old on refusal.
   /// Returns the server's error, or null.
-  Future<String?> editNote(String noteId, String body, {List<String> mentionedUserIds = const []}) async {
+  Future<String?> editNote(String noteId, String body,
+      {List<String> mentionedUserIds = const []}) async {
     final before = state;
-    state = [for (final n in state) n.id == noteId ? n.copyWith(body: body) : n];
+    state = [
+      for (final n in state) n.id == noteId ? n.copyWith(body: body) : n
+    ];
     if (!_remoteWired) return null;
     try {
-      await _repo!.updateNote(noteId: noteId, body: body, mentionedUserIds: mentionedUserIds);
+      await _repo!.updateNote(
+          noteId: noteId, body: body, mentionedUserIds: mentionedUserIds);
       return null;
     } on AppError catch (e) {
       if (mounted) state = before;
@@ -255,7 +276,10 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
   /// Webapp "Delete note": removes it (and its replies). Returns the error.
   Future<String?> deleteNote(String noteId) async {
     final before = state;
-    state = [for (final n in state) if (n.id != noteId) n];
+    state = [
+      for (final n in state)
+        if (n.id != noteId) n
+    ];
     if (!_remoteWired) return null;
     try {
       await _repo!.deleteNote(noteId);
@@ -269,8 +293,8 @@ class CrmNotesNotifier extends StateNotifier<List<NoteEntry>> {
 
 /// Per-record notes provider. Kept alive (no autoDispose) so notes added on a
 /// detail screen survive navigation away and back.
-final crmNotesProvider =
-    StateNotifierProvider.family<CrmNotesNotifier, List<NoteEntry>, CrmNotesSeed>(
+final crmNotesProvider = StateNotifierProvider.family<CrmNotesNotifier,
+    List<NoteEntry>, CrmNotesSeed>(
   (ref, seed) {
     if (ApiConfig.apiEnabled) {
       return CrmNotesNotifier.remote(ref.read(notesRepositoryProvider), seed);
@@ -284,7 +308,8 @@ final crmNotesProvider =
 ///
 /// An empty answer (none configured, or the call timed out) is not kept, so
 /// the next screen that shows notes asks again; a real list is kept.
-final noteTypesProvider = FutureProvider.autoDispose<List<NoteTypeOption>>((ref) async {
+final noteTypesProvider =
+    FutureProvider.autoDispose<List<NoteTypeOption>>((ref) async {
   final types = await ref.read(notesRepositoryProvider).noteTypes();
   if (types.isNotEmpty) ref.keepAlive();
   return types;
@@ -296,17 +321,29 @@ final noteTypesProvider = FutureProvider.autoDispose<List<NoteTypeOption>>((ref)
 /// on the webapp — there is simply no Mention picker.
 // autoDispose until a list arrives: a timed-out fetch is retried the next
 // time a task opens, rather than leaving the picker missing for the session.
-final taskMentionUsersProvider = FutureProvider.autoDispose<List<({String id, String name})>>((ref) async {
+final taskMentionUsersProvider =
+    FutureProvider.autoDispose<List<({String id, String name})>>((ref) async {
   if (!ApiConfig.apiEnabled) return const [];
   try {
-    final body = await ref.read(apiServiceProvider).get(ApiEndpoints.users, query: {'page_size': 100}, quiet: true);
+    final body = await ref.read(apiServiceProvider).getAllPages(
+        ApiEndpoints.users,
+        query: {'page_size': 100},
+        quiet: true);
     final out = <({String id, String name})>[];
-    for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
+    for (final r
+        in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
       final id = r['user_id'];
       if (id == null) continue;
       final full = '${r['full_name'] ?? ''}'.trim();
-      final parts = [r['first_name'], r['last_name']].where((v) => v != null && '$v'.isNotEmpty).join(' ').trim();
-      final name = full.isNotEmpty ? full : parts.isNotEmpty ? parts : '${r['username'] ?? r['email'] ?? ''}'.trim();
+      final parts = [r['first_name'], r['last_name']]
+          .where((v) => v != null && '$v'.isNotEmpty)
+          .join(' ')
+          .trim();
+      final name = full.isNotEmpty
+          ? full
+          : parts.isNotEmpty
+              ? parts
+              : '${r['username'] ?? r['email'] ?? ''}'.trim();
       if (name.isNotEmpty) out.add((id: '$id', name: name));
     }
     if (out.isNotEmpty) ref.keepAlive();

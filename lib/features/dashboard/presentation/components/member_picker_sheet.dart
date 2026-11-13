@@ -36,14 +36,20 @@ Future<void> showDashMemberPicker(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Filter by member',
-                  style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 17,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               GestureDetector(
                 onTap: () => Navigator.of(ctx).pop(),
                 child: Container(
                   width: 32.w,
                   height: 32.w,
-                  decoration: BoxDecoration(color: DashColors.chipGrey, borderRadius: BorderRadius.circular(9.r)),
-                  child: Icon(PhosphorIconsBold.x, size: 15.sp, color: AppColors.textLabelAlt),
+                  decoration: BoxDecoration(
+                      color: DashColors.chipGrey,
+                      borderRadius: BorderRadius.circular(9.r)),
+                  child: Icon(PhosphorIconsBold.x,
+                      size: 15.sp, color: AppColors.textLabelAlt),
                 ),
               ),
             ],
@@ -62,7 +68,9 @@ Future<void> showDashMemberPicker(
                     child: Text('No members available to filter by.',
                         textAlign: TextAlign.center,
                         style: AppText.custom(
-                            size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
                   )
                 else
                   for (final o in rows)
@@ -73,9 +81,12 @@ Future<void> showDashMemberPicker(
                         Navigator.of(ctx).pop();
                       },
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 14.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 10.w, vertical: 14.h),
                         decoration: const BoxDecoration(
-                          border: Border(bottom: BorderSide(color: AppColors.bgLight, width: 1)),
+                          border: Border(
+                              bottom: BorderSide(
+                                  color: AppColors.bgLight, width: 1)),
                         ),
                         child: Row(
                           children: [
@@ -85,18 +96,25 @@ Future<void> showDashMemberPicker(
                                 children: [
                                   Text(o.name,
                                       style: AppText.custom(
-                                          size: 15, weight: FontWeight.w600, color: AppColors.textBody)),
+                                          size: 15,
+                                          weight: FontWeight.w600,
+                                          color: AppColors.textBody)),
                                   if (o.sub.isNotEmpty) ...[
                                     SizedBox(height: 1.h),
                                     Text(o.sub,
                                         style: AppText.custom(
-                                            size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                                            size: 12,
+                                            weight: FontWeight.w500,
+                                            color: AppColors.textPlaceholder)),
                                   ],
                                 ],
                               ),
                             ),
                             Icon(PhosphorIconsBold.check,
-                                size: 17.sp, color: selected == o.id ? DashColors.green : Colors.transparent),
+                                size: 17.sp,
+                                color: selected == o.id
+                                    ? DashColors.green
+                                    : Colors.transparent),
                           ],
                         ),
                       ),

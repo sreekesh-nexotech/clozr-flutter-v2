@@ -50,8 +50,7 @@ String? moneyInput(String raw) {
 bool moneyIsZero(Object? value) => moneyNum(value).abs() < 0.005;
 
 /// `YYYY-MM-DD` — the only date form the accounting API reads (in IST).
-String isoDay(DateTime d) =>
-    '${d.year.toString().padLeft(4, '0')}-'
+String isoDay(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
     '${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
 
@@ -59,7 +58,7 @@ String isoDay(DateTime d) =>
 String formatApiDay(String? iso) {
   if (iso == null || iso.isEmpty) return '—';
   final d = DateTime.tryParse(iso);
-  return d == null ? iso : DateFormat('d MMM yyyy').format(d);
+  return d == null ? iso : DateFormat('dd/MM/yyyy').format(d);
 }
 
 final Random _rng = Random.secure();

@@ -43,8 +43,11 @@ class TeamCard extends StatelessWidget {
                 width: 40.w,
                 height: 40.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(11.r)),
-                child: Icon(PhosphorIconsRegular.usersThree, size: 19.sp, color: AppColors.navy),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEEF1F4),
+                    borderRadius: BorderRadius.circular(11.r)),
+                child: Icon(PhosphorIconsRegular.usersThree,
+                    size: 19.sp, color: AppColors.navy),
               ),
               SizedBox(width: 12.w),
               Expanded(
@@ -56,17 +59,24 @@ class TeamCard extends StatelessWidget {
                     Text(team.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 2.h),
                     Row(
                       children: [
-                        Icon(PhosphorIconsRegular.mapPin, size: 11.sp, color: AppColors.textMuted),
+                        Icon(PhosphorIconsRegular.mapPin,
+                            size: 11.sp, color: AppColors.textMuted),
                         SizedBox(width: 4.w),
                         Flexible(
                           child: Text('${team.zone} · ${team.countLabel}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                              style: AppText.custom(
+                                  size: 11.5,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted)),
                         ),
                       ],
                     ),
@@ -96,10 +106,17 @@ class TeamCard extends StatelessWidget {
                     Text(lead?.name ?? '—',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
                     Text('TEAM LEAD',
-                        style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                        style: AppText.custom(
+                            size: 10.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPlaceholder,
+                            letterSpacing: 0.4)),
                   ],
                 ),
               ),
@@ -108,7 +125,8 @@ class TeamCard extends StatelessWidget {
                 size: 28,
                 overlap: 8,
                 items: [
-                  for (final id in team.members) (membersById[id]?.initials ?? '?', _color(id)),
+                  for (final id in team.members)
+                    (membersById[id]?.initials ?? '?', _color(id)),
                 ],
               ),
             ],
@@ -133,7 +151,8 @@ class TeamCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(9.r),
           border: Border.all(color: AppColors.borderCard),
         ),
-        child: Icon(PhosphorIconsRegular.pencilSimple, size: 15.sp, color: AppColors.textSecondary),
+        child: Icon(PhosphorIconsRegular.pencilSimple,
+            size: 15.sp, color: AppColors.textSecondary),
       ),
     );
   }
@@ -152,9 +171,14 @@ class TeamCard extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(PhosphorIconsRegular.userPlus, size: 14.sp, color: AppColors.textSecondary),
+            Icon(PhosphorIconsRegular.userPlus,
+                size: 14.sp, color: AppColors.textSecondary),
             SizedBox(width: 5.w),
-            Text('Add', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textBody)),
+            Text('Add',
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ],
         ),
       ),

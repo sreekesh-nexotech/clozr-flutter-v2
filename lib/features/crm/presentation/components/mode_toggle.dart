@@ -45,7 +45,9 @@ class ModeToggle extends StatelessWidget {
                   height: 42.h,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: selectedIndex == i ? AppColors.white : Colors.transparent,
+                    color: selectedIndex == i
+                        ? AppColors.white
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(11.r),
                     border: selectedIndex == i
                         ? Border.all(color: const Color(0xFFE6E7EA))
@@ -65,14 +67,20 @@ class ModeToggle extends StatelessWidget {
                     children: [
                       Icon(options[i].icon,
                           size: 16.sp,
-                          color: selectedIndex == i ? AppColors.navy : AppColors.textMuted2),
+                          color: selectedIndex == i
+                              ? AppColors.navy
+                              : AppColors.textMuted2),
                       SizedBox(width: 7.w),
                       Text(
                         options[i].label,
                         style: AppText.custom(
                           size: 13.5,
-                          weight: selectedIndex == i ? FontWeight.w700 : FontWeight.w500,
-                          color: selectedIndex == i ? AppColors.navy : AppColors.textMuted2,
+                          weight: selectedIndex == i
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: selectedIndex == i
+                              ? AppColors.navy
+                              : AppColors.textMuted2,
                         ),
                       ),
                     ],

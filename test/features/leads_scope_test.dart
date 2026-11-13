@@ -69,7 +69,8 @@ class _RecordAdapter implements HttpClientAdapter {
   ) async {
     requests.add(options);
     return ResponseBody.fromString(
-      jsonEncode({'lead_id': 'L1', 'lead_name': 'Lead 1', 'status': 'Contacted'}),
+      jsonEncode(
+          {'lead_id': 'L1', 'lead_name': 'Lead 1', 'status': 'Contacted'}),
       200,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -136,13 +137,15 @@ class _RecordingRepo implements LeadsRepository {
   Future<Lead?> updateLeadStatus(String leadId, String statusId) async => null;
 
   @override
-  Future<List<CatalogOption>> getAssignableUsers(String leadId) async => const [];
+  Future<List<CatalogOption>> getAssignableUsers(String leadId) async =>
+      const [];
 
   @override
   Future<Lead?> createLead(Map<String, dynamic> fields) async => null;
 
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async =>
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields,
+          {String? version}) async =>
       null;
 
   @override
@@ -167,7 +170,8 @@ void main() {
 
       adapter.requests.clear();
       await ds.fetchLeadRows();
-      expect(adapter.requests.single.queryParameters.containsKey('is_teams'), isFalse);
+      expect(adapter.requests.single.queryParameters.containsKey('is_teams'),
+          isFalse);
     });
 
     test('sends the drawer filters as query params, is-not included', () async {
@@ -188,7 +192,8 @@ void main() {
       expect(q['lead_score_min'], 75);
     });
 
-    test('paging and scope keys survive a filter that collides with them', () async {
+    test('paging and scope keys survive a filter that collides with them',
+        () async {
       final adapter = _PagingAdapter(pages: 2);
       final ds = LeadsRemoteDataSource(_apiWith(adapter));
 
@@ -250,7 +255,8 @@ void main() {
   });
 
   group('mock repository', () {
-    test('mineOnly mirrors the server scope (owner or assignee is me)', () async {
+    test('mineOnly mirrors the server scope (owner or assignee is me)',
+        () async {
       const repo = LeadsRepositoryImpl(LeadsMockDataSource());
 
       final all = await repo.getLeads();
@@ -262,7 +268,8 @@ void main() {
   });
 
   group('drawer filters are a server query, not a local pass', () {
-    test('editing a filter refetches with it; clearing refetches without', () async {
+    test('editing a filter refetches with it; clearing refetches without',
+        () async {
       final repo = _RecordingRepo();
       final container = ProviderContainer(overrides: [
         leadsRepositoryProvider.overrideWithValue(repo),

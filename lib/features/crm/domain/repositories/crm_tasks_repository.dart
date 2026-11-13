@@ -24,7 +24,8 @@ abstract class CrmTasksRepository {
   /// Unmapped by design: the panel renders the columns the org configured, so
   /// it needs values keyed by field name. Null when no such task is visible.
   /// [isFollowup] adds `?is_followup=true` — without it a follow-up is a 404.
-  Future<Map<String, dynamic>?> getTaskRow(String id, {bool isFollowup = false});
+  Future<Map<String, dynamic>?> getTaskRow(String id,
+      {bool isFollowup = false});
 
   /// Creates a task from the Add-task sheet's fields
   /// (`title` / `task_type` / `due_date` / `description`). Returns the created
@@ -41,12 +42,16 @@ abstract class CrmTasksRepository {
   /// `PATCH /crm/tasks/{id}/` — saves an edit built from the org's schema.
   /// [isFollowup] adds `?is_followup=true`: a follow-up is only found under
   /// that flag, and the plain task URL answers 404 for it.
-  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields, {bool isFollowup = false});
+  Future<CrmTask?> updateTask(String id, Map<String, dynamic> fields,
+      {bool isFollowup = false});
 
   /// `DELETE /crm/tasks/{id}/` (`?is_followup=true` for a follow-up).
   Future<void> deleteTask(String id, {bool isFollowup = false});
 
   /// Moves a task to the status matching the UI key
-  /// (`todo | inprogress | blocked | done`).
-  Future<void> setTaskStatusByKey(String taskId, String uiStatusKey);
+  /// (`todo | inprogress | blocked | done`). [requestNote] is the comment for
+  /// the approver when the move needs approval. Resolves true when the server
+  /// held the move for approval (202) — the task keeps its status until then.
+  Future<bool> setTaskStatusByKey(String taskId, String uiStatusKey,
+      {String requestNote = ''});
 }

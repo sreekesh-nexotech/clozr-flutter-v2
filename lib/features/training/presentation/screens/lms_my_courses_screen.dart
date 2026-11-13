@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -6,303 +8,347 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../core/network/app_error.dart';
+import '../../../../core/utils/relative_time.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../../data/mock/status_meta.dart';
-import '../../../shell/application/providers/shell_providers.dart';
-import '../../application/providers/lms_providers.dart';
-import '../../domain/entities/course.dart';
-import '../../domain/entities/learner_record.dart';
-import '../../domain/lms_logic.dart';
+import '../../application/providers/my_training_providers.dart';
+import '../../domain/entities/my_course.dart';
 import '../components/lms_header.dart';
 import '../components/lms_progress_bar.dart';
+import '../components/lms_search_field.dart';
 import '../lms_nav.dart';
 
-/// My Courses — the current user's progress header, an in-progress carousel
-/// (with sequential module locking), a more-courses grid and an all-caught-up
-/// state.
-class LmsMyCoursesScreen extends ConsumerWidget {
+/// Webapp `MyTrainingsScreen`: the signed-in user's own published enrolments
+/// (`GET /lms/my-courses/`) — search, the "My progress" card with Continue
+/// learning, then "Courses in progress" and "Completed". Open to every user on
+/// the LMS plan; never reads the admin-only course list.
+class LmsMyCoursesScreen extends ConsumerStatefulWidget {
   const LmsMyCoursesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final record = ref.watch(lmsRecordByIdProvider('me'));
-    final courseOf = ref.watch(lmsCourseLookupProvider);
-    final load = lmsCombine([
-      ref.watch(lmsRecordsControllerProvider),
-      ref.watch(lmsCoursesControllerProvider),
-    ]);
+  ConsumerState<LmsMyCoursesScreen> createState() => _LmsMyCoursesScreenState();
+}
 
-    final entries = <(CourseProgress, Course)>[
-      for (final e in record.courses)
-        if (courseOf(e.courseId) != null && courseOf(e.courseId)!.isPublished)
-          (e, courseOf(e.courseId)!),
-    ];
-    final doneCount = entries.where((x) => LmsLogic.done(x.$1)).length;
-    final avg = entries.isEmpty
-        ? 0
-        : (entries.map((x) => LmsLogic.pct(x.$1)).reduce((a, b) => a + b) / entries.length).round();
-    final allDone = entries.isNotEmpty && doneCount == entries.length;
-    final anyOver = entries.any((x) => LmsLogic.statusOf(x.$1, x.$2) == 'overdue');
-    final headKey = allDone ? 'completed' : (anyOver ? 'overdue' : 'inprogress');
+class _LmsMyCoursesScreenState extends ConsumerState<LmsMyCoursesScreen> {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
 
-    final inProg = entries.where((x) => LmsLogic.statusOf(x.$1, x.$2) == 'inprogress').toList();
-    final more = entries.where((x) => LmsLogic.statusOf(x.$1, x.$2) != 'inprogress').toList();
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
-    void toast(String m) => ref.read(toastProvider.notifier).show(m);
+  void _onSearch(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) ref.read(myCoursesSearchProvider.notifier).state = v.trim();
+    });
+  }
 
-    final children = <Widget>[
-      Padding(
-        padding: EdgeInsets.symmetric(horizontal: 18.w),
-        child: _progressCard(record, entries, doneCount, avg, headKey, allDone),
-      ),
-      if (allDone)
-        Padding(
-          padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 0),
-          child: _allCaughtUp(),
+  void _open(String enrollmentId) =>
+      context.push('${Routes.lmsPlayer}?enrollment=$enrollmentId');
+
+  @override
+  Widget build(BuildContext context) {
+    final search = ref.watch(myCoursesSearchProvider);
+    final async = ref.watch(myCoursesProvider(search));
+    // Keep the last page on screen while a new search loads (webapp
+    // keepPreviousData), so the progress card does not flash to zero.
+    final page = async.valueOrNull;
+
+    Widget body;
+    if (page == null && async.isLoading) {
+      body = const ListSkeleton();
+    } else if (page == null && async.hasError) {
+      final e = async.error;
+      body = ListView(children: [
+        ErrorState.forError(
+          e is AppError
+              ? e
+              : const AppError(
+                  type: AppErrorType.unknown,
+                  message: 'Something went wrong. Please try again.'),
+          onRetry: () => ref.invalidate(myCoursesProvider(search)),
         ),
-      for (final x in inProg) ..._inProgressBlock(context, x, toast),
-      Padding(
-        padding: EdgeInsets.fromLTRB(20.w, 22.h, 20.w, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('More courses', style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
-            SizedBox(height: 2.h),
-            Text('Complete your assigned courses.',
-                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-          ],
-        ),
-      ),
-      Padding(
-        padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 0),
-        child: _moreGrid(context, more),
-      ),
-    ];
+      ]);
+    } else {
+      body = RefreshIndicator(
+        onRefresh: () => ref.refresh(myCoursesProvider(search).future),
+        child: _content(page ?? const MyCoursesPage(results: []), search),
+      );
+    }
 
     return Container(
       color: AppColors.bgScreen,
       child: Column(
         children: [
           LmsHeader(
-            onBack: () => lmsBack(context),
-            title: Text('My courses',
-                style: AppText.custom(size: 22, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+            onBack: () => lmsBack(context, fallback: Routes.lmsMy),
+            title: Text('My Trainings',
+                style: AppText.custom(
+                    size: 22,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.4)),
+            bottom: LmsSearchField(
+                controller: _searchCtrl,
+                hint: 'Search courses..',
+                onChanged: _onSearch),
           ),
-          Expanded(
-            child: load.loading
-                ? const ListSkeleton()
-                : load.error != null
-                    ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
-                    : entries.isEmpty
-                        ? ListView(children: const [
-                            EmptyState(
-                              icon: PhosphorIconsFill.graduationCap,
-                              title: 'No courses assigned',
-                              body: 'Courses assigned to you will show up here once your manager enrols you.',
-                            ),
-                          ])
-                        : ListView(
-                            padding: EdgeInsets.only(top: 16.h, bottom: 40.h),
-                            children: children,
-                          ),
-          ),
+          Expanded(child: body),
         ],
       ),
     );
   }
 
-  Widget _progressCard(
-    LearnerRecord record,
-    List<(CourseProgress, Course)> entries,
-    int doneCount,
-    int avg,
-    String headKey,
-    bool allDone,
-  ) {
-    return ClozrCard(
-      radius: 16,
-      padding: EdgeInsets.all(16.r),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _content(MyCoursesPage page, String search) {
+    final results = page.results;
+    final done = results.where((c) => c.isCompleted).length;
+    final overall = results.isEmpty
+        ? 0
+        : (results.map((c) => c.completion).reduce((a, b) => a + b) /
+                results.length)
+            .round();
+    final inProgress = results.where((c) => !c.isCompleted).toList();
+    final completed = results.where((c) => c.isCompleted).toList();
+    // The server can name a last-watched enrolment that is no longer listed
+    // (its course went back to draft); resuming it would only reach "Course
+    // not found.", so fall back to the first course still in progress.
+    final lastWatched = page.lastWatchedEnrollmentId;
+    final continueId =
+        lastWatched != null && results.any((c) => c.enrollmentId == lastWatched)
+            ? lastWatched
+            : (inProgress.isEmpty ? null : inProgress.first.enrollmentId);
+    final allDone = results.isNotEmpty && done == results.length;
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 40.h),
+      children: [
+        ClozrCard(
+          radius: 16,
+          padding: EdgeInsets.all(16.r),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('My progress', style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                    SizedBox(height: 2.h),
-                    Text('$doneCount of ${entries.length} courses completed',
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
-                  ],
-                ),
-              ),
-              SizedBox(width: 10.w),
-              StatusPill.meta(StatusMeta$.lms[headKey]!),
-            ],
-          ),
-          SizedBox(height: 13.h),
-          Row(
-            children: [
-              Expanded(child: LmsProgressBar(value: avg / 100, color: allDone ? AppColors.success : AppColors.warning, height: 8)),
-              SizedBox(width: 10.w),
-              Text('$avg%', style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _allCaughtUp() {
-    return ClozrCard(
-      radius: 18,
-      padding: EdgeInsets.symmetric(horizontal: 22.w, vertical: 34.h),
-      child: Column(
-        children: [
-          Container(
-            width: 66.r,
-            height: 66.r,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.tintAmber, borderRadius: BorderRadius.circular(20.r)),
-            child: Icon(PhosphorIconsFill.trophy, size: 32.sp, color: AppColors.warningDeep),
-          ),
-          SizedBox(height: 14.h),
-          Text("You're All Caught Up!", style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary)),
-          SizedBox(height: 7.h),
-          ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 260.w),
-            child: Text(
-              "You've completed all your modules and your training is 100% up to date. Great job staying ahead of the curve!",
-              textAlign: TextAlign.center,
-              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.55),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _inProgressBlock(BuildContext context, (CourseProgress, Course) x, void Function(String) toast) {
-    final e = x.$1;
-    final c = x.$2;
-    final nextIdx = e.mods.indexWhere((m) => m < 100);
-    final idx = nextIdx < 0 ? 0 : nextIdx;
-    return [
-      Padding(
-        padding: EdgeInsets.fromLTRB(20.w, 22.h, 20.w, 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  Text(c.title, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                  SizedBox(height: 2.h),
-                  Text('Module ${idx + 1} - ${c.modules[idx].title}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('My progress',
+                            style: AppText.custom(
+                                size: 16,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary)),
+                        SizedBox(height: 2.h),
+                        Text('$done of ${results.length} courses completed',
+                            style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted)),
+                      ],
+                    ),
+                  ),
+                  if (results.isNotEmpty)
+                    StatusPill.meta(
+                        StatusMeta$.lms[allDone ? 'completed' : 'inprogress']!),
                 ],
               ),
-            ),
-            SizedBox(width: 10.w),
-            if (c.deadline.isNotEmpty)
-              Text('Deadline: ${c.deadline}',
-                  style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
-          ],
+              if (continueId != null) ...[
+                SizedBox(height: 12.h),
+                GestureDetector(
+                  onTap: () => _open(continueId),
+                  child: Container(
+                    height: 40.h,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(10.r)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(PhosphorIconsFill.play,
+                            size: 15.sp, color: AppColors.white),
+                        SizedBox(width: 7.w),
+                        Text('Continue learning',
+                            style: AppText.custom(
+                                size: 13.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.white)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              SizedBox(height: 13.h),
+              Row(
+                children: [
+                  Expanded(
+                      child: LmsProgressBar(
+                          value: overall / 100,
+                          color: AppColors.warning,
+                          height: 8)),
+                  SizedBox(width: 10.w),
+                  Text('$overall%',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-      SizedBox(
-        height: 178.h,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 4.h),
-          itemCount: c.modules.length,
-          separatorBuilder: (_, __) => SizedBox(width: 12.w),
-          itemBuilder: (context, i) => _moduleCard(context, e, c, i, toast),
-        ),
-      ),
-    ];
+        if (results.isEmpty)
+          EmptyState(
+            icon: search.isEmpty
+                ? PhosphorIconsFill.graduationCap
+                : PhosphorIconsRegular.magnifyingGlass,
+            title: search.isEmpty
+                ? 'No training assigned to you yet'
+                : 'No courses match your search',
+            body: '',
+          ),
+        if (inProgress.isNotEmpty) ...[
+          _sectionTitle('Courses in progress'),
+          for (final c in inProgress) _card(c),
+        ],
+        if (completed.isNotEmpty) ...[
+          _sectionTitle('Completed'),
+          for (final c in completed) _card(c),
+        ],
+      ],
+    );
   }
 
-  Widget _moduleCard(BuildContext context, CourseProgress e, Course c, int i, void Function(String) toast) {
-    final locked = LmsLogic.lockedAt(e, c, i);
-    final p = i < e.mods.length ? e.mods[i] : 0;
-    return GestureDetector(
-      onTap: () {
-        if (locked) {
-          toast('Complete the previous module first');
-        } else {
-          context.push('${Routes.lmsPlayer}?id=${c.id}&m=$i');
-        }
-      },
-      child: Opacity(
-        opacity: locked ? 0.55 : 1,
-        child: Container(
-          width: 252.w,
-          decoration: BoxDecoration(color: c.tint, borderRadius: BorderRadius.circular(14.r)),
+  Widget _sectionTitle(String t) => Padding(
+        padding: EdgeInsets.fromLTRB(2.w, 22.h, 2.w, 10.h),
+        child: Text(t,
+            style: AppText.custom(
+                size: 17,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
+      );
+
+  Widget _badge(String text, Color fg, Color bg, {bool dot = true}) =>
+      Container(
+        height: 24.h,
+        padding: EdgeInsets.symmetric(horizontal: 9.w),
+        decoration:
+            BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (dot) ...[
+              Container(
+                  width: 7.r,
+                  height: 7.r,
+                  decoration: BoxDecoration(color: fg, shape: BoxShape.circle)),
+              SizedBox(width: 5.w),
+            ],
+            Text(text,
+                style: AppText.custom(
+                    size: 11.5, weight: FontWeight.w700, color: fg)),
+          ],
+        ),
+      );
+
+  /// Webapp `MyCourseCard`.
+  Widget _card(MyCourse c) {
+    final pct = c.completion.round();
+    final bar = c.isCompleted
+        ? AppColors.success
+        : (c.isOverdue ? AppColors.error : AppColors.warning);
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12.h),
+      child: ClozrCard(
+        radius: 14,
+        padding: EdgeInsets.zero,
+        onTap: () => _open(c.enrollmentId),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14.r),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                height: 118.h,
+                height: 150.h,
                 child: Stack(
-                  alignment: Alignment.center,
                   children: [
-                    Icon(c.icon, size: 38.sp, color: c.accent.withOpacity(0.45)),
-                    if (!locked)
-                      Container(
-                        width: 42.w,
-                        height: 42.w,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.white.withOpacity(0.9),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(color: const Color(0xFF101828).withOpacity(0.18), blurRadius: 12, offset: const Offset(0, 4)),
-                          ],
-                        ),
-                        child: Icon(PhosphorIconsFill.play, size: 18.sp, color: AppColors.navy),
-                      )
-                    else
-                      Container(
-                        width: 42.w,
-                        height: 42.w,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.textPrimary.withOpacity(0.55),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(PhosphorIconsFill.lock, size: 18.sp, color: AppColors.white),
+                    Positioned.fill(
+                      child: c.thumbnailUrl.isEmpty
+                          ? _noThumb()
+                          : Image.network(c.thumbnailUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _noThumb()),
+                    ),
+                    if (c.isOverdue)
+                      Positioned(
+                          top: 10.h,
+                          right: 10.w,
+                          child: _badge(
+                              'Overdue', AppColors.error, AppColors.tintRed)),
+                    if (c.isCompleted)
+                      Positioned(
+                          top: 10.h,
+                          right: 10.w,
+                          child: _badge('Completed', AppColors.success,
+                              AppColors.tintGreen)),
+                    if (c.isMandatory)
+                      Positioned(
+                        bottom: 10.h,
+                        left: 10.w,
+                        child: _badge('Required', AppColors.textPrimary,
+                            AppColors.white.withOpacity(0.92),
+                            dot: false),
                       ),
                   ],
                 ),
               ),
               Padding(
-                padding: EdgeInsets.fromLTRB(12.w, 0, 12.w, 12.h),
+                padding: EdgeInsets.all(14.r),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    LmsProgressBar(
-                      value: p / 100,
-                      color: p >= 100 ? AppColors.success : AppColors.warningDeep,
-                      height: 5,
-                      track: AppColors.white.withOpacity(0.75),
+                    Row(
+                      children: [
+                        Icon(PhosphorIconsFill.play,
+                            size: 15.sp, color: AppColors.navy),
+                        SizedBox(width: 9.w),
+                        Expanded(
+                            child: LmsProgressBar(
+                                value: pct / 100, color: bar, height: 6)),
+                        SizedBox(width: 9.w),
+                        Text('$pct%',
+                            style: AppText.custom(
+                                size: 12,
+                                weight: FontWeight.w700,
+                                color: AppColors.textMuted)),
+                      ],
                     ),
-                    SizedBox(height: 8.h),
-                    Text('Module ${i + 1} - ${c.modules[i].title}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12, weight: FontWeight.w700, color: const Color(0xFF2A2C31))),
+                    SizedBox(height: 9.h),
+                    Text(c.title,
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
+                    SizedBox(height: 4.h),
+                    Text(
+                        c.deadline == null
+                            ? 'No deadline'
+                            : 'Deadline: ${absoluteDate(c.deadline)}',
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -313,74 +359,10 @@ class LmsMyCoursesScreen extends ConsumerWidget {
     );
   }
 
-  Widget _moreGrid(BuildContext context, List<(CourseProgress, Course)> more) {
-    final rows = <Widget>[];
-    for (int i = 0; i < more.length; i += 2) {
-      rows.add(Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: _moreCard(context, more[i])),
-          SizedBox(width: 12.w),
-          Expanded(child: i + 1 < more.length ? _moreCard(context, more[i + 1]) : const SizedBox()),
-        ],
-      ));
-      if (i + 2 < more.length) rows.add(SizedBox(height: 12.h));
-    }
-    return Column(children: rows);
-  }
-
-  Widget _moreCard(BuildContext context, (CourseProgress, Course) x) {
-    final c = x.$2;
-    final st = LmsLogic.statusOf(x.$1, c);
-    return ClozrCard(
-      radius: 14,
-      padding: EdgeInsets.zero,
-      onTap: () => context.push('${Routes.lmsPlayer}?id=${c.id}&m=0'),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14.r),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 96.h,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Container(
-                      color: c.tint,
-                      alignment: Alignment.center,
-                      child: Icon(c.icon, size: 30.sp, color: c.accent.withOpacity(0.5)),
-                    ),
-                  ),
-                  Positioned(
-                    top: 9.h,
-                    right: 9.w,
-                    child: StatusPill.meta(StatusMeta$.lms[st]!),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(12.w, 10.h, 12.w, 12.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(c.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                  SizedBox(height: 2.h),
-                  Text(c.sub,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _noThumb() => Container(
+        color: AppColors.blueSubtle,
+        alignment: Alignment.center,
+        child: Icon(PhosphorIconsFill.graduationCap,
+            size: 34.sp, color: AppColors.navy),
+      );
 }

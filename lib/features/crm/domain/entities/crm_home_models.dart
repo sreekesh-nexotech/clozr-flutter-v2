@@ -155,7 +155,12 @@ class CrmHomeData {
 
   /// Neutral, data-free bundle: the API-mode base and per-section fallback.
   factory CrmHomeData.empty() => const CrmHomeData(
-        kpis: [CrmKpiValue.empty, CrmKpiValue.empty, CrmKpiValue.empty, CrmKpiValue.empty],
+        kpis: [
+          CrmKpiValue.empty,
+          CrmKpiValue.empty,
+          CrmKpiValue.empty,
+          CrmKpiValue.empty
+        ],
         firstResponseMedianMinutes: null,
         funnel: [],
         attention: [

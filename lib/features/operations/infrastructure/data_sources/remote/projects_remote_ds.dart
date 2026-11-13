@@ -1,11 +1,13 @@
 import 'package:dio/dio.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../crm/domain/entities/crm_catalog.dart';
-import '../../../../crm/infrastructure/data_sources/remote/crm_catalog_remote_ds.dart' show hexColor;
+import '../../../../crm/infrastructure/data_sources/remote/crm_catalog_remote_ds.dart'
+    show hexColor;
 import '../../../../crm/infrastructure/data_sources/remote/attachments_remote_ds.dart';
 import '../../../../crm/domain/entities/lead_file.dart';
 import '../../../../../core/network/api_service.dart';
 import '../../../../../core/network/paginated.dart';
+import '../../../../../core/status_groups/status_groups.dart';
 import '../../../../../core/utils/inr_format.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
@@ -24,7 +26,8 @@ class ProjectsRemoteDataSource {
   final ApiService _api;
 
   static const int _pageSize = 100;
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   /// All projects visible to the caller — slim rows, up to 3 pages of 100.
   /// The org's project statuses (`operations.md` §3) and types (§4), for the
@@ -60,7 +63,8 @@ class ProjectsRemoteDataSource {
   }) async {
     try {
       final body = await _api.get(path, query: {'page_size': 100}, quiet: true);
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
         if (row['is_active'] == false) continue;
@@ -176,7 +180,8 @@ class ProjectsRemoteDataSource {
     try {
       final body = await _api.get(ApiEndpoints.projectAttachments,
           query: {'project': projectId, 'page_size': 100});
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       return [
         for (final row in rows)
           if (AttachmentsRemoteDataSource.fileFromJson(row) case final f?) f,
@@ -219,18 +224,21 @@ class ProjectsRemoteDataSource {
   ///
   /// Returns `('all' → total, '<status name>' → count)`. Best-effort: a failure
   /// yields an empty map, which the caller reads as "count locally".
-  Future<Map<String, int>> fetchStatusCounts(Map<String, dynamic> filters) async {
+  Future<Map<String, int>> fetchStatusCounts(
+      Map<String, dynamic> filters) async {
     try {
-      final body = await _api.get(ApiEndpoints.projectStatusCounts, query: {
-        // Paging and the status facet are meaningless here; the server ignores
-        // the latter anyway, but sending it invites confusion.
-        ...{...filters}..removeWhere((k, _) =>
-            k == 'page' ||
-            k == 'page_size' ||
-            k == 'status' ||
-            k.startsWith('status__') ||
-            k.startsWith('status_name')),
-      }, quiet: true);
+      final body = await _api.get(ApiEndpoints.projectStatusCounts,
+          query: {
+            // Paging and the status facet are meaningless here; the server ignores
+            // the latter anyway, but sending it invites confusion.
+            ...{...filters}..removeWhere((k, _) =>
+                k == 'page' ||
+                k == 'page_size' ||
+                k == 'status' ||
+                k.startsWith('status__') ||
+                k.startsWith('status_name')),
+          },
+          quiet: true);
       if (body is! Map) return const {};
       final out = <String, int>{'all': _count(body['total'])};
       for (final row in (body['statuses'] as List? ?? const [])) {
@@ -239,13 +247,16 @@ class ProjectsRemoteDataSource {
         if (name.isEmpty) continue;
         out[name] = _count(row['count']);
       }
+      // The header's open / closed group totals (Oct 2026).
+      StatusGroups.readGroupCounts(body, out);
       return out;
     } on Object {
       return const {};
     }
   }
 
-  static int _count(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
+  static int _count(Object? v) =>
+      v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
 
   /// `Project.id` is ALWAYS the `project_id` UUID (never `naming_series`):
   /// ops-task rows reference their project by that UUID, and the UI treats
@@ -267,7 +278,8 @@ class ProjectsRemoteDataSource {
       statusName: (row['status_name'] as String? ?? '').trim(),
       statusId: (row['status'] as String? ?? '').trim(),
       pri: priorityKey(row['priority'] as String?),
-      progress: parseAmount(row['percent_complete']).round().clamp(0, 100).toInt(),
+      progress:
+          parseAmount(row['percent_complete']).round().clamp(0, 100).toInt(),
       manager: _managerId(row),
       // The five below are **detail-only**: `?view=list` drops the costing
       // totals and the nested `assignees`, so they stay at their defaults on a
@@ -294,8 +306,10 @@ class ProjectsRemoteDataSource {
       canManage: row['can_manage'] is bool ? row['can_manage'] as bool : null,
       quotationId: row['quotation'] is String ? row['quotation'] as String : '',
       archivedAt: row['archived_at'] as String? ?? '',
-      taskCount: row['task_count'] is num ? (row['task_count'] as num).toInt() : null,
-      doneCount: row['done_count'] is num ? (row['done_count'] as num).toInt() : null,
+      taskCount:
+          row['task_count'] is num ? (row['task_count'] as num).toInt() : null,
+      doneCount:
+          row['done_count'] is num ? (row['done_count'] as num).toInt() : null,
       startISO: row['expected_start_date'] as String? ?? '',
     );
   }
@@ -352,6 +366,8 @@ class ProjectsRemoteDataSource {
   /// user input.
   static Map<String, dynamic> _clean(Map<String, dynamic> fields) => {
         for (final e in fields.entries)
-          if (e.value != null && (e.value is! String || (e.value as String).isNotEmpty)) e.key: e.value,
+          if (e.value != null &&
+              (e.value is! String || (e.value as String).isNotEmpty))
+            e.key: e.value,
       };
 }

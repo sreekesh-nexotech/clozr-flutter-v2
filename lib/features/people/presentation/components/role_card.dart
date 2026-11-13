@@ -24,7 +24,8 @@ class RoleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final countLabel = '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
+    final countLabel =
+        '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
     return ClozrCard(
       radius: 14,
       padding: EdgeInsets.all(14.r),
@@ -38,8 +39,11 @@ class RoleCard extends StatelessWidget {
                 width: 40.w,
                 height: 40.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(11.r)),
-                child: Icon(PhosphorIconsRegular.shieldCheck, size: 19.sp, color: AppColors.navy),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEEF1F4),
+                    borderRadius: BorderRadius.circular(11.r)),
+                child: Icon(PhosphorIconsRegular.shieldCheck,
+                    size: 19.sp, color: AppColors.navy),
               ),
               SizedBox(width: 10.w),
               Expanded(
@@ -52,14 +56,21 @@ class RoleCard extends StatelessWidget {
                           child: Text(role.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                              style: AppText.custom(
+                                  size: 14.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary)),
                         ),
                         SizedBox(width: 8.w),
                         _badge(role.locked),
                       ],
                     ),
                     SizedBox(height: 2.h),
-                    Text(countLabel, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text(countLabel,
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -70,24 +81,33 @@ class RoleCard extends StatelessWidget {
                   child: SizedBox(
                     width: 34.w,
                     height: 34.w,
-                    child: Icon(PhosphorIconsRegular.trash, size: 17.sp, color: AppColors.error),
+                    child: Icon(PhosphorIconsRegular.trash,
+                        size: 17.sp, color: AppColors.error),
                   ),
                 ),
             ],
           ),
           SizedBox(height: 10.h),
           Text(role.desc,
-              style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2, height: 1.5)),
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted2,
+                  height: 1.5)),
           SizedBox(height: 9.h),
           Row(
             children: [
-              Icon(PhosphorIconsRegular.eye, size: 13.sp, color: AppColors.textPlaceholder),
+              Icon(PhosphorIconsRegular.eye,
+                  size: 13.sp, color: AppColors.textPlaceholder),
               SizedBox(width: 6.w),
               Flexible(
                 child: Text(role.scope,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.textLabelAlt)),
               ),
             ],
           ),
@@ -111,15 +131,24 @@ class RoleCard extends StatelessWidget {
       ),
       child: Text(locked ? 'LOCKED' : 'CUSTOM',
           style: AppText.custom(
-              size: 9.5, weight: FontWeight.w700, color: locked ? AppColors.textMuted : AppColors.blueBright, letterSpacing: 0.5)),
+              size: 9.5,
+              weight: FontWeight.w700,
+              color: locked ? AppColors.textMuted : AppColors.blueBright,
+              letterSpacing: 0.5)),
     );
   }
 
   Widget _capChip(String label) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-      decoration: BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(7.r)),
-      child: Text(label, style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: const Color(0xFF35507C))),
+      decoration: BoxDecoration(
+          color: AppColors.blueSubtle,
+          borderRadius: BorderRadius.circular(7.r)),
+      child: Text(label,
+          style: AppText.custom(
+              size: 10.5,
+              weight: FontWeight.w700,
+              color: const Color(0xFF35507C))),
     );
   }
 }

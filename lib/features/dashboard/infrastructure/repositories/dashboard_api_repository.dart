@@ -20,15 +20,24 @@ class DashboardApiRepository implements DashboardRepository {
 
   @override
   Future<DashboardData> getDashboard(
-      {String period = 'month', String? teamId, String? userId}) async {
+      {String period = 'month',
+      String? teamId,
+      String? userId,
+      String? from,
+      String? to}) async {
     final base = DashboardData.empty();
     // The member is part of the cache identity: two selections that differ
     // only by member are different bundles.
-    final cacheKey = 'sections:$period:${teamId ?? 'all'}:${userId ?? 'all'}';
+    final cacheKey =
+        'sections:$period${period == 'custom' ? ':$from:$to' : ''}:${teamId ?? 'all'}:${userId ?? 'all'}';
     final errors = <AppError>[];
-    final sections =
-        await _remote.fetchSections(
-            period: period, teamId: teamId, userId: userId, errors: errors);
+    final sections = await _remote.fetchSections(
+        period: period,
+        teamId: teamId,
+        userId: userId,
+        from: from,
+        to: to,
+        errors: errors);
     if (sections.values.any((v) => v != null)) {
       await AppCache.put(AppCache.dashboardCache, cacheKey, sections);
       return DashboardRemoteDataSource.mapDashboard(sections, base);

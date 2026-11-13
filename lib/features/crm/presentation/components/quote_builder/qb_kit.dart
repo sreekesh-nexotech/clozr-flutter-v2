@@ -25,7 +25,11 @@ class QbSectionLabel extends StatelessWidget {
         children: [
           Expanded(
             child: Text(text.toUpperCase(),
-                style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.5)),
           ),
           if (trailing != null) trailing!,
         ],
@@ -44,16 +48,24 @@ class QbFieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(children: [
       Flexible(
-        child: Text(label, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+        child: Text(label,
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
       ),
-      if (required) Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+      if (required)
+        Text(' *',
+            style: AppText.custom(
+                size: 12, weight: FontWeight.w700, color: AppColors.error)),
     ]);
   }
 }
 
 /// A muted helper / error line under a field.
 class QbHint extends StatelessWidget {
-  const QbHint(this.text, {super.key, this.error = false, this.align = TextAlign.start});
+  const QbHint(this.text,
+      {super.key, this.error = false, this.align = TextAlign.start});
   final String text;
   final bool error;
   final TextAlign align;
@@ -64,7 +76,9 @@ class QbHint extends StatelessWidget {
         child: Text(text,
             textAlign: align,
             style: AppText.custom(
-                size: 11.5, weight: FontWeight.w500, color: error ? AppColors.error : AppColors.textPlaceholder)),
+                size: 11.5,
+                weight: FontWeight.w500,
+                color: error ? AppColors.error : AppColors.textPlaceholder)),
       );
 }
 
@@ -72,7 +86,12 @@ enum QbTone { info, warning, danger }
 
 /// The web builder's `BuilderNotice`: a tinted, icon-led message box.
 class QbNotice extends StatelessWidget {
-  const QbNotice({super.key, required this.tone, required this.children, this.icon, this.action});
+  const QbNotice(
+      {super.key,
+      required this.tone,
+      required this.children,
+      this.icon,
+      this.action});
   final QbTone tone;
   final List<Widget> children;
   final IconData? icon;
@@ -88,7 +107,8 @@ class QbNotice extends StatelessWidget {
     return Container(
       margin: EdgeInsets.only(bottom: 10.h),
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11.r)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -113,11 +133,12 @@ class QbNotice extends StatelessWidget {
 }
 
 /// Body text for a [QbNotice].
-Text qbNoticeText(String text, {bool strong = false, bool muted = false}) => Text(text,
-    style: AppText.custom(
-        size: 12.5,
-        weight: strong ? FontWeight.w700 : FontWeight.w500,
-        color: muted ? AppColors.textMuted : AppColors.textBody));
+Text qbNoticeText(String text, {bool strong = false, bool muted = false}) =>
+    Text(text,
+        style: AppText.custom(
+            size: 12.5,
+            weight: strong ? FontWeight.w700 : FontWeight.w500,
+            color: muted ? AppColors.textMuted : AppColors.textBody));
 
 /// The screen's chip row (single choice).
 class QbChipField extends StatelessWidget {
@@ -163,7 +184,12 @@ class QbChipField extends StatelessWidget {
 }
 
 class QbChip extends StatelessWidget {
-  const QbChip({super.key, required this.label, required this.selected, this.onTap, this.icon});
+  const QbChip(
+      {super.key,
+      required this.label,
+      required this.selected,
+      this.onTap,
+      this.icon});
   final String label;
   final bool selected;
   final VoidCallback? onTap;
@@ -178,7 +204,9 @@ class QbChip extends StatelessWidget {
         height: 38.h,
         padding: EdgeInsets.symmetric(horizontal: 14.w),
         decoration: BoxDecoration(
-          color: selected ? AppColors.blueSubtle : (dim ? AppColors.bgChipGrey : AppColors.white),
+          color: selected
+              ? AppColors.blueSubtle
+              : (dim ? AppColors.bgChipGrey : AppColors.white),
           borderRadius: BorderRadius.circular(10.r),
           border: Border.all(
             color: selected ? const Color(0xFFA6D1FF) : const Color(0xFFE6E7EA),
@@ -187,7 +215,9 @@ class QbChip extends StatelessWidget {
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (icon != null) ...[
-            Icon(icon, size: 14.sp, color: selected ? AppColors.navy : AppColors.textLabelAlt),
+            Icon(icon,
+                size: 14.sp,
+                color: selected ? AppColors.navy : AppColors.textLabelAlt),
             SizedBox(width: 6.w),
           ],
           Flexible(
@@ -249,7 +279,8 @@ class QbBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: enabled ? AppColors.white : AppColors.bgChipGrey,
         borderRadius: BorderRadius.circular(11.r),
-        border: Border.all(color: error ? AppColors.error : AppColors.borderInput, width: 1.5),
+        border: Border.all(
+            color: error ? AppColors.error : AppColors.borderInput, width: 1.5),
       ),
       child: Row(children: [
         Expanded(
@@ -259,18 +290,25 @@ class QbBox extends StatelessWidget {
             enabled: enabled,
             textAlign: align,
             maxLength: maxLength,
-            keyboardType: numeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+            keyboardType: numeric
+                ? const TextInputType.numberWithOptions(decimal: true)
+                : TextInputType.text,
             inputFormatters: inputFormatters,
             onChanged: onChanged,
             style: AppText.custom(
-                size: 13.5, weight: FontWeight.w600, color: muted ? AppColors.textMuted : AppColors.textBody),
+                size: 13.5,
+                weight: FontWeight.w600,
+                color: muted ? AppColors.textMuted : AppColors.textBody),
             cursorColor: AppColors.blueBright,
             decoration: InputDecoration(
               isDense: true,
               counterText: '',
               border: InputBorder.none,
               hintText: hint,
-              hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+              hintStyle: AppText.custom(
+                  size: 13.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder),
             ),
           ),
         ),
@@ -313,7 +351,9 @@ class QbPickerBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: onTap == null ? AppColors.bgChipGrey : AppColors.white,
           borderRadius: BorderRadius.circular(11.r),
-          border: Border.all(color: error ? AppColors.error : AppColors.borderInput, width: 1.5),
+          border: Border.all(
+              color: error ? AppColors.error : AppColors.borderInput,
+              width: 1.5),
         ),
         child: Row(children: [
           if (icon != null) ...[
@@ -327,10 +367,14 @@ class QbPickerBox extends StatelessWidget {
                 style: AppText.custom(
                     size: 13.5,
                     weight: empty ? FontWeight.w500 : FontWeight.w600,
-                    color: empty ? AppColors.textPlaceholder : AppColors.textBody)),
+                    color: empty
+                        ? AppColors.textPlaceholder
+                        : AppColors.textBody)),
           ),
           if (trailing != null) trailing!,
-          if (onTap != null) Icon(PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.textMuted2),
+          if (onTap != null)
+            Icon(PhosphorIconsBold.caretDown,
+                size: 12.sp, color: AppColors.textMuted2),
         ]),
       ),
     );
@@ -339,7 +383,11 @@ class QbPickerBox extends StatelessWidget {
 
 /// A dashed-look "Add …" button.
 class QbAddButton extends StatelessWidget {
-  const QbAddButton({super.key, required this.label, required this.icon, required this.onTap});
+  const QbAddButton(
+      {super.key,
+      required this.label,
+      required this.icon,
+      required this.onTap});
   final String label;
   final IconData icon;
   final VoidCallback onTap;
@@ -362,7 +410,10 @@ class QbAddButton extends StatelessWidget {
             child: Text(label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                style: AppText.custom(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
           ),
         ]),
       ),
@@ -372,7 +423,13 @@ class QbAddButton extends StatelessWidget {
 
 /// A small square icon button (remove, move, reset).
 class QbIconButton extends StatelessWidget {
-  const QbIconButton({super.key, required this.icon, this.onTap, this.danger = false, this.tooltip, this.size});
+  const QbIconButton(
+      {super.key,
+      required this.icon,
+      this.onTap,
+      this.danger = false,
+      this.tooltip,
+      this.size});
   final IconData icon;
   final VoidCallback? onTap;
   final bool danger;
@@ -391,11 +448,15 @@ class QbIconButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(9.r),
-          border: Border.all(color: danger ? const Color(0xFFF3C1C1) : const Color(0xFFE6E7EA)),
+          border: Border.all(
+              color:
+                  danger ? const Color(0xFFF3C1C1) : const Color(0xFFE6E7EA)),
         ),
         child: Icon(icon,
             size: 15.sp,
-            color: onTap == null ? AppColors.textPlaceholder : (danger ? AppColors.error : AppColors.textLabelAlt)),
+            color: onTap == null
+                ? AppColors.textPlaceholder
+                : (danger ? AppColors.error : AppColors.textLabelAlt)),
       ),
     );
     return tooltip == null ? child : Tooltip(message: tooltip!, child: child);
@@ -416,7 +477,8 @@ Future<String?> qbPickOne(
     backgroundColor: Colors.transparent,
     barrierColor: AppColors.scrim,
     builder: (ctx) => Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
       decoration: BoxDecoration(
         color: AppColors.bgApp,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
@@ -426,7 +488,11 @@ Future<String?> qbPickOne(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+          Text(title,
+              style: AppText.custom(
+                  size: 17,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 10.h),
           Flexible(
             child: ListView(
@@ -443,10 +509,16 @@ Future<String?> qbPickOne(
                           child: Text(o.$2,
                               style: AppText.custom(
                                   size: 14,
-                                  weight: o.$1 == selected ? FontWeight.w700 : FontWeight.w600,
-                                  color: o.$1 == selected ? AppColors.navy : AppColors.textPrimary)),
+                                  weight: o.$1 == selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: o.$1 == selected
+                                      ? AppColors.navy
+                                      : AppColors.textPrimary)),
                         ),
-                        if (o.$1 == selected) Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.success),
+                        if (o.$1 == selected)
+                          Icon(PhosphorIconsBold.check,
+                              size: 16.sp, color: AppColors.success),
                       ]),
                     ),
                   ),
@@ -463,6 +535,7 @@ Future<String?> qbPickOne(
 /// a price flip) without fighting the user's own typing.
 void qbSync(TextEditingController c, String value) {
   if (c.text != value) {
-    c.value = TextEditingValue(text: value, selection: TextSelection.collapsed(offset: value.length));
+    c.value = TextEditingValue(
+        text: value, selection: TextSelection.collapsed(offset: value.length));
   }
 }

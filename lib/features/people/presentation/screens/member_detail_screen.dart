@@ -60,7 +60,8 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                   return const EmptyState(
                     icon: PhosphorIconsRegular.userMinus,
                     title: 'Member not found',
-                    body: 'This member may have been removed, or you may not have access to them.',
+                    body:
+                        'This member may have been removed, or you may not have access to them.',
                   );
                 }
                 return ListView(
@@ -155,7 +156,11 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InitialsAvatar(initials: m.initials, size: 54, background: AppColors.navy, fontSize: 17),
+              InitialsAvatar(
+                  initials: m.initials,
+                  size: 54,
+                  background: AppColors.navy,
+                  fontSize: 17),
               SizedBox(width: 13.w),
               Expanded(
                 child: Column(
@@ -167,12 +172,20 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(m.name,
-                            style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                            style: AppText.custom(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.3)),
                         StatusPill(label: st.label, color: st.color),
                       ],
                     ),
                     SizedBox(height: 2.h),
-                    Text(m.role, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text(m.role,
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -185,12 +198,16 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
             ],
           ),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
-          _contactRow(PhosphorIconsRegular.envelopeSimple, m.email, AppColors.textBody),
+          _contactRow(
+              PhosphorIconsRegular.envelopeSimple, m.email, AppColors.textBody),
           SizedBox(height: 8.h),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => ref.read(toastProvider.notifier).show('Calling ${m.name.split(' ').first}…'),
-            child: _contactRow(PhosphorIconsRegular.phone, m.phone, AppColors.blueBright),
+            onTap: () => ref
+                .read(toastProvider.notifier)
+                .show('Calling ${m.name.split(' ').first}…'),
+            child: _contactRow(
+                PhosphorIconsRegular.phone, m.phone, AppColors.blueBright),
           ),
         ],
       ),
@@ -200,14 +217,21 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   Widget _protectedBadge() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 4.h),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(8.r)),
+      decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(8.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsRegular.lockSimple, size: 12.sp, color: const Color(0xFF6C6C6C)),
+          Icon(PhosphorIconsRegular.lockSimple,
+              size: 12.sp, color: const Color(0xFF6C6C6C)),
           SizedBox(width: 5.w),
           Text('PROTECTED',
-              style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: const Color(0xFF6C6C6C), letterSpacing: 0.3)),
+              style: AppText.custom(
+                  size: 10.5,
+                  weight: FontWeight.w700,
+                  color: const Color(0xFF6C6C6C),
+                  letterSpacing: 0.3)),
         ],
       ),
     );
@@ -219,7 +243,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         Icon(icon, size: 16.sp, color: AppColors.textPlaceholder),
         SizedBox(width: 9.w),
         Expanded(
-          child: Text(text, style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: textColor)),
+          child: Text(text,
+              style: AppText.custom(
+                  size: 13.5, weight: FontWeight.w600, color: textColor)),
         ),
       ],
     );
@@ -261,7 +287,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                       'Attendance & leave tracking is coming soon',
                       textAlign: TextAlign.center,
                       style: AppText.custom(
-                          size: 14, weight: FontWeight.w700, color: AppColors.textPrimary),
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary),
                     ),
                     SizedBox(height: 6.h),
                     Text(
@@ -272,7 +300,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                       // over a blurred, uneven backdrop, where #848383 was too
                       // low-contrast to read.
                       style: AppText.custom(
-                          size: 12.5, weight: FontWeight.w600, color: AppColors.textBodyMuted),
+                          size: 12.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.textBodyMuted),
                     ),
                   ],
                 ),
@@ -286,44 +316,51 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
 
   Widget _availabilityHeatmap(String email) {
     final months = _buildMonths(email);
-    return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(
         children: [
-          Row(
-            children: [
-              Icon(PhosphorIconsRegular.calendarCheck, size: 16.sp, color: AppColors.textLabelAlt),
-              SizedBox(width: 7.w),
-              Text('Availability', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
-              SizedBox(width: 6.w),
-              Text('· 2026', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+          Icon(PhosphorIconsRegular.calendarCheck,
+              size: 16.sp, color: AppColors.textLabelAlt),
+          SizedBox(width: 7.w),
+          Text('Availability',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
+          SizedBox(width: 6.w),
+          Text('· 2026',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPlaceholder)),
+        ],
+      ),
+      SizedBox(height: 13.h),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (int i = 0; i < months.length; i++) ...[
+              if (i > 0) SizedBox(width: 9.w),
+              _monthColumn(months[i]),
             ],
-          ),
-          SizedBox(height: 13.h),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (int i = 0; i < months.length; i++) ...[
-                  if (i > 0) SizedBox(width: 9.w),
-                  _monthColumn(months[i]),
-                ],
-              ],
-            ),
-          ),
-          SizedBox(height: 12.h),
-          Wrap(
-            spacing: 12.w,
-            runSpacing: 8.h,
-            children: [
-              _legend(AppColors.success, 'Full day'),
-              _legend(AppColors.warning, 'Half-day leave'),
-              _legend(AppColors.error, 'On leave'),
-              _legend(const Color(0xFFE8EAEE), 'Weekend'),
-            ],
-          ),
-        ]);
+          ],
+        ),
+      ),
+      SizedBox(height: 12.h),
+      Wrap(
+        spacing: 12.w,
+        runSpacing: 8.h,
+        children: [
+          _legend(AppColors.success, 'Full day'),
+          _legend(AppColors.warning, 'Half-day leave'),
+          _legend(AppColors.error, 'On leave'),
+          _legend(const Color(0xFFE8EAEE), 'Weekend'),
+        ],
+      ),
+    ]);
   }
 
   Widget _monthColumn(_MonthData month) {
@@ -354,7 +391,11 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         ),
         SizedBox(height: 4.h),
         Text(month.label,
-            style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
+            style: AppText.custom(
+                size: 9,
+                weight: FontWeight.w700,
+                color: AppColors.textPlaceholder,
+                letterSpacing: 0.5)),
       ],
     );
   }
@@ -363,9 +404,17 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2.5.r))),
+        Container(
+            width: 9.w,
+            height: 9.w,
+            decoration: BoxDecoration(
+                color: color, borderRadius: BorderRadius.circular(2.5.r))),
         SizedBox(width: 5.w),
-        Text(label, style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+        Text(label,
+            style: AppText.custom(
+                size: 11,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
       ],
     );
   }
@@ -374,7 +423,20 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   /// seeded algorithm (weekends grey, future days faded, otherwise a pseudo-
   /// random full/half/leave day seeded off the email).
   List<_MonthData> _buildMonths(String email) {
-    const labels = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const labels = [
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC'
+    ];
     final seedN = email.codeUnits.fold<int>(0, (a, c) => a + c);
     final cutoff = DateTime(2026, 7, 9);
     return List.generate(12, (mo) {
@@ -395,7 +457,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
           bg = const Color(0xFFE8EAEE); // weekend
         } else {
           final r = (seedN * 31 + mo * 97 + d * 13) % 100;
-          bg = r < 4 ? AppColors.error : (r < 12 ? AppColors.warning : AppColors.success);
+          bg = r < 4
+              ? AppColors.error
+              : (r < 12 ? AppColors.warning : AppColors.success);
         }
         weeks[wk][dow] = bg;
       }
@@ -435,14 +499,21 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
       ('Email', m.email),
       ('Designation', m.designation.isEmpty ? dash : m.designation),
       ('Phone', m.phone.isEmpty ? dash : m.phone),
-      ('Role & scope', m.scope.isEmpty || m.scope == dash
-          ? m.role
-          : '${m.role} · ${m.scope}'),
-      ('Reporting manager', m.hasManager ? m.reportsTo : '— (top of hierarchy)'),
+      (
+        'Role & scope',
+        m.scope.isEmpty || m.scope == dash ? m.role : '${m.role} · ${m.scope}'
+      ),
+      (
+        'Reporting manager',
+        m.hasManager ? m.reportsTo : '— (top of hierarchy)'
+      ),
       ('Team', m.hasTeam ? m.team : 'No team'),
       // Territories this user *manages*; most members manage none.
       ('Territory', m.territories.isEmpty ? dash : m.territories.join(', ')),
-      ('Timezone', m.timezone.isEmpty ? dash : '${m.timezone} (${_tzAbbr(m.timezone)})'),
+      (
+        'Timezone',
+        m.timezone.isEmpty ? dash : '${m.timezone} (${_tzAbbr(m.timezone)})'
+      ),
       ('Custom fields', 'Configured in web app'),
     ];
     final shown = _infoMore ? rows : rows.take(7).toList();
@@ -452,7 +523,11 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Member information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Member information',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
           for (final r in shown)
             Container(
@@ -463,12 +538,19 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(r.$1, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  Text(r.$1,
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                   SizedBox(width: 14.w),
                   Expanded(
                     child: Text(r.$2,
                         textAlign: TextAlign.right,
-                        style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                   ),
                 ],
               ),
@@ -482,9 +564,17 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(_infoMore ? 'Show less' : 'Show more',
-                      style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: AppColors.blueBright)),
                   SizedBox(width: 6.w),
-                  Icon(_infoMore ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.blueBright),
+                  Icon(
+                      _infoMore
+                          ? PhosphorIconsBold.caretUp
+                          : PhosphorIconsBold.caretDown,
+                      size: 12.sp,
+                      color: AppColors.blueBright),
                 ],
               ),
             ),
@@ -501,7 +591,8 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
     // card always rendered the entity's zero defaults — 0 / 0 / 0 / ₹0L / —.
     // Falls back to the plain member while in flight, in mock mode, and for a
     // caller without `can_access_user_kpis` (which 403s).
-    final m = ref.watch(memberWithPerformanceProvider(member.id)).valueOrNull ?? member;
+    final m = ref.watch(memberWithPerformanceProvider(member.id)).valueOrNull ??
+        member;
     final noWon = m.perfWon == 0 ? 'no won deals in range' : '';
     final noDec = m.perfClosed == 0 ? 'no decided deals in range' : '';
     return ClozrCard(
@@ -512,28 +603,42 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.chartLineUp, size: 16.sp, color: AppColors.textLabelAlt),
+              Icon(PhosphorIconsRegular.chartLineUp,
+                  size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
               Expanded(
-                child: Text('Performance & records', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                child: Text('Performance & records',
+                    style: AppText.custom(
+                        size: 15,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
               ),
               _rangeControl(),
             ],
           ),
           SizedBox(height: 14.h),
           Text('OWNED LEADS',
-              style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6)),
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPlaceholder,
+                  letterSpacing: 0.6)),
           SizedBox(height: 8.h),
           Row(
             children: [
-              Expanded(child: _statTile('${m.perfOpen}', 'Open', 'in pipeline')),
+              Expanded(
+                  child: _statTile('${m.perfOpen}', 'Open', 'in pipeline')),
               SizedBox(width: 9.w),
-              Expanded(child: _statTile('${m.perfClosed}', 'Closed', 'won / lost')),
+              Expanded(
+                  child: _statTile('${m.perfClosed}', 'Closed', 'won / lost')),
             ],
           ),
-          _perfRow(PhosphorIconsRegular.trophy, const Color(0xFF890DB6), AppColors.tintPurple, 'Deals won', '${m.perfWon}', noWon, true),
-          _perfRow(PhosphorIconsRegular.currencyInr, AppColors.success, AppColors.tintGreen, 'Deal value won', m.perfWonVal, noWon, true),
-          _perfRow(PhosphorIconsRegular.percent, AppColors.blueBright, AppColors.tintBlue, 'Conversion rate', m.perfConv, noDec, false),
+          _perfRow(PhosphorIconsRegular.trophy, const Color(0xFF890DB6),
+              AppColors.tintPurple, 'Deals won', '${m.perfWon}', noWon, true),
+          _perfRow(PhosphorIconsRegular.currencyInr, AppColors.success,
+              AppColors.tintGreen, 'Deal value won', m.perfWonVal, noWon, true),
+          _perfRow(PhosphorIconsRegular.percent, AppColors.blueBright,
+              AppColors.tintBlue, 'Conversion rate', m.perfConv, noDec, false),
         ],
       ),
     );
@@ -559,23 +664,29 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
-                        ref.read(memberPerfPeriodProvider.notifier).state = value;
+                        ref.read(memberPerfPeriodProvider.notifier).state =
+                            value;
                         Navigator.of(ctx).pop();
                       },
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 14.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 10.w, vertical: 14.h),
                         decoration: const BoxDecoration(
-                          border: Border(bottom: BorderSide(color: AppColors.bgLight)),
+                          border: Border(
+                              bottom: BorderSide(color: AppColors.bgLight)),
                         ),
                         child: Row(
                           children: [
                             Expanded(
                               child: Text(label,
                                   style: AppText.custom(
-                                      size: 15, weight: FontWeight.w600, color: AppColors.textBody)),
+                                      size: 15,
+                                      weight: FontWeight.w600,
+                                      color: AppColors.textBody)),
                             ),
                             if (current == value)
-                              Icon(PhosphorIconsBold.check, size: 17.sp, color: AppColors.success),
+                              Icon(PhosphorIconsBold.check,
+                                  size: 17.sp, color: AppColors.success),
                           ],
                         ),
                       ),
@@ -608,9 +719,13 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(memberPerfPeriodLabel(period),
-                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textBody)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
             SizedBox(width: 8.w),
-            Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: const Color(0xFF6C6C6C)),
+            Icon(PhosphorIconsBold.caretDown,
+                size: 11.sp, color: const Color(0xFF6C6C6C)),
           ],
         ),
       ),
@@ -620,7 +735,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   Widget _statTile(String value, String label, String sub) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 12.h),
-      decoration: BoxDecoration(color: const Color(0xFFF6F8FB), borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF6F8FB),
+          borderRadius: BorderRadius.circular(12.r)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -628,24 +745,38 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(value, style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(value,
+                  style: AppText.custom(
+                      size: 20,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
               SizedBox(width: 6.w),
-              Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+              Text(label,
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textSecondary)),
             ],
           ),
           SizedBox(height: 2.h),
-          Text(sub, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text(sub,
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ],
       ),
     );
   }
 
-  Widget _perfRow(IconData icon, Color iconColor, Color iconBg, String label, String value, String cap, bool border) {
+  Widget _perfRow(IconData icon, Color iconColor, Color iconBg, String label,
+      String value, String cap, bool border) {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 12.h),
       margin: EdgeInsets.only(top: 6.h),
       decoration: border
-          ? const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5))))
+          ? const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5))))
           : null,
       child: Row(
         children: [
@@ -653,7 +784,8 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
             width: 34.w,
             height: 34.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10.r)),
+            decoration: BoxDecoration(
+                color: iconBg, borderRadius: BorderRadius.circular(10.r)),
             child: Icon(icon, size: 16.sp, color: iconColor),
           ),
           SizedBox(width: 11.w),
@@ -661,14 +793,26 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text(label,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
                 SizedBox(height: 1.h),
-                Text(value, style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                Text(value,
+                    style: AppText.custom(
+                        size: 16,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
               ],
             ),
           ),
           if (cap.isNotEmpty)
-            Text(cap, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+            Text(cap,
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
         ],
       ),
     );
@@ -685,21 +829,45 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
     if (feed.isNotEmpty) return [for (final e in feed) _fromApi(e)];
     return [
       if (m.status == 'invited')
-        _Activity(PhosphorIconsRegular.paperPlaneTilt, AppColors.warningDeep, AppColors.tintAmber, 'Invite sent', '${m.email} · awaiting acceptance')
+        _Activity(
+            PhosphorIconsRegular.paperPlaneTilt,
+            AppColors.warningDeep,
+            AppColors.tintAmber,
+            'Invite sent',
+            '${m.email} · awaiting acceptance')
       else
-        _Activity(PhosphorIconsRegular.signIn, AppColors.blueBright, AppColors.tintBlue, 'Signed in', m.name),
-      _Activity(PhosphorIconsRegular.shieldCheck, AppColors.pending, AppColors.tintPurple, 'Role set to ${m.role}', ''),
-      _Activity(PhosphorIconsRegular.userPlus, AppColors.success, AppColors.tintGreen, 'Joined the workspace', m.name),
+        _Activity(PhosphorIconsRegular.signIn, AppColors.blueBright,
+            AppColors.tintBlue, 'Signed in', m.name),
+      _Activity(PhosphorIconsRegular.shieldCheck, AppColors.pending,
+          AppColors.tintPurple, 'Role set to ${m.role}', ''),
+      _Activity(PhosphorIconsRegular.userPlus, AppColors.success,
+          AppColors.tintGreen, 'Joined the workspace', m.name),
     ];
   }
 
   /// One API row as a timeline entry, iconed by its `type` (§4.3).
   _Activity _fromApi(MemberActivity e) {
     final (icon, tone, bg) = switch (e.type) {
-      'joined' => (PhosphorIconsRegular.userPlus, AppColors.success, AppColors.tintGreen),
-      'login' => (PhosphorIconsRegular.signIn, AppColors.blueBright, AppColors.tintBlue),
-      'role_assign' => (PhosphorIconsRegular.shieldCheck, AppColors.pending, AppColors.tintPurple),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textLabelAlt, AppColors.bgLight),
+      'joined' => (
+          PhosphorIconsRegular.userPlus,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      'login' => (
+          PhosphorIconsRegular.signIn,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      'role_assign' => (
+          PhosphorIconsRegular.shieldCheck,
+          AppColors.pending,
+          AppColors.tintPurple
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.textLabelAlt,
+          AppColors.bgLight
+        ),
     };
     final when = e.at == null ? '' : relativeTime(e.at);
     final sub = [e.actor, when].where((s) => s.isNotEmpty).join(' · ');
@@ -707,7 +875,8 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   }
 
   Widget _activityCard(Member m) {
-    final feed = ref.watch(memberActivityProvider(m.id)).valueOrNull ?? const [];
+    final feed =
+        ref.watch(memberActivityProvider(m.id)).valueOrNull ?? const [];
     final events = _events(m, feed);
     return ClozrCard(
       radius: 18,
@@ -717,13 +886,19 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16.sp, color: AppColors.textLabelAlt),
+              Icon(PhosphorIconsRegular.clockCounterClockwise,
+                  size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
-              Text('Activity log', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Activity log',
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
-          for (int i = 0; i < events.length; i++) _activityRow(events[i], i < events.length - 1),
+          for (int i = 0; i < events.length; i++)
+            _activityRow(events[i], i < events.length - 1),
         ],
       ),
     );
@@ -745,7 +920,10 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
               ),
               if (hasLine)
                 Expanded(
-                  child: Container(width: 1.5.w, constraints: BoxConstraints(minHeight: 12.h), color: AppColors.borderCardSoft),
+                  child: Container(
+                      width: 1.5.w,
+                      constraints: BoxConstraints(minHeight: 12.h),
+                      color: AppColors.borderCardSoft),
                 ),
             ],
           ),
@@ -756,9 +934,17 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.title, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(a.title,
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
-                  Text(a.sub, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                  Text(a.sub,
+                      style: AppText.custom(
+                          size: 12.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted2)),
                 ],
               ),
             ),

@@ -69,7 +69,7 @@ void main() {
       expect(lead.time, '5h ago');
       expect(lead.lastFu, 'Call · 2d ago');
       expect(lead.statusDays, 19);
-      expect(lead.createdOn, contains('Jul 2026'));
+      expect(lead.createdOn, contains('/07/2026'));
       expect(lead.phone, '+91 484 405 8890');
       expect(lead.email, 'aboobacker@lulufashion.in');
       expect(lead.website, 'www.lulufashion.in');
@@ -86,14 +86,19 @@ void main() {
       expect(lead.team, contains(otherUuid));
       expect(lead.isMine, isTrue);
 
-      final mine = fullRow()..['lead_owner'] = {'user_id': meUuid, 'full_name': 'Manoj Varma'};
+      final mine = fullRow()
+        ..['lead_owner'] = {'user_id': meUuid, 'full_name': 'Manoj Varma'};
       expect(LeadsRemoteDataSource.mapLead(mine)!.owner, 'me');
     });
 
     test('prefers the first product name for project when products exist', () {
       final row = fullRow()
         ..['products'] = [
-          {'product_id': 'p-1', 'product_name': 'Flagship fit-out', 'quantity': 1},
+          {
+            'product_id': 'p-1',
+            'product_name': 'Flagship fit-out',
+            'quantity': 1
+          },
         ];
       expect(LeadsRemoteDataSource.mapLead(row)!.project, 'Flagship fit-out');
     });
@@ -125,7 +130,8 @@ void main() {
           'archived');
       expect(
           LeadsRemoteDataSource.mapLead(fullRow()..['status'] = 'Contacted',
-              statusTypes: catalog)!.status,
+                  statusTypes: catalog)!
+              .status,
           'qualified');
     });
 
@@ -135,7 +141,8 @@ void main() {
         ..['status_type'] = 'won';
       expect(
           LeadsRemoteDataSource.mapLead(row,
-              statusTypes: const {'disqualified': 'junk'})!.status,
+                  statusTypes: const {'disqualified': 'junk'})!
+              .status,
           'won');
     });
 
@@ -147,13 +154,15 @@ void main() {
     test('phone comes from mobile_no, with phone as a fallback', () {
       expect(
           LeadsRemoteDataSource.mapLead(
-              fullRow()..['mobile_no'] = '+9191423 34434')!.phone,
+                  fullRow()..['mobile_no'] = '+9191423 34434')!
+              .phone,
           '+9191423 34434');
       // whatsapp_no is a different number and must not fill the Mobile field.
       expect(
           LeadsRemoteDataSource.mapLead(fullRow()
-            ..remove('phone')
-            ..['whatsapp_no'] = '+919999999999')!.phone,
+                ..remove('phone')
+                ..['whatsapp_no'] = '+919999999999')!
+              .phone,
           '');
       expect(
           LeadsRemoteDataSource.mapLead(fullRow()..['phone'] = '+91 80 1234')!

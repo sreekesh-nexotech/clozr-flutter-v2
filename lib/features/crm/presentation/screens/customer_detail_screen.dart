@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../components/quote_detail/generate_for_record.dart';
+import '../../application/customer_call.dart';
 import '../../application/providers/record_presence_providers.dart';
 import '../../../../core/network/api_endpoints.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import '../../../messages/application/providers/messages_providers.dart';
+import '../../../messages/application/whatsapp_gate.dart';
+import '../../../messages/domain/entities/conversation.dart'
+    show Conversation, sameWaNumber, waDigits;
+import '../components/whatsapp_draft_sheet.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../accounting/application/providers/accounting_providers.dart';
 import '../../../accounting/presentation/components/customer_accounting.dart';
@@ -60,12 +67,12 @@ class CustomerDetailScreen extends ConsumerStatefulWidget {
   const CustomerDetailScreen({super.key});
 
   @override
-  ConsumerState<CustomerDetailScreen> createState() => _CustomerDetailScreenState();
+  ConsumerState<CustomerDetailScreen> createState() =>
+      _CustomerDetailScreenState();
 }
 
 class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   bool _infoMore = false;
-
 
   /// True while an upsell POST is in flight. The action is reachable from three
   /// places — the overflow menu, the Upsell button and the Leads tab's CTA — and
@@ -84,6 +91,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   bool _staleReloaded = false;
   final _notesKey = GlobalKey<NotesThreadState>();
 
+  /// Drives the body list, so "Add note" can reach the notes card even when
+  /// the lazy list has not built it yet (matches the lead detail screen).
+  final _scroll = ScrollController();
+
   /// The record id whose row / activity tabs were refetched on open.
   /// `customerRowProvider` and the tab providers live for the session, so
   /// without this a customer reopened after a quote was accepted elsewhere
@@ -92,18 +103,36 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   String? _openedId;
 
   /// Scrolls the notes card into view and focuses the composer (#13).
-  void _focusNotes() {
-    final ctx = _notesKey.currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 300), alignment: 0.05, curve: Curves.easeOut);
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _focusNotes() async {
+    // The page is a lazy ListView: below the fold the notes card has not been
+    // built and its key has no context, so ensureVisible would do nothing.
+    // Nudging the list to the end builds it; the second pass lands on it.
+    if (_notesKey.currentContext == null && _scroll.hasClients) {
+      await _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
     }
+    if (!mounted) return;
+    final ctx = _notesKey.currentContext;
+    if (ctx != null && ctx.mounted) {
+      await Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 260),
+          alignment: 0.05,
+          curve: Curves.easeOut);
+    }
+    if (!mounted) return;
     _notesKey.currentState?.focusComposer();
   }
 
   void _openCustomerMenu(Customer cust) {
-    final toast = ref.read(toastProvider.notifier);
-    final first = cust.name.split(' ').first;
     // Webapp gating: quotes need quotation.create, a payment payment.create,
     // an upsell customer.update; removing the customer customer.delete.
     final canQuote = hasPermission(ref, 'quotation', PermVerb.create);
@@ -111,21 +140,39 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final canUpdate = hasPermission(ref, 'customer', PermVerb.update);
     final perm = ref.read(modulePermProvider('customer'));
     final deleteControl = customerDeleteControl(
-      readOnly: isReadOnlyRole(read: perm.read, create: perm.create, update: perm.update, delete: perm.delete),
+      readOnly: isReadOnlyRole(
+          read: perm.read,
+          create: perm.create,
+          update: perm.update,
+          delete: perm.delete),
       canDelete: hasPermission(ref, 'customer', PermVerb.delete),
       row: ref.read(customerRowProvider(cust.id)).valueOrNull,
     );
     showActionMenu(
       context,
       actions: [
-        MenuAction(icon: PhosphorIconsFill.phone, label: 'Call customer', onTap: () => toast.show('Calling $first…')),
-        MenuAction(icon: PhosphorIconsRegular.whatsappLogo, label: 'WhatsApp chat', onTap: () => toast.show('Opening WhatsApp…')),
+        MenuAction(
+            icon: PhosphorIconsFill.phone,
+            label: 'Call customer',
+            onTap: () =>
+                dialCustomer(ref, phone: _phoneOf(cust), name: _nameOf(cust))),
+        MenuAction(
+            icon: PhosphorIconsRegular.whatsappLogo,
+            label: 'WhatsApp chat',
+            onTap: () => _openWhatsapp(cust)),
         MenuAction(
             icon: PhosphorIconsRegular.filePlus,
             label: 'Create quote',
             enabled: canQuote,
             sublabel: canQuote ? null : permissionCopy(PermVerb.create),
             onTap: () => _createQuote(cust)),
+        MenuAction(
+            icon: PhosphorIconsRegular.filePlus,
+            label: 'Generate document',
+            enabled: canUpdate,
+            sublabel: canUpdate ? null : permissionCopy(PermVerb.update),
+            onTap: () =>
+                generateDocumentForRecord(context, ref, customerId: cust.id)),
         MenuAction(
             icon: PhosphorIconsRegular.wallet,
             label: 'Record payment',
@@ -150,12 +197,14 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             icon: PhosphorIconsRegular.notePencil,
             label: 'Add note',
             onTap: _focusNotes),
-        if (ref.read(accountingActiveProvider) && ref.read(accPermProvider('acc_setup')).read)
+        if (ref.read(accountingActiveProvider) &&
+            ref.read(accPermProvider('acc_setup')).read)
           MenuAction(
               icon: PhosphorIconsRegular.identificationCard,
               label: 'Tax profile',
               sublabel: 'GSTIN, PAN and registration',
-              onTap: () => showPartyTaxProfileSheet(context, kind: 'customer', partyId: cust.id, title: cust.name)),
+              onTap: () => showPartyTaxProfileSheet(context,
+                  kind: 'customer', partyId: cust.id, title: cust.name)),
         // Webapp: Delete (no archive on the detail page). Hidden for a
         // read-only role; disabled with the reason without `delete` or when
         // the server says this customer can never be deleted.
@@ -170,7 +219,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       ],
     );
   }
-
 
   // ── Create quote ──
 
@@ -192,7 +240,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     if (!mounted) return;
 
     if (leads.isEmpty) {
-      toast.show('A quote is raised against a lead. Create an upsell lead first.');
+      toast.show(
+          'A quote is raised against a lead. Create an upsell lead first.');
       return;
     }
     var leadId = leads.first.id;
@@ -258,13 +307,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete this customer?'),
-        content: Text('$name and its details will be permanently removed. A customer that accounting '
+        content: Text(
+            '$name and its details will be permanently removed. A customer that accounting '
             'records (invoices, receipts or payments) reference can’t be deleted.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Delete customer', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete customer',
+                style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -320,7 +373,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   /// toast so the caller can explain it in place.
   Future<AppError?> _patch(Customer cust, Map<String, dynamic> body) async {
     try {
-      await ref.read(customersRepositoryProvider).updateCustomer(cust.id, body, version: _versionOf(cust.id));
+      await ref
+          .read(customersRepositoryProvider)
+          .updateCustomer(cust.id, body, version: _versionOf(cust.id));
     } on AppError catch (e) {
       ref.read(apiServiceProvider).handled(e);
       return e;
@@ -355,7 +410,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
   /// An inline field save: "Customer updated", or the message for under the
   /// field (the editor stays open with the typed value).
-  Future<({String message, bool stale})?> _saveFieldPatch(Customer cust, Map<String, dynamic> patch) async {
+  Future<({String message, bool stale})?> _saveFieldPatch(
+      Customer cust, Map<String, dynamic> patch) async {
     if (!hasPermission(ref, 'customer', PermVerb.update)) {
       return (message: permissionCopy(PermVerb.update), stale: false);
     }
@@ -367,6 +423,82 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   /// The display name — the record's when it has landed.
+  /// WhatsApp, as the webapp's chat icon: the customer's own CRM thread when
+  /// one exists (linked through its converted lead, or sharing the number),
+  /// otherwise a draft chat in the app (template required). Never hands off to
+  /// the device's WhatsApp.
+  Future<void> _openWhatsapp(Customer cust) async {
+    if (!await ensureWhatsappConnected(ref)) return;
+    if (!mounted) return;
+    final toast = ref.read(toastProvider.notifier);
+    final row = ref.read(customerRowProvider(cust.id)).valueOrNull;
+    String pick(List<String> keys) {
+      for (final k in keys) {
+        final v = row?[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+      return cust.phone;
+    }
+
+    final digits = waDigits(pick(['whatsapp_no', 'mobile_no', 'phone']));
+    final leadIds = <String>{
+      for (final l in (row?['linked_leads'] is List
+          ? row!['linked_leads'] as List
+          : const []))
+        if (l is Map)
+          for (final k in ['lead_id', 'id', 'lead'])
+            if (l[k] != null) l[k].toString(),
+    };
+
+    if (ref.read(whatsappInboxAllowedProvider)) {
+      try {
+        await ref.read(conversationsProvider.notifier).ensureLoaded();
+      } on Object {
+        // A failed inbox read is not a dead end — the number can still be reached.
+      }
+      if (!mounted) return;
+      final convs = ref.read(conversationsProvider).conversations;
+      Conversation? existing;
+      for (final c in convs) {
+        if (c.leadId != null && leadIds.contains(c.leadId)) {
+          existing = c;
+          break;
+        }
+      }
+      if (existing == null && digits.isNotEmpty) {
+        for (final c in convs) {
+          if (sameWaNumber(c.phone, digits)) {
+            existing = c;
+            break;
+          }
+        }
+      }
+      if (existing != null) {
+        ref.read(conversationsProvider.notifier).markRead(existing.id);
+        context.push('${Routes.chat}?id=${existing.id}');
+        return;
+      }
+    }
+    if (digits.isEmpty) {
+      toast.show('No phone number on this customer.');
+      return;
+    }
+    await showWhatsappDraftSheet(
+      context,
+      name: _nameOf(cust),
+      phoneDigits: digits,
+      onSent: () => ref.invalidate(conversationsProvider),
+    );
+  }
+
+  /// The phone as the record has it — an inline edit on this page lands on the
+  /// row, not on the list entity [cust] was built from.
+  String _phoneOf(Customer cust) {
+    final row = ref.read(customerRowProvider(cust.id)).valueOrNull;
+    final p = row?['phone'] ?? row?['mobile'];
+    return p is String && p.trim().isNotEmpty ? p : cust.phone;
+  }
+
   String _nameOf(Customer cust) {
     final n = ref.read(customerRowProvider(cust.id)).valueOrNull?['name'];
     return n is String && n.trim().isNotEmpty ? n.trim() : cust.name;
@@ -431,10 +563,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   /// (`CustomerLostModal`): the reason is required and the sheet lists the
   /// deals the move closes. A `409 LOST_HAS_OPEN_INVOICES` (an invoice issued
   /// after the sheet opened) re-opens it listing those invoices.
-  Future<void> _setStatus(Customer cust, String statusId, {List<CustomerLostImpact> blocked = const []}) async {
+  Future<void> _setStatus(Customer cust, String statusId,
+      {List<CustomerLostImpact> blocked = const []}) async {
     final statuses = ref.read(customerStatusesProvider);
     final target = statuses.where((s) => s.id == statusId).firstOrNull;
-    final current = statuses.where((s) => s.id == _currentStatusId(statuses, cust)).firstOrNull;
+    final current = statuses
+        .where((s) => s.id == _currentStatusId(statuses, cust))
+        .firstOrNull;
     LostChoice? lost;
     if (target?.statusType == 'lost' && current?.statusType != 'lost') {
       lost = await showCustomerLostDialog(context,
@@ -451,7 +586,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       return;
     }
     if (e.code == lostHasOpenInvoicesCode && lost != null) {
-      final impacts = customerLostImpactsFromCause(e.causeMap.isNotEmpty ? e.causeMap : e.extra);
+      final impacts = customerLostImpactsFromCause(
+          e.causeMap.isNotEmpty ? e.causeMap : e.extra);
       if (impacts.isNotEmpty) {
         await _setStatus(cust, statusId, blocked: impacts);
         return;
@@ -460,7 +596,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final err = customerWriteError(e);
     if (err.stale) {
       setState(() {
-        _stale = (message: e.message, unsaved: 'Status → ${target?.name ?? 'the new status'}');
+        _stale = (
+          message: e.message,
+          unsaved: 'Status → ${target?.name ?? 'the new status'}'
+        );
         _staleReloaded = false;
       });
     } else {
@@ -482,16 +621,16 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Raise an upsell?'),
-        content: Text('A new upsell lead will be created for ${cust.name}, and '
-            'the customer moves to "Upsell in progress".'),
+        title: const Text('Create upsell lead?'),
+        content: Text(
+            "This spawns a new upsell lead from ${cust.name}'s details and moves you to it."),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Cancel')),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Create')),
+              child: const Text('Create upsell')),
         ],
       ),
     );
@@ -502,11 +641,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final toast = ref.read(toastProvider.notifier);
     String? leadId;
     try {
-      leadId = await ref.read(customersRepositoryProvider).createUpsell(cust.id);
+      leadId =
+          await ref.read(customersRepositoryProvider).createUpsell(cust.id);
     } on Object catch (e) {
       if (!mounted) return;
       setState(() => _upselling = false);
-      toast.showError(e is AppError ? e.message : 'Could not raise the upsell.');
+      toast
+          .showError(e is AppError ? e.message : 'Could not raise the upsell.');
       return;
     }
     if (!mounted) return;
@@ -534,37 +675,63 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   Future<void> _addAssignee(Customer cust) async {
     if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
     final toast = ref.read(toastProvider.notifier);
-    final current = [for (final a in customerAssignees(ref.read(customerRowProvider(cust.id)).valueOrNull)) a.id];
+    final current = [
+      for (final a in customerAssignees(
+          ref.read(customerRowProvider(cust.id)).valueOrNull))
+        a.id
+    ];
     List<CatalogOption> users;
     try {
-      users = await ref.read(assignableUsersForModuleProvider('customer').future);
+      users =
+          await ref.read(assignableUsersForModuleProvider('customer').future);
     } on Object catch (e) {
       if (!mounted) return;
-      toast.showError(e is AppError ? e.message : 'Could not load the user list.');
+      toast.showError(
+          e is AppError ? e.message : 'Could not load the user list.');
       return;
     }
     if (!mounted) return;
     final picked = await showOptionPicker(
       context: context,
       title: 'Add assignee',
-      options: assignableNotAssigned<CatalogOption>(users, (u) => u.id, current),
+      options:
+          assignableNotAssigned<CatalogOption>(users, (u) => u.id, current),
       selected: const {},
       emptyNote: 'Everyone who can be assigned already is.',
     );
     if (picked == null || picked.isEmpty || !mounted) return;
     final id = picked.first;
     if (current.contains(id)) return;
-    final name = users.where((u) => u.id == id).map((u) => u.name).firstOrNull ?? '';
-    await _write(cust, {'assignees': [...current, id]},
-        success: 'Assignee added', unsaved: 'Add assignee $name'.trim());
+    final name =
+        users.where((u) => u.id == id).map((u) => u.name).firstOrNull ?? '';
+    await _write(
+        cust,
+        {
+          'assignees': [...current, id]
+        },
+        success: 'Assignee added',
+        unsaved: 'Add assignee $name'.trim());
   }
 
   /// The chip's ×.
-  Future<void> _removeAssignee(Customer cust, ({String id, String name}) who) async {
+  Future<void> _removeAssignee(
+      Customer cust, ({String id, String name}) who) async {
     if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
-    final current = [for (final a in customerAssignees(ref.read(customerRowProvider(cust.id)).valueOrNull)) a.id];
-    await _write(cust, {'assignees': [for (final i in current) if (i != who.id) i]},
-        success: 'Assignee removed', unsaved: 'Remove assignee ${who.name}'.trim());
+    final current = [
+      for (final a in customerAssignees(
+          ref.read(customerRowProvider(cust.id)).valueOrNull))
+        a.id
+    ];
+    await _write(
+        cust,
+        {
+          'assignees': [
+            for (final i in current)
+              if (i != who.id) i
+          ]
+        },
+        success: 'Assignee removed',
+        unsaved: 'Remove assignee ${who.name}'.trim());
   }
 
   // ── Products ──
@@ -641,7 +808,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     return async.when(
       loading: () => _stateScaffold(const DetailSkeleton()),
       error: (e, _) => _stateScaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(customersScopedProvider)),
+        ErrorState.forError(crmAppError(e),
+            onRetry: () => ref.invalidate(customersScopedProvider)),
       ),
       data: (_) => _buildCustomer(context, id),
     );
@@ -688,7 +856,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     if (cust == null) return _stateScaffold(_notFound(context));
     // The row above comes from the loaded list, which can outlive the record:
     // ask the record endpoint, and show the webapp's not-found state on a 404.
-    final gone = ref.watch(recordGoneProvider(RecordProbe(ApiEndpoints.customer(cust.id)))).valueOrNull ?? false;
+    final gone = ref
+            .watch(
+                recordGoneProvider(RecordProbe(ApiEndpoints.customer(cust.id))))
+            .valueOrNull ??
+        false;
     if (gone) return _stateScaffold(_notFound(context));
 
     if (_openedId != cust.id) {
@@ -700,8 +872,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       });
     }
 
-    final meta = StatusMeta$.customer[cust.status] ?? StatusMeta$.customer['active']!;
-
+    final meta =
+        StatusMeta$.customer[cust.status] ?? StatusMeta$.customer['active']!;
 
     return Container(
       color: AppColors.bgDetail,
@@ -720,55 +892,72 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             child: AppRefresh(
               onRefresh: () => _refresh(cust.id),
               child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
-              children: [
-                if (_stale != null) ...[_staleBanner(cust), SizedBox(height: 14.h)],
-                _profileCard(cust, meta),
-                SizedBox(height: 14.h),
-                if (_deleteError != null) ...[
-                  _banner(
-                    icon: PhosphorIconsRegular.warning,
-                    tone: AppColors.error,
-                    bg: AppColors.tintRed,
-                    child: Text(_deleteError!, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textBody)),
-                    onDismiss: () => setState(() => _deleteError = null),
+                controller: _scroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16.w, 4.h, 16.w, 140.h),
+                children: [
+                  if (_stale != null) ...[
+                    _staleBanner(cust),
+                    SizedBox(height: 14.h)
+                  ],
+                  _profileCard(cust, meta),
+                  SizedBox(height: 14.h),
+                  if (_deleteError != null) ...[
+                    _banner(
+                      icon: PhosphorIconsRegular.warning,
+                      tone: AppColors.error,
+                      bg: AppColors.tintRed,
+                      child: Text(_deleteError!,
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textBody)),
+                      onDismiss: () => setState(() => _deleteError = null),
+                    ),
+                    SizedBox(height: 14.h),
+                  ],
+                  if (CustomerHeaderFacts.fromRow(
+                          ref.watch(customerRowProvider(cust.id)).valueOrNull)
+                      .isConverted) ...[
+                    _banner(
+                      icon: PhosphorIconsRegular.lock,
+                      tone: AppColors.success,
+                      bg: AppColors.tintGreen,
+                      child: Text.rich(TextSpan(children: [
+                        TextSpan(
+                            text: convertedBannerLead,
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
+                        TextSpan(
+                            text: convertedBannerBody,
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w500,
+                                color: AppColors.textBody)),
+                      ])),
+                    ),
+                    SizedBox(height: 14.h),
+                  ],
+                  _scoreCard(cust),
+                  SizedBox(height: 14.h),
+                  _infoCard(cust),
+                  SizedBox(height: 14.h),
+                  CustomerActivityTabs(
+                    customer: cust,
+                    onUpsell: () => _createUpsell(cust),
+                    onRecordPayment: () => _recordPayment(cust),
                   ),
                   SizedBox(height: 14.h),
-                ],
-                if (CustomerHeaderFacts.fromRow(ref.watch(customerRowProvider(cust.id)).valueOrNull).isConverted) ...[
-                  _banner(
-                    icon: PhosphorIconsRegular.lock,
-                    tone: AppColors.success,
-                    bg: AppColors.tintGreen,
-                    child: Text.rich(TextSpan(children: [
-                      TextSpan(
-                          text: convertedBannerLead,
-                          style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                      TextSpan(
-                          text: convertedBannerBody,
-                          style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textBody)),
-                    ])),
-                  ),
+                  CustomerNotesCard(customer: cust, threadKey: _notesKey),
                   SizedBox(height: 14.h),
+                  // Webapp `CustomerAccountingPanel`: only while accounting is
+                  // active, and only with at least one acc_* grant.
+                  CustomerAccountingPanel(
+                      customerId: cust.id, customerName: cust.name),
+                  _activityLogCard(cust),
                 ],
-                _scoreCard(cust),
-                SizedBox(height: 14.h),
-                _infoCard(cust),
-                SizedBox(height: 14.h),
-                CustomerActivityTabs(
-                  customer: cust,
-                  onUpsell: () => _createUpsell(cust),
-                  onRecordPayment: () => _recordPayment(cust),
-                ),
-                SizedBox(height: 14.h),
-                CustomerNotesCard(customer: cust, threadKey: _notesKey),
-                SizedBox(height: 14.h),
-                // Webapp `CustomerAccountingPanel`: only while accounting is
-                // active, and only with at least one acc_* grant.
-                CustomerAccountingPanel(customerId: cust.id, customerName: cust.name),
-                _activityLogCard(cust),
-              ],
               ),
             ),
           ),
@@ -783,9 +972,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     // trimmed to the org's mobile config and carries none of these facts.
     final row = ref.watch(customerRowProvider(cust.id)).valueOrNull;
     final facts = CustomerHeaderFacts.fromRow(row);
-    final name = (row?['name'] is String && (row!['name'] as String).trim().isNotEmpty)
-        ? (row['name'] as String).trim()
-        : cust.name;
+    final name =
+        (row?['name'] is String && (row!['name'] as String).trim().isNotEmpty)
+            ? (row['name'] as String).trim()
+            : cust.name;
     final initials = UserDirectory.initialsOf(name);
     final canUpdate = hasPermission(ref, 'customer', PermVerb.update);
 
@@ -793,10 +983,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label.toUpperCase(),
-                style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                style: AppText.custom(
+                    size: 10,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder,
+                    letterSpacing: 0.4)),
             SizedBox(height: 2.h),
             Text(webMoney(value),
-                style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                style: AppText.custom(
+                    size: 18,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3)),
           ],
         );
 
@@ -813,8 +1011,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 width: 62.w,
                 height: 62.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(15.r)),
-                child: Text(initials, style: AppText.custom(size: 17, weight: FontWeight.w700, color: AppColors.navy, letterSpacing: 0.4)),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEEF1F4),
+                    borderRadius: BorderRadius.circular(15.r)),
+                child: Text(initials,
+                    style: AppText.custom(
+                        size: 17,
+                        weight: FontWeight.w700,
+                        color: AppColors.navy,
+                        letterSpacing: 0.4)),
               ),
               SizedBox(width: 13.w),
               Expanded(
@@ -824,14 +1029,22 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     Text(name,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
-                    if (facts.isConverted || facts.isUpsell || cust.isUpsell) ...[
+                        style: AppText.custom(
+                            size: 20,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.4)),
+                    if (facts.isConverted ||
+                        facts.isUpsell ||
+                        cust.isUpsell) ...[
                       SizedBox(height: 5.h),
                       Wrap(
                         spacing: 6.w,
                         runSpacing: 4.h,
                         children: [
-                          if (facts.isConverted) _textBadge('CONVERTED', AppColors.success, AppColors.tintGreen),
+                          if (facts.isConverted)
+                            _textBadge('CONVERTED', AppColors.success,
+                                AppColors.tintGreen),
                           if (facts.isUpsell || cust.isUpsell) _upsellBadge(),
                         ],
                       ),
@@ -843,16 +1056,23 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       Text(facts.subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     ],
                     if (facts.since.isNotEmpty) ...[
                       SizedBox(height: 5.h),
                       Row(
                         children: [
-                          Icon(PhosphorIconsRegular.calendarBlank, size: 13.sp, color: AppColors.textPlaceholder),
+                          Icon(PhosphorIconsRegular.calendarBlank,
+                              size: 13.sp, color: AppColors.textPlaceholder),
                           SizedBox(width: 5.w),
                           Text('Customer since ${facts.since}',
-                              style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted2)),
+                              style: AppText.custom(
+                                  size: 12,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textMuted2)),
                         ],
                       ),
                     ],
@@ -865,15 +1085,21 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             SizedBox(height: 14.h),
             Row(
               children: [
-                if (facts.dealValue != null) Expanded(child: stat('Value (excl. GST)', facts.dealValue!)),
-                if (facts.received != null) Expanded(child: stat('Received (incl. GST)', facts.received!)),
+                if (facts.dealValue != null)
+                  Expanded(child: stat('Value (excl. GST)', facts.dealValue!)),
+                if (facts.received != null)
+                  Expanded(
+                      child: stat('Received (incl. GST)', facts.received!)),
               ],
             ),
           ],
           if (facts.isLost) ...[
             SizedBox(height: 10.h),
             Text('Lost: ${facts.lostReason}',
-                style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.error)),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.error)),
           ],
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
           Row(
@@ -892,12 +1118,24 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
+                        Container(
+                            width: 9.w,
+                            height: 9.w,
+                            decoration: BoxDecoration(
+                                color: meta.color, shape: BoxShape.circle)),
                         SizedBox(width: 8.w),
-                        Flexible(child: Text(meta.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textBody))),
+                        Flexible(
+                            child: Text(meta.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.custom(
+                                    size: 13.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textBody))),
                         if (canUpdate) ...[
                           SizedBox(width: 6.w),
-                          Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textMuted2),
+                          Icon(PhosphorIconsBold.caretDown,
+                              size: 11.sp, color: AppColors.textMuted2),
                         ],
                       ],
                     ),
@@ -908,18 +1146,26 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               Expanded(
                 child: GestureDetector(
                   onTap: () {
-                    if (ensurePermission(ref, 'customer', PermVerb.update)) _createUpsell(cust);
+                    if (ensurePermission(ref, 'customer', PermVerb.update))
+                      _createUpsell(cust);
                   },
                   child: Container(
                     height: 44.h,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(11.r)),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(PhosphorIconsFill.trendUp, size: 16.sp, color: AppColors.white),
+                        Icon(PhosphorIconsFill.trendUp,
+                            size: 16.sp, color: AppColors.white),
                         SizedBox(width: 8.w),
-                        Text('Upsell', style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.white)),
+                        Text('Upsell',
+                            style: AppText.custom(
+                                size: 13.5,
+                                weight: FontWeight.w600,
+                                color: AppColors.white)),
                       ],
                     ),
                   ),
@@ -934,8 +1180,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
   Widget _textBadge(String label, Color fg, Color bg) => Container(
         padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7.r)),
-        child: Text(label, style: AppText.custom(size: 11, weight: FontWeight.w700, color: fg)),
+        decoration:
+            BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7.r)),
+        child: Text(label,
+            style:
+                AppText.custom(size: 11, weight: FontWeight.w700, color: fg)),
       );
 
   /// A full-width notice card (delete refusal, converted, stale record).
@@ -966,7 +1215,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               onTap: onDismiss,
               child: Padding(
                 padding: EdgeInsets.only(left: 8.w),
-                child: Icon(PhosphorIconsBold.x, size: 14.sp, color: AppColors.textMuted),
+                child: Icon(PhosphorIconsBold.x,
+                    size: 14.sp, color: AppColors.textMuted),
               ),
             ),
         ],
@@ -998,21 +1248,34 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       });
                     },
               child: Text(_staleReloading ? 'Reloading…' : 'Reload',
-                  style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.blueBright)),
             ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Changed elsewhere — ${s.message}',
-              style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPrimary)),
           if (s.unsaved.isNotEmpty) ...[
             SizedBox(height: 3.h),
-            Text('Not saved: ${s.unsaved}', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textBody)),
+            Text('Not saved: ${s.unsaved}',
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textBody)),
           ],
           if (_staleReloaded) ...[
             SizedBox(height: 3.h),
             Text('Latest version loaded — make the change again.',
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted)),
           ],
         ],
       ),
@@ -1022,13 +1285,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   Widget _upsellBadge() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-      decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(7.r)),
+      decoration: BoxDecoration(
+          color: AppColors.tintPurple,
+          borderRadius: BorderRadius.circular(7.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsFill.trendUp, size: 11.sp, color: AppColors.pending),
+          Icon(PhosphorIconsFill.trendUp,
+              size: 11.sp, color: AppColors.pending),
           SizedBox(width: 4.w),
-          Text('UPSELL', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.pending)),
+          Text('UPSELL',
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w700, color: AppColors.pending)),
         ],
       ),
     );
@@ -1041,7 +1309,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     // field. The detail row wins; the entity stays the fallback.
     final row = ref.watch(customerRowProvider(cust.id)).valueOrNull;
     final score = (row?['score'] as num?)?.toInt() ?? cust.score;
-    final color = score >= 75 ? AppColors.success : (score >= 45 ? AppColors.warningDeep : AppColors.error);
+    final color = score >= 75
+        ? AppColors.success
+        : (score >= 45 ? AppColors.warningDeep : AppColors.error);
     return ClozrCard(
       radius: 18,
       child: Column(
@@ -1050,11 +1320,19 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Customer score', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+              Text('Customer score',
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 2.h),
-                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(7.r)),
-                child: Text('$score / 100', style: AppText.custom(size: 12, weight: FontWeight.w700, color: color)),
+                decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(7.r)),
+                child: Text('$score / 100',
+                    style: AppText.custom(
+                        size: 12, weight: FontWeight.w700, color: color)),
               ),
             ],
           ),
@@ -1075,16 +1353,29 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 width: 34.w,
                 height: 34.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(10.r)),
-                child: Icon(PhosphorIconsFill.sparkle, size: 18.sp, color: AppColors.pending),
+                decoration: BoxDecoration(
+                    color: AppColors.tintPurple,
+                    borderRadius: BorderRadius.circular(10.r)),
+                child: Icon(PhosphorIconsFill.sparkle,
+                    size: 18.sp, color: AppColors.pending),
               ),
               SizedBox(width: 11.w),
-              Text('AI summary', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('AI summary',
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               SizedBox(width: 7.w),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-                decoration: BoxDecoration(color: AppColors.tintPurple, borderRadius: BorderRadius.circular(6.r)),
-                child: Text('SOON', style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.pending)),
+                decoration: BoxDecoration(
+                    color: AppColors.tintPurple,
+                    borderRadius: BorderRadius.circular(6.r)),
+                child: Text('SOON',
+                    style: AppText.custom(
+                        size: 10,
+                        weight: FontWeight.w700,
+                        color: AppColors.pending)),
               ),
             ],
           ),
@@ -1112,7 +1403,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   Widget _fieldRow(Customer cust, CustomerInfoField f, {bool last = false}) {
     final row = DetailInfoRow(label: f.label, value: f.value, last: last);
     if (f.hint != null) {
-      return Tooltip(message: f.hint!, triggerMode: TooltipTriggerMode.tap, child: row);
+      return Tooltip(
+          message: f.hint!, triggerMode: TooltipTriggerMode.tap, child: row);
     }
     if (!f.editable) return row;
     return GestureDetector(
@@ -1123,26 +1415,36 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Widget _eyebrow(String t) => Text(t,
-      style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6));
+      style: AppText.custom(
+          size: 11,
+          weight: FontWeight.w700,
+          color: AppColors.textPlaceholder,
+          letterSpacing: 0.6));
 
   Widget _infoCard(Customer cust) {
     final schema = ref.watch(customerDetailSchemaProvider);
     final row = ref.watch(customerRowProvider(cust.id)).valueOrNull;
     // Without `update` nothing is editable (webapp `perms.can('update')`).
     final canUpdate = ref.watch(modulePermProvider('customer')).update;
-    final industries = canUpdate ? ref.watch(industryCatalogProvider).valueOrNull : null;
+    final industries =
+        canUpdate ? ref.watch(industryCatalogProvider).valueOrNull : null;
 
     final List<Widget> infoRows;
     List<CustomerInfoField> billing = const [];
     if (schema.isEmpty || row == null) {
       final all = _fallbackInfoRows(cust);
-      infoRows = [for (final r in all) DetailInfoRow(label: r.$1, value: r.$2.isEmpty ? '—' : r.$2)];
+      infoRows = [
+        for (final r in all)
+          DetailInfoRow(label: r.$1, value: r.$2.isEmpty ? '—' : r.$2)
+      ];
     } else {
       final built = buildCustomerInfoFields(
         row: row,
         columns: schema.columns,
         editable: canUpdate,
-        industryOptions: industries == null ? null : [for (final o in industries) (o.id, o.name)],
+        industryOptions: industries == null
+            ? null
+            : [for (final o in industries) (o.id, o.name)],
         hasProductsEditor: true,
       );
       billing = built.billing;
@@ -1151,7 +1453,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     // Long layouts stay behind "Show more"; a short one shows whole.
     const collapseAt = 8;
     final collapsible = infoRows.length > collapseAt;
-    final rows = (_infoMore || !collapsible) ? infoRows : infoRows.take(collapseAt).toList();
+    final rows = (_infoMore || !collapsible)
+        ? infoRows
+        : infoRows.take(collapseAt).toList();
     final assignees = customerAssignees(row);
     final teamName = _teamNameOf(row?['assigned_team']);
 
@@ -1161,7 +1465,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Customer information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Customer information',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
           ...rows,
           if (collapsible)
@@ -1174,9 +1482,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(_infoMore ? 'Show less' : 'Show more', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
+                    Text(_infoMore ? 'Show less' : 'Show more',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: AppColors.blueBright)),
                     SizedBox(width: 6.w),
-                    Icon(_infoMore ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.blueBright),
+                    Icon(
+                        _infoMore
+                            ? PhosphorIconsBold.caretUp
+                            : PhosphorIconsBold.caretDown,
+                        size: 12.sp,
+                        color: AppColors.blueBright),
                   ],
                 ),
               ),
@@ -1191,27 +1508,42 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           Row(
             children: [
               Expanded(child: _eyebrow('ASSIGNED TO')),
-              if (canUpdate) _roundAction(PhosphorIconsRegular.userPlus, () => _addAssignee(cust)),
+              if (canUpdate)
+                _roundAction(
+                    PhosphorIconsRegular.userPlus, () => _addAssignee(cust)),
             ],
           ),
           SizedBox(height: 8.h),
           if (assignees.isEmpty)
-            Text('Unassigned', style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder))
+            Text('Unassigned',
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder))
           else
             Wrap(
               spacing: 8.w,
               runSpacing: 8.h,
-              children: [for (final a in assignees) _assigneeChip(cust, a, removable: canUpdate)],
+              children: [
+                for (final a in assignees)
+                  _assigneeChip(cust, a, removable: canUpdate)
+              ],
             ),
           if (teamName.isNotEmpty) ...[
             SizedBox(height: 14.h),
-            Text('Assigned team', style: AppText.caption(color: AppColors.textMuted)),
+            Text('Assigned team',
+                style: AppText.caption(color: AppColors.textMuted)),
             SizedBox(height: 5.h),
             Row(
               children: [
-                Icon(PhosphorIconsRegular.usersThree, size: 15.sp, color: AppColors.textLabelAlt),
+                Icon(PhosphorIconsRegular.usersThree,
+                    size: 15.sp, color: AppColors.textLabelAlt),
                 SizedBox(width: 7.w),
-                Text(teamName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(teamName,
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
               ],
             ),
           ],
@@ -1221,7 +1553,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   /// An assignee chip — initials, full name and ×.
-  Widget _assigneeChip(Customer cust, ({String id, String name}) a, {required bool removable}) {
+  Widget _assigneeChip(Customer cust, ({String id, String name}) a,
+      {required bool removable}) {
     final name = a.name.isEmpty ? 'User' : a.name;
     return Container(
       padding: EdgeInsets.fromLTRB(4.w, 4.h, removable ? 4.w : 10.w, 4.h),
@@ -1237,19 +1570,26 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             width: 24.w,
             height: 24.w,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+                color: AppColors.navy, shape: BoxShape.circle),
             child: Text(UserDirectory.initialsOf(name),
-                style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                style: AppText.custom(
+                    size: 10, weight: FontWeight.w700, color: AppColors.white)),
           ),
           SizedBox(width: 7.w),
-          Text(name, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
+          Text(name,
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textSecondary)),
           if (removable)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => _removeAssignee(cust, a),
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                child: Icon(PhosphorIconsBold.x, size: 12.sp, color: AppColors.textMuted),
+                child: Icon(PhosphorIconsBold.x,
+                    size: 12.sp, color: AppColors.textMuted),
               ),
             ),
         ],
@@ -1286,7 +1626,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         width: 38.w,
         height: 38.w,
         alignment: Alignment.center,
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(11.r), border: Border.all(color: const Color(0xFFE6E7EA))),
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(11.r),
+            border: Border.all(color: const Color(0xFFE6E7EA))),
         child: Icon(icon, size: 17.sp, color: AppColors.textSecondary),
       ),
     );
@@ -1295,17 +1637,36 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   /// The row styling for one kind of audit event.
   static ActivityItem _activityRow(AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created =>
-        (PhosphorIconsRegular.handshake, AppColors.textMuted2, AppColors.bgChipGrey),
-      AuditEventKind.statusChanged =>
-        (PhosphorIconsRegular.flag, AppColors.blueBright, AppColors.tintBlue),
-      AuditEventKind.noteAdded =>
-        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.childAdded =>
-        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
-      AuditEventKind.deleted =>
-        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.handshake,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.flag,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.paperclip,
+          AppColors.warningDeep,
+          AppColors.tintAmber
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.bgChipGrey
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
     };
     return ActivityItem(
       icon: icon,
@@ -1346,7 +1707,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               SizedBox(width: 7.w),
               Text('Activity log',
                   style: AppText.custom(
-                      size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
@@ -1367,40 +1730,49 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         children: [
           Expanded(
             child: GestureDetector(
-              onTap: () => ref.read(toastProvider.notifier).show('Calling ${cust.name.split(' ').first}…'),
+              onTap: () =>
+                  dialCustomer(ref, phone: _phoneOf(cust), name: _nameOf(cust)),
               child: Container(
                 height: 52.h,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(13.r)),
+                decoration: BoxDecoration(
+                    color: AppColors.navy,
+                    borderRadius: BorderRadius.circular(13.r)),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(PhosphorIconsRegular.phone, size: 19.sp, color: AppColors.white),
+                    Icon(PhosphorIconsRegular.phone,
+                        size: 19.sp, color: AppColors.white),
                     SizedBox(width: 9.w),
-                    Text('Call', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                    Text('Call',
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.white)),
                   ],
                 ),
               ),
             ),
           ),
           SizedBox(width: 10.w),
-          _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta, () => ref.read(toastProvider.notifier).show('Opening WhatsApp…'), border: const Color(0xFFC9DCF5)),
+          _squareAction(PhosphorIconsRegular.whatsappLogo, AppColors.blueCta,
+              () => _openWhatsapp(cust),
+              border: const Color(0xFFC9DCF5)),
           SizedBox(width: 10.w),
           // The pencil beside WhatsApp opens the customer's edit form — the
           // same schema-driven form the org configures, not a note composer.
-          _squareAction(PhosphorIconsBold.pencilSimple, AppColors.white,
-              () {
-                if (ensurePermission(ref, 'customer', PermVerb.update)) {
-                  context.push('${Routes.editCustomer}?id=${cust.id}');
-                }
-              },
-              border: const Color(0xFFB9C2D8), borderWidth: 1.5),
+          _squareAction(PhosphorIconsBold.pencilSimple, AppColors.white, () {
+            if (ensurePermission(ref, 'customer', PermVerb.update)) {
+              context.push('${Routes.editCustomer}?id=${cust.id}');
+            }
+          }, border: const Color(0xFFB9C2D8), borderWidth: 1.5),
         ],
       ),
     );
   }
 
-  Widget _squareAction(IconData icon, Color bg, VoidCallback onTap, {required Color border, double borderWidth = 1}) {
+  Widget _squareAction(IconData icon, Color bg, VoidCallback onTap,
+      {required Color border, double borderWidth = 1}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(

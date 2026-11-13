@@ -17,6 +17,7 @@ import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/accounting_providers.dart';
+import '../../../messages/application/whatsapp_gate.dart';
 import '../../domain/entities/acc_document.dart';
 import '../components/acc_widgets.dart';
 
@@ -46,19 +47,27 @@ class AccDocumentPrintScreen extends ConsumerWidget {
       color: AppColors.bgDetail,
       child: Column(
         children: [
-          DetailAppBar(section: 'Share', name: async.valueOrNull?.s('invoice_number'), onBack: () => context.pop()),
+          DetailAppBar(
+              section: 'Share',
+              name: async.valueOrNull?.s('invoice_number'),
+              onBack: () => context.pop()),
           Expanded(
             child: AccountingGate(
               child: async.when(
                 loading: () => const DetailSkeleton(),
                 error: (e, _) => ErrorState.forError(
-                  e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load.'),
+                  e is AppError
+                      ? e
+                      : const AppError(
+                          type: AppErrorType.unknown,
+                          message: 'Could not load.'),
                   onRetry: () => ref.invalidate(_printProvider(id)),
                 ),
                 data: (p) => ListView(
                   padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
                   children: [
-                    const AccInfoBanner('A PDF is not available yet. Share the summary below, or take a screenshot of the invoice.'),
+                    const AccInfoBanner(
+                        'A PDF is not available yet. Share the summary below, or take a screenshot of the invoice.'),
                     SizedBox(height: 14.h),
                     _Paper(print: p, stateName: stateName),
                   ],
@@ -74,10 +83,14 @@ class AccDocumentPrintScreen extends ConsumerWidget {
 
   Widget _shareBar(BuildContext context, WidgetRef ref, InvoicePrint p) {
     final text = _summary(p);
-    final subject = '${p.s('doc_type_label').isEmpty ? 'Invoice' : p.s('doc_type_label')} ${p.s('invoice_number')}';
+    final subject =
+        '${p.s('doc_type_label').isEmpty ? 'Invoice' : p.s('doc_type_label')} ${p.s('invoice_number')}';
     Future<void> open(Uri uri) async {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) ref.read(toastProvider.notifier).showError('No app on this device can open that');
+      if (!ok)
+        ref
+            .read(toastProvider.notifier)
+            .showError('No app on this device can open that');
     }
 
     return StickyActionBar(children: [
@@ -113,7 +126,10 @@ class AccDocumentPrintScreen extends ConsumerWidget {
           label: 'WhatsApp',
           icon: PhosphorIconsRegular.whatsappLogo,
           height: 48,
-          onTap: () => open(Uri.https('wa.me', '/', {'text': text})),
+          onTap: () async {
+            if (!await ensureWhatsappConnected(ref)) return;
+            open(Uri.https('wa.me', '/', {'text': text}));
+          },
         ),
       ),
     ]);
@@ -121,24 +137,36 @@ class AccDocumentPrintScreen extends ConsumerWidget {
 
   /// `mailto:` wants `%20`, not `+`, for spaces — [Uri.queryParameters] would
   /// encode them as `+`, which mail apps show literally.
-  static String _query(Map<String, String> params) =>
-      params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+  static String _query(Map<String, String> params) => params.entries
+      .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+      .join('&');
 
   static String _summary(InvoicePrint p) {
     final b = StringBuffer()
-      ..writeln('${p.s('doc_type_label').isEmpty ? 'Invoice' : p.s('doc_type_label')} ${p.s('invoice_number')}')
+      ..writeln(
+          '${p.s('doc_type_label').isEmpty ? 'Invoice' : p.s('doc_type_label')} ${p.s('invoice_number')}')
       ..writeln('Date: ${formatApiDay(p.s('invoice_date'))}');
-    if (p.s('due_date').isNotEmpty) b.writeln('Due: ${formatApiDay(p.s('due_date'))}');
+    if (p.s('due_date').isNotEmpty)
+      b.writeln('Due: ${formatApiDay(p.s('due_date'))}');
     b
-      ..writeln('From: ${p.s('supplier_name')}${p.s('supplier_gstin').isEmpty ? '' : ' (GSTIN ${p.s('supplier_gstin')})'}')
-      ..writeln('To: ${p.s('recipient_name')}${p.s('recipient_gstin').isEmpty ? '' : ' (GSTIN ${p.s('recipient_gstin')})'}')
+      ..writeln(
+          'From: ${p.s('supplier_name')}${p.s('supplier_gstin').isEmpty ? '' : ' (GSTIN ${p.s('supplier_gstin')})'}')
+      ..writeln(
+          'To: ${p.s('recipient_name')}${p.s('recipient_gstin').isEmpty ? '' : ' (GSTIN ${p.s('recipient_gstin')})'}')
       ..writeln()
       ..writeln('Taxable: ${formatMoneyStr(p.s('taxable_total'))}');
-    for (final h in const [('CGST', 'tax_cgst'), ('SGST', 'tax_sgst'), ('IGST', 'tax_igst'), ('Cess', 'tax_cess')]) {
-      if (!moneyIsZero(p.s(h.$2))) b.writeln('${h.$1}: ${formatMoneyStr(p.s(h.$2))}');
+    for (final h in const [
+      ('CGST', 'tax_cgst'),
+      ('SGST', 'tax_sgst'),
+      ('IGST', 'tax_igst'),
+      ('Cess', 'tax_cess')
+    ]) {
+      if (!moneyIsZero(p.s(h.$2)))
+        b.writeln('${h.$1}: ${formatMoneyStr(p.s(h.$2))}');
     }
     b.writeln('Total: ${formatMoneyStr(p.s('grand_total'))}');
-    if (p.s('grand_total_in_words').isNotEmpty) b.writeln(p.s('grand_total_in_words'));
+    if (p.s('grand_total_in_words').isNotEmpty)
+      b.writeln(p.s('grand_total_in_words'));
     return b.toString().trim();
   }
 }
@@ -173,12 +201,22 @@ class _Paper extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(p.s('supplier_legal_name').isEmpty ? p.s('supplier_name') : p.s('supplier_legal_name'),
-                        style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                    if (p.s('supplier_address').isNotEmpty) _small(p.s('supplier_address')),
-                    if (p.s('supplier_gstin').isNotEmpty) _small('GSTIN ${p.s('supplier_gstin')}'),
-                    if (p.s('supplier_pan').isNotEmpty) _small('PAN ${p.s('supplier_pan')}'),
-                    if (p.s('supplier_state_code').isNotEmpty) _small(stateName(p.s('supplier_state_code'))),
+                    Text(
+                        p.s('supplier_legal_name').isEmpty
+                            ? p.s('supplier_name')
+                            : p.s('supplier_legal_name'),
+                        style: AppText.custom(
+                            size: 16,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
+                    if (p.s('supplier_address').isNotEmpty)
+                      _small(p.s('supplier_address')),
+                    if (p.s('supplier_gstin').isNotEmpty)
+                      _small('GSTIN ${p.s('supplier_gstin')}'),
+                    if (p.s('supplier_pan').isNotEmpty)
+                      _small('PAN ${p.s('supplier_pan')}'),
+                    if (p.s('supplier_state_code').isNotEmpty)
+                      _small(stateName(p.s('supplier_state_code'))),
                   ],
                 ),
               ),
@@ -186,10 +224,22 @@ class _Paper extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text((p.s('doc_type_label').isEmpty ? 'Tax invoice' : p.s('doc_type_label')).toUpperCase(),
-                      style: AppText.custom(size: 11, weight: FontWeight.w800, color: AppColors.navy, letterSpacing: 0.6)),
+                  Text(
+                      (p.s('doc_type_label').isEmpty
+                              ? 'Tax invoice'
+                              : p.s('doc_type_label'))
+                          .toUpperCase(),
+                      style: AppText.custom(
+                          size: 11,
+                          weight: FontWeight.w800,
+                          color: AppColors.navy,
+                          letterSpacing: 0.6)),
                   SizedBox(height: 3.h),
-                  Text(p.s('invoice_number'), style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text(p.s('invoice_number'),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                   _small(formatApiDay(p.s('invoice_date'))),
                 ],
               ),
@@ -198,30 +248,60 @@ class _Paper extends StatelessWidget {
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
           Text('BILL TO', style: _label),
           SizedBox(height: 4.h),
-          Text(p.s('recipient_organization').isEmpty ? p.s('recipient_name') : p.s('recipient_organization'),
-              style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
-          if (p.s('recipient_organization').isNotEmpty && p.s('recipient_name').isNotEmpty) _small(p.s('recipient_name')),
-          if (p.s('recipient_address').isNotEmpty) _small(p.s('recipient_address')),
-          if (p.s('recipient_gstin').isNotEmpty) _small('GSTIN ${p.s('recipient_gstin')}'),
-          if (p.s('place_of_supply_state_code').isNotEmpty) _small('Place of supply: ${stateName(p.s('place_of_supply_state_code'))}'),
+          Text(
+              p.s('recipient_organization').isEmpty
+                  ? p.s('recipient_name')
+                  : p.s('recipient_organization'),
+              style: AppText.custom(
+                  size: 14,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
+          if (p.s('recipient_organization').isNotEmpty &&
+              p.s('recipient_name').isNotEmpty)
+            _small(p.s('recipient_name')),
+          if (p.s('recipient_address').isNotEmpty)
+            _small(p.s('recipient_address')),
+          if (p.s('recipient_gstin').isNotEmpty)
+            _small('GSTIN ${p.s('recipient_gstin')}'),
+          if (p.s('place_of_supply_state_code').isNotEmpty)
+            _small(
+                'Place of supply: ${stateName(p.s('place_of_supply_state_code'))}'),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
           for (final l in lines) _line(l),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 10)),
           _total('Taxable value', p.s('taxable_total')),
-          for (final h in const [('CGST', 'tax_cgst'), ('SGST', 'tax_sgst'), ('IGST', 'tax_igst'), ('Cess', 'tax_cess')])
+          for (final h in const [
+            ('CGST', 'tax_cgst'),
+            ('SGST', 'tax_sgst'),
+            ('IGST', 'tax_igst'),
+            ('Cess', 'tax_cess')
+          ])
             if (!moneyIsZero(p.s(h.$2))) _total(h.$1, p.s(h.$2)),
-          if (!moneyIsZero(p.s('round_off'))) _total('Round-off', p.s('round_off')),
+          if (!moneyIsZero(p.s('round_off')))
+            _total('Round-off', p.s('round_off')),
           SizedBox(height: 6.h),
           Row(
             children: [
-              Expanded(child: Text('Total', style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary))),
+              Expanded(
+                  child: Text('Total',
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary))),
               Text(formatMoneyStr(p.s('grand_total')),
-                  style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 17,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ],
           ),
           if (p.s('grand_total_in_words').isNotEmpty) ...[
             SizedBox(height: 4.h),
-            Text(p.s('grand_total_in_words'), style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+            Text(p.s('grand_total_in_words'),
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textMuted)),
           ],
           if (hsn.length > 1 || (hsn.length == 1 && hsn.keys.first != '—')) ...[
             const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 14)),
@@ -243,20 +323,37 @@ class _Paper extends StatelessWidget {
     );
   }
 
-  static TextStyle get _label =>
-      AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5);
+  static TextStyle get _label => AppText.custom(
+      size: 10.5,
+      weight: FontWeight.w700,
+      color: AppColors.textPlaceholder,
+      letterSpacing: 0.5);
 
   Widget _small(String t) => Padding(
         padding: EdgeInsets.only(top: 2.h),
-        child: Text(t, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.4)),
+        child: Text(t,
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w500,
+                color: AppColors.textMuted,
+                height: 1.4)),
       );
 
   Widget _total(String label, String value) => Padding(
         padding: EdgeInsets.symmetric(vertical: 3.h),
         child: Row(
           children: [
-            Expanded(child: Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted))),
-            Text(formatMoneyStr(value), style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            Expanded(
+                child: Text(label,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted))),
+            Text(formatMoneyStr(value),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
           ],
         ),
       );
@@ -275,13 +372,25 @@ class _Paper extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${l['description'] ?? ''}', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                Text('${l['qty'] ?? ''} × ${formatMoneyStr(l['unit_price'])}${meta.isEmpty ? '' : ' · $meta'}',
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text('${l['description'] ?? ''}',
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                Text(
+                    '${l['qty'] ?? ''} × ${formatMoneyStr(l['unit_price'])}${meta.isEmpty ? '' : ' · $meta'}',
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
-          Text(formatMoneyStr(l['taxable']), style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text(formatMoneyStr(l['taxable']),
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
         ],
       ),
     );

@@ -34,7 +34,9 @@ void main() {
           'updated_at': '2026-07-20T08:30:00Z',
         };
 
-    test('maps a slim row: uuid id (never naming_series), names, dates, defaults', () {
+    test(
+        'maps a slim row: uuid id (never naming_series), names, dates, defaults',
+        () {
       final p = ProjectsRemoteDataSource.mapProject(slimRow())!;
 
       expect(p.id, 'a1b2c3d4-0000-0000-0000-000000000001');
@@ -48,8 +50,8 @@ void main() {
       expect(p.manager, '55ee66ff-0000-0000-0000-0000000000dd');
       expect(p.assignees, isEmpty);
       expect(p.myTask, isFalse);
-      expect(p.start, '5 Jan 2026');
-      expect(p.end, '28 Jun 2026');
+      expect(p.start, '05/01/2026');
+      expect(p.end, '28/06/2026');
       expect(p.endISO, '2026-06-28');
       // The detail-only fields stay empty on a slim row rather than being
       // guessed. They used to read "Team" and "Task-based" whatever the
@@ -92,22 +94,27 @@ void main() {
       expect(p.id, 'a1b2c3d4-0000-0000-0000-000000000001');
     });
 
-    test('is_overdue comes from the server, not the frozen prototype clock', () {
-      expect(ProjectsRemoteDataSource.mapProject(slimRow())!.isOverdue, isFalse);
+    test('is_overdue comes from the server, not the frozen prototype clock',
+        () {
       expect(
-        ProjectsRemoteDataSource.mapProject(slimRow()..['is_overdue'] = true)!.isOverdue,
+          ProjectsRemoteDataSource.mapProject(slimRow())!.isOverdue, isFalse);
+      expect(
+        ProjectsRemoteDataSource.mapProject(slimRow()..['is_overdue'] = true)!
+            .isOverdue,
         isTrue,
       );
       // Absent stays null so the caller keeps its date fallback rather than
       // reading a missing flag as "not overdue".
       expect(
-        ProjectsRemoteDataSource.mapProject(slimRow()..remove('is_overdue'))!.isOverdue,
+        ProjectsRemoteDataSource.mapProject(slimRow()..remove('is_overdue'))!
+            .isOverdue,
         isNull,
       );
     });
 
     test('is_archived is carried, so the menu can offer Restore', () {
-      expect(ProjectsRemoteDataSource.mapProject(slimRow())!.isArchived, isFalse);
+      expect(
+          ProjectsRemoteDataSource.mapProject(slimRow())!.isArchived, isFalse);
       expect(
         ProjectsRemoteDataSource.mapProject(slimRow()..['is_archived'] = true)!
             .isArchived,
@@ -151,7 +158,9 @@ void main() {
       expect(statusOf(null), 'active'); // safe default
     });
 
-    test('percent_complete tolerates numbers, decimal strings, nulls, out-of-range', () {
+    test(
+        'percent_complete tolerates numbers, decimal strings, nulls, out-of-range',
+        () {
       int progressOf(Object? v) {
         final row = slimRow()..['percent_complete'] = v;
         return ProjectsRemoteDataSource.mapProject(row)!.progress;
@@ -165,7 +174,8 @@ void main() {
     });
 
     test('a row without project_id is skipped (null)', () {
-      expect(ProjectsRemoteDataSource.mapProject({'project_name': 'Ghost'}), isNull);
+      expect(ProjectsRemoteDataSource.mapProject({'project_name': 'Ghost'}),
+          isNull);
       expect(ProjectsRemoteDataSource.mapProject({'project_id': ''}), isNull);
     });
 
@@ -203,19 +213,28 @@ void main() {
           'is_overdue': false,
           'progress': '0.000000',
           'computed_progress': 39.0,
-          'assigned_to': {'user_id': 'f126141c-0000-0000-0000-000000000006', 'full_name': 'Manoj Varma'},
+          'assigned_to': {
+            'user_id': 'f126141c-0000-0000-0000-000000000006',
+            'full_name': 'Manoj Varma'
+          },
           'assignees': [
-            {'user_id': 'f126141c-0000-0000-0000-000000000006', 'first_name': 'Manoj', 'last_name': 'Varma'},
+            {
+              'user_id': 'f126141c-0000-0000-0000-000000000006',
+              'first_name': 'Manoj',
+              'last_name': 'Varma'
+            },
           ],
           'exp_end_date': '2026-06-30T17:30:00',
         };
 
-    test('maps a slim row: uuid ids, group, status, priority, end date/time', () {
+    test('maps a slim row: uuid ids, group, status, priority, end date/time',
+        () {
       final t = OpsTasksRemoteDataSource.mapOpsTask(slimRow())!;
 
       expect(t.id, '5cbf187a-0000-0000-0000-000000000001');
       expect(t.subject, 'Snag list & handover');
-      expect(t.projId, '0e1b9270-0000-0000-0000-000000000002'); // project uuid = Project.id
+      expect(t.projId,
+          '0e1b9270-0000-0000-0000-000000000002'); // project uuid = Project.id
       expect(t.group, 'Site Work');
       expect(t.status, 'review');
       expect(t.pri, 'Urgent');
@@ -223,19 +242,21 @@ void main() {
       expect(t.milestone, isTrue);
       expect(t.start, '');
       expect(t.startTime, '');
-      expect(t.end, '30 Jun 2026');
-      expect(t.endTime, '5:30 PM');
+      expect(t.end, '30/06/2026');
+      expect(t.endTime, '17:30');
       expect(t.endISO, '2026-06-30T17:30:00');
       // No expected-hours or weight field exists on /projects/tasks/, so these
       // stay null — a 0/1 default would be indistinguishable from a stored
       // value on the detail page.
       expect(t.expHrs, isNull);
-      expect(t.progress, 39); // computed_progress wins over the '0.000000' string
+      expect(
+          t.progress, 39); // computed_progress wins over the '0.000000' string
       expect(t.weight, isNull);
       expect(t.dept, '');
       expect(t.color.name, '');
       expect(t.subtasks, isEmpty);
-      expect(t.waitingOn, isEmpty); // slim rows expose pending_dependency_count only
+      expect(t.waitingOn,
+          isEmpty); // slim rows expose pending_dependency_count only
       expect(t.notes, isEmpty);
       expect(t.actualStart, isNull);
       expect(t.actualEnd, isNull);
@@ -258,8 +279,10 @@ void main() {
       expect(t.waitingOn, isEmpty);
     });
 
-    test('is_overdue comes from the server, not the frozen prototype clock', () {
-      expect(OpsTasksRemoteDataSource.mapOpsTask(slimRow())!.isOverdue, isFalse);
+    test('is_overdue comes from the server, not the frozen prototype clock',
+        () {
+      expect(
+          OpsTasksRemoteDataSource.mapOpsTask(slimRow())!.isOverdue, isFalse);
       expect(
         OpsTasksRemoteDataSource.mapOpsTask(slimRow()..['is_overdue'] = true)!
             .isOverdue,
@@ -290,21 +313,30 @@ void main() {
         ..['exp_start_date'] = '2026-06-28T09:00:00'
         ..['department'] = 'Snagging'
         ..['dependencies'] = [
-          {'task_depends_on_id': 'edge-1', 'task_id': 'blocker-1', 'subject': 'First fix'},
-          {'task_depends_on_id': 'edge-2', 'task_id': 'blocker-2', 'subject': 'Second fix'},
+          {
+            'task_depends_on_id': 'edge-1',
+            'task_id': 'blocker-1',
+            'subject': 'First fix'
+          },
+          {
+            'task_depends_on_id': 'edge-2',
+            'task_id': 'blocker-2',
+            'subject': 'Second fix'
+          },
         ])!;
 
       // All four are absent from `?view=list`, so the edit form prefilled them
       // blank whatever was stored.
       expect(t.desc, 'Walk the site with the client.');
-      expect(t.start, '28 Jun 2026');
-      expect(t.startTime, '9:00 AM');
+      expect(t.start, '28/06/2026');
+      expect(t.startTime, '09:00');
       expect(t.dept, 'Snagging');
       // The edge's `task_id` is the *other* task, not the edge id.
       expect(t.waitingOn, ['blocker-1', 'blocker-2']);
     });
 
-    test('the detail-only decimals, code and colour are read, not invented', () {
+    test('the detail-only decimals, code and colour are read, not invented',
+        () {
       final t = OpsTasksRemoteDataSource.mapOpsTask(slimRow()
         ..['task_code'] = 'PRJ-1010-t3'
         ..['subtask_count'] = 4
@@ -327,8 +359,10 @@ void main() {
       expect(opsDecimalLabel(t.weight!), '3.5');
     });
 
-    test('a colour the app cannot parse keeps the label and greys the swatch', () {
-      final t = OpsTasksRemoteDataSource.mapOpsTask(slimRow()..['color'] = 'aubergine')!;
+    test('a colour the app cannot parse keeps the label and greys the swatch',
+        () {
+      final t = OpsTasksRemoteDataSource.mapOpsTask(
+          slimRow()..['color'] = 'aubergine')!;
       expect(t.color.name, 'aubergine');
       expect(t.color.hex, OpsTasksRemoteDataSource.neutralTag.hex);
     });
@@ -367,14 +401,19 @@ void main() {
       final t = OpsTasksRemoteDataSource.mapOpsTask(slimRow()
         ..['dependencies'] = [
           {'task_depends_on_id': 'edge-1', 'subject': 'Orphan'},
-          {'task_depends_on_id': 'edge-2', 'task_id': 'ok-1', 'subject': 'Real'},
+          {
+            'task_depends_on_id': 'edge-2',
+            'task_id': 'ok-1',
+            'subject': 'Real'
+          },
         ])!;
 
       expect(t.deps.map((d) => d.taskId), ['ok-1']);
       expect(t.waitingOn, ['ok-1']);
     });
 
-    test('a slim row keeps the detail-only fields empty rather than guessing', () {
+    test('a slim row keeps the detail-only fields empty rather than guessing',
+        () {
       final t = OpsTasksRemoteDataSource.mapOpsTask(slimRow())!;
 
       expect(t.start, '');
@@ -384,7 +423,8 @@ void main() {
     });
 
     test('subtask_count is carried — subtasks themselves never are', () {
-      final t = OpsTasksRemoteDataSource.mapOpsTask(slimRow()..['subtask_count'] = 3)!;
+      final t = OpsTasksRemoteDataSource.mapOpsTask(
+          slimRow()..['subtask_count'] = 3)!;
 
       // The edit form reads the count to decide whether progress is rolled up
       // from children or set by hand; the embedded list is always empty, so
@@ -400,21 +440,34 @@ void main() {
       expect(t.group, 'Site Work');
     });
 
-    test('progress falls back to the decimal string when computed_progress is absent', () {
+    test(
+        'progress falls back to the decimal string when computed_progress is absent',
+        () {
       final row = slimRow()
         ..remove('computed_progress')
         ..['progress'] = '62.500000';
       expect(OpsTasksRemoteDataSource.mapOpsTask(row)!.progress, 63);
     });
 
-    test("assignee uuids route through UserDirectory (signed-in user becomes 'me')", () {
+    test(
+        "assignee uuids route through UserDirectory (signed-in user becomes 'me')",
+        () {
       UserDirectory.currentUserId = 'f126141c-0000-0000-0000-000000000006';
       final row = slimRow()
         ..['assignees'] = [
-          {'user_id': 'f126141c-0000-0000-0000-000000000006', 'first_name': 'Manoj', 'last_name': 'Varma'},
-          {'user_id': 'other-uuid', 'first_name': 'Sneha', 'last_name': 'Thomas'},
+          {
+            'user_id': 'f126141c-0000-0000-0000-000000000006',
+            'first_name': 'Manoj',
+            'last_name': 'Varma'
+          },
+          {
+            'user_id': 'other-uuid',
+            'first_name': 'Sneha',
+            'last_name': 'Thomas'
+          },
         ];
-      expect(OpsTasksRemoteDataSource.mapOpsTask(row)!.assignees, ['me', 'other-uuid']);
+      expect(OpsTasksRemoteDataSource.mapOpsTask(row)!.assignees,
+          ['me', 'other-uuid']);
     });
 
     test('status/priority/group fall back safely when absent', () {
@@ -438,7 +491,7 @@ void main() {
       final row = slimRow()..['exp_end_date'] = '2026-05-20';
       final t = OpsTasksRemoteDataSource.mapOpsTask(row)!;
 
-      expect(t.end, '20 May 2026');
+      expect(t.end, '20/05/2026');
       expect(t.endTime, '');
       expect(t.endISO, '2026-05-20');
     });
@@ -472,7 +525,9 @@ void main() {
   });
 
   group('OpsTasksRemoteDataSource.mapActivity', () {
-    Map<String, dynamic> row({String? summary, String? eventType, String? action}) => {
+    Map<String, dynamic> row(
+            {String? summary, String? eventType, String? action}) =>
+        {
           'audit_log_id': 'log-1',
           'summary': summary ?? 'Task created',
           'event_type': eventType ?? 'created',
@@ -495,7 +550,10 @@ void main() {
       // catalog this row puts a uuid in front of the user.
       const id = '7803f448-03a7-4a77-8bf0-5918f50655b5';
       final e = OpsTasksRemoteDataSource.mapActivity(
-        row(summary: 'Status changed to $id', eventType: 'field_changed', action: 'update'),
+        row(
+            summary: 'Status changed to $id',
+            eventType: 'field_changed',
+            action: 'update'),
         0,
         statusNames: const {id: 'Completed'},
       )!;
@@ -506,12 +564,13 @@ void main() {
     test('an unknown status uuid is left as it is, not dropped', () {
       const id = '11111111-2222-3333-4444-555555555555';
       final e = OpsTasksRemoteDataSource.mapActivity(
-        row(summary: 'Status changed to $id'), 0)!;
+          row(summary: 'Status changed to $id'), 0)!;
       expect(e.title, 'Status changed to $id');
     });
 
     test('a row with no summary is skipped rather than rendered blank', () {
-      expect(OpsTasksRemoteDataSource.mapActivity(row(summary: '  '), 0), isNull);
+      expect(
+          OpsTasksRemoteDataSource.mapActivity(row(summary: '  '), 0), isNull);
     });
   });
 }

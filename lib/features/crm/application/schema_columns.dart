@@ -47,7 +47,9 @@ bool _isIdKey(String key) =>
 String humanizeKey(String key) => key
     .split(RegExp(r'[_\s]+'))
     .where((w) => w.isNotEmpty)
-    .map((w) => w.length == 1 ? w.toUpperCase() : '${w[0].toUpperCase()}${w.substring(1)}')
+    .map((w) => w.length == 1
+        ? w.toUpperCase()
+        : '${w[0].toUpperCase()}${w.substring(1)}')
     .join(' ');
 
 /// Every renderable field on a row, whether or not the schema mentions it.
@@ -108,7 +110,13 @@ String? formatRawValue(Object? value) {
   if (value is num) return '$value';
 
   if (value is Map) {
-    for (final key in const ['name', 'full_name', 'title', 'label', 'display_name']) {
+    for (final key in const [
+      'name',
+      'full_name',
+      'title',
+      'label',
+      'display_name'
+    ]) {
       final v = value[key];
       if (v is String && v.trim().isNotEmpty) return v.trim();
     }

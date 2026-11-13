@@ -23,7 +23,13 @@ import '../../../domain/entities/dashboard_models.dart';
 /// with `scope=own` before giving up. Mapping is static so tests feed fixture
 /// maps without an HTTP stack.
 class DashboardRemoteDataSource {
-  const DashboardRemoteDataSource(this._api, {this.includePmo = true});
+  const DashboardRemoteDataSource(
+    this._api, {
+    this.includePmo = true,
+    this.includeAdmin = true,
+    this.includeCrm = true,
+    this.includeIssue = true,
+  });
 
   final ApiService _api;
 
@@ -31,6 +37,19 @@ class DashboardRemoteDataSource {
   /// False for a role without `pmo_dashboard`: the webapp never renders the
   /// Operations panel for it, so it never asks for those figures either.
   final bool includePmo;
+
+  /// Whether the Business (`/dashboard-new/`) widgets and the team list are
+  /// fetched. False for a role without `admin_dashboard`: every one of those
+  /// calls is a 403, which used to surface as a permission toast and an empty
+  /// Team / Member picker.
+  final bool includeAdmin;
+
+  /// Whether the CRM (`/dashboard-crm/`) widgets are fetched (`crm_dashboard`).
+  final bool includeCrm;
+
+  /// Whether the Helpdesk (`/dashboard-issue/`) widgets are fetched
+  /// (`issue_dashboard`).
+  final bool includeIssue;
 
   // ── section keys of the raw bundle (shared with the repository + tests) ──
   static const kCustomerKpis = 'customer_kpis';
@@ -67,11 +86,16 @@ class DashboardRemoteDataSource {
     String period = 'month',
     String? teamId,
     String? userId,
+    String? from,
+    String? to,
     List<AppError>? errors,
   }) async {
     // 'all' is the org-wide sentinel and 'individual' is not a team uuid —
     // both mean "no team filter" for the widget endpoints.
-    final team = (teamId == null || teamId.isEmpty || teamId == 'all' || teamId == 'individual')
+    final team = (teamId == null ||
+            teamId.isEmpty ||
+            teamId == 'all' ||
+            teamId == 'individual')
         ? null
         : teamId;
 
@@ -83,6 +107,12 @@ class DashboardRemoteDataSource {
       Map<String, dynamic> query(String scope) => {
             'scope': scope,
             'period': period,
+            // A custom range travels as inclusive dates; the server refuses
+            // `period=custom` without both.
+            if (period == 'custom' && from != null && to != null) ...{
+              'from': from,
+              'to': to,
+            },
             if (team != null) 'team_id': team,
             // The member filter. Documented to win over `team_id` when both
             // are sent, so both go out and the server settles it.
@@ -127,20 +157,24 @@ class DashboardRemoteDataSource {
 
     // Building the map starts every future — the whole bundle is concurrent.
     final sections = <String, Future<Object?>>{
-      kCustomerKpis: call('$admin/customer-kpis/'),
-      kReceivables: call('$admin/total-receivables/'),
-      kTopCustomers: call('$admin/top-customers/'),
-      kTeams: fetchTeams(),
-      kCrmKpis: call('$crm/kpis/'),
-      kCrmFunnel: call('$crm/lead-funnel/'),
-      kCrmInflow: call('$crm/lead-inflow-trend/'),
-      kCrmMissed: call('$crm/missed/'),
-      kCrmSources: call('$crm/lead-sources/'),
-      kCrmStuckLeads: call('$crm/stuck-items/', {'kind': 'leads'}),
-      kCrmStuckQuotes: call('$crm/stuck-items/', {'kind': 'quotes'}),
-      kCrmStuckPayments: call('$crm/stuck-items/', {'kind': 'payments'}),
-      kCrmStuckWonNc: call('$crm/stuck-items/', {'kind': 'won_nc'}),
-      kCrmEmployees: call('$crm/employee-performance/'),
+      if (includeAdmin) ...{
+        kCustomerKpis: call('$admin/customer-kpis/'),
+        kReceivables: call('$admin/total-receivables/'),
+        kTopCustomers: call('$admin/top-customers/'),
+        kTeams: fetchTeams(),
+      },
+      if (includeCrm) ...{
+        kCrmKpis: call('$crm/kpis/'),
+        kCrmFunnel: call('$crm/lead-funnel/'),
+        kCrmInflow: call('$crm/lead-inflow-trend/'),
+        kCrmMissed: call('$crm/missed/'),
+        kCrmSources: call('$crm/lead-sources/'),
+        kCrmStuckLeads: call('$crm/stuck-items/', {'kind': 'leads'}),
+        kCrmStuckQuotes: call('$crm/stuck-items/', {'kind': 'quotes'}),
+        kCrmStuckPayments: call('$crm/stuck-items/', {'kind': 'payments'}),
+        kCrmStuckWonNc: call('$crm/stuck-items/', {'kind': 'won_nc'}),
+        kCrmEmployees: call('$crm/employee-performance/'),
+      },
       if (includePmo) ...{
         kPmoKpis: call('$pmo/kpis/'),
         kPmoStatus: call('$pmo/project-status/'),
@@ -148,16 +182,18 @@ class DashboardRemoteDataSource {
         kPmoProjects: call('$pmo/active-projects/'),
         kPmoEmployees: call('$pmo/employee-performance/'),
       },
-      kIssueKpis: call('$issue/kpis/'),
-      // The category axis (IssueType), which is what the chart is titled after.
-      // Was `tickets-by-status/` — the workflow-lane axis, a different breakdown
-      // entirely, so the bars were Open/In Progress/Resolved under a "by
-      // Category" heading.
-      kIssueCategories: call('$issue/tickets-by-category/'),
-      kIssueSla: call('$issue/sla-priority-mix/'),
-      kIssueAttention: call('$issue/top-tickets-needing-attention/'),
-      kIssueFlow: call('$issue/ticket-flow-trend/'),
-      kIssueEmployees: call('$issue/employee-performance/'),
+      if (includeIssue) ...{
+        kIssueKpis: call('$issue/kpis/'),
+        // The category axis (IssueType), which is what the chart is titled after.
+        // Was `tickets-by-status/` — the workflow-lane axis, a different breakdown
+        // entirely, so the bars were Open/In Progress/Resolved under a "by
+        // Category" heading.
+        kIssueCategories: call('$issue/tickets-by-category/'),
+        kIssueSla: call('$issue/sla-priority-mix/'),
+        kIssueAttention: call('$issue/top-tickets-needing-attention/'),
+        kIssueFlow: call('$issue/ticket-flow-trend/'),
+        kIssueEmployees: call('$issue/employee-performance/'),
+      },
     };
 
     final keys = sections.keys.toList();
@@ -171,7 +207,8 @@ class DashboardRemoteDataSource {
   /// for every section/field a call failed to supply. In production [base] is
   /// [DashboardData.empty] so an unsupplied section stays empty (never mock);
   /// spark/figures are only ever those the API supplied.
-  static DashboardData mapDashboard(Map<String, Object?> raw, DashboardData base) {
+  static DashboardData mapDashboard(
+      Map<String, Object?> raw, DashboardData base) {
     final receivables = _receivables(raw[kReceivables], base);
     return DashboardData(
       adminKpis: _adminKpis(raw[kCustomerKpis], base.adminKpis),
@@ -182,7 +219,8 @@ class DashboardRemoteDataSource {
       aging: receivables.aging,
       upcoming: receivables.upcoming,
       outstanding: _outstanding(raw[kTopCustomers], base.outstanding),
-      outstandingTotal: _outstandingTotal(raw[kTopCustomers], base.outstandingTotal),
+      outstandingTotal:
+          _outstandingTotal(raw[kTopCustomers], base.outstandingTotal),
       topCustomers: _topCustomers(raw[kTopCustomers], base.topCustomers),
       crmKpis: _crmKpis(raw[kCrmKpis], base.crmKpis),
       crmFunnel: _funnel(raw[kCrmFunnel], base.crmFunnel),
@@ -195,10 +233,14 @@ class DashboardRemoteDataSource {
       crmAttention: _attention(raw[kCrmMissed], base.crmAttention),
       crmSources: _sources(raw[kCrmSources], base.crmSources),
       crmStuck: {
-        'stale': _stuckRows(raw[kCrmStuckLeads], base.crmStuck['stale'] ?? const []),
-        'quotes': _stuckRows(raw[kCrmStuckQuotes], base.crmStuck['quotes'] ?? const []),
-        'payments': _stuckRows(raw[kCrmStuckPayments], base.crmStuck['payments'] ?? const []),
-        'wonnc': _stuckRows(raw[kCrmStuckWonNc], base.crmStuck['wonnc'] ?? const []),
+        'stale': _stuckRows(raw[kCrmStuckLeads],
+            base.crmStuck['stale'] ?? const [], Routes.leadDetail),
+        'quotes': _stuckRows(raw[kCrmStuckQuotes],
+            base.crmStuck['quotes'] ?? const [], Routes.quoteDetail),
+        'payments': _stuckRows(raw[kCrmStuckPayments],
+            base.crmStuck['payments'] ?? const [], Routes.paymentDetail),
+        'wonnc': _stuckRows(raw[kCrmStuckWonNc],
+            base.crmStuck['wonnc'] ?? const [], Routes.leadDetail),
       },
       crmEmployees: _crmEmployees(raw[kCrmEmployees], base.crmEmployees),
       opsKpis: _opsKpis(raw[kPmoKpis], base.opsKpis),
@@ -207,10 +249,11 @@ class DashboardRemoteDataSource {
       opsProjects: _opsProjects(raw[kPmoProjects], base.opsProjects),
       opsRoster: _opsRoster(raw[kPmoEmployees], base.opsRoster),
       helpKpis: _helpKpis(raw[kIssueKpis], base.helpKpis),
-      helpCategories: _helpCategories(raw[kIssueCategories], base.helpCategories),
+      helpCategories:
+          _helpCategories(raw[kIssueCategories], base.helpCategories),
       helpSla: _donutSection(raw[kIssueSla], 'sla', _slaBuckets, base.helpSla),
-      helpPriority:
-          _donutSection(raw[kIssueSla], 'priority', _priorityBuckets, base.helpPriority),
+      helpPriority: _donutSection(
+          raw[kIssueSla], 'priority', _priorityBuckets, base.helpPriority),
       helpAttention: _helpAttention(raw[kIssueAttention], base.helpAttention),
       helpFlow: _trendOf(
         raw[kIssueFlow],
@@ -246,7 +289,8 @@ class DashboardRemoteDataSource {
       unit: unit ?? b.unit,
       label: b.label,
       sub: sub ?? b.sub,
-      trendPositive: t == null ? b.trendPositive : (t == 0 || (t > 0) == goodWhenUp),
+      trendPositive:
+          t == null ? b.trendPositive : (t == 0 || (t > 0) == goodWhenUp),
       trend: t == null ? b.trend : _signedPct(t),
       arrow: t == null
           ? b.arrow
@@ -269,7 +313,9 @@ class DashboardRemoteDataSource {
     if (pipeline is Map && pipeline['amount'] != null) {
       final parts = _moneyParts(parseAmount(pipeline['amount']));
       out[0] = _kpiWith(base[0],
-          value: parts[0], unit: parts[1], trendPct: _numOf(pipeline['trend_pct']));
+          value: parts[0],
+          unit: parts[1],
+          trendPct: _numOf(pipeline['trend_pct']));
     }
     final collected = json['payments_collected'];
     if (collected is Map && collected['collected'] != null) {
@@ -310,12 +356,14 @@ class DashboardRemoteDataSource {
     final newLeads = json['new_leads'];
     if (newLeads is Map && newLeads['count'] != null) {
       out[0] = _kpiWith(base[0],
-          value: '${_intOf(newLeads['count']) ?? 0}', trendPct: _numOf(newLeads['trend_pct']));
+          value: '${_intOf(newLeads['count']) ?? 0}',
+          trendPct: _numOf(newLeads['trend_pct']));
     }
     final winRate = json['win_rate'];
     if (winRate is Map && winRate['pct'] != null) {
       out[1] = _kpiWith(base[1],
-          value: _trimNum(_numOf(winRate['pct']) ?? 0), trendPct: _numOf(winRate['trend_pct']));
+          value: _trimNum(_numOf(winRate['pct']) ?? 0),
+          trendPct: _numOf(winRate['trend_pct']));
     }
     final firstResponse = json['first_response'];
     if (firstResponse is Map && firstResponse['median_minutes'] != null) {
@@ -323,6 +371,11 @@ class DashboardRemoteDataSource {
           value: _trimNum(_numOf(firstResponse['median_minutes']) ?? 0),
           trendPct: _numOf(firstResponse['trend_pct']),
           goodWhenUp: false);
+    } else if (firstResponse is Map &&
+        firstResponse.containsKey('median_minutes')) {
+      // The server measured nothing (no responded leads this period): "—", not
+      // a made-up "0 minutes".
+      out[2] = _kpiWith(base[2], value: '—', unit: '', goodWhenUp: false);
     }
     final quoteAcceptance = json['quote_acceptance'];
     if (quoteAcceptance is Map && quoteAcceptance['pct'] != null) {
@@ -342,7 +395,8 @@ class DashboardRemoteDataSource {
     final active = json['active_projects'];
     if (active is Map && active['count'] != null) {
       out[0] = _kpiWith(base[0],
-          value: '${_intOf(active['count']) ?? 0}', trendPct: _numOf(active['trend_pct']));
+          value: '${_intOf(active['count']) ?? 0}',
+          trendPct: _numOf(active['trend_pct']));
     }
     final overdueProjects = json['projects_overdue'];
     if (overdueProjects is Map && overdueProjects['count'] != null) {
@@ -385,9 +439,11 @@ class DashboardRemoteDataSource {
           goodWhenUp: false);
     }
 
-    out[3] = cycleCard(base[3], json['avg_project_cycle'], 'Start → handover', 'project');
+    out[3] = cycleCard(
+        base[3], json['avg_project_cycle'], 'Start → handover', 'project');
     if (out.length > 4) {
-      out[4] = cycleCard(base[4], json['avg_task_cycle'], 'Start → done', 'task');
+      out[4] =
+          cycleCard(base[4], json['avg_task_cycle'], 'Start → done', 'task');
     }
     return out;
   }
@@ -427,15 +483,32 @@ class DashboardRemoteDataSource {
               value: _trimNum(value), trendPct: trend, goodWhenUp: false);
           return;
         }
+        // The key is there but null: nothing was measured this period ("—",
+        // as the web and Help Home show it), not zero hours.
+        if (node is Map && valueKeys.any((k) => node.containsKey(k.$1))) {
+          out[i] = _kpiWith(base[i],
+              value: '—', unit: '', trendPct: trend, goodWhenUp: false);
+          return;
+        }
       }
     }
 
     const asIs = 1.0;
     const minToHour = 1 / 60;
-    swap(0, const ['open_tickets', 'open'], const [('count', asIs), ('value', asIs)]);
-    swap(1, const ['sla_breaches', 'breaches'], const [('count', asIs), ('value', asIs)]);
-    swap(2, const ['avg_resolution', 'avg_resolution_hours', 'resolution'],
-        const [('minutes', minToHour), ('hours', asIs), ('median_hours', asIs), ('value', asIs)]);
+    swap(0, const ['open_tickets', 'open'],
+        const [('count', asIs), ('value', asIs)]);
+    swap(1, const ['sla_breaches', 'breaches'],
+        const [('count', asIs), ('value', asIs)]);
+    swap(2, const [
+      'avg_resolution',
+      'avg_resolution_hours',
+      'resolution'
+    ], const [
+      ('minutes', minToHour),
+      ('hours', asIs),
+      ('median_hours', asIs),
+      ('value', asIs)
+    ]);
     swap(3, const ['first_response', 'first_response_minutes'],
         const [('minutes', asIs), ('median_minutes', asIs), ('value', asIs)]);
     return out;
@@ -457,7 +530,11 @@ class DashboardRemoteDataSource {
       if (row is! Map) continue;
       final name = _str(row['name']);
       if (name.isEmpty) continue;
-      out.add(DashBar(_shortLabel(name), _intOf(row['count']) ?? 0));
+      // The Leads chips are keyed by `CatalogOption.key` (the lower-cased
+      // status name), and that catalog is not loaded while the Dashboard is
+      // up — so the bar carries the key itself, not the status uuid.
+      out.add(DashBar(_shortLabel(name), _intOf(row['count']) ?? 0,
+          id: name.toLowerCase().trim()));
     }
     return out;
   }
@@ -482,7 +559,8 @@ class DashboardRemoteDataSource {
       final name = _str(row['name']);
       final count = _intOf(row['count']);
       if (name.isEmpty || count == null) continue;
-      named.add(DashBar(_shortLabel(name), count));
+      named.add(DashBar(_shortLabel(name), count,
+          id: _str(row['issue_type_id'] ?? row['id'])));
     }
     if (named.isEmpty) return base;
 
@@ -558,7 +636,18 @@ class DashboardRemoteDataSource {
       min: 0,
       max: maxVal <= 0 ? 1 : (maxVal * 1.15).ceilToDouble(),
       axisLabels: _axisLabels(labels),
+      year: _yearOf(labels),
     );
+  }
+
+  /// "2026" from month labels such as "Jan 2026" (the last label's year);
+  /// empty when the labels carry none.
+  static String _yearOf(List<String> labels) {
+    for (final l in labels.reversed) {
+      final m = RegExp(r'(\d{4})\s*$').firstMatch(l.trim());
+      if (m != null) return m.group(1)!;
+    }
+    return '';
   }
 
   /// Four evenly spread month-style axis labels ("Jan 2026" → "Jan").
@@ -580,7 +669,8 @@ class DashboardRemoteDataSource {
 
   // ── donuts ──
 
-  static List<DashDonutPart> _donutParts(Object? json, List<DashDonutPart> base) {
+  static List<DashDonutPart> _donutParts(
+      Object? json, List<DashDonutPart> base) {
     Object? rows;
     if (json is List) {
       rows = json;
@@ -598,9 +688,12 @@ class DashboardRemoteDataSource {
       if (row is! Map) continue;
       final label = _str(row['name'] ?? row['label']);
       if (label.isEmpty) continue;
-      final fallback =
-          base.isNotEmpty ? base[out.length % base.length].color : DashColors.grey;
-      out.add(DashDonutPart(label, _hexColor(row['color']) ?? fallback, _intOf(row['count']) ?? 0));
+      final fallback = base.isNotEmpty
+          ? base[out.length % base.length].color
+          : DashColors.grey;
+      out.add(DashDonutPart(
+          label, _hexColor(row['color']) ?? fallback, _intOf(row['count']) ?? 0,
+          id: _str(row['status_id'] ?? row['id'])));
     }
     return out.isEmpty ? base : out;
   }
@@ -650,9 +743,15 @@ class DashboardRemoteDataSource {
   // ── attention / sources / stuck ──
 
   /// `/dashboard-crm/missed/` → the four Attention Needed cards (fixed order).
-  static List<DashAttentionCard> _attention(Object? json, List<DashAttentionCard> base) {
+  static List<DashAttentionCard> _attention(
+      Object? json, List<DashAttentionCard> base) {
     if (json is! Map || base.length < 4) return base;
-    const keys = ['payments_missed', 'followups_missed', 'tasks_missed', 'lost_after_quote'];
+    const keys = [
+      'payments_missed',
+      'followups_missed',
+      'tasks_missed',
+      'lost_after_quote'
+    ];
     final out = List<DashAttentionCard>.of(base);
     for (var i = 0; i < keys.length; i++) {
       final node = json[keys[i]];
@@ -661,7 +760,9 @@ class DashboardRemoteDataSource {
       var direction = _str(node['direction']);
       if (direction.isEmpty) {
         // All four metrics are bad-when-up.
-        direction = trendPct > 0 ? 'worsening' : (trendPct < 0 ? 'improving' : 'steady');
+        direction = trendPct > 0
+            ? 'worsening'
+            : (trendPct < 0 ? 'improving' : 'steady');
       }
       final improving = direction == 'improving';
       final steady = direction == 'steady';
@@ -699,6 +800,7 @@ class DashboardRemoteDataSource {
       final name = _str(row['name']);
       if (name.isEmpty) continue;
       out.add(DashSource(
+        id: _str(row['id'] ?? row['lead_source_id']),
         name: name,
         leads: _intOf(row['total_leads']) ?? 0,
         won: _intOf(row['won_leads']) ?? 0,
@@ -714,7 +816,10 @@ class DashboardRemoteDataSource {
   /// `/dashboard-crm/stuck-items/?kind=…` → one Stuck Items tab. `value` is
   /// polymorphic: a money string/number is formatted, a priority name passes
   /// through verbatim.
-  static List<DashStuckRow> _stuckRows(Object? json, List<DashStuckRow> base) {
+  /// [detailRoute] is the detail screen the row's `id` opens: a lead (stale and
+  /// won-not-converted), a quotation, or a payment instalment (record) id.
+  static List<DashStuckRow> _stuckRows(
+      Object? json, List<DashStuckRow> base, String detailRoute) {
     final items = json is Map ? json['items'] : null;
     if (items is! List) return base;
     final out = <DashStuckRow>[];
@@ -727,6 +832,7 @@ class DashboardRemoteDataSource {
         _ownerName(row['owner']),
         _valueLabel(row['value']),
         '${_intOf(row['stuck_days']) ?? 0}d',
+        _str(row['id']).isEmpty ? null : '$detailRoute?id=${_str(row['id'])}',
       ));
     }
     return out;
@@ -751,7 +857,8 @@ class DashboardRemoteDataSource {
 
   /// `/dashboard-crm/employee-performance/` → CRM employee rows. Registers
   /// each user so names/initials resolve and maps the signed-in uuid to 'me'.
-  static List<DashCrmEmployee> _crmEmployees(Object? json, List<DashCrmEmployee> base) {
+  static List<DashCrmEmployee> _crmEmployees(
+      Object? json, List<DashCrmEmployee> base) {
     final rows = json is Map ? json['results'] : null;
     if (rows is! List) return base;
     final out = <DashCrmEmployee>[];
@@ -759,8 +866,10 @@ class DashboardRemoteDataSource {
       if (row is! Map) continue;
       final userId = _str(row['user_id']);
       if (userId.isEmpty) continue;
-      UserDirectory.register(userId: userId, fullName: _str(row['name'] ?? row['full_name']));
+      UserDirectory.register(
+          userId: userId, fullName: _str(row['name'] ?? row['full_name']));
       out.add(DashCrmEmployee(
+        userId: userId,
         UserDirectory.mapUserId(userId),
         _intOf(row['open_leads']) ?? 0,
         _intOf(row['won_leads']) ?? 0,
@@ -773,7 +882,8 @@ class DashboardRemoteDataSource {
   }
 
   /// `/dashboard-pmo/employee-performance/` → Operations roster rows.
-  static List<DashRosterRow> _opsRoster(Object? json, List<DashRosterRow> base) {
+  static List<DashRosterRow> _opsRoster(
+      Object? json, List<DashRosterRow> base) {
     final rows = json is Map ? json['results'] : null;
     if (rows is! List) return base;
     final out = <DashRosterRow>[];
@@ -781,7 +891,8 @@ class DashboardRemoteDataSource {
       if (row is! Map) continue;
       final userId = _str(row['user_id']);
       if (userId.isEmpty) continue;
-      UserDirectory.register(userId: userId, fullName: _str(row['name'] ?? row['full_name']));
+      UserDirectory.register(
+          userId: userId, fullName: _str(row['name'] ?? row['full_name']));
       final projects = _intOf(row['active_projects']) ?? 0;
       final tasks = _intOf(row['open_tasks']) ?? 0;
       final overdue = _intOf(row['tasks_overdue']) ?? 0;
@@ -791,6 +902,7 @@ class DashboardRemoteDataSource {
             '$tasks open ${tasks == 1 ? 'task' : 'tasks'}',
         '$overdue overdue',
         overdue > 0,
+        userId: userId,
       ));
     }
     return out;
@@ -798,7 +910,8 @@ class DashboardRemoteDataSource {
 
   /// `/dashboard-issue/employee-performance/` — undocumented; requires at
   /// least one recognizable count per row, else the section keeps its mock.
-  static List<DashRosterRow> _helpRoster(Object? json, List<DashRosterRow> base) {
+  static List<DashRosterRow> _helpRoster(
+      Object? json, List<DashRosterRow> base) {
     final rows = json is Map ? json['results'] : (json is List ? json : null);
     if (rows is! List) return base;
     final out = <DashRosterRow>[];
@@ -806,17 +919,24 @@ class DashboardRemoteDataSource {
       if (row is! Map) continue;
       final userId = _str(row['user_id']);
       if (userId.isEmpty) continue;
-      final open = _intOf(row['open_tickets'] ?? row['open']);
-      final resolved = _intOf(row['resolved_tickets'] ?? row['resolved']);
+      // The documented row is `assigned_issues` / `resolved_issues` (the
+      // webapp's "Open" column is `assignedIssues`); the older keys are kept
+      // as fallbacks.
+      final open =
+          _intOf(row['assigned_issues'] ?? row['open_tickets'] ?? row['open']);
+      final resolved = _intOf(
+          row['resolved_issues'] ?? row['resolved_tickets'] ?? row['resolved']);
       final breaches = _intOf(row['sla_breaches'] ?? row['breaches']);
       if (open == null && resolved == null && breaches == null) continue;
-      UserDirectory.register(userId: userId, fullName: _str(row['name'] ?? row['full_name']));
+      UserDirectory.register(
+          userId: userId, fullName: _str(row['name'] ?? row['full_name']));
       final b = breaches ?? 0;
       out.add(DashRosterRow(
         UserDirectory.mapUserId(userId),
         '${open ?? 0} open · ${resolved ?? 0} resolved',
         '$b ${b == 1 ? 'breach' : 'breaches'}',
         b > 0,
+        userId: userId,
       ));
     }
     return out.isEmpty ? base : out;
@@ -826,13 +946,15 @@ class DashboardRemoteDataSource {
 
   static _Receivables _receivables(Object? json, DashboardData base) {
     if (json is! Map) {
-      return _Receivables(base.receivablesTotal, base.receivablesSub, base.overdueTotal,
-          base.upcomingTotal, base.aging, base.upcoming);
+      return _Receivables(base.receivablesTotal, base.receivablesSub,
+          base.overdueTotal, base.upcomingTotal, base.aging, base.upcoming);
     }
     final overdue = json['overdue'];
     final upcoming = json['upcoming'];
-    final overdueTotal = overdue is Map ? parseAmount(overdue['total_amount']) : 0.0;
-    final upcomingTotal = upcoming is Map ? parseAmount(upcoming['total_amount']) : 0.0;
+    final overdueTotal =
+        overdue is Map ? parseAmount(overdue['total_amount']) : 0.0;
+    final upcomingTotal =
+        upcoming is Map ? parseAmount(upcoming['total_amount']) : 0.0;
 
     final total = json['total_amount'] != null
         ? formatInr(parseAmount(json['total_amount']))
@@ -840,15 +962,22 @@ class DashboardRemoteDataSource {
     final sub = (overdue is Map && upcoming is Map)
         ? '${formatInr(overdueTotal)} overdue · ${formatInr(upcomingTotal)} upcoming'
         : base.receivablesSub;
-    final overdueLabel =
-        overdue is Map ? 'Overdue · ${formatInr(overdueTotal)}' : base.overdueTotal;
-    final upcomingLabel =
-        upcoming is Map ? 'Upcoming · ${formatInr(upcomingTotal)}' : base.upcomingTotal;
+    final overdueLabel = overdue is Map
+        ? 'Overdue · ${formatInr(overdueTotal)}'
+        : base.overdueTotal;
+    final upcomingLabel = upcoming is Map
+        ? 'Upcoming · ${formatInr(upcomingTotal)}'
+        : base.upcomingTotal;
 
     var aging = base.aging;
     if (overdue is Map) {
       const bucketKeys = ['0_30', '31_60', '61_90', '90_plus'];
-      const bucketLabels = ['0–30 days', '31–60 days', '61–90 days', '90+ days'];
+      const bucketLabels = [
+        '0–30 days',
+        '31–60 days',
+        '61–90 days',
+        '90+ days'
+      ];
       final rows = <DashAgingRow>[];
       for (var i = 0; i < bucketKeys.length; i++) {
         final bucket = overdue[bucketKeys[i]];
@@ -869,43 +998,57 @@ class DashboardRemoteDataSource {
       // Buckets are cumulative server-side (next_90 ⊇ next_30 ⊇ next_7);
       // the panel renders each bucket amount as sent, like the mock.
       const keys = ['today', 'next_7', 'next_30', 'next_90'];
-      const labels = ['Due today', 'Due in 7 days', 'Due in 30 days', 'Due in 90 days'];
+      const labels = [
+        'Due today',
+        'Due in 7 days',
+        'Due in 30 days',
+        'Due in 90 days'
+      ];
       final rows = <DashLabelAmt>[];
       for (var i = 0; i < keys.length; i++) {
         final bucket = upcoming[keys[i]];
         if (bucket is! Map) continue;
-        rows.add(DashLabelAmt(labels[i], formatInr(parseAmount(bucket['amount']))));
+        rows.add(
+            DashLabelAmt(labels[i], formatInr(parseAmount(bucket['amount']))));
       }
       if (rows.isNotEmpty) upcomingRows = rows;
     }
 
-    return _Receivables(total, sub, overdueLabel, upcomingLabel, aging, upcomingRows);
+    return _Receivables(
+        total, sub, overdueLabel, upcomingLabel, aging, upcomingRows);
   }
 
   /// `top_outstanding` → Top 5 outstanding rows; bar width is relative to the
   /// largest row, colors reuse the mock rows by index.
-  static List<DashOutstanding> _outstanding(Object? json, List<DashOutstanding> base) {
+  static List<DashOutstanding> _outstanding(
+      Object? json, List<DashOutstanding> base) {
     final rows = json is Map ? json['top_outstanding'] : null;
     if (rows is! List) return base;
     var maxAmount = 0.0;
-    final parsed = <(String, int, double)>[];
+    final parsed = <(String, int, double, String)>[];
     for (final row in rows) {
       if (row is! Map) continue;
       final name = _str(row['name']);
       if (name.isEmpty) continue;
       final amount = parseAmount(row['outstanding_amount']);
       if (amount > maxAmount) maxAmount = amount;
-      parsed.add((name, _intOf(row['oldest_overdue_days']) ?? 0, amount));
+      parsed.add((
+        name,
+        _intOf(row['oldest_overdue_days']) ?? 0,
+        amount,
+        _str(row['customer_id'])
+      ));
     }
     final out = <DashOutstanding>[];
     for (var i = 0; i < parsed.length; i++) {
-      final (name, days, amount) = parsed[i];
+      final (name, days, amount, id) = parsed[i];
       out.add(DashOutstanding(
         name,
         days,
         formatInr(amount),
         base.isNotEmpty ? base[i % base.length].barColor : DashColors.red,
         maxAmount > 0 ? (amount / maxAmount * 100) : 0,
+        id: id,
       ));
     }
     return out;
@@ -923,7 +1066,8 @@ class DashboardRemoteDataSource {
 
   /// `top_by_value` → Top customers (₹ Value). The API carries no order/recency
   /// meta, so the sub renders an em dash.
-  static List<DashTopCustomer> _topCustomers(Object? json, List<DashTopCustomer> base) {
+  static List<DashTopCustomer> _topCustomers(
+      Object? json, List<DashTopCustomer> base) {
     final rows = json is Map ? json['top_by_value'] : null;
     if (rows is! List) return base;
     final out = <DashTopCustomer>[];
@@ -931,7 +1075,9 @@ class DashboardRemoteDataSource {
       if (row is! Map) continue;
       final name = _str(row['name']);
       if (name.isEmpty) continue;
-      out.add(DashTopCustomer(name, '—', formatInr(parseAmount(row['total_value']))));
+      out.add(DashTopCustomer(
+          name, '—', formatInr(parseAmount(row['total_value'])),
+          id: _str(row['customer_id'])));
     }
     return out;
   }
@@ -939,7 +1085,8 @@ class DashboardRemoteDataSource {
   // ── operations ──
 
   /// `/dashboard-pmo/overdue-tasks/` → Overdue Tasks rows.
-  static List<DashOverdueTask> _opsOverdue(Object? json, List<DashOverdueTask> base) {
+  static List<DashOverdueTask> _opsOverdue(
+      Object? json, List<DashOverdueTask> base) {
     final rows = json is Map ? json['tasks'] : null;
     if (rows is! List) return base;
     final out = <DashOverdueTask>[];
@@ -948,12 +1095,16 @@ class DashboardRemoteDataSource {
       final title = _str(row['title']);
       if (title.isEmpty) continue;
       final project = row['project'];
+      // The row opens the task itself (webapp `openTask`), not the list.
+      final taskId = _str(row['task_id'] ?? row['id']);
       out.add(DashOverdueTask(
         title,
         project is Map ? _str(project['name']) : '',
         project is Map ? formatInr(parseAmount(project['value'])) : '',
         '${_intOf(row['days_overdue']) ?? 0}d overdue',
-        Routes.opsTasks,
+        taskId.isEmpty
+            ? '${Routes.opsTasks}?due=overdue'
+            : '${Routes.opsTaskDetail}?id=$taskId',
       ));
     }
     return out;
@@ -965,7 +1116,8 @@ class DashboardRemoteDataSource {
   /// "All active"/"Overdue" show `tab == 'active'` rows (overdue = negative
   /// days remaining), "At risk" shows `tab == 'onhold'` — so API `health` maps
   /// onto those values, not onto the segment ids themselves.
-  static List<DashProjectRow> _opsProjects(Object? json, List<DashProjectRow> base) {
+  static List<DashProjectRow> _opsProjects(
+      Object? json, List<DashProjectRow> base) {
     final rows = json is Map ? json['results'] : null;
     if (rows is! List) return base;
     final out = <DashProjectRow>[];
@@ -997,6 +1149,7 @@ class DashboardRemoteDataSource {
         _intOf(row['progress_pct']) ?? 0,
         _intOf(row['days_remaining']) ?? 0,
         health == 'at_risk' ? 'onhold' : 'active',
+        id: _str(row['project_id'] ?? row['id']),
       ));
     }
     return out;
@@ -1006,7 +1159,8 @@ class DashboardRemoteDataSource {
 
   /// `/dashboard-issue/top-tickets-needing-attention/` — undocumented; rows
   /// must at least carry a subject/title to be trusted, else mock.
-  static List<DashTicketAttn> _helpAttention(Object? json, List<DashTicketAttn> base) {
+  static List<DashTicketAttn> _helpAttention(
+      Object? json, List<DashTicketAttn> base) {
     Object? rows;
     if (json is List) {
       rows = json;
@@ -1027,11 +1181,18 @@ class DashboardRemoteDataSource {
       final customer = row['customer'];
       final assigned = row['assigned_to'];
       final subParts = <String>[
-        if (customer is Map) _str(customer['name']) else if (customer is String) customer.trim(),
-        if (assigned is Map) _str(assigned['name']) else if (assigned is String) assigned.trim(),
+        if (customer is Map)
+          _str(customer['name'])
+        else if (customer is String)
+          customer.trim(),
+        if (assigned is Map)
+          _str(assigned['name'])
+        else if (assigned is String)
+          assigned.trim(),
       ].where((s) => s.isNotEmpty).toList();
       final priority = row['priority'];
-      final priorityName = priority is Map ? _str(priority['name']) : _str(priority);
+      final priorityName =
+          priority is Map ? _str(priority['name']) : _str(priority);
       // `sla_status` is what the endpoint actually sends (`within_sla` /
       // `at_risk` / `breached` / `on_hold`, verified against the dev backend).
       // The `sla_label` / `sla` / `breached` keys below it are older names kept
@@ -1039,6 +1200,7 @@ class DashboardRemoteDataSource {
       // with an empty SLA chip and none was ever flagged as breached.
       final slaStatus = _str(row['sla_status']).toLowerCase();
       out.add(DashTicketAttn(
+        issueId: _str(row['issue_id']),
         // `display_number` is the ticket's own reference ("TCK-00012"); it, and
         // `issue_id`, are the keys the API sends. Without them the row's number
         // was blank on every ticket.
@@ -1061,8 +1223,9 @@ class DashboardRemoteDataSource {
             row['paused'] == true ||
             row['on_hold'] == true,
         priority: priorityName,
-        priorityColor: (priority is Map ? _hexColor(priority['color']) : null) ??
-            _priorityColor(priorityName),
+        priorityColor:
+            (priority is Map ? _hexColor(priority['color']) : null) ??
+                _priorityColor(priorityName),
       ));
     }
     return out.isEmpty ? base : out;
@@ -1104,41 +1267,58 @@ class DashboardRemoteDataSource {
     return DashColors.grey;
   }
 
-  /// `/dashboard-new/users/?module=…[&team_id=…]` — the Member dropdown
-  /// (`admin_dashboard.md` §9).
+  /// `/dashboard-{crm|pmo|issue}/filter-options/` — the Team and Member
+  /// dropdowns, "scoped server-side to the caller" exactly as the webapp reads
+  /// them. Unlike `/dashboard-new/teams|users` (which need `admin_dashboard`
+  /// and answer 403 to a CRM, PMO or Helpdesk user), every role that can open a
+  /// dashboard tab may read its own module's options.
   ///
-  /// [module] is **required** by the API (`crm` | `pmo` | `issue`) and 400s
-  /// without it; [teamId] narrows the list to that team, which is why this is
-  /// fetched per selection rather than bundled with the widgets.
-  ///
-  /// Best-effort: any failure yields the empty list, and the picker then offers
-  /// "All members" alone rather than inventing people. A 403 is expected here —
-  /// listing members needs `can_access_user_kpis`.
-  Future<List<DashTeamOption>> fetchMembers({
-    required String module,
-    String? teamId,
-  }) async {
-    final team = (teamId == null || teamId.isEmpty || teamId == 'all' || teamId == 'individual')
-        ? null
-        : teamId;
+  /// Shape: `{org_wide, has_reportees, teams:[{team_id, name, member_ids}],
+  /// users:[{user_id, name}]}`. Best-effort: any failure yields empty lists and
+  /// the pickers offer "All …" alone rather than inventing people.
+  Future<DashFilterOptions> fetchFilterOptions(String module) async {
+    final group = switch (module) {
+      'pmo' => ApiEndpoints.dashboardPmo,
+      'issue' => ApiEndpoints.dashboardIssue,
+      _ => ApiEndpoints.dashboardCrm,
+    };
     try {
-      final body = await _api.get('${ApiEndpoints.dashboardNew}/users/', query: {
-        'module': module,
-        if (team != null) 'team_id': team,
-      });
-      final rows = body is Map ? body['users'] : null;
-      if (rows is! List) return const [];
-      final out = <DashTeamOption>[];
-      for (final row in rows) {
-        if (row is! Map) continue;
-        final id = _str(row['user_id']);
-        final name = _str(row['name']);
-        if (id.isEmpty || name.isEmpty) continue;
-        out.add(DashTeamOption(id, name, _str(row['email'])));
+      final body = await _api.get('$group/filter-options/', quiet: true);
+      final teams = <DashTeamOption>[
+        const DashTeamOption('all', 'All teams', '')
+      ];
+      final members = <String, List<String>>{};
+      if (body is Map) {
+        final t = body['teams'];
+        if (t is List) {
+          for (final row in t) {
+            if (row is! Map) continue;
+            final id = _str(row['team_id']);
+            final name = _str(row['name']);
+            if (id.isEmpty || name.isEmpty) continue;
+            teams.add(DashTeamOption(id, name, ''));
+            final ids = row['member_ids'];
+            members[id] = [
+              if (ids is List)
+                for (final m in ids) _str(m),
+            ];
+          }
+        }
       }
-      return out;
+      final users = <DashTeamOption>[];
+      if (body is Map && body['users'] is List) {
+        for (final row in body['users'] as List) {
+          if (row is! Map) continue;
+          final id = _str(row['user_id']);
+          final name = _str(row['name']);
+          if (id.isEmpty || name.isEmpty) continue;
+          users.add(DashTeamOption(id, name, ''));
+        }
+      }
+      return DashFilterOptions(teams, users, members);
     } on Object {
-      return const [];
+      return const DashFilterOptions(
+          [DashTeamOption('all', 'All teams', '')], [], {});
     }
   }
 
@@ -1146,7 +1326,8 @@ class DashboardRemoteDataSource {
 
   /// `/dashboard-new/teams/` → team picker options ('all' arrives as a
   /// sentinel row from the API — nothing is prepended client-side).
-  static List<DashTeamOption> _teamOptions(Object? json, List<DashTeamOption> base) {
+  static List<DashTeamOption> _teamOptions(
+      Object? json, List<DashTeamOption> base) {
     final rows = json is Map ? json['items'] : null;
     if (rows is! List) return base;
     final out = <DashTeamOption>[];
@@ -1167,7 +1348,8 @@ class DashboardRemoteDataSource {
   static List<String> _moneyParts(num amount) {
     final s = formatInr(amount);
     for (final unit in const ['Cr', 'L', 'K']) {
-      if (s.endsWith(unit)) return [s.substring(0, s.length - unit.length), unit];
+      if (s.endsWith(unit))
+        return [s.substring(0, s.length - unit.length), unit];
     }
     return [s, ''];
   }
@@ -1223,8 +1405,8 @@ class DashboardRemoteDataSource {
 /// The receivables panel's mapped fields, bundled so [DashboardRemoteDataSource]
 /// can build them in one pass.
 class _Receivables {
-  const _Receivables(
-      this.total, this.sub, this.overdueLabel, this.upcomingLabel, this.aging, this.upcoming);
+  const _Receivables(this.total, this.sub, this.overdueLabel,
+      this.upcomingLabel, this.aging, this.upcoming);
 
   final String total;
   final String sub;

@@ -17,7 +17,8 @@ class RawPage {
     return RawPage(p.results, count: p.count, hasMore: p.hasMore);
   }
 
-  Map<String, dynamic> toJson() => {'results': rows, 'count': count, 'has_more': hasMore};
+  Map<String, dynamic> toJson() =>
+      {'results': rows, 'count': count, 'has_more': hasMore};
 
   static RawPage fromCache(Object? data) {
     if (data is! Map) return const RawPage([]);
@@ -35,14 +36,17 @@ class RawPage {
 /// string — the report endpoints 500 on one (handover §12.6).
 Map<String, dynamic> compact(Map<String, Object?> m) => {
       for (final e in m.entries)
-        if (e.value != null && !(e.value is String && (e.value as String).trim().isEmpty))
+        if (e.value != null &&
+            !(e.value is String && (e.value as String).trim().isEmpty))
           e.key: e.value,
     };
 
 /// Wraps a posting response: `200 {skipped: true}` is its own outcome.
-PostOutcome<T> postOutcome<T>(Object? body, T? Function(Map<String, dynamic>) map) {
+PostOutcome<T> postOutcome<T>(
+    Object? body, T? Function(Map<String, dynamic>) map) {
   if (body is Map && body['skipped'] == true) {
-    return PostOutcome<T>.skipped(body['detail'] is String ? body['detail'] as String : null);
+    return PostOutcome<T>.skipped(
+        body['detail'] is String ? body['detail'] as String : null);
   }
   final value = body is Map ? map(Map<String, dynamic>.from(body)) : null;
   return PostOutcome<T>.posted(value);

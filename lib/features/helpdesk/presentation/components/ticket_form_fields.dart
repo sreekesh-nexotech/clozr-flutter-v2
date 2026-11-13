@@ -19,8 +19,15 @@ class TicketFieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(text, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-        if (required) Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+        Text(text,
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textLabelAlt)),
+        if (required)
+          Text(' *',
+              style: AppText.custom(
+                  size: 12, weight: FontWeight.w700, color: AppColors.error)),
       ],
     );
   }
@@ -64,7 +71,9 @@ class TicketPickerRow extends StatelessWidget {
                   style: AppText.custom(
                       size: 13.5,
                       weight: FontWeight.w600,
-                      color: placeholder ? AppColors.textPlaceholder : AppColors.textBody)),
+                      color: placeholder
+                          ? AppColors.textPlaceholder
+                          : AppColors.textBody)),
             ),
             Icon(icon, size: 15.sp, color: AppColors.textPlaceholder),
           ],
@@ -102,12 +111,16 @@ class TicketChipWrap extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 9.h),
               decoration: BoxDecoration(
                 color: selected == o
-                    ? (dotColor != null ? dotColor!(o).withOpacity(0.08) : AppColors.blueSubtle)
+                    ? (dotColor != null
+                        ? dotColor!(o).withOpacity(0.08)
+                        : AppColors.blueSubtle)
                     : AppColors.white,
                 borderRadius: BorderRadius.circular(10.r),
                 border: Border.all(
                   color: selected == o
-                      ? (dotColor != null ? dotColor!(o) : const Color(0xFFA6D1FF))
+                      ? (dotColor != null
+                          ? dotColor!(o)
+                          : const Color(0xFFA6D1FF))
                       : AppColors.borderCardSoft,
                   width: 1.5,
                 ),
@@ -116,7 +129,11 @@ class TicketChipWrap extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (dotColor != null) ...[
-                    Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: dotColor!(o), shape: BoxShape.circle)),
+                    Container(
+                        width: 9.w,
+                        height: 9.w,
+                        decoration: BoxDecoration(
+                            color: dotColor!(o), shape: BoxShape.circle)),
                     SizedBox(width: 7.w),
                   ],
                   Text(o,
@@ -124,7 +141,9 @@ class TicketChipWrap extends StatelessWidget {
                           size: 13,
                           weight: FontWeight.w600,
                           color: selected == o
-                              ? (dotColor != null ? dotColor!(o) : AppColors.navy)
+                              ? (dotColor != null
+                                  ? dotColor!(o)
+                                  : AppColors.navy)
                               : AppColors.textLabelAlt)),
                 ],
               ),
@@ -220,16 +239,24 @@ Future<TicketLink?> pickTicketLink(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(label,
-                        style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     if (sub != null && sub.isNotEmpty) ...[
                       SizedBox(height: 1.h),
                       Text(sub,
-                          style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                     ],
                   ],
                 ),
               ),
-              if (active) Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.blueBright),
+              if (active)
+                Icon(PhosphorIconsBold.check,
+                    size: 16.sp, color: AppColors.blueBright),
             ],
           ),
         ),
@@ -257,7 +284,10 @@ Future<TicketLink?> pickTicketLink(
                   Padding(
                     padding: EdgeInsets.symmetric(vertical: 18.h),
                     child: Text(empty,
-                        style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ),
                 for (final (id, name, sub) in options)
                   row(

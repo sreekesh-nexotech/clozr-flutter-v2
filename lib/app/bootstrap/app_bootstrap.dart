@@ -9,6 +9,7 @@ import '../../core/config/api_config.dart';
 import '../../core/monitoring/app_monitoring.dart';
 import '../../core/monitoring/sentry_config.dart';
 import '../../core/services/in_app_update_service.dart';
+import '../../core/services/push_notification_service.dart';
 import '../../core/storage/app_cache.dart';
 import '../../features/auth/application/providers/auth_providers.dart';
 import '../app.dart';
@@ -83,4 +84,10 @@ Future<void> _startApp(List<Override> overrides) async {
   // immediate update takes over the screen with its own UI whenever it does
   // resolve — there is nothing here for the app to wait on.
   unawaited(InAppUpdateService.checkAndPrompt());
+
+  // Push notifications: Firebase init, permission prompt after sign-in,
+  // device registration, foreground banner and tap handling. Not awaited —
+  // none of it is needed for first paint, and it is a no-op in a build
+  // without Firebase values (see firebase_options.dart).
+  unawaited(PushNotificationService.start(container));
 }

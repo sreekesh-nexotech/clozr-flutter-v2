@@ -30,5 +30,6 @@ final crmPartyLookupProvider = Provider<CrmPartyLookup>((ref) {
     return ({String? custId, String? leadId}) =>
         CrmPartyDirectory.resolve(custId: custId, leadId: leadId);
   }
-  return customerPartyLookup(ref.watch(customersProvider).valueOrNull ?? const []);
+  return customerPartyLookup(
+      ref.watch(customersProvider).valueOrNull ?? const []);
 });

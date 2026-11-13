@@ -23,8 +23,11 @@ import 'vendor_form_sheet.dart';
 /// "Record expense" (plan §4.9, form D3) — a vendor bill and its payment in
 /// one call. Purchases post immediately (no draft, no preview, §12.9), so the
 /// submit goes through a confirm step with the amount labelled estimated.
-Future<bool?> showRecordExpenseSheet(BuildContext context, {String? vendorId}) =>
-    showClozrSheet<bool>(context: context, builder: (_) => _RecordExpenseSheet(vendorId: vendorId));
+Future<bool?> showRecordExpenseSheet(BuildContext context,
+        {String? vendorId}) =>
+    showClozrSheet<bool>(
+        context: context,
+        builder: (_) => _RecordExpenseSheet(vendorId: vendorId));
 
 /// The ITC note shown under a chosen expense category.
 String? itcHintFor(ExpenseCategory c) => switch (c.itc) {
@@ -38,7 +41,8 @@ class _RecordExpenseSheet extends ConsumerStatefulWidget {
   final String? vendorId;
 
   @override
-  ConsumerState<_RecordExpenseSheet> createState() => _RecordExpenseSheetState();
+  ConsumerState<_RecordExpenseSheet> createState() =>
+      _RecordExpenseSheetState();
 }
 
 class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
@@ -67,8 +71,12 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
     }
     ref.read(bankAccountsProvider.future).then((accounts) {
       if (!mounted || _bank != null) return;
-      final banks = [for (final a in accounts) if (a.kind == 'BANK') a];
-      final def = banks.where((a) => a.isDefault).firstOrNull ?? (banks.length == 1 ? banks.first : null);
+      final banks = [
+        for (final a in accounts)
+          if (a.kind == 'BANK') a
+      ];
+      final def = banks.where((a) => a.isDefault).firstOrNull ??
+          (banks.length == 1 ? banks.first : null);
       if (def != null) setState(() => _bank = def);
     }).catchError((_) {});
   }
@@ -89,14 +97,19 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
     if (_busy) return;
     if (_vendor == null) return _fail('Pick the vendor');
     if (_category == null) return _fail('Pick what the expense was for');
-    if (!_lines.every((l) => l.complete)) return _fail('Every line needs a description and an amount');
-    if (!_lines.every((l) => l.hsnValid)) return _fail('HSN/SAC must be 4 to 8 digits');
-    if (_source == 'BANK' && _bank == null) return _fail('Pick the bank account it was paid from');
-    if (_source == 'OWNER' && _owner.text.trim().isEmpty) return _fail('Say who paid from their own funds');
+    if (!_lines.every((l) => l.complete))
+      return _fail('Every line needs a description and an amount');
+    if (!_lines.every((l) => l.hsnValid))
+      return _fail('HSN/SAC must be 4 to 8 digits');
+    if (_source == 'BANK' && _bank == null)
+      return _fail('Pick the bank account it was paid from');
+    if (_source == 'OWNER' && _owner.text.trim().isEmpty)
+      return _fail('Say who paid from their own funds');
     final ok = await confirmAcc(
       context,
       title: 'Post this expense?',
-      body: 'About ${formatMoneyStr(purchaseLinesHint(_lines))} (estimated — tax and TDS are worked out by the server). '
+      body:
+          'About ${formatMoneyStr(purchaseLinesHint(_lines))} (estimated — tax and TDS are worked out by the server). '
           'This posts the bill and the payment to the ledger now. It cannot be edited afterwards.',
       confirmLabel: 'Post expense',
     );
@@ -123,9 +136,11 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
       if (!mounted) return;
       final toast = ref.read(toastProvider.notifier);
       if (out.skipped) {
-        toast.show(out.skipReason ?? 'Already recorded — nothing new was posted');
+        toast.show(
+            out.skipReason ?? 'Already recorded — nothing new was posted');
       } else {
-        toast.show('Expense posted${out.value?.number == null ? '' : ' · ${out.value!.number}'} · payment posted');
+        toast.show(
+            'Expense posted${out.value?.number == null ? '' : ' · ${out.value!.number}'} · payment posted');
       }
       Navigator.of(context).pop(true);
     } on AppError catch (e) {
@@ -159,17 +174,26 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
           hint: 'What was it for?',
           footnote: _category == null ? null : itcHintFor(_category!),
           onTap: () async {
-            final c = await pickExpenseCategory(context, selected: _category?.key);
+            final c =
+                await pickExpenseCategory(context, selected: _category?.key);
             if (c != null) setState(() => _category = c);
           },
         ),
         PurchaseLinesEditor(lines: _lines, onChanged: () => setState(() {})),
-        AccDateBox(label: 'Date', required: true, value: _date, showIstHint: true,
+        AccDateBox(
+            label: 'Date',
+            required: true,
+            value: _date,
+            showIstHint: true,
             onChanged: (d) => setState(() => _date = d ?? _date)),
         AccChoiceChips(
           label: 'Paid from',
           required: true,
-          options: const {'BANK': 'Bank', 'CASH': 'Cash', 'OWNER': "Owner's funds"},
+          options: const {
+            'BANK': 'Bank',
+            'CASH': 'Cash',
+            'OWNER': "Owner's funds"
+          },
           selected: _source,
           onSelected: (v) => setState(() => _source = v),
         ),
@@ -180,12 +204,21 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
             value: _bank?.label,
             hint: 'Select account…',
             onTap: () async {
-              final b = await pickBankAccount(context, ref, selectedId: _bank?.id);
+              final b =
+                  await pickBankAccount(context, ref, selectedId: _bank?.id);
               if (b != null) setState(() => _bank = b);
             },
           ),
-        if (_source == 'OWNER') AccInput(label: 'Paid by', required: true, controller: _owner, hint: 'Owner or partner name'),
-        AccInput(label: 'Vendor invoice no', controller: _invoiceNo, hint: 'Optional'),
+        if (_source == 'OWNER')
+          AccInput(
+              label: 'Paid by',
+              required: true,
+              controller: _owner,
+              hint: 'Owner or partner name'),
+        AccInput(
+            label: 'Vendor invoice no',
+            controller: _invoiceNo,
+            hint: 'Optional'),
         AccDisclosure(
           title: 'More options',
           children: [
@@ -209,7 +242,8 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
             ),
           ],
         ),
-        const AccInfoBanner('Posts the bill and its payment together. Tax, TDS and what is payable are worked out by the server.'),
+        const AccInfoBanner(
+            'Posts the bill and its payment together. Tax, TDS and what is payable are worked out by the server.'),
       ],
     );
   }
@@ -218,7 +252,11 @@ class _RecordExpenseSheetState extends ConsumerState<_RecordExpenseSheet> {
 /// The vendor picker row used by the purchase sheets, with a "Quick add"
 /// action that opens the vendor form (and its duplicate-name check).
 class VendorPickerField extends ConsumerWidget {
-  const VendorPickerField({super.key, required this.vendor, required this.onChanged, this.enabled = true});
+  const VendorPickerField(
+      {super.key,
+      required this.vendor,
+      required this.onChanged,
+      this.enabled = true});
 
   final Vendor? vendor;
   final ValueChanged<Vendor> onChanged;
@@ -252,10 +290,14 @@ class VendorPickerField extends ConsumerWidget {
               padding: EdgeInsets.only(top: 7.h),
               child: Row(
                 children: [
-                  Icon(PhosphorIconsBold.plus, size: 12.sp, color: AppColors.blueBright),
+                  Icon(PhosphorIconsBold.plus,
+                      size: 12.sp, color: AppColors.blueBright),
                   SizedBox(width: 5.w),
                   Text('Quick add vendor',
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                      style: AppText.custom(
+                          size: 12.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.blueBright)),
                 ],
               ),
             ),

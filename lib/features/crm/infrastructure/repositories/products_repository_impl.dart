@@ -30,7 +30,9 @@ class ProductsRepositoryImpl implements ProductsRepository {
 
   /// Mock write: no-op — the catalog seed is immutable here.
   @override
-  Future<Product?> updateProduct(String id, Map<String, dynamic> fields) async => null;
+  Future<Product?> updateProduct(
+          String id, Map<String, dynamic> fields) async =>
+      null;
 
   /// Mock mode reports no activity, so the usage section stays hidden rather
   /// than showing invented counts for a seeded catalog.
@@ -48,7 +50,8 @@ class ProductsRepositoryImpl implements ProductsRepository {
     await Future<void>.delayed(AppConstants.mockLatency);
     final name = fields['product_name'] as String? ?? '';
     if (name.isEmpty) return null;
-    final price = fields['price'] is num ? (fields['price'] as num).toDouble() : 0.0;
+    final price =
+        fields['price'] is num ? (fields['price'] as num).toDouble() : 0.0;
     return Product(
       id: 'NEW-${DateTime.now().millisecondsSinceEpoch}',
       name: name,

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'shell_providers.dart';
 
 /// A page-supplied "add" action for the bottom-nav `+` button (#14).
@@ -9,7 +10,17 @@ import 'shell_providers.dart';
 /// single global `+` is always contextual to the current screen. When a screen
 /// registers nothing, the nav falls back to a route-based default.
 class AddAction {
-  const AddAction({required this.label, required this.run, this.module});
+  const AddAction(
+      {required this.label, required this.run, this.module, this.routePath});
+
+  /// The route path of the screen that registered this action. Set by
+  /// [registerAdd]. The `+` ignores an action whose screen is no longer the
+  /// one on show — a Tasks screen still animating out re-registers "New task"
+  /// over the Projects screen that replaced it.
+  final String? routePath;
+
+  AddAction _forRoute(String? path) =>
+      AddAction(label: label, run: run, module: module, routePath: path);
 
   /// The backend module the action creates in. When set, the `+` checks the
   /// role's `can_create` there first and, without it, says so instead of
@@ -36,6 +47,12 @@ final _lastAddRoutePathProvider = StateProvider<String?>((ref) => null);
 /// screen overwrites it. Kept as a free function for use in both stateless and
 /// stateful consumers.
 void registerAdd(WidgetRef ref, AddAction? action) {
+  // Read the screen's own route while building, not in the callback.
+  String? path;
+  try {
+    path = GoRouterState.of(ref.context).uri.path;
+  } catch (_) {}
+  if (action != null) action = action._forRoute(path);
   // Defer so we don't mutate provider state during a build.
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (!ref.context.mounted) return;

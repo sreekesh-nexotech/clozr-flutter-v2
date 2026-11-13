@@ -24,8 +24,14 @@ class AttentionCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(15.r),
           border: Border.all(color: AppColors.borderCardSoft),
           boxShadow: [
-            BoxShadow(color: const Color(0xFF101828).withOpacity(0.04), blurRadius: 2, offset: const Offset(0, 1)),
-            BoxShadow(color: const Color(0xFF101828).withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 8)),
+            BoxShadow(
+                color: const Color(0xFF101828).withOpacity(0.04),
+                blurRadius: 2,
+                offset: const Offset(0, 1)),
+            BoxShadow(
+                color: const Color(0xFF101828).withOpacity(0.05),
+                blurRadius: 20,
+                offset: const Offset(0, 8)),
           ],
         ),
         child: Column(
@@ -33,10 +39,17 @@ class AttentionCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(card.value,
-                style: AppText.custom(size: 24, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
+                style: AppText.custom(
+                    size: 24,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.5)),
             SizedBox(height: 2.h),
             Text(card.label,
-                style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
             SizedBox(height: 12.h),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -47,7 +60,10 @@ class AttentionCard extends StatelessWidget {
                       textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 11, weight: FontWeight.w600, color: card.noteColor)),
+                      style: AppText.custom(
+                          size: 11,
+                          weight: FontWeight.w600,
+                          color: card.noteColor)),
                 ),
               ],
             ),
@@ -76,13 +92,16 @@ class AttentionCard extends StatelessWidget {
     };
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7.r)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 10.sp, color: fg),
           SizedBox(width: 3.w),
-          Text(card.delta, style: AppText.custom(size: 11, weight: FontWeight.w700, color: fg)),
+          Text(card.delta,
+              style:
+                  AppText.custom(size: 11, weight: FontWeight.w700, color: fg)),
         ],
       ),
     );

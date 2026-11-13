@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../../core/widgets/row_actions_sheet.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/components/permission_guard.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -14,11 +15,14 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../../core/widgets/tab_chip.dart';
+import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/customer_call.dart';
 import '../../application/filters/customers_filter_spec.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
+import '../../application/providers/customer_activity_providers.dart';
 import '../../application/providers/saved_filters_providers.dart';
 import '../../application/providers/customers_providers.dart';
 import '../../domain/entities/customer.dart';
@@ -37,6 +41,21 @@ class CustomersScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomersScreenState extends ConsumerState<CustomersScreen> {
+  /// Long press: the shared row actions (UI/UX audit #52) — View / Edit.
+  Future<void> _rowMenu(String id, String title) async {
+    final pick = await showRowActionsSheet(context, title: title, actions: [
+      RowAction.view('customer'),
+      RowAction.edit('customer'),
+    ]);
+    if (pick == null || !mounted) return;
+    if (pick == 'view') {
+      context.push('${Routes.customerDetail}?id=$id');
+      return;
+    }
+    if (!ensurePermission(ref, 'customer', PermVerb.update)) return;
+    context.push('${Routes.editCustomer}?id=$id');
+  }
+
   final _searchCtrl = TextEditingController();
 
   @override
@@ -55,7 +74,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     }
     // A query left behind by a collapsed box would filter the list with
     // nothing on screen saying so; only keep it while the box is open.
-    if (!ref.read(customerSearchOpenProvider) && ref.read(customerSearchProvider).isNotEmpty) {
+    if (!ref.read(customerSearchOpenProvider) &&
+        ref.read(customerSearchProvider).isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(customerSearchProvider.notifier).state = '';
       });
@@ -69,13 +89,15 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final wantsNew = GoRouterState.of(context).uri.queryParameters['new'] == '1';
+    final wantsNew =
+        GoRouterState.of(context).uri.queryParameters['new'] == '1';
     if (!wantsNew) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Drop the flag first so a rebuild or Back does not reopen the sheet.
       context.go(Routes.customers);
-      if (hasPermission(ref, 'customer', PermVerb.create)) showAddCustomerSheet(context, ref);
+      if (hasPermission(ref, 'customer', PermVerb.create))
+        showAddCustomerSheet(context, ref);
     });
   }
 
@@ -90,7 +112,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     // Contextual add: the bottom-nav `+` opens the Add customer sheet here.
     registerAdd(
       ref,
-      AddAction(label: 'Add customer', module: 'customer', run: (ctx) => showAddCustomerSheet(ctx, ref)),
+      AddAction(
+          label: 'Add customer',
+          module: 'customer',
+          run: (ctx) => showAddCustomerSheet(ctx, ref)),
     );
 
     final all = ref.watch(customersSearchedProvider);
@@ -129,7 +154,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                   _searchCtrl.clear();
                   ref.read(customerSearchProvider.notifier).state = '';
                 }
-                ref.read(customerSearchOpenProvider.notifier).state = !searchOpen;
+                ref.read(customerSearchOpenProvider.notifier).state =
+                    !searchOpen;
               },
               onFilter: _openFilters,
             ),
@@ -138,7 +164,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search customers…',
-                onChanged: (v) => ref.read(customerSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(customerSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(customerSearchProvider.notifier).state = '';
@@ -155,7 +182,9 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     TabChip(
                       label: '${_label(k)} (${customerTabCount(all, k)})',
                       active: k == 'all' ? chips.isEmpty : chips.contains(k),
-                      dotColor: dotKey == null ? null : StatusMeta$.customer[dotKey]!.color,
+                      dotColor: dotKey == null
+                          ? null
+                          : StatusMeta$.customer[dotKey]!.color,
                       onTap: () => _toggleChip(k),
                     ),
                   // Only when something sits outside every live lane (web).
@@ -188,7 +217,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                         ? EmptyState(
                             icon: PhosphorIconsRegular.funnel,
                             title: 'No customers match your filters',
-                            body: 'Try widening your search or clearing a filter to see more.',
+                            body:
+                                'Try widening your search or clearing a filter to see more.',
                             ctaLabel: 'Clear filters',
                             ctaIcon: PhosphorIconsBold.xCircle,
                             onCta: _resetListView,
@@ -196,7 +226,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                         : EmptyState(
                             icon: PhosphorIconsRegular.userCircle,
                             title: 'No customers yet',
-                            body: 'Add a customer directly, or win a lead to convert one automatically.',
+                            body:
+                                'Add a customer directly, or win a lead to convert one automatically.',
                             ctaLabel: 'Add customer',
                             ctaIcon: PhosphorIconsBold.plus,
                             onCta: () => showAddCustomerSheet(context, ref),
@@ -214,8 +245,11 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                   return CustomerCard(
                     customer: c,
                     schema: cardSchema,
-                    onTap: () => context.push('${Routes.customerDetail}?id=${c.id}'),
-                    onCall: () => ref.read(toastProvider.notifier).show('Calling ${c.name.split(' ').first}…'),
+                    onTap: () =>
+                        context.push('${Routes.customerDetail}?id=${c.id}'),
+                    onLongPress: () => _rowMenu(c.id, c.name),
+                    onCall: () =>
+                        dialCustomer(ref, phone: c.phone, name: c.name),
                   );
                 },
               );
@@ -229,14 +263,17 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   /// Chips are multi-select (All clears). Like the webapp, picking a chip
   /// drops an applied saved view — the view no longer describes the list.
   void _toggleChip(String key) {
-    ref.read(customerTabProvider.notifier).update((cur) => toggleCustomerTab(cur, key));
+    ref
+        .read(customerTabProvider.notifier)
+        .update((cur) => toggleCustomerTab(cur, key));
     if (ref.read(customerSavedViewsProvider).activeId != null) {
       ref.read(customerSavedViewsProvider.notifier).deactivate();
       _applyFilters(FilterValues());
     }
   }
 
-  String _label(String key) => key == 'all' ? 'All' : StatusMeta$.customer[key]!.label;
+  String _label(String key) =>
+      key == 'all' ? 'All' : StatusMeta$.customer[key]!.label;
 
   // ── Filter drawer ──
   /// Pull-to-refresh: the customer rows and the saved views over them.
@@ -271,8 +308,9 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     // fetch fails — the preview is an estimate, never a blocker.
     List<Customer> previewBase;
     try {
-      previewBase = await ref
-          .read(customersScopedProvider(ref.read(customersUnfilteredQueryProvider)).future);
+      previewBase = await ref.read(
+          customersScopedProvider(ref.read(customersUnfilteredQueryProvider))
+              .future);
     } on Object {
       previewBase = ref.read(customersAllProvider);
     }
@@ -281,6 +319,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     final spec = ref.read(customersFilterSpecProvider);
     final current = ref.read(customerFiltersProvider);
     final activeView = ref.read(customerSavedViewsProvider).active;
+    final statusKeys = {
+      for (final s in ref.read(customerStatusesProvider))
+        s.id: customerStatusKey(name: s.name, type: s.statusType),
+    };
 
     final result = await showFilterSheet(
       context: context,
@@ -288,10 +330,16 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       initial: current,
       // Still the local matcher: a live count per keystroke cannot be a round
       // trip. Apply is authoritative — that is what re-queries the server.
-      previewCount: (draft) =>
-          previewBase.where((c) => customerMatchesFilters(c, draft)).length,
+      previewCount: (draft) => previewBase
+          .where(
+              (c) => customerMatchesFilters(c, draft, statusKeys: statusKeys))
+          .length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(customerSavedViewsProvider).filters.map((f) => f.name).toSet(),
+      existingViewNames: ref
+          .read(customerSavedViewsProvider)
+          .filters
+          .map((f) => f.name)
+          .toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;
@@ -332,11 +380,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         .read(customerSavedViewsProvider)
         .filters
         .any((f) => f.name.toLowerCase() == name.trim().toLowerCase());
-    final error =
-        await ref.read(customerSavedViewsProvider.notifier).save(name, definition);
+    final error = await ref
+        .read(customerSavedViewsProvider.notifier)
+        .save(name, definition);
     if (!mounted) return;
     // The webapp's wording: "View saved" / "View updated".
-    ref.read(toastProvider.notifier).show(error ?? (isUpdate ? 'View updated' : 'View saved'));
+    ref
+        .read(toastProvider.notifier)
+        .show(error ?? (isUpdate ? 'View updated' : 'View saved'));
   }
 
   /// Deletes a saved view after the chip's confirm. Removing the applied view
@@ -344,7 +395,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   /// that no longer exists.
   Future<void> _removeView(String id) async {
     final wasActive = ref.read(customerSavedViewsProvider).activeId == id;
-    final error = await ref.read(customerSavedViewsProvider.notifier).remove(id);
+    final error =
+        await ref.read(customerSavedViewsProvider.notifier).remove(id);
     if (!mounted) return;
     final toast = ref.read(toastProvider.notifier);
     if (error != null) {
@@ -361,7 +413,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     return SizedBox(
       height: 34.h,
       child: chips.SavedChipRow(
-        views: [for (final f in saved.filters) chips.SavedView(f.id, f.name, invalid: !f.isValid)],
+        views: [
+          for (final f in saved.filters)
+            chips.SavedView(f.id, f.name, invalid: !f.isValid)
+        ],
         active: {if (saved.activeId != null) saved.activeId!},
         showClearAlways: filterCount > 0,
         onToggle: _toggleView,
@@ -385,7 +440,9 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.filters.where((f) => f.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     // A filter the server marked invalid (it references a purged custom field)
@@ -393,7 +450,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     if (!view.isValid) {
       // Webapp `applyPreset`: the server's reason, else its fallback.
       ref.read(toastProvider.notifier).showError(
-            view.invalidReason ?? 'This saved filter is invalid and cannot be applied.',
+            view.invalidReason ??
+                'This saved filter is invalid and cannot be applied.',
           );
       return;
     }

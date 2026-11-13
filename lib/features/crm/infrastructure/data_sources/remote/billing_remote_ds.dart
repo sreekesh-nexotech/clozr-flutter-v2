@@ -25,7 +25,8 @@ class BillingRemoteDataSource {
     final body = await _api.get(ApiEndpoints.billingInvoices, query: {
       'page_size': 100,
     });
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = [for (final row in rows) invoiceFromJson(row)];
     // The API returns them oldest-first; a billing history reads newest-first.
     out.sort((a, b) {
@@ -46,7 +47,8 @@ class BillingRemoteDataSource {
   /// `GET /billing/plans/` — the plans on offer, cheapest first.
   Future<List<BillingPlan>> fetchPlans() async {
     final body = await _api.get(_plans, query: {'page_size': 50});
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = [
       for (final row in rows)
         if (row['is_active'] != false) planFromJson(row),
@@ -60,7 +62,8 @@ class BillingRemoteDataSource {
   /// not read it.
   Future<BillingSubscription?> fetchSubscription() async {
     final body = await _api.get(_subscriptions, query: {'page_size': 5});
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     if (rows.isEmpty) return null;
     return subscriptionFromJson(rows.first);
   }
@@ -77,7 +80,8 @@ class BillingRemoteDataSource {
       licensedUsers: i(r['licensed_user_count']),
       activeUsers: i(r['active_user_count']),
       freeSeats: i(r['free_seats']),
-      pricePerUser: parseAmount(r['current_price_per_user'] ?? r['monthly_price_per_user']),
+      pricePerUser: parseAmount(
+          r['current_price_per_user'] ?? r['monthly_price_per_user']),
       periodEnd: parseApiDate(r['current_period_end'] ?? r['trial_end_date']),
       autoRenew: r['auto_renew'] == true,
       mandateVerified: r['mandate_verified'] == true,
@@ -120,7 +124,8 @@ class BillingRemoteDataSource {
     return StorageUsage(
       usedDisplay: _str(body['used_display']) ?? '',
       limitDisplay: _str(body['limit_display']),
-      percent: body['percent'] is num ? (body['percent'] as num).toDouble() : null,
+      percent:
+          body['percent'] is num ? (body['percent'] as num).toDouble() : null,
       // Explicit flag first; a null cap says the same thing.
       unlimited: body['unlimited'] == true || body['limit_bytes'] == null,
     );

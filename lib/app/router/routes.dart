@@ -68,6 +68,7 @@ class Routes {
   static const ticketDetail = '/help/tickets/detail';
   static const createTicket = '/help/tickets/create';
   static const editTicket = '/help/tickets/edit';
+  static const ticketTrash = '/help/tickets/trash';
   static const helpBoards = '/help/boards';
 
   // Training
@@ -83,7 +84,15 @@ class Routes {
   // Cross-cutting
   static const dashboard = '/dashboard';
   static const notifications = '/notifications';
+
+  /// Product tours: every tour with Start / Resume / Replay.
+  static const productTours = '/product-tours';
   static const rewards = '/rewards';
+
+  /// Unified Approvals (`docs-flutter/APPROVALS_FLUTTER_ROUTEMAP.md`). Takes
+  /// `?tab=` and `?kind=`.
+  static const approvals = '/approvals';
+  static const approvalDetail = '/approvals/detail';
   static const members = '/members';
   static const memberDetail = '/members/detail';
   static const teams = '/teams';
@@ -151,6 +160,7 @@ class Routes {
     ticketDetail: RouteMeta(NavContext.help, false),
     createTicket: RouteMeta(NavContext.help, false),
     editTicket: RouteMeta(NavContext.help, false),
+    ticketTrash: RouteMeta(NavContext.help, false),
     helpBoards: RouteMeta(NavContext.help, true),
     lmsOverview: RouteMeta(NavContext.crm, false),
     lmsCourses: RouteMeta(NavContext.crm, false),
@@ -162,7 +172,10 @@ class Routes {
     lmsPlayer: RouteMeta(NavContext.crm, false),
     dashboard: RouteMeta(NavContext.dash, true),
     notifications: RouteMeta(NavContext.crm, false),
+    productTours: RouteMeta(NavContext.crm, false),
     rewards: RouteMeta(NavContext.crm, false),
+    approvals: RouteMeta(NavContext.crm, false),
+    approvalDetail: RouteMeta(NavContext.crm, false),
     members: RouteMeta(NavContext.crm, false),
     memberDetail: RouteMeta(NavContext.crm, false),
     teams: RouteMeta(NavContext.crm, false),

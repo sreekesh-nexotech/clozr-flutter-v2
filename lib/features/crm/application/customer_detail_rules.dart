@@ -1,3 +1,4 @@
+import '../../../core/utils/phone_format.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/network/app_error.dart';
@@ -12,22 +13,27 @@ import '../domain/entities/view_schema.dart';
 
 // ── Formatting ──
 
-final NumberFormat _inrWhole = NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 0);
-final NumberFormat _inrPaise = NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 2);
+final NumberFormat _inrWhole =
+    NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 0);
+final NumberFormat _inrPaise =
+    NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 2);
 
 /// Webapp `money()`: `₹3,50,000` for whole rupees, `₹3,50,000.50` with paise,
 /// `—` when unknown.
 String webMoney(num? n) {
   if (n == null || !n.isFinite) return '—';
   final paise = (n.abs() * 100).round();
-  final text = paise % 100 == 0 ? _inrWhole.format(paise ~/ 100) : _inrPaise.format(paise / 100);
+  final text = paise % 100 == 0
+      ? _inrWhole.format(paise ~/ 100)
+      : _inrPaise.format(paise / 100);
   return '${n < 0 && paise > 0 ? '-₹' : '₹'}${text.trim()}';
 }
 
 /// Webapp `Intl.NumberFormat('en-IN', {style: 'currency', currency: 'INR',
 /// maximumFractionDigits: 2})` as used by the Lost dialog — INR keeps two
 /// decimals: `₹11,800.00`.
-String lostMoney(num n) => '${n < 0 ? '-' : ''}₹${_inrPaise.format(n.abs()).trim()}';
+String lostMoney(num n) =>
+    '${n < 0 ? '-' : ''}₹${_inrPaise.format(n.abs()).trim()}';
 
 /// A number off the wire (`350000.00`, `7`, `"12.5"`), or null.
 num? numOf(Object? v) {
@@ -36,7 +42,11 @@ num? numOf(Object? v) {
   return null;
 }
 
-String strOf(Object? v) => v is String ? v : v == null ? '' : '$v';
+String strOf(Object? v) => v is String
+    ? v
+    : v == null
+        ? ''
+        : '$v';
 
 String? _text(Object? v) {
   if (v is String && v.trim().isNotEmpty) return v.trim();
@@ -55,14 +65,16 @@ String customerCode(Map<String, dynamic>? row) {
   final ref = row?['reference'];
   if (ref is String && ref.trim().isNotEmpty) return ref.trim();
   final id = row?['customer_id'];
-  return id is String && id.isNotEmpty ? '#${id.substring(0, id.length < 8 ? id.length : 8)}' : '';
+  return id is String && id.isNotEmpty
+      ? '#${id.substring(0, id.length < 8 ? id.length : 8)}'
+      : '';
 }
 
 /// Webapp `fmtDate`: "22 Oct 2026" (no zero padding), '' when unknown.
 String customerSinceText(Object? statusEnteredAt) {
   final at = parseApiDate(statusEnteredAt);
   if (at == null) return '';
-  return DateFormat('d MMM yyyy').format(at.toLocal());
+  return DateFormat('dd/MM/yyyy').format(at.toLocal());
 }
 
 /// The facts the detail header reads off the record.
@@ -82,7 +94,10 @@ class CustomerHeaderFacts {
 
   factory CustomerHeaderFacts.fromRow(Map<String, dynamic>? row) {
     final leads = row?['linked_leads'];
-    final linked = [for (final l in (leads is List ? leads : const [])) if (l is Map) l];
+    final linked = [
+      for (final l in (leads is List ? leads : const []))
+        if (l is Map) l
+    ];
     return CustomerHeaderFacts(
       code: customerCode(row),
       organisation: strOf(row?['organization_name']).trim(),
@@ -94,7 +109,8 @@ class CustomerHeaderFacts {
       isConverted: linked.any((l) => l['is_converted'] == true),
       isUpsell: linked.any((l) => l['is_upsell'] == true),
       isLost: row?['status_type'] == 'lost',
-      lostReason: describeLostReason(row?['lost_reason_name'], row?['lost_reason_note']),
+      lostReason: describeLostReason(
+          row?['lost_reason_name'], row?['lost_reason_note']),
       score: numOf(row?['score'])?.toInt(),
     );
   }
@@ -111,7 +127,10 @@ class CustomerHeaderFacts {
   final int? score;
 
   /// "CUST-0006 · Kerala Agro".
-  String get subtitle => [if (code.isNotEmpty) code, if (organisation.isNotEmpty) organisation].join(' · ');
+  String get subtitle => [
+        if (code.isNotEmpty) code,
+        if (organisation.isNotEmpty) organisation
+      ].join(' · ');
 }
 
 /// Webapp `describeLostReason`: "Budget cut — Q4 freeze", either alone, or
@@ -130,7 +149,12 @@ const String convertedBannerBody =
 // ── Lost impact ──
 
 class CustomerOpenInvoice {
-  const CustomerOpenInvoice({required this.id, required this.number, this.date, required this.amountDue, this.leadName});
+  const CustomerOpenInvoice(
+      {required this.id,
+      required this.number,
+      this.date,
+      required this.amountDue,
+      this.leadName});
   final String id;
   final String number;
   final String? date;
@@ -175,7 +199,10 @@ class CustomerLostImpact {
   /// `cause.customers[]` row. Null for anything that is not an object.
   static CustomerLostImpact? fromJson(Object? raw) {
     if (raw is! Map) return null;
-    List<Map> rows(Object? v) => [for (final x in (v is List ? v : const [])) if (x is Map) x];
+    List<Map> rows(Object? v) => [
+          for (final x in (v is List ? v : const []))
+            if (x is Map) x
+        ];
     num n0(Object? v) => numOf(v) ?? 0;
     final invoices = [
       for (final (i, x) in rows(raw['open_invoices']).indexed)
@@ -187,7 +214,8 @@ class CustomerLostImpact {
           leadName: _text(x['lead_name']),
         ),
     ];
-    final money = raw['money_received'] is Map ? raw['money_received'] as Map : const {};
+    final money =
+        raw['money_received'] is Map ? raw['money_received'] as Map : const {};
     return CustomerLostImpact(
       customerId: _text(raw['customer_id']) ?? '',
       customerName: _text(raw['customer_name']) ?? _text(raw['name']),
@@ -197,27 +225,41 @@ class CustomerLostImpact {
           : invoices.fold<num>(0, (s, x) => s + x.amountDue),
       canCredit: raw['can_credit'] == true,
       openInstalments: [
-        for (final x in rows(raw['open_instalments'])) (amount: n0(x['amount_expected']), invoiced: x['invoiced'] == true),
+        for (final x in rows(raw['open_instalments']))
+          (amount: n0(x['amount_expected']), invoiced: x['invoiced'] == true),
       ],
-      draftInvoices: [for (final x in rows(raw['draft_invoices'])) _text(x['number']) ?? 'Draft invoice'],
+      draftInvoices: [
+        for (final x in rows(raw['draft_invoices']))
+          _text(x['number']) ?? 'Draft invoice'
+      ],
       moneyReceived: n0(money['amount']),
       paymentCount: n0(money['payment_count']),
-      customerCredit: money['customer_credit'] == null ? null : n0(money['customer_credit']),
-      upsellLeads: [for (final x in rows(raw['upsell_leads'])) _text(x['lead_name']) ?? 'Upsell lead'],
-      legacyQuotes: [for (final x in rows(raw['legacy_quotes'])) _text(x['quotation_number']) ?? 'Quote'],
+      customerCredit: money['customer_credit'] == null
+          ? null
+          : n0(money['customer_credit']),
+      upsellLeads: [
+        for (final x in rows(raw['upsell_leads']))
+          _text(x['lead_name']) ?? 'Upsell lead'
+      ],
+      legacyQuotes: [
+        for (final x in rows(raw['legacy_quotes']))
+          _text(x['quotation_number']) ?? 'Quote'
+      ],
     );
   }
 }
 
 /// Webapp `customerLostImpactsFromCause` — the customers a 409
 /// `LOST_HAS_OPEN_INVOICES` reports, only those with open invoices.
-List<CustomerLostImpact> customerLostImpactsFromCause(Map<String, dynamic>? cause) {
+List<CustomerLostImpact> customerLostImpactsFromCause(
+    Map<String, dynamic>? cause) {
   if (cause == null || cause.isEmpty) return const [];
   final list = cause['customers'];
   if (list is List) {
     return [
       for (final c in list)
-        if (CustomerLostImpact.fromJson(c) case final i? when i.hasOpenInvoices) i,
+        if (CustomerLostImpact.fromJson(c) case final i? when i.hasOpenInvoices)
+          i,
     ];
   }
   final one = CustomerLostImpact.fromJson(cause);
@@ -232,25 +274,29 @@ List<String> lostSummaryLines(CustomerLostImpact impact) {
   final out = <String>[];
   if (instalments.isNotEmpty) {
     final total = instalments.fold<num>(0, (s, r) => s + r.amount);
-    out.add('${instalments.length} open instalment${instalments.length == 1 ? '' : 's'} '
+    out.add(
+        '${instalments.length} open instalment${instalments.length == 1 ? '' : 's'} '
         '(${lostMoney(total)}) and their follow-up tasks are cancelled');
   }
   final d = impact.draftInvoices.length;
   if (d > 0) out.add('$d draft invoice${d == 1 ? ' is' : 's are'} voided');
   final q = impact.legacyQuotes.length;
   if (q > 0) {
-    out.add('$q other quote${q == 1 ? '' : 's'} of this customer ${q == 1 ? 'is' : 'are'} closed the same way: '
+    out.add(
+        '$q other quote${q == 1 ? '' : 's'} of this customer ${q == 1 ? 'is' : 'are'} closed the same way: '
         '${impact.legacyQuotes.join(', ')}');
   }
   final u = impact.upsellLeads.length;
   if (u > 0) {
-    out.add('$u open upsell lead${u == 1 ? '' : 's'} move${u == 1 ? 's' : ''} to Lost with the same reason: '
+    out.add(
+        '$u open upsell lead${u == 1 ? '' : 's'} move${u == 1 ? 's' : ''} to Lost with the same reason: '
         '${impact.upsellLeads.join(', ')}');
   }
   return out;
 }
 
-const String lostSummaryHeading = 'Marking this customer Lost closes its open deals:';
+const String lostSummaryHeading =
+    'Marking this customer Lost closes its open deals:';
 
 /// Webapp `describeMoneyReceived`; null when nothing was received and there is
 /// no credit. The dialog appends "Next step: Refund via Accounts — only if the
@@ -258,7 +304,9 @@ const String lostSummaryHeading = 'Marking this customer Lost closes its open de
 String? describeMoneyReceived(CustomerLostImpact impact) {
   final credit = impact.customerCredit;
   if (impact.moneyReceived <= 0 && !(credit != null && credit > 0)) return null;
-  final creditText = credit != null && credit > 0 ? ' (unapplied credit now ${lostMoney(credit)})' : '';
+  final creditText = credit != null && credit > 0
+      ? ' (unapplied credit now ${lostMoney(credit)})'
+      : '';
   return '${lostMoney(impact.moneyReceived)} already received stays with the customer as credit$creditText. '
       'Nothing is refunded automatically.';
 }
@@ -279,18 +327,28 @@ const String partyHasBooksCode = 'PARTY_HAS_BOOKS';
 const String customerHasBooksCopy =
     'This customer can’t be deleted because accounting records (invoices, receipts or payments) reference it. '
     'Keep the customer and change its status instead.';
-const String customerNotDeletableCopy = 'This customer can’t be deleted. Archive it instead.';
-const String deleteForbiddenCopy = 'You don’t have permission to delete this customer. Ask a workspace admin.';
-const String deleteNotFoundCopy = 'This customer no longer exists — it may already have been deleted.';
-const String deleteNoPermissionCopy = "You don't have permission to delete records here. Ask a workspace admin.";
+const String customerNotDeletableCopy =
+    'This customer can’t be deleted. Archive it instead.';
+const String deleteForbiddenCopy =
+    'You don’t have permission to delete this customer. Ask a workspace admin.';
+const String deleteNotFoundCopy =
+    'This customer no longer exists — it may already have been deleted.';
+const String deleteNoPermissionCopy =
+    "You don't have permission to delete records here. Ask a workspace admin.";
 
 /// Webapp `customerDeleteGate`: `can_delete` + `delete_blocked_reason.message`.
 /// An older server sends neither → allowed.
 ({bool allowed, String? reason}) customerDeleteGate(Map<String, dynamic>? row) {
-  if (row == null || row['can_delete'] != false) return (allowed: true, reason: null);
+  if (row == null || row['can_delete'] != false)
+    return (allowed: true, reason: null);
   final raw = row['delete_blocked_reason'];
   final msg = raw is Map ? raw['message'] : null;
-  return (allowed: false, reason: msg is String && msg.trim().isNotEmpty ? msg.trim() : customerNotDeletableCopy);
+  return (
+    allowed: false,
+    reason: msg is String && msg.trim().isNotEmpty
+        ? msg.trim()
+        : customerNotDeletableCopy
+  );
 }
 
 /// The Delete control: hidden for a read-only role; disabled with a reason
@@ -301,7 +359,8 @@ const String deleteNoPermissionCopy = "You don't have permission to delete recor
   required Map<String, dynamic>? row,
 }) {
   if (readOnly) return (visible: false, enabled: false, reason: null);
-  if (!canDelete) return (visible: true, enabled: false, reason: deleteNoPermissionCopy);
+  if (!canDelete)
+    return (visible: true, enabled: false, reason: deleteNoPermissionCopy);
   final gate = customerDeleteGate(row);
   return (visible: true, enabled: gate.allowed, reason: gate.reason);
 }
@@ -311,12 +370,15 @@ String customerDeleteErrorCopy(AppError e) {
   if (e.code == partyHasBooksCode) return customerHasBooksCopy;
   if (e.type == AppErrorType.forbidden) return deleteForbiddenCopy;
   if (e.type == AppErrorType.notFound) return deleteNotFoundCopy;
-  return e.message.isNotEmpty ? e.bareMessage : 'Could not delete the customer.';
+  return e.message.isNotEmpty
+      ? e.bareMessage
+      : 'Could not delete the customer.';
 }
 
 // ── Products ──
 
-const String customerQuantityError = 'Quantities on a customer are whole numbers (1, 2, 3 …).';
+const String customerQuantityError =
+    'Quantities on a customer are whole numbers (1, 2, 3 …).';
 
 /// Webapp `customerProductsPatch`: blank → 1; anything but a whole number ≥ 1
 /// is refused.
@@ -334,11 +396,14 @@ const String customerQuantityError = 'Quantities on a customer are whole numbers
 }
 
 /// Webapp `customerProductRows`: the dialog's starting rows.
-List<({String id, String label, String quantity})> customerProductRows(Object? v) {
+List<({String id, String label, String quantity})> customerProductRows(
+    Object? v) {
   if (v is! List) return const [];
   return [
     for (final p in v)
-      if (p is Map && p['product_id'] is String && (p['product_id'] as String).isNotEmpty)
+      if (p is Map &&
+          p['product_id'] is String &&
+          (p['product_id'] as String).isNotEmpty)
         (
           id: p['product_id'] as String,
           label: _text(p['product_name']) ?? 'Product',
@@ -354,12 +419,15 @@ String productsText(Object? v) {
     for (final p in v)
       () {
         final m = p is Map ? p : const {};
-        final name = _text(m['product_name']) ?? _text(m['product_code']) ?? 'Product';
+        final name =
+            _text(m['product_name']) ?? _text(m['product_code']) ?? 'Product';
         final q = numOf(m['quantity']);
         return q != null && q != 1 ? '$name ×${_n(q)}' : name;
       }(),
   ];
-  return parts.length > 3 ? '${parts.take(3).join(', ')} +${parts.length - 3} more' : parts.join(', ');
+  return parts.length > 3
+      ? '${parts.take(3).join(', ')} +${parts.length - 3} more'
+      : parts.join(', ');
 }
 
 // ── Assignees ──
@@ -373,7 +441,10 @@ List<({String id, String name})> customerAssignees(Map<String, dynamic>? row) {
     if (a is String && a.isNotEmpty) {
       out.add((id: a, name: ''));
     } else if (a is Map && a['user_id'] is String) {
-      final full = _text(a['full_name']) ?? _text(a['username']) ?? _text(a['email']) ?? '';
+      final full = _text(a['full_name']) ??
+          _text(a['username']) ??
+          _text(a['email']) ??
+          '';
       out.add((id: a['user_id'] as String, name: full));
     }
   }
@@ -381,9 +452,13 @@ List<({String id, String name})> customerAssignees(Map<String, dynamic>? row) {
 }
 
 /// The picker's choices: assignable users not already assigned.
-List<T> assignableNotAssigned<T>(List<T> users, String Function(T) idOf, Iterable<String> assigned) {
+List<T> assignableNotAssigned<T>(
+    List<T> users, String Function(T) idOf, Iterable<String> assigned) {
   final taken = assigned.toSet();
-  return [for (final u in users) if (!taken.contains(idOf(u))) u];
+  return [
+    for (final u in users)
+      if (!taken.contains(idOf(u))) u
+  ];
 }
 
 // ── Info fields ──
@@ -401,9 +476,12 @@ const List<(String, String)> slaModes = [
 
 /// `(value, label)` — values are `"<n>|<unit>"`.
 List<(String, String)> slaOptions({bool withMinutes = false}) => [
-      if (withMinutes) for (final n in slaMinuteCounts) ('$n|minutes', '$n minutes'),
-      for (final n in slaHourCounts) ('$n|hours', '$n ${n == 1 ? 'hour' : 'hours'}'),
-      for (final n in slaDayCounts) ('$n|days', '$n ${n == 1 ? 'day' : 'days'}'),
+      if (withMinutes)
+        for (final n in slaMinuteCounts) ('$n|minutes', '$n minutes'),
+      for (final n in slaHourCounts)
+        ('$n|hours', '$n ${n == 1 ? 'hour' : 'hours'}'),
+      for (final n in slaDayCounts)
+        ('$n|days', '$n ${n == 1 ? 'day' : 'days'}'),
     ];
 
 /// "Resolve within 3 days" — `—` when the pair is incomplete.
@@ -424,7 +502,19 @@ const String gstinPlaceholder = 'e.g. 32ABCDE1234F1Z5';
 const String sourceHint =
     'Where the lead this customer was converted from came from. It stays with that lead, so it is read-only here.';
 
-enum InfoEditKind { none, text, multiline, email, phone, number, date, boolean, select, products }
+enum InfoEditKind {
+  none,
+  text,
+  multiline,
+  email,
+  phone,
+  number,
+  date,
+  boolean,
+  select,
+  multiselect,
+  products
+}
 
 class CustomerInfoField {
   const CustomerInfoField({
@@ -456,11 +546,26 @@ class CustomerInfoField {
 
 /// Fields rendered elsewhere on the page or composed (webapp `SKIP`).
 const Set<String> _skip = {
-  'name', 'status', 'assigned_to', 'assignees', 'assigned_team',
-  'sla_mode', 'sla_value', 'sla_unit', 'first_response_value', 'first_response_unit',
+  'name',
+  'status',
+  'assigned_to',
+  'assignees',
+  'assigned_team',
+  'sla_mode',
+  'sla_value',
+  'sla_unit',
+  'first_response_value',
+  'first_response_unit',
 };
 
-const List<String> _addressParts = ['address_line1', 'address_line2', 'city', 'state_code', 'pincode', 'country'];
+const List<String> _addressParts = [
+  'address_line1',
+  'address_line2',
+  'city',
+  'state_code',
+  'pincode',
+  'country'
+];
 
 /// Webapp `ADDRESS_GSTIN_FIELD_NAMES` (+ the lead-only deal fields, which a
 /// customer layout never has but must never render as plain rows either).
@@ -491,13 +596,18 @@ const _numericTypes = {'decimal', 'integer', 'number', 'float'};
 String _display(Object? value, String type) {
   if (value == null || (value is String && value.trim().isEmpty)) return '—';
   if (type == 'boolean') return value == true ? 'Yes' : 'No';
+  if (type == 'phone' && value is String) return PhoneFormat.display(value);
   if (type == 'date' || type == 'datetime') {
     final d = parseApiDate(value);
-    if (d != null) return DateFormat('d MMM yyyy').format(d.toLocal());
+    if (d != null) return DateFormat('dd/MM/yyyy').format(d.toLocal());
   }
-  if (value is Map) return _text(value['name']) ?? _text(value['full_name']) ?? '—';
+  if (value is Map)
+    return _text(value['name']) ?? _text(value['full_name']) ?? '—';
   if (value is List) {
-    final parts = [for (final v in value) if (v is Map) _text(v['name']) ?? '' else '$v'];
+    final parts = [
+      for (final v in value)
+        if (v is Map) _text(v['name']) ?? '' else '$v'
+    ];
     final s = parts.where((p) => p.isNotEmpty).join(', ');
     return s.isEmpty ? '—' : s;
   }
@@ -510,7 +620,10 @@ String valueNeedText(Object? v) {
   if (v is! Map) return '—';
   final revenue = numOf(v['value']);
   final need = strOf(v['need']).trim();
-  final parts = [if (revenue != null) webMoney(revenue), if (need.isNotEmpty) need];
+  final parts = [
+    if (revenue != null) webMoney(revenue),
+    if (need.isNotEmpty) need
+  ];
   return parts.isEmpty ? '—' : parts.join(' · ');
 }
 
@@ -519,7 +632,8 @@ String valueNeedText(Object? v) {
 ///
 /// [industryOptions] / [hasProductsEditor] mirror the webapp's optional
 /// arguments: absent → that row stays read-only.
-({List<CustomerInfoField> info, List<CustomerInfoField> billing}) buildCustomerInfoFields({
+({List<CustomerInfoField> info, List<CustomerInfoField> billing})
+    buildCustomerInfoFields({
   required Map<String, dynamic> row,
   required List<ViewColumn> columns,
   required bool editable,
@@ -556,13 +670,20 @@ String valueNeedText(Object? v) {
     switch (c.name) {
       case 'source':
         info.add(CustomerInfoField(
-            name: c.name, label: c.label, value: _text(value) ?? '—', hint: _text(value) == null ? null : sourceHint));
+            name: c.name,
+            label: c.label,
+            value: _text(value) ?? '—',
+            hint: _text(value) == null ? null : sourceHint));
         continue;
       case 'value_need':
-        info.add(CustomerInfoField(name: c.name, label: c.label, value: valueNeedText(value)));
+        info.add(CustomerInfoField(
+            name: c.name, label: c.label, value: valueNeedText(value)));
         continue;
       case 'score':
-        info.add(CustomerInfoField(name: c.name, label: c.label, value: value == null ? '—' : '${_n(numOf(value) ?? 0)} / 100'));
+        info.add(CustomerInfoField(
+            name: c.name,
+            label: c.label,
+            value: value == null ? '—' : '${_n(numOf(value) ?? 0)} / 100'));
         continue;
       case 'industry':
         final canEdit = editable && industryOptions != null;
@@ -572,19 +693,25 @@ String valueNeedText(Object? v) {
           value: _text(row['industry_name']) ?? '—',
           kind: canEdit ? InfoEditKind.select : InfoEditKind.none,
           editValue: strOf(value),
-          options: canEdit ? [('', 'No industry'), ...industryOptions] : const [],
+          options:
+              canEdit ? [('', 'No industry'), ...industryOptions] : const [],
         ));
         continue;
       case 'last_followup_at':
         final type = _text(row['last_followup_type']);
-        info.add(CustomerInfoField(name: c.name, label: c.label, value: type ?? _display(value, 'datetime')));
+        info.add(CustomerInfoField(
+            name: c.name,
+            label: c.label,
+            value: type ?? _display(value, 'datetime')));
         continue;
       case 'products':
         info.add(CustomerInfoField(
           name: c.name,
           label: c.label,
           value: productsText(value),
-          kind: editable && hasProductsEditor ? InfoEditKind.products : InfoEditKind.none,
+          kind: editable && hasProductsEditor
+              ? InfoEditKind.products
+              : InfoEditKind.none,
         ));
         continue;
       case 'revenue':
@@ -599,33 +726,43 @@ String valueNeedText(Object? v) {
         continue;
       case 'email':
         info.add(CustomerInfoField(
-            name: c.name, label: c.label, value: _display(value, c.type),
-            kind: editable ? InfoEditKind.email : InfoEditKind.none, editValue: strOf(value)));
+            name: c.name,
+            label: c.label,
+            value: _display(value, c.type),
+            kind: editable ? InfoEditKind.email : InfoEditKind.none,
+            editValue: strOf(value)));
         continue;
       case 'phone':
       case 'mobile_no':
       case 'whatsapp_no':
         info.add(CustomerInfoField(
-            name: c.name, label: c.label, value: _display(value, c.type),
-            kind: editable ? InfoEditKind.phone : InfoEditKind.none, editValue: strOf(value)));
+            name: c.name,
+            label: c.label,
+            value: _display(value, 'phone'),
+            kind: editable ? InfoEditKind.phone : InfoEditKind.none,
+            editValue: strOf(value)));
         continue;
     }
     final type = c.type;
+    final multi = c.isCustom && c.customType == 'multi_select' && c.hasChoices;
     final kind = !editable
         ? InfoEditKind.none
-        : c.hasChoices
-            ? InfoEditKind.select
-            : _numericTypes.contains(type)
-                ? InfoEditKind.number
-                : type == 'boolean'
-                    ? InfoEditKind.boolean
-                    : type == 'date'
-                        ? InfoEditKind.date
-                        : type == 'string'
-                            ? InfoEditKind.text
-                            : type == 'text'
-                                ? InfoEditKind.multiline
-                                : InfoEditKind.none; // FK / m2m / unknown → read-only
+        : multi
+            ? InfoEditKind.multiselect
+            : c.hasChoices
+                ? InfoEditKind.select
+                : _numericTypes.contains(type)
+                    ? InfoEditKind.number
+                    : type == 'boolean'
+                        ? InfoEditKind.boolean
+                        : type == 'date'
+                            ? InfoEditKind.date
+                            : type == 'string'
+                                ? InfoEditKind.text
+                                : type == 'text'
+                                    ? InfoEditKind.multiline
+                                    : InfoEditKind
+                                        .none; // FK / m2m / unknown → read-only
     var shown = _display(value, type);
     if (c.hasChoices && value != null) {
       for (final (v, l) in c.choices) {
@@ -637,8 +774,16 @@ String valueNeedText(Object? v) {
       label: c.label,
       value: shown,
       kind: kind,
-      editValue: type == 'boolean' ? (value == true ? 'true' : 'false') : strOf(value),
-      options: c.hasChoices ? [('', '—'), ...c.choices] : const [],
+      editValue: type == 'boolean'
+          ? (value == true ? 'true' : 'false')
+          : multi
+              ? (value is List ? value.map((e) => '$e').join(',') : '')
+              : strOf(value),
+      options: multi
+          ? c.choices
+          : c.hasChoices
+              ? [('', '—'), ...c.choices]
+              : const [],
     ));
   }
 
@@ -671,12 +816,16 @@ String valueNeedText(Object? v) {
   return (info: info, billing: billing);
 }
 
-List<CustomerInfoField> _slaFields(Map<String, dynamic> row, List<ViewColumn> columns, bool editable) {
+List<CustomerInfoField> _slaFields(
+    Map<String, dynamic> row, List<ViewColumn> columns, bool editable) {
   bool visible(String n) => columns.any((c) => c.name == n);
   final out = <CustomerInfoField>[];
   if (visible('sla_mode') && row.containsKey('sla_mode')) {
-    final mode = strOf(row['sla_mode']).isEmpty ? 'custom' : strOf(row['sla_mode']);
-    final label = slaModes.where((m) => m.$1 == mode).map((m) => m.$2).firstOrNull ?? mode;
+    final mode =
+        strOf(row['sla_mode']).isEmpty ? 'custom' : strOf(row['sla_mode']);
+    final label =
+        slaModes.where((m) => m.$1 == mode).map((m) => m.$2).firstOrNull ??
+            mode;
     out.add(CustomerInfoField(
       name: '__sla_mode',
       label: 'SLA source',
@@ -698,7 +847,8 @@ List<CustomerInfoField> _slaFields(Map<String, dynamic> row, List<ViewColumn> co
       options: slaOptions(),
     ));
   }
-  if (visible('first_response_value') && row.containsKey('first_response_value')) {
+  if (visible('first_response_value') &&
+      row.containsKey('first_response_value')) {
     final v = row['first_response_value'];
     final u = row['first_response_unit'];
     final set = numOf(v) != null && strOf(u).isNotEmpty;
@@ -737,15 +887,22 @@ Map<String, dynamic>? customerFieldPatch(CustomerInfoField f, String input) {
       final parts = v.split('|');
       return {'sla_value': num.parse(parts[0]).toInt(), 'sla_unit': parts[1]};
     case '__sla_respond':
-      if (v.isEmpty) return {'first_response_value': null, 'first_response_unit': null};
+      if (v.isEmpty)
+        return {'first_response_value': null, 'first_response_unit': null};
       final parts = v.split('|');
-      return {'first_response_value': num.parse(parts[0]).toInt(), 'first_response_unit': parts[1]};
+      return {
+        'first_response_value': num.parse(parts[0]).toInt(),
+        'first_response_unit': parts[1]
+      };
   }
   final Object? value = switch (f.kind) {
-    InfoEditKind.number => v.isEmpty ? null : num.tryParse(v.replaceAll(RegExp(r'[,\s]'), '')),
+    InfoEditKind.number =>
+      v.isEmpty ? null : num.tryParse(v.replaceAll(RegExp(r'[,\s]'), '')),
     InfoEditKind.boolean => v == 'true',
     InfoEditKind.date => v.isEmpty ? null : v,
     InfoEditKind.select => v.isEmpty ? null : v,
+    InfoEditKind.multiselect =>
+      v.isEmpty ? null : v.split(',').where((e) => e.isNotEmpty).toList(),
     _ => v,
   };
   if (f.name.startsWith('custom_fields.')) {
@@ -760,7 +917,8 @@ Map<String, dynamic>? customerFieldPatch(CustomerInfoField f, String input) {
 String? customerFieldInputError(CustomerInfoField f, String input) {
   if (f.kind == InfoEditKind.number) {
     final t = input.trim().replaceAll(RegExp(r'[,\s]'), '');
-    if (t.isNotEmpty && num.tryParse(t) == null) return 'Enter a number, e.g. 500000 or 12.5.';
+    if (t.isNotEmpty && num.tryParse(t) == null)
+      return 'Enter a number, e.g. 500000 or 12.5.';
   }
   if (f.name == 'name' && input.trim().isEmpty) return 'Enter a name.';
   return null;
@@ -776,5 +934,9 @@ String? customerFieldInputError(CustomerInfoField f, String input) {
 }
 
 /// Webapp `isReadOnlyOnModule`: the module is granted but no write verb is.
-bool isReadOnlyRole({required bool read, required bool create, required bool update, required bool delete}) =>
+bool isReadOnlyRole(
+        {required bool read,
+        required bool create,
+        required bool update,
+        required bool delete}) =>
     read && !create && !update && !delete;

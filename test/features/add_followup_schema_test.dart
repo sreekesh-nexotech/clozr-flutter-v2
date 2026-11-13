@@ -36,7 +36,8 @@ class _Adapter implements HttpClientAdapter {
 }
 
 ApiService _api(_Adapter a) {
-  final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))..httpClientAdapter = a;
+  final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
+    ..httpClientAdapter = a;
   return ApiService(tokens: TokenStorage(), dio: dio);
 }
 
@@ -47,18 +48,54 @@ Map<String, dynamic> _detailSchema() => {
       'has_org_config': true,
       'all_fields': {
         'columns': [
-          {'name': 'title', 'label': 'Task', 'order': 1, 'visible': true,
-           'field_info': {'type': 'string'}},
-          {'name': 'task_type', 'label': 'Type', 'order': 2, 'visible': true,
-           'field_info': {'type': 'string'}},
-          {'name': 'status', 'label': 'Status', 'order': 3, 'visible': true,
-           'field_info': {'type': 'foreignkey', 'related_model': 'CRMTaskStatus'}},
-          {'name': 'priority', 'label': 'Priority', 'order': 4, 'visible': true,
-           'field_info': {'type': 'foreignkey', 'related_model': 'TaskPriority'}},
-          {'name': 'due_date', 'label': 'Due Date', 'order': 5, 'visible': true,
-           'field_info': {'type': 'date'}},
+          {
+            'name': 'title',
+            'label': 'Task',
+            'order': 1,
+            'visible': true,
+            'field_info': {'type': 'string'}
+          },
+          {
+            'name': 'task_type',
+            'label': 'Type',
+            'order': 2,
+            'visible': true,
+            'field_info': {'type': 'string'}
+          },
+          {
+            'name': 'status',
+            'label': 'Status',
+            'order': 3,
+            'visible': true,
+            'field_info': {
+              'type': 'foreignkey',
+              'related_model': 'CRMTaskStatus'
+            }
+          },
+          {
+            'name': 'priority',
+            'label': 'Priority',
+            'order': 4,
+            'visible': true,
+            'field_info': {
+              'type': 'foreignkey',
+              'related_model': 'TaskPriority'
+            }
+          },
+          {
+            'name': 'due_date',
+            'label': 'Due Date',
+            'order': 5,
+            'visible': true,
+            'field_info': {'type': 'date'}
+          },
           // Display-only: the API accepts a write and stores nothing.
-          {'name': 'related_to', 'label': 'Related To', 'order': 9, 'visible': true},
+          {
+            'name': 'related_to',
+            'label': 'Related To',
+            'order': 9,
+            'visible': true
+          },
         ],
       },
     };

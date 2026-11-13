@@ -82,7 +82,8 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                 PeopleIconAction(
                   icon: PhosphorIconsRegular.magnifyingGlass,
                   dot: query.isNotEmpty,
-                  onTap: () => ref.read(teamSearchOpenProvider.notifier).state = !searchOpen,
+                  onTap: () => ref.read(teamSearchOpenProvider.notifier).state =
+                      !searchOpen,
                 ),
                 PeopleIconAction(
                   icon: PhosphorIconsRegular.slidersHorizontal,
@@ -93,13 +94,15 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
               ],
             ),
             SizedBox(height: 6.h),
-            Text('Groups of members, organised by region or function.', style: AppText.caption()),
+            Text('Groups of members, organised by region or function.',
+                style: AppText.caption()),
             SizedBox(height: 14.h),
             if (searchOpen) ...[
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search team, lead, member…',
-                onChanged: (v) => ref.read(teamSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(teamSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(teamSearchProvider.notifier).state = '';
@@ -126,9 +129,14 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                 children: [
                   const InfoBanner(
                     spans: [
-                      TextSpan(text: 'Teams are for grouping only — they carry '),
-                      TextSpan(text: 'no visibility scope of their own', style: TextStyle(fontWeight: FontWeight.w700)),
-                      TextSpan(text: '. Access always comes from a member’s role and reporting hierarchy.'),
+                      TextSpan(
+                          text: 'Teams are for grouping only — they carry '),
+                      TextSpan(
+                          text: 'no visibility scope of their own',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      TextSpan(
+                          text:
+                              '. Access always comes from a member’s role and reporting hierarchy.'),
                     ],
                   ),
                   SizedBox(height: 10.h),
@@ -180,9 +188,11 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((t) => teamMatchesFilters(t, draft)).length,
+      previewCount: (draft) =>
+          base.where((t) => teamMatchesFilters(t, draft)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(teamSavedViewsProvider).views.map((v) => v.name).toSet(),
+      existingViewNames:
+          ref.read(teamSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(teamSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');
@@ -206,7 +216,10 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
   /// produce the "User is already a member." 400 by itself.
   Future<void> _addMembers(Team team) async {
     final all = ref.read(membersProvider).valueOrNull ?? const <Member>[];
-    final candidates = [for (final m in all) if (!team.members.contains(m.id)) m];
+    final candidates = [
+      for (final m in all)
+        if (!team.members.contains(m.id)) m
+    ];
     final picked = <String>{};
 
     final confirmed = await showClozrSheet<bool>(
@@ -226,7 +239,8 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                 children: [
                   if (candidates.isEmpty)
                     Padding(
-                      padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
                       child: Text(
                         all.isEmpty
                             ? 'No teammates have loaded yet.'
@@ -238,15 +252,20 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () => setSheetState(() {
-                        picked.contains(m.id) ? picked.remove(m.id) : picked.add(m.id);
+                        picked.contains(m.id)
+                            ? picked.remove(m.id)
+                            : picked.add(m.id);
                       }),
                       child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                        padding: EdgeInsets.symmetric(
+                            vertical: 11.h, horizontal: 6.w),
                         child: Row(
                           children: [
-                            Expanded(child: Text(m.name, style: AppText.body())),
+                            Expanded(
+                                child: Text(m.name, style: AppText.body())),
                             if (picked.contains(m.id))
-                              Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                              Icon(PhosphorIconsBold.check,
+                                  size: 19.sp, color: AppColors.success),
                           ],
                         ),
                       ),
@@ -259,7 +278,9 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
                           : 'Add ${picked.length} member${picked.length == 1 ? '' : 's'}',
                       icon: PhosphorIconsBold.plus,
                       height: 48,
-                      onTap: picked.isEmpty ? null : () => Navigator.of(ctx).pop(true),
+                      onTap: picked.isEmpty
+                          ? null
+                          : () => Navigator.of(ctx).pop(true),
                     ),
                   ],
                 ],
@@ -319,7 +340,9 @@ class _TeamsScreenState extends ConsumerState<TeamsScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.views.where((v) => v.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     ref.read(teamSavedViewsProvider.notifier).apply(id);

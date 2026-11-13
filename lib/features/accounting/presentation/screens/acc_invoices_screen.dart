@@ -41,7 +41,12 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
-  static const _tabs = {'all': 'All', 'DRAFT': 'Draft', 'ISSUED': 'Issued', 'CANCELLED': 'Cancelled'};
+  static const _tabs = {
+    'all': 'All',
+    'DRAFT': 'Draft',
+    'ISSUED': 'Issued',
+    'CANCELLED': 'Cancelled'
+  };
 
   @override
   void initState() {
@@ -69,7 +74,11 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
     final canCreate = ref.watch(accPermProvider('acc_document')).create;
     registerAdd(
       ref,
-      canCreate ? AddAction(label: 'New invoice', run: (ctx) => ctx.push(Routes.accNewInvoice)) : null,
+      canCreate
+          ? AddAction(
+              label: 'New invoice',
+              run: (ctx) => ctx.push(Routes.accNewInvoice))
+          : null,
     );
 
     final credit = ref.watch(accDocModeProvider) == 'credit';
@@ -90,7 +99,9 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
               title: 'Invoices',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(accDocSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () => ref
+                  .read(accDocSearchOpenProvider.notifier)
+                  .state = !searchOpen,
               onFilter: _openFilters,
             ),
             SizedBox(height: 14.h),
@@ -101,7 +112,8 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
               ],
               selectedIndex: credit ? 1 : 0,
               onChanged: (i) {
-                ref.read(accDocModeProvider.notifier).state = i == 0 ? 'invoices' : 'credit';
+                ref.read(accDocModeProvider.notifier).state =
+                    i == 0 ? 'invoices' : 'credit';
                 // The type filter belongs to the invoice family only.
                 ref.read(accDocFiltersProvider.notifier).state = FilterValues();
               },
@@ -129,7 +141,8 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
                     TabChip(
                       label: e.value,
                       active: tab == e.key,
-                      onTap: () => ref.read(accDocTabProvider.notifier).state = e.key,
+                      onTap: () =>
+                          ref.read(accDocTabProvider.notifier).state = e.key,
                     ),
                 ],
               ),
@@ -165,7 +178,9 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
             EmptyState(
-              icon: credit ? PhosphorIconsRegular.arrowUUpLeft : PhosphorIconsRegular.receipt,
+              icon: credit
+                  ? PhosphorIconsRegular.arrowUUpLeft
+                  : PhosphorIconsRegular.receipt,
               title: credit ? 'No credit notes' : 'No invoices found',
               body: credit
                   ? 'Credit notes raised against issued invoices show up here.'
@@ -182,7 +197,8 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
       onRefresh: refresh,
       child: NotificationListener<ScrollNotification>(
         onNotification: (n) {
-          if (n.metrics.pixels > n.metrics.maxScrollExtent - 400) ctrl.loadMore();
+          if (n.metrics.pixels > n.metrics.maxScrollExtent - 400)
+            ctrl.loadMore();
           return false;
         },
         child: ListView.separated(
@@ -198,7 +214,8 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
                   child: SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, color: AppColors.navy),
                   ),
                 ),
               );
@@ -206,7 +223,8 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
             final d = state.items[i];
             return DocumentCard(
               document: d,
-              onTap: () => context.push('${Routes.accDocumentDetail}?id=${d.id}'),
+              onTap: () =>
+                  context.push('${Routes.accDocumentDetail}?id=${d.id}'),
             );
           },
         ),
@@ -217,14 +235,17 @@ class _AccInvoicesScreenState extends ConsumerState<AccInvoicesScreen> {
   Future<void> _openFilters() async {
     final credit = ref.read(accDocModeProvider) == 'credit';
     final spec = ref.read(documentsFilterSpecProvider(credit));
-    final loaded = ref.read(docListProvider(ref.read(accDocQueryProvider))).items;
+    final loaded =
+        ref.read(docListProvider(ref.read(accDocQueryProvider))).items;
     final result = await showFilterSheet(
       context: context,
       spec: spec,
       initial: ref.read(accDocFiltersProvider),
       // A preview over the rows already loaded; the list itself refetches
       // with the filters applied server-side.
-      previewCount: (draft) => loaded.where((d) => documentMatchesFilters(d, draft, creditNotes: credit)).length,
+      previewCount: (draft) => loaded
+          .where((d) => documentMatchesFilters(d, draft, creditNotes: credit))
+          .length,
     );
     if (result == null) return;
     ref.read(accDocFiltersProvider.notifier).state = result;

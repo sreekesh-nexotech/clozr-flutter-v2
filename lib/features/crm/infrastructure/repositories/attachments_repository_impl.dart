@@ -13,7 +13,9 @@ class AttachmentsRepositoryImpl implements AttachmentsRepository {
   @override
   Future<List<LeadFile>> getFiles(String relatedTo, String relatedToId) async {
     await Future<void>.delayed(AppConstants.mockLatency);
-    return relatedTo == 'lead' ? _local.fetchFilesForLead(relatedToId) : const [];
+    return relatedTo == 'lead'
+        ? _local.fetchFilesForLead(relatedToId)
+        : const [];
   }
 
   @override
@@ -43,4 +45,11 @@ class AttachmentsRepositoryImpl implements AttachmentsRepository {
   }) =>
       uploadFile(
           relatedTo: 'lead', relatedToId: leadId, path: path, name: name);
+
+  @override
+  Future<String?> renameFile(String attachmentId, String name) async => null;
+
+  @override
+  Future<String?> deleteFile(String attachmentId, {bool quiet = false}) async =>
+      null;
 }

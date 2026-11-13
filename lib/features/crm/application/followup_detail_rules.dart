@@ -1,3 +1,4 @@
+import '../../../core/utils/relative_time.dart';
 import '../domain/entities/view_schema.dart';
 
 /// Pure copy + display rules of the follow-up detail screen, mirroring the
@@ -5,19 +6,26 @@ import '../domain/entities/view_schema.dart';
 /// `taskCell.tsx dueDateInfo`, `taskInfoFields.tsx`). Kept free of widgets so
 /// they are unit-tested.
 
-/// Webapp `deleteTaskMessage` for a follow-up.
-String followupDeleteMessage(int? notes, int? files) {
+/// Webapp `deleteTaskMessage(noun, notes, files)` — the delete confirm's body,
+/// naming how many notes and files go with the record once they are known.
+String deleteTaskMessage(String noun, int? notes, int? files) {
   String count(int n, String one, String many) => '$n ${n == 1 ? one : many}';
   if (notes == null || files == null) {
-    return "This permanently removes the follow-up together with its notes and files. This can't be undone.";
+    return "This permanently removes the $noun together with its notes and files. This can't be undone.";
   }
   final parts = [
     if (notes > 0) count(notes, 'note', 'notes'),
     if (files > 0) count(files, 'file', 'files'),
   ];
-  if (parts.isEmpty) return "This permanently removes the follow-up. This can't be undone.";
-  return "This permanently removes the follow-up and its ${parts.join(' and ')}. This can't be undone.";
+  if (parts.isEmpty) {
+    return "This permanently removes the $noun. This can't be undone.";
+  }
+  return "This permanently removes the $noun and its ${parts.join(' and ')}. This can't be undone.";
 }
+
+/// [deleteTaskMessage] for a follow-up.
+String followupDeleteMessage(int? notes, int? files) =>
+    deleteTaskMessage('follow-up', notes, files);
 
 /// Webapp `reopenBlockedReason('follow-up')`.
 const followupReopenOffHint =
@@ -27,7 +35,8 @@ const followupReopenOffHint =
 const followupUnlinkedText = 'Internal follow-up — not linked to any record.';
 
 /// The actions-band button: "Mark complete", or "Mark as not done" once done.
-String followupCompleteLabel(bool done) => done ? 'Mark as not done' : 'Mark complete';
+String followupCompleteLabel(bool done) =>
+    done ? 'Mark as not done' : 'Mark complete';
 
 String _clean(Object? v) {
   final s = '${v ?? ''}'.trim();
@@ -36,7 +45,8 @@ String _clean(Object? v) {
 
 /// Webapp `relatedModelLabel`: "lead" → "Lead", "organization_contact" →
 /// "Contact", an unknown model → its words capitalised.
-String followupRelatedModelLabel(String? model) => switch (_clean(model).toLowerCase()) {
+String followupRelatedModelLabel(String? model) =>
+    switch (_clean(model).toLowerCase()) {
       'lead' => 'Lead',
       'customer' => 'Customer',
       'product' => 'Product',
@@ -76,7 +86,20 @@ String followupRelatedRowValue(Object? related) {
   return model.isEmpty ? label : '$label · $model';
 }
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 /// Webapp `dueDateInfo().label`: a `YYYY-MM-DD` due date as "18 Jun 2026".
 /// Falls back to [fallback] (the list's own formatted date) when the record's
@@ -85,7 +108,7 @@ String followupDueLabel(Object? dueIso, {String fallback = ''}) {
   final s = _clean(dueIso);
   final d = s.isEmpty ? null : DateTime.tryParse(s);
   if (d == null) return s.isEmpty ? fallback.trim() : s;
-  return '${d.day} ${_months[d.month - 1]} ${d.year}';
+  return fmtDay(d);
 }
 
 /// The tint of the header's due line (webapp `DUE_TONE`).

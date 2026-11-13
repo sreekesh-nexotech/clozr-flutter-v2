@@ -19,81 +19,128 @@ class DashKpiCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasSpark = kpi.spark != null;
-    return GestureDetector(
+    // One spoken unit per card — label, value, caption and trend — instead of
+    // five separate fragments a screen reader would read out of order.
+    final spoken = [
+      kpi.label,
+      '${kpi.value}${kpi.unit.isEmpty ? '' : ' ${kpi.unit}'}',
+      if (kpi.sub.isNotEmpty) kpi.sub,
+      if (kpi.trend.isNotEmpty) 'trend ${kpi.trend}',
+    ].join(', ');
+    return Semantics(
+      container: true,
+      button: onTap != null,
+      label: spoken,
+      excludeSemantics: true,
       onTap: onTap,
-      child: Container(
-        clipBehavior: Clip.hardEdge,
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(16.r),
-          border: Border.all(color: AppColors.borderCardSoft),
-          boxShadow: [
-            BoxShadow(color: const Color(0xFF101828).withOpacity(0.04), blurRadius: 2, offset: const Offset(0, 1)),
-            BoxShadow(color: const Color(0xFF101828).withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 10)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(14.r, 14.r, 14.r, hasSpark ? 8.h : 14.r),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        width: 30.w,
-                        height: 30.w,
-                        decoration: BoxDecoration(color: kpi.iconBg, borderRadius: BorderRadius.circular(9.r)),
-                        child: Icon(kpi.icon, size: 16.sp, color: kpi.accent),
-                      ),
-                      _trendPill(),
-                    ],
-                  ),
-                  SizedBox(height: 12.h),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(kpi.value,
-                          style: AppText.custom(size: 25, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.6)),
-                      if (kpi.unit.isNotEmpty) ...[
-                        SizedBox(width: 3.w),
-                        Text(kpi.unit, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                      ],
-                    ],
-                  ),
-                  SizedBox(height: 2.h),
-                  Text(kpi.label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBodyMuted)),
-                  SizedBox(height: 1.h),
-                  Text(kpi.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.micro()),
-                  if (kpi.progress != null)
-                    Padding(
-                      padding: EdgeInsets.only(top: 15.h),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(999.r),
-                        child: LinearProgressIndicator(
-                          value: kpi.progress,
-                          minHeight: 7.h,
-                          backgroundColor: AppColors.borderCardSoft,
-                          valueColor: AlwaysStoppedAnimation(kpi.accent),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          clipBehavior: Clip.hardEdge,
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            border: Border.all(color: AppColors.borderCardSoft),
+            boxShadow: [
+              BoxShadow(
+                  color: const Color(0xFF101828).withOpacity(0.04),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1)),
+              BoxShadow(
+                  color: const Color(0xFF101828).withOpacity(0.05),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                    14.r, 14.r, 14.r, hasSpark ? 8.h : 14.r),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          width: 30.w,
+                          height: 30.w,
+                          decoration: BoxDecoration(
+                              color: kpi.iconBg,
+                              borderRadius: BorderRadius.circular(9.r)),
+                          child: Icon(kpi.icon, size: 16.sp, color: kpi.accent),
                         ),
+                        _trendPill(),
+                      ],
+                    ),
+                    SizedBox(height: 12.h),
+                    // A very large figure shrinks to fit the card rather than
+                    // overflowing it.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(kpi.value,
+                              style: AppText.custom(
+                                  size: 25,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.6)),
+                          if (kpi.unit.isNotEmpty) ...[
+                            SizedBox(width: 3.w),
+                            Text(kpi.unit,
+                                style: AppText.custom(
+                                    size: 12,
+                                    weight: FontWeight.w600,
+                                    color: AppColors.textPlaceholder)),
+                          ],
+                        ],
                       ),
                     ),
-                ],
+                    SizedBox(height: 2.h),
+                    Text(kpi.label,
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: AppColors.textBodyMuted)),
+                    SizedBox(height: 1.h),
+                    Text(kpi.sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.micro()),
+                    if (kpi.progress != null)
+                      Padding(
+                        padding: EdgeInsets.only(top: 15.h),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999.r),
+                          child: LinearProgressIndicator(
+                            value: kpi.progress,
+                            minHeight: 7.h,
+                            backgroundColor: AppColors.borderCardSoft,
+                            valueColor: AlwaysStoppedAnimation(kpi.accent),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            if (hasSpark)
-              SizedBox(
-                height: 30.h,
-                width: double.infinity,
-                child: Sparkline(values: kpi.spark!, color: kpi.accent, height: 30.h),
-              ),
-          ],
+              if (hasSpark)
+                SizedBox(
+                  height: 30.h,
+                  width: double.infinity,
+                  child: Sparkline(
+                      values: kpi.spark!, color: kpi.accent, height: 30.h),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -115,10 +162,14 @@ class DashKpiCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11.sp, color: positive ? DashColors.green : DashColors.red),
+          Icon(icon,
+              size: 11.sp, color: positive ? DashColors.green : DashColors.red),
           SizedBox(width: 3.w),
           Text(kpi.trend,
-              style: AppText.custom(size: 11, weight: FontWeight.w700, color: positive ? DashColors.green : DashColors.red)),
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w700,
+                  color: positive ? DashColors.green : DashColors.red)),
         ],
       ),
     );
@@ -135,7 +186,9 @@ class DashKpiGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DashTwoColGrid(
-      children: [for (final k in kpis) DashKpiCard(kpi: k, onTap: () => onTapKpi(k))],
+      children: [
+        for (final k in kpis) DashKpiCard(kpi: k, onTap: () => onTapKpi(k))
+      ],
     );
   }
 }
@@ -156,7 +209,10 @@ class DashTwoColGrid extends StatelessWidget {
         children: [
           Expanded(child: children[i]),
           SizedBox(width: 12.w),
-          Expanded(child: (i + 1) < children.length ? children[i + 1] : const SizedBox()),
+          Expanded(
+              child: (i + 1) < children.length
+                  ? children[i + 1]
+                  : const SizedBox()),
         ],
       ));
     }

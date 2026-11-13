@@ -18,7 +18,8 @@ class ChatMessage extends Equatable {
   final bool mine; // true = sent by me (right, blue bubble)
   final String text;
   final String time;
-  final String status; // 'read' | 'sent' | 'failed' | '' (only meaningful when mine)
+  final String
+      status; // 'read' | 'sent' | 'failed' | '' (only meaningful when mine)
   final bool tpl; // approved WhatsApp template message
 
   /// Client-side id for optimistic outgoing bubbles, so the send result can be
@@ -61,8 +62,17 @@ class ChatMessage extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [mine, text, time, status, tpl, localId, attachmentPath, attachmentKind, mediaId];
+  List<Object?> get props => [
+        mine,
+        text,
+        time,
+        status,
+        tpl,
+        localId,
+        attachmentPath,
+        attachmentKind,
+        mediaId
+      ];
 }
 
 /// One conversation's thread as the API serves it: the messages, plus the two

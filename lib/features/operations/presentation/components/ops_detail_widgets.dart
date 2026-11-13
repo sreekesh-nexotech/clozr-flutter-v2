@@ -13,11 +13,17 @@ class AuditEntry {
   final Color bg;
   final String title;
   final String sub;
-  const AuditEntry({required this.icon, required this.tone, required this.bg, required this.title, required this.sub});
+  const AuditEntry(
+      {required this.icon,
+      required this.tone,
+      required this.bg,
+      required this.title,
+      required this.sub});
 }
 
 String opsInitials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
   if (parts.isEmpty) return '?';
   if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
   return (parts.first.substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
@@ -41,18 +47,28 @@ class OpsAuditLog extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16.sp, color: AppColors.textLabelAlt),
+              Icon(PhosphorIconsRegular.clockCounterClockwise,
+                  size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
-              Text('Audit log', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Audit log',
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
           if (entries.isEmpty && emptyText != null)
             Padding(
               padding: EdgeInsets.only(bottom: 12.h),
-              child: Text(emptyText!, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+              child: Text(emptyText!,
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder)),
             ),
-          for (int i = 0; i < entries.length; i++) _row(entries[i], i < entries.length - 1),
+          for (int i = 0; i < entries.length; i++)
+            _row(entries[i], i < entries.length - 1),
         ],
       ),
     );
@@ -74,7 +90,10 @@ class OpsAuditLog extends StatelessWidget {
               ),
               if (hasLine)
                 Expanded(
-                  child: Container(width: 1.5.w, constraints: BoxConstraints(minHeight: 12.h), color: AppColors.borderCardSoft),
+                  child: Container(
+                      width: 1.5.w,
+                      constraints: BoxConstraints(minHeight: 12.h),
+                      color: AppColors.borderCardSoft),
                 ),
             ],
           ),
@@ -85,9 +104,17 @@ class OpsAuditLog extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.title, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(a.title,
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
-                  Text(a.sub, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                  Text(a.sub,
+                      style: AppText.custom(
+                          size: 12.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted2)),
                 ],
               ),
             ),
@@ -136,9 +163,14 @@ class _OpsNotesCardState extends State<OpsNotesCard> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.note, size: 16.sp, color: AppColors.textLabelAlt),
+              Icon(PhosphorIconsRegular.note,
+                  size: 16.sp, color: AppColors.textLabelAlt),
               SizedBox(width: 7.w),
-              Text('Notes', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Notes',
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
@@ -156,7 +188,10 @@ class _OpsNotesCardState extends State<OpsNotesCard> {
                   ),
                   child: TextField(
                     controller: _ctrl,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textBody),
                     cursorColor: AppColors.blueBright,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _add(),
@@ -164,7 +199,10 @@ class _OpsNotesCardState extends State<OpsNotesCard> {
                       isDense: true,
                       border: InputBorder.none,
                       hintText: 'Add a note…',
-                      hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                      hintStyle: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder),
                     ),
                   ),
                 ),
@@ -176,8 +214,11 @@ class _OpsNotesCardState extends State<OpsNotesCard> {
                   width: 42.w,
                   height: 42.h,
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
-                  child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 16.sp, color: AppColors.white),
+                  decoration: BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.circular(11.r)),
+                  child: Icon(PhosphorIconsFill.paperPlaneTilt,
+                      size: 16.sp, color: AppColors.white),
                 ),
               ),
             ],
@@ -192,9 +233,13 @@ class _OpsNotesCardState extends State<OpsNotesCard> {
                     width: 28.w,
                     height: 28.w,
                     alignment: Alignment.center,
-                    decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(
+                        color: AppColors.navy, shape: BoxShape.circle),
                     child: Text(opsInitials(n.author),
-                        style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.white)),
+                        style: AppText.custom(
+                            size: 10,
+                            weight: FontWeight.w700,
+                            color: AppColors.white)),
                   ),
                   SizedBox(width: 10.w),
                   Expanded(
@@ -204,13 +249,24 @@ class _OpsNotesCardState extends State<OpsNotesCard> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(n.author, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            Text(n.author,
+                                style: AppText.custom(
+                                    size: 12.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textPrimary)),
                             SizedBox(width: 7.w),
-                            Text(n.time, style: AppText.micro(color: AppColors.textPlaceholder)),
+                            Text(n.time,
+                                style: AppText.micro(
+                                    color: AppColors.textPlaceholder)),
                           ],
                         ),
                         SizedBox(height: 2.h),
-                        Text(n.body, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textSecondary, height: 1.55)),
+                        Text(n.body,
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w500,
+                                color: AppColors.textSecondary,
+                                height: 1.55)),
                       ],
                     ),
                   ),

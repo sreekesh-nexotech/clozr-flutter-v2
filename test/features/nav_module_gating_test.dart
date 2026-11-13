@@ -62,7 +62,31 @@ void main() {
     final a = ModuleAccess.fromJson({
       'modules': {'payment': _perm('Payments')},
     });
-    expect(_visible(a), ['crm']);
+    // Training is plan-gated only (every user gets My Trainings), and
+    // Approvals is for everyone signed in (webapp `requires: 'signedIn'`), so
+    // those are the other entries a payments-only role still sees.
+    expect(_visible(a), ['approvals', 'crm', 'training']);
+  });
+
+  test('Training: learners see only My Trainings, course managers all four',
+      () {
+    List<String> trainingRows(ModuleAccess a) => [
+          for (final c
+              in navCatalog.firstWhere((e) => e.key == 'training').children)
+            if (a.canAny(c.modules)) c.label,
+        ];
+    expect(trainingRows(_crmUser()), ['My Trainings']);
+    final courseAdmin = ModuleAccess.fromJson({
+      'modules': {
+        'course': _perm('Course'),
+        'course_enrollment': _perm('Course Enrollment')
+      },
+    });
+    expect(trainingRows(courseAdmin),
+        ['Training Dashboard', 'My Trainings', 'Learners', 'Course builder']);
+    // Visible to everyone, but never a role's landing screen.
+    expect(landingPathFor(ModuleAccess.fromJson({'modules': {}})),
+        Routes.dashboard);
   });
 
   test('an admin sees Billing, Reports and Dashboard', () {
@@ -85,7 +109,10 @@ void _dashboardTabs() {
     expect(visibleDashboardTabs(_admin()), ['business']);
     expect(visibleDashboardTabs(null), ['business', 'crm', 'ops', 'help']);
     final helpOnly = ModuleAccess.fromJson({
-      'modules': {'issue_dashboard': _perm('Issue Dashboard'), 'issue': _perm('Issues')},
+      'modules': {
+        'issue_dashboard': _perm('Issue Dashboard'),
+        'issue': _perm('Issues')
+      },
     });
     expect(visibleDashboardTabs(helpOnly), ['help']);
   });
@@ -94,7 +121,13 @@ void _dashboardTabs() {
     // System Admin as dev.clozr.tech returns it: four *_dashboard keys, no plain `dashboard`.
     final admin = ModuleAccess.fromJson({
       'modules': {
-        for (final k in ['admin_dashboard', 'crm_dashboard', 'pmo_dashboard', 'issue_dashboard', 'lead'])
+        for (final k in [
+          'admin_dashboard',
+          'crm_dashboard',
+          'pmo_dashboard',
+          'issue_dashboard',
+          'lead'
+        ])
           k: _perm(k),
       },
     });
@@ -105,7 +138,13 @@ void _dashboardTabs() {
     // CRM User + Helpdesk + PMO: no admin_dashboard → no Business tab.
     final mixed = ModuleAccess.fromJson({
       'modules': {
-        for (final k in ['crm_dashboard', 'pmo_dashboard', 'issue_dashboard', 'lead']) k: _perm(k),
+        for (final k in [
+          'crm_dashboard',
+          'pmo_dashboard',
+          'issue_dashboard',
+          'lead'
+        ])
+          k: _perm(k),
       },
     });
     expect(_visible(mixed), contains('dashboard'));

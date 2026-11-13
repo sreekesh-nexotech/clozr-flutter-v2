@@ -87,7 +87,8 @@ void main() {
   });
 
   group('addAttachment', () {
-    test('POSTs multipart to the attachments endpoint, linked to the note', () async {
+    test('POSTs multipart to the attachments endpoint, linked to the note',
+        () async {
       final adapter = _UploadAdapter();
 
       final result = await _dsWith(adapter).addAttachment(
@@ -123,7 +124,8 @@ void main() {
       expect(result, isNull);
     });
 
-    test('a response without a file url yields null rather than a bad link', () async {
+    test('a response without a file url yields null rather than a bad link',
+        () async {
       final adapter = _UploadAdapter(body: {'attachment_id': 'att-1'});
 
       final result = await _dsWith(adapter).addAttachment(

@@ -55,7 +55,8 @@ class AppMonitoring {
     String? message,
   }) async {
     if (kDebugMode) {
-      debugPrint('AppMonitoring.captureError${message == null ? '' : ' [$message]'}: $error');
+      debugPrint(
+          'AppMonitoring.captureError${message == null ? '' : ' [$message]'}: $error');
     }
     if (!Sentry.isEnabled || SentryConfig.isExpectedFailure(error)) return;
     await Sentry.captureException(

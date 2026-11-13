@@ -8,7 +8,11 @@ import '../../../core/network/app_error.dart';
 import '../../../core/network/connectivity_provider.dart';
 import '../../../core/network/network_providers.dart';
 import '../../../core/widgets/keyboard_visibility.dart';
+import '../../approvals/application/providers/approval_actions_providers.dart';
+import '../../approvals/application/providers/approvals_providers.dart';
 import '../../auth/application/providers/auth_providers.dart';
+import '../../training/application/providers/mandatory_block_provider.dart';
+import '../../training/presentation/screens/lms_mandatory_block_screen.dart';
 import '../application/providers/contextual_add_provider.dart';
 import '../application/providers/shell_providers.dart';
 import 'app_drawer.dart';
@@ -25,7 +29,13 @@ class ClozrShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final location = GoRouterState.of(context).uri.toString();
+    // A deep link (`clozr://app/leads`) arrives with its scheme and host; the
+    // route table is keyed by path, so without this the lookup failed and the
+    // bottom nav stayed hidden for the rest of the session (UAT).
+    final uri = GoRouterState.of(context).uri;
+    final location = uri.hasScheme
+        ? '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'
+        : uri.toString();
     final meta = Routes.metaFor(location);
     final drawerOpen = ref.watch(drawerOpenProvider);
     // Started here, not just by [AppDrawer], so the role is known — and the
@@ -63,6 +73,33 @@ class ClozrShell extends ConsumerWidget {
       if (ref.read(pageReportedFailureProvider) == failure.message) return;
       ref.read(toastProvider.notifier).showError(failure.message);
     });
+
+    // A save the server held for approval (202 APPROVAL_REQUIRED, or the
+    // pending ids of a bulk / due-date write) — said here, once, for every
+    // write path (webapp `ApprovalHoldListener`): the record did not change,
+    // so the user must hear that it is waiting, the list cards get their
+    // "Sent for approval" chip, and the approvals counts and banners refresh.
+    ref.listen(apiApprovalHoldProvider, (_, hold) {
+      if (hold == null) return;
+      ref.read(heldRecordsProvider.notifier).markHeld(hold.heldIds);
+      // A bulk or due-date write words its own outcome; a single held save
+      // is said here, in the server's words ("Sent to Priya for approval.").
+      if (hold.isEnvelope)
+        ref.read(toastProvider.notifier).showInfo(hold.message);
+      invalidateApprovals(ref);
+    });
+
+    // A mandatory-course 403 from any endpoint raises the app-wide block
+    // (webapp MandatoryCourseGate). Training stays reachable — its endpoints
+    // are server-exempt and the learner needs them to finish the course.
+    ref.listen(apiCourseBlockProvider, (_, courses) {
+      if (courses != null)
+        ref.read(mandatoryBlockProvider.notifier).setBlock(courses);
+    });
+    final blocked =
+        ref.watch(mandatoryBlockProvider.select((s) => s.blocked)) &&
+            !location.startsWith('/training');
+    final routed = blocked ? const LmsMandatoryBlockScreen() : child;
 
     // Reconnecting should replace stale data, not just recolor the banner.
     // Every repository-backed provider reaches the network through
@@ -116,51 +153,53 @@ class ClozrShell extends ConsumerWidget {
           backgroundColor: AppColors.bgScreen,
           body: Stack(
             children: [
-          // Routed screen. Headers stay edge-to-edge under the real status bar
-          // (their own top padding clears it); the bottom SafeArea keeps every
-          // screen's bottom-anchored content (sticky CTAs, list ends) above the
-          // OS gesture/navigation bar on all device sizes. The simulated iOS
-          // status bar and home-indicator from the design canvas are gone — the
-          // real OS draws those.
-          //
-          // While the keyboard is up the screen also becomes tap-to-dismiss:
-          // otherwise there is no way out of a focused field except the search
-          // field's own × chip, and the keyboard sits over half the results.
-          // Translucent, so a tap that lands on something interactive is still
-          // claimed by that child — only dead space reaches this recogniser.
-          Positioned.fill(
-            child: SafeArea(
-              top: false,
-              bottom: true,
-              child: keyboardOpen
-                  ? GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-                      child: child,
-                    )
-                  : child,
-            ),
-          ),
+              // Routed screen. Headers stay edge-to-edge under the real status bar
+              // (their own top padding clears it); the bottom SafeArea keeps every
+              // screen's bottom-anchored content (sticky CTAs, list ends) above the
+              // OS gesture/navigation bar on all device sizes. The simulated iOS
+              // status bar and home-indicator from the design canvas are gone — the
+              // real OS draws those.
+              //
+              // While the keyboard is up the screen also becomes tap-to-dismiss:
+              // otherwise there is no way out of a focused field except the search
+              // field's own × chip, and the keyboard sits over half the results.
+              // Translucent, so a tap that lands on something interactive is still
+              // claimed by that child — only dead space reaches this recogniser.
+              Positioned.fill(
+                child: SafeArea(
+                  top: false,
+                  bottom: true,
+                  child: keyboardOpen
+                      ? GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () =>
+                              FocusManager.instance.primaryFocus?.unfocus(),
+                          child: routed,
+                        )
+                      : routed,
+                ),
+              ),
 
-          // Bottom nav (conditional) — lifts itself above the gesture inset.
-          // Hidden while the keyboard is up: the Scaffold shrinks the Stack by
-          // the inset, so a bottom-anchored nav is not covered by the keyboard,
-          // it is glued to the top of it — floating over the list on every
-          // search-open screen.
-          if (meta.showNav && !keyboardOpen)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: ClozrBottomNav(location: location),
-            ),
+              // Bottom nav (conditional) — lifts itself above the gesture inset.
+              // Hidden while the keyboard is up: the Scaffold shrinks the Stack by
+              // the inset, so a bottom-anchored nav is not covered by the keyboard,
+              // it is glued to the top of it — floating over the list on every
+              // search-open screen.
+              if (meta.showNav && !keyboardOpen)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: ClozrBottomNav(location: location),
+                ),
 
-          // Drawer.
-          if (drawerOpen) Positioned.fill(child: AppDrawer(location: location)),
+              // Drawer.
+              if (drawerOpen)
+                Positioned.fill(child: AppDrawer(location: location)),
 
-          // The toast is NOT here: it lives above the navigator (see
-          // [ToastOverlay] in app.dart), because bottom sheets open on the
-          // root navigator and would otherwise cover it.
+              // The toast is NOT here: it lives above the navigator (see
+              // [ToastOverlay] in app.dart), because bottom sheets open on the
+              // root navigator and would otherwise cover it.
             ],
           ),
         ),

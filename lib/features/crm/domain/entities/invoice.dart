@@ -35,6 +35,7 @@ class Invoice extends Equatable {
   /// product, issue, task, project, project_task, quotation. So an invoice's
   /// notes hang off the quote it was raised from.
   final String? quoteUuid;
+
   /// The webapp plan-type label (`planTypeLabel(paymentType)`): Lump sum /
   /// Subscription / Instalments – even split / Milestone-based.
   final String type;
@@ -324,8 +325,16 @@ class InvoiceSummary extends Equatable {
 
   @override
   List<Object?> get props => [
-        totalNum, paidNum, remainingNum, currency, status,
-        nextDue, totalRecords, pendingRecords, paidRecords, overdueRecords,
+        totalNum,
+        paidNum,
+        remainingNum,
+        currency,
+        status,
+        nextDue,
+        totalRecords,
+        pendingRecords,
+        paidRecords,
+        overdueRecords,
       ];
 }
 
@@ -364,9 +373,17 @@ class PlanSubscription extends Equatable {
 
   @override
   List<Object?> get props => [
-        periodLabel, amountPerPeriod, amountPerPeriodInclGst, periodsScheduled,
-        periodsPaid, periodsOpen, openEnded, amountScheduledInclGst,
-        amountDueNowInclGst, nextDue, header,
+        periodLabel,
+        amountPerPeriod,
+        amountPerPeriodInclGst,
+        periodsScheduled,
+        periodsPaid,
+        periodsOpen,
+        openEnded,
+        amountScheduledInclGst,
+        amountDueNowInclGst,
+        nextDue,
+        header,
       ];
 }
 
@@ -426,10 +443,23 @@ class PlanRecurring extends Equatable {
 
   @override
   List<Object?> get props => [
-        periodLabel, termPeriods, effectiveTermPeriods, ongoing, amountPerPeriod,
-        amountPerPeriodInclGst, periodsGenerated, periodsPaid, periodsElapsed,
-        progressPct, nextDue, firstPeriodStart, nextPeriodStart,
-        generationEnded, stopFrom, canStop, header,
+        periodLabel,
+        termPeriods,
+        effectiveTermPeriods,
+        ongoing,
+        amountPerPeriod,
+        amountPerPeriodInclGst,
+        periodsGenerated,
+        periodsPaid,
+        periodsElapsed,
+        progressPct,
+        nextDue,
+        firstPeriodStart,
+        nextPeriodStart,
+        generationEnded,
+        stopFrom,
+        canStop,
+        header,
       ];
 }
 
@@ -462,7 +492,8 @@ String planStatusKey({
   required double total,
   String? backendStatus,
 }) {
-  if (backendStatus == 'completed' || (total > 0 && balance <= 0)) return 'completed';
+  if (backendStatus == 'completed' || (total > 0 && balance <= 0))
+    return 'completed';
   if (paid <= 0 && balance >= total) return 'unpaid';
   return 'partial';
 }

@@ -101,22 +101,46 @@ FilterSpec buildCustomersFilterSpec({
             id: 'since',
             label: 'Customer since',
             control: FilterControl.dateRange,
-            dateChips: ['today', 'last7', 'last30', 'last60', 'last90', 'month']),
+            dateChips: [
+              'today',
+              'last7',
+              'last30',
+              'last60',
+              'last90',
+              'month'
+            ]),
       ]),
     ],
   );
 }
 
 /// Evaluate a customer against applied filter values.
-bool customerMatchesFilters(Customer c, FilterValues v) {
-  if (!FilterMatch.matchAnyOf(v.choice('statuses'), [c.status])) return false;
+///
+/// [statusKeys] maps an org status id to the folded key a row carries
+/// (`customerStatusKey`). The drawer's status options are the org's own ids
+/// while [Customer.status] is the folded key, so without the map a picked
+/// status matched nothing and the live "Apply · N results" count read 0.
+bool customerMatchesFilters(Customer c, FilterValues v,
+    {Map<String, String> statusKeys = const {}}) {
+  final statusIds = v.choice('statuses');
+  if (statusIds != null && statusIds.ids.isNotEmpty) {
+    final wanted = {
+      for (final id in statusIds.ids) statusKeys[id] ?? id,
+    };
+    final hit = wanted.contains(c.status);
+    if (statusIds.isNot ? hit : !hit) return false;
+  }
   if (!FilterMatch.matchAnyOf(v.choice('sources'), [c.source])) return false;
   // Account manager = any assignee (customers have no single owner).
-  if (!FilterMatch.matchAnyOf(v.choice('owners'), [c.owner, ...c.team])) return false;
-  if (!FilterMatch.matchAnyOf(v.choice('companies'), [c.company ?? c.name])) return false;
+  if (!FilterMatch.matchAnyOf(v.choice('owners'), [c.owner, ...c.team]))
+    return false;
+  if (!FilterMatch.matchAnyOf(v.choice('companies'), [c.company ?? c.name]))
+    return false;
   if (!FilterMatch.matchAnyOf(v.choice('products'), [c.project])) return false;
-  if (!FilterMatch.matchRange(v.range('value'), c.valueNum, scale: 100000)) return false;
-  if (!FilterMatch.matchDate(v.date('since'), parseCrmDate(c.createdOn))) return false;
+  if (!FilterMatch.matchRange(v.range('value'), c.valueNum, scale: 100000))
+    return false;
+  if (!FilterMatch.matchDate(v.date('since'), parseCrmDate(c.createdOn)))
+    return false;
   return true;
 }
 
@@ -170,7 +194,8 @@ final customerFilterCodecProvider = Provider<CustomerFilterCodec>(
 );
 
 /// Applied drawer filters for the Customers list (the source of the badge).
-final customerFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final customerFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Customers list, backed by `/crm/saved-filters/`.
 ///

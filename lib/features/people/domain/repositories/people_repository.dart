@@ -39,7 +39,8 @@ abstract class PeopleRepository {
 
   /// Adds [userIds] to a team, one call each. Users already on the team are a
   /// no-op rather than an error.
-  Future<void> addTeamMembers({required String teamId, required List<String> userIds});
+  Future<void> addTeamMembers(
+      {required String teamId, required List<String> userIds});
 
   /// The capability cards and visibility scopes the Add role form offers.
   /// Empty when unavailable, which the form reads as "use the built-in set".

@@ -53,7 +53,8 @@ class AccSheetScaffold extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: title, onClose: () => Navigator.of(context).maybePop()),
+        SheetHeader(
+            title: title, onClose: () => Navigator.of(context).maybePop()),
         Flexible(
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 12.h),
@@ -61,7 +62,10 @@ class AccSheetScaffold extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (error != null) ...[
-                  ConflictBanner(error: error!, actionLabel: errorAction, onAction: onErrorAction),
+                  ConflictBanner(
+                      error: error!,
+                      actionLabel: errorAction,
+                      onAction: onErrorAction),
                   SizedBox(height: 13.h),
                 ],
                 for (int i = 0; i < children.length; i++) ...[
@@ -106,17 +110,23 @@ Future<bool> confirmAcc(
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
-      title: Text(title, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
-      content: Text(body, style: AppText.body(color: AppColors.textMuted).copyWith(height: 1.45)),
+      title: Text(title,
+          style: AppText.custom(
+              size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+      content: Text(body,
+          style:
+              AppText.body(color: AppColors.textMuted).copyWith(height: 1.45)),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text('Cancel', style: AppText.bodyStrong(color: AppColors.textLabelAlt)),
+          child: Text('Cancel',
+              style: AppText.bodyStrong(color: AppColors.textLabelAlt)),
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           child: Text(confirmLabel,
-              style: AppText.bodyStrong(color: destructive ? AppColors.error : AppColors.navy)),
+              style: AppText.bodyStrong(
+                  color: destructive ? AppColors.error : AppColors.navy)),
         ),
       ],
     ),

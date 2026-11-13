@@ -10,7 +10,8 @@ import '../messages_tokens.dart';
 /// optional TEMPLATE badge and, for outgoing messages, read/sent ticks.
 /// Mirrors design lines 5780–5789.
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message, this.onRetry, this.onOpenAttachment});
+  const MessageBubble(
+      {super.key, required this.message, this.onRetry, this.onOpenAttachment});
 
   final ChatMessage message;
 
@@ -29,7 +30,8 @@ class MessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 3.h),
       child: Row(
-        mainAxisAlignment: m.mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            m.mine ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 282.w),
@@ -37,72 +39,90 @@ class MessageBubble extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: openable ? onOpenAttachment : null,
               child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 9.h),
-              decoration: BoxDecoration(
-                color: m.mine ? AppColors.tintBlue : AppColors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(14.r),
-                  topRight: Radius.circular(14.r),
-                  bottomLeft: Radius.circular(m.mine ? 14.r : 4.r),
-                  bottomRight: Radius.circular(m.mine ? 4.r : 14.r),
+                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 9.h),
+                decoration: BoxDecoration(
+                  color: m.mine ? AppColors.tintBlue : AppColors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(14.r),
+                    topRight: Radius.circular(14.r),
+                    bottomLeft: Radius.circular(m.mine ? 14.r : 4.r),
+                    bottomRight: Radius.circular(m.mine ? 4.r : 14.r),
+                  ),
+                  border: Border.all(
+                    color: m.mine
+                        ? MessagesColors.myBubbleBorder
+                        : AppColors.borderCardSoft,
+                    width: 1,
+                  ),
                 ),
-                border: Border.all(
-                  color: m.mine ? MessagesColors.myBubbleBorder : AppColors.borderCardSoft,
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (m.isAttachment)
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (m.isAttachment)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            m.attachmentKind == 'image'
+                                ? PhosphorIconsRegular.image
+                                : PhosphorIconsRegular.filePdf,
+                            size: 15.sp,
+                            color: AppColors.blueBright,
+                          ),
+                          SizedBox(width: 6.w),
+                          Text(m.text,
+                              style: AppText.custom(
+                                      size: 13.5,
+                                      weight: FontWeight.w500,
+                                      color: openable
+                                          ? AppColors.blueBright
+                                          : AppColors.textBody)
+                                  .copyWith(
+                                      height: 1.5,
+                                      decoration: openable
+                                          ? TextDecoration.underline
+                                          : null)),
+                        ],
+                      )
+                    else
+                      Text(m.text,
+                          style: AppText.custom(
+                                  size: 13.5,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textBody)
+                              .copyWith(height: 1.5)),
+                    if (m.tpl) ...[
+                      SizedBox(height: 6.h),
+                      _templateBadge(),
+                    ],
+                    SizedBox(height: 3.h),
                     Row(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          m.attachmentKind == 'image' ? PhosphorIconsRegular.image : PhosphorIconsRegular.filePdf,
-                          size: 15.sp,
-                          color: AppColors.blueBright,
-                        ),
-                        SizedBox(width: 6.w),
-                        Text(m.text,
-                            style: AppText.custom(
-                                    size: 13.5,
-                                    weight: FontWeight.w500,
-                                    color: openable ? AppColors.blueBright : AppColors.textBody)
-                                .copyWith(height: 1.5, decoration: openable ? TextDecoration.underline : null)),
-                      ],
-                    )
-                  else
-                    Text(m.text,
-                        style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody)
-                            .copyWith(height: 1.5)),
-                  if (m.tpl) ...[
-                    SizedBox(height: 6.h),
-                    _templateBadge(),
-                  ],
-                  SizedBox(height: 3.h),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: m.mine && m.failed
-                        ? [_failedAffordance()]
-                        : [
-                            Text(m.time,
-                                style: AppText.custom(size: 10, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                            if (m.mine) ...[
-                              SizedBox(width: 4.w),
-                              Icon(PhosphorIconsRegular.checks,
-                                  size: 13.sp,
-                                  color: m.status == 'read' ? AppColors.blueBright : AppColors.textPlaceholder),
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: m.mine && m.failed
+                          ? [_failedAffordance()]
+                          : [
+                              Text(m.time,
+                                  style: AppText.custom(
+                                      size: 10,
+                                      weight: FontWeight.w500,
+                                      color: AppColors.textPlaceholder)),
+                              if (m.mine) ...[
+                                SizedBox(width: 4.w),
+                                Icon(PhosphorIconsRegular.checks,
+                                    size: 13.sp,
+                                    color: m.status == 'read'
+                                        ? AppColors.blueBright
+                                        : AppColors.textPlaceholder),
+                              ],
                             ],
-                          ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         ],
       ),
@@ -118,10 +138,12 @@ class MessageBubble extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsFill.warningCircle, size: 12.sp, color: AppColors.error),
+          Icon(PhosphorIconsFill.warningCircle,
+              size: 12.sp, color: AppColors.error),
           SizedBox(width: 4.w),
           Text('Not delivered · Retry',
-              style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.error)),
+              style: AppText.custom(
+                  size: 10.5, weight: FontWeight.w700, color: AppColors.error)),
         ],
       ),
     );
@@ -130,14 +152,20 @@ class MessageBubble extends StatelessWidget {
   Widget _templateBadge() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-      decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(6.r)),
+      decoration: BoxDecoration(
+          color: AppColors.tintGreen, borderRadius: BorderRadius.circular(6.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsFill.sealCheck, size: 10.sp, color: AppColors.success),
+          Icon(PhosphorIconsFill.sealCheck,
+              size: 10.sp, color: AppColors.success),
           SizedBox(width: 4.w),
           Text('TEMPLATE',
-              style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.success, letterSpacing: 0.4)),
+              style: AppText.custom(
+                  size: 9.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.success,
+                  letterSpacing: 0.4)),
         ],
       ),
     );

@@ -30,15 +30,18 @@ class RewardsRemoteDataSource {
 
   final ApiService _api;
 
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   /// GET /milestones/progress/ rows (paginated, bounded), scoped to the
   /// signed-in user when the session id is known.
-  Future<List<Map<String, dynamic>>> fetchProgressRows() => _pages(ApiEndpoints.milestoneProgress);
+  Future<List<Map<String, dynamic>>> fetchProgressRows() =>
+      _pages(ApiEndpoints.milestoneProgress);
 
   /// GET /milestones/rewards/ grant rows. Visibility rules may 403 — the
   /// repository treats that as "no grants".
-  Future<List<Map<String, dynamic>>> fetchGrantRows() => _pages(ApiEndpoints.milestoneRewards);
+  Future<List<Map<String, dynamic>>> fetchGrantRows() =>
+      _pages(ApiEndpoints.milestoneRewards);
 
   /// The org's milestone tracks, their steps, and the milestone catalog the
   /// steps point at — the three pieces the Closer Track is built from.
@@ -167,7 +170,8 @@ class RewardsRemoteDataSource {
         row,
         index: goals.length,
         grantByKey: grantByKey,
-        pastRows: pastByMilestone[row['milestone']?.toString() ?? ''] ?? const [],
+        pastRows:
+            pastByMilestone[row['milestone']?.toString() ?? ''] ?? const [],
       );
       if (goal != null) goals.add(goal);
     }
@@ -201,7 +205,7 @@ class RewardsRemoteDataSource {
       profile: profile,
       lastUpdated: lastSwept == null
           ? base.lastUpdated
-          : DateFormat('d MMM yyyy, HH:mm').format(lastSwept.toLocal()),
+          : DateFormat('dd/MM/yyyy, HH:mm').format(lastSwept.toLocal()),
       goals: goals,
       // Built from the track/step/milestone rows when they are there; the
       // screen still hides the card when they are not (no track, no steps),
@@ -239,7 +243,8 @@ class RewardsRemoteDataSource {
   }) {
     Map<String, dynamic>? track;
     for (final t in trackRows) {
-      if (t is Map<String, dynamic> && (t['status'] as String? ?? 'active') == 'active') {
+      if (t is Map<String, dynamic> &&
+          (t['status'] as String? ?? 'active') == 'active') {
         track = t;
         break;
       }
@@ -250,7 +255,8 @@ class RewardsRemoteDataSource {
     final steps = <Map<String, dynamic>>[
       for (final s in stepRows)
         if (s is Map<String, dynamic> && s['track'] == trackId) s,
-    ]..sort((a, b) => ((a['sequence'] as num?) ?? 0).compareTo((b['sequence'] as num?) ?? 0));
+    ]..sort((a, b) =>
+        ((a['sequence'] as num?) ?? 0).compareTo((b['sequence'] as num?) ?? 0));
     if (steps.isEmpty) return fallback;
 
     final milestoneById = <String, Map<String, dynamic>>{
@@ -281,7 +287,8 @@ class RewardsRemoteDataSource {
       final mid = step['milestone'] as String? ?? '';
       final m = milestoneById[mid];
       final name = (m?['name'] as String?)?.trim();
-      final title = (name == null || name.isEmpty) ? 'Level ${step['sequence']}' : name;
+      final title =
+          (name == null || name.isEmpty) ? 'Level ${step['sequence']}' : name;
       final measure = _measureLabel(
           m?['measure'] as String?, m?['target_value'] ?? m?['condition']);
       final isDone = done.contains(mid);
@@ -294,7 +301,9 @@ class RewardsRemoteDataSource {
         here = true;
         reachedCurrent = true;
         upNextTitle = title;
-        upNextSub = measure.isEmpty ? 'Next level on the track' : 'Needs $measure to unlock';
+        upNextSub = measure.isEmpty
+            ? 'Next level on the track'
+            : 'Needs $measure to unlock';
         // The bar reads this level's own progress row: how far along the
         // measure the user is, against the target the milestone snapshotted.
         final row = progressByMilestone[mid];
@@ -318,8 +327,10 @@ class RewardsRemoteDataSource {
         title: title,
         sub: switch (kind) {
           RewardLevelKind.done => measure.isEmpty ? '' : '$measure · ',
-          RewardLevelKind.current => measure.isEmpty ? 'In progress' : '$measure · In progress',
-          RewardLevelKind.locked => measure.isEmpty ? 'Locked' : '$measure · Locked',
+          RewardLevelKind.current =>
+            measure.isEmpty ? 'In progress' : '$measure · In progress',
+          RewardLevelKind.locked =>
+            measure.isEmpty ? 'Locked' : '$measure · Locked',
         },
         subTail: kind == RewardLevelKind.done ? 'Achieved' : '',
         kind: kind,
@@ -331,12 +342,17 @@ class RewardsRemoteDataSource {
     if (!reachedCurrent && ordered.isNotEmpty) {
       final top = ordered.last;
       ordered[ordered.length - 1] = RewardLevel(
-        title: top.title, sub: top.sub, subTail: top.subTail, kind: top.kind, here: true);
+          title: top.title,
+          sub: top.sub,
+          subTail: top.subTail,
+          kind: top.kind,
+          here: true);
       upNextTitle = 'All levels achieved';
       upNextSub = 'You have cleared every level on this track';
     }
 
-    final doneCount = ordered.where((l) => l.kind == RewardLevelKind.done).length;
+    final doneCount =
+        ordered.where((l) => l.kind == RewardLevelKind.done).length;
     // The bar shows progress *toward the next level* when its row is known,
     // else how many levels are cleared.
     final pct = upNextPct ?? (doneCount * 100 / ordered.length).round();
@@ -379,7 +395,9 @@ class RewardsRemoteDataSource {
     if (measure == null || measure.isEmpty) return '';
     // The catalog row carries the target as `target_value` ("10000.00");
     // `condition` is `{}` there. Both shapes are accepted.
-    final raw = condition is Map ? (condition['value'] ?? condition['target']) : condition;
+    final raw = condition is Map
+        ? (condition['value'] ?? condition['target'])
+        : condition;
     final n = raw == null ? null : parseAmount(raw);
     final target = n == null || n == 0 ? null : _short(n);
     final noun = switch (measure) {
@@ -430,8 +448,11 @@ class RewardsRemoteDataSource {
       date: row['period_label'] as String? ?? '',
       pill: pill,
       achieveTitle: title,
-      achieveSub: target > 0 ? 'Reach ${formatValue(target, target)} to unlock the reward' : '',
-      progLeft: '${formatValue(currentValue, target)} / ${formatValue(target, target)}',
+      achieveSub: target > 0
+          ? 'Reach ${formatValue(target, target)} to unlock the reward'
+          : '',
+      progLeft:
+          '${formatValue(currentValue, target)} / ${formatValue(target, target)}',
       progRight: '$pct%',
       progPct: pct,
       rwIcon: visual.$1,
@@ -458,7 +479,8 @@ class RewardsRemoteDataSource {
   /// Percent 0–100 from the row's `pct` (a 0–1 ratio server-side; values > 1
   /// are tolerated as pre-multiplied percents), falling back to
   /// current/target.
-  static int progressPct(Map<String, dynamic> row, double current, double target) {
+  static int progressPct(
+      Map<String, dynamic> row, double current, double target) {
     final raw = parseAmount(row['pct']);
     double pct;
     if (raw > 0) {
@@ -477,7 +499,8 @@ class RewardsRemoteDataSource {
   /// measure library only has counts and INR values).
   static String formatValue(double value, double target) {
     final money = target >= 1000;
-    if (money) return '₹${NumberFormat.decimalPattern('en_IN').format(value.round())}';
+    if (money)
+      return '₹${NumberFormat.decimalPattern('en_IN').format(value.round())}';
     return value == value.roundToDouble()
         ? value.round().toString()
         : value.toStringAsFixed(1);

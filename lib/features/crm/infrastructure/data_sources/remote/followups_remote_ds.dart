@@ -97,9 +97,11 @@ class FollowupsRemoteDataSource {
     };
     final desc = _str(fields['description'])?.trim();
     if (desc != null && desc.isNotEmpty) body['description'] = desc;
-    final iso = CrmTasksRemoteDataSource.isoDateOrNull(_str(fields['due_date']));
+    final iso =
+        CrmTasksRemoteDataSource.isoDateOrNull(_str(fields['due_date']));
     if (iso != null) body['due_date'] = iso;
-    final time = CrmTasksRemoteDataSource.apiTimeOrNull(_str(fields['due_time']));
+    final time =
+        CrmTasksRemoteDataSource.apiTimeOrNull(_str(fields['due_time']));
     if (time != null) body['due_time'] = time;
     body.addAll(CrmTasksRemoteDataSource.relatedTo(fields));
     final res = await _api.post(ApiEndpoints.crmTasks, body: body);
@@ -125,7 +127,8 @@ class FollowupsRemoteDataSource {
       'is_followup': true,
     };
     // Webapp `createTask`: the kind goes on the query too (`kindParams`).
-    final res = await _api.post(ApiEndpoints.crmTasks, body: body, query: const {'is_followup': 'true'});
+    final res = await _api.post(ApiEndpoints.crmTasks,
+        body: body, query: const {'is_followup': 'true'});
     return res is Map<String, dynamic> ? followupFromJson(res) : null;
   }
 
@@ -139,7 +142,8 @@ class FollowupsRemoteDataSource {
     if (statusId == null) return;
     // Webapp: `PATCH /crm/tasks/{id}/?is_followup=true` — without the flag the
     // server does not find a follow-up and answers 404.
-    await _api.patch('${ApiEndpoints.crmTask(id)}?is_followup=true', body: {'status_id': statusId});
+    await _api.patch('${ApiEndpoints.crmTask(id)}?is_followup=true',
+        body: {'status_id': statusId});
   }
 
   /// The org's lanes as `name` → `status_type`, for folding (see
@@ -203,7 +207,8 @@ class FollowupsRemoteDataSource {
             (statusRaw is Map ? _str(statusRaw['status_type']) : null) ??
             '')
         .toLowerCase();
-    final folded = crmTaskStatusKey(name: statusName, type: statusType.isEmpty ? null : statusType);
+    final folded = crmTaskStatusKey(
+        name: statusName, type: statusType.isEmpty ? null : statusType);
 
     return Followup(
       raw: json,
@@ -229,7 +234,8 @@ class FollowupsRemoteDataSource {
       statusName: statusName ?? '',
       priority: _refName(json['priority']),
       // Webapp `isTerminal`: no caption once completed or cancelled.
-      dueNote: folded == 'done' || const {'completed', 'cancelled'}.contains(statusType)
+      dueNote: folded == 'done' ||
+              const {'completed', 'cancelled'}.contains(statusType)
           ? ''
           : CrmTasksRemoteDataSource.dueNoteFor(dueDate, now: now),
     );
@@ -260,8 +266,8 @@ class FollowupsRemoteDataSource {
     }
     if (fallback != null) return _str(fallback['crm_task_status_id']);
     for (final s in statuses) {
-      final key = crmTaskStatusKey(
-          name: _str(s['name']), type: _str(s['status_type']));
+      final key =
+          crmTaskStatusKey(name: _str(s['name']), type: _str(s['status_type']));
       if (key != 'done') return _str(s['crm_task_status_id']);
     }
     return null;

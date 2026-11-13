@@ -10,6 +10,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<DashboardData> getDashboard(
-          {String period = 'month', String? teamId, String? userId}) async =>
+          {String period = 'month',
+          String? teamId,
+          String? userId,
+          String? from,
+          String? to}) async =>
       _ds.load();
 }

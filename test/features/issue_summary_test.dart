@@ -60,7 +60,8 @@ void main() {
       expect(s.resolvedTotal, 7); // Resolved 5 + Closed 2
     });
 
-    test('"Within SLA" is everything not breached and not due within the hour', () {
+    test('"Within SLA" is everything not breached and not due within the hour',
+        () {
       expect(s.withinSla, 9 + 3 + 7);
     });
   });

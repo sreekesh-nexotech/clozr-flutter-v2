@@ -31,4 +31,12 @@ abstract class AttachmentsRepository {
     required String name,
     String description,
   });
+
+  /// Renames a stored attachment (`PATCH /crm/attachments/{id}/`). Returns the
+  /// error text when the server refuses, null on success.
+  Future<String?> renameFile(String attachmentId, String name);
+
+  /// Deletes a stored attachment (`DELETE /crm/attachments/{id}/`). Returns the
+  /// error text when the server refuses, null on success.
+  Future<String?> deleteFile(String attachmentId, {bool quiet = false});
 }

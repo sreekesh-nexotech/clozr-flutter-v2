@@ -111,7 +111,8 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Create team', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Create team', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -135,13 +136,18 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
               AppTextField(
                 label: 'Team lead (optional)',
                 readOnly: true,
-                value: _lead.isEmpty ? 'No lead yet' : (byId[_lead]?.name ?? _lead),
+                value: _lead.isEmpty
+                    ? 'No lead yet'
+                    : (byId[_lead]?.name ?? _lead),
                 onTap: () => _pickLead(leadOpts),
               ),
               SizedBox(height: 6.h),
               Text(
                 'Team lead is a designation only — it grants no scope or permissions.',
-                style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder),
               ),
               SizedBox(height: 14.h),
               AppTextField(
@@ -149,16 +155,17 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
                 readOnly: true,
                 value: _members.isEmpty
                     ? 'No members yet'
-                    : _members
-                        .map((id) => byId[id]?.name ?? id)
-                        .join(', '),
+                    : _members.map((id) => byId[id]?.name ?? id).join(', '),
                 onTap: () => _pickMembers(members),
               ),
               SizedBox(height: 6.h),
               Text(
                 'Added with the team. You can change the roster afterwards from '
                 'the team itself.',
-                style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder),
               ),
               SizedBox(height: 20.h),
               PrimaryButton(
@@ -180,7 +187,8 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
       builder: (ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SheetHeader(title: 'Team lead', onClose: () => Navigator.of(ctx).pop()),
+          SheetHeader(
+              title: 'Team lead', onClose: () => Navigator.of(ctx).pop()),
           Flexible(
             child: ListView(
               shrinkWrap: true,
@@ -194,12 +202,14 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
                       Navigator.of(ctx).pop();
                     },
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
                       child: Row(
                         children: [
                           Expanded(child: Text(label, style: AppText.body())),
                           if (value == _lead)
-                            Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                            Icon(PhosphorIconsBold.check,
+                                size: 19.sp, color: AppColors.success),
                         ],
                       ),
                     ),
@@ -240,7 +250,8 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
                 children: [
                   if (members.isEmpty)
                     Padding(
-                      padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
                       child: Text(
                         'No teammates have loaded yet.',
                         style: AppText.body(color: AppColors.textMuted),
@@ -255,10 +266,12 @@ class _CreateTeamSheetState extends ConsumerState<_CreateTeamSheet> {
                             : _members.add(m.id);
                       }),
                       child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                        padding: EdgeInsets.symmetric(
+                            vertical: 11.h, horizontal: 6.w),
                         child: Row(
                           children: [
-                            Expanded(child: Text(m.name, style: AppText.body())),
+                            Expanded(
+                                child: Text(m.name, style: AppText.body())),
                             if (_members.contains(m.id))
                               Icon(PhosphorIconsBold.check,
                                   size: 19.sp, color: AppColors.success),

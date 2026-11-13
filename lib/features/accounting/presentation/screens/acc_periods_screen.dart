@@ -84,7 +84,11 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
           loading: () => [const DetailSkeleton()],
           error: (e, _) => [
             ErrorState.forError(
-              e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load periods.'),
+              e is AppError
+                  ? e
+                  : const AppError(
+                      type: AppErrorType.unknown,
+                      message: 'Could not load periods.'),
               onRetry: () => ref.invalidate(periodRegisterProvider),
             ),
           ],
@@ -92,20 +96,33 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
             FinanceCard(
               child: Row(
                 children: [
-                  const IconChip(icon: PhosphorIconsRegular.calendarBlank, size: 46, radius: 13, iconSize: 22),
+                  const IconChip(
+                      icon: PhosphorIconsRegular.calendarBlank,
+                      size: 46,
+                      radius: 13,
+                      iconSize: 22),
                   SizedBox(width: 12.w),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Financial year', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                        Text('Financial year',
+                            style: AppText.custom(
+                                size: 12,
+                                weight: FontWeight.w600,
+                                color: AppColors.textPlaceholder)),
                         SizedBox(height: 2.h),
                         Text(reg.fyLabel ?? '—',
-                            style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                            style: AppText.custom(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.3)),
                       ],
                     ),
                   ),
-                  if (reg.status != null) AccPill(StatusMeta$.accPeriod, reg.status!),
+                  if (reg.status != null)
+                    AccPill(StatusMeta$.accPeriod, reg.status!),
                 ],
               ),
             ),
@@ -113,7 +130,10 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
             ClozrCard(
               radius: 18,
               padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 6.h),
-              child: DetailUnderlineTabs(labels: _tabs, index: _tab, onChanged: (i) => setState(() => _tab = i)),
+              child: DetailUnderlineTabs(
+                  labels: _tabs,
+                  index: _tab,
+                  onChanged: (i) => setState(() => _tab = i)),
             ),
             SizedBox(height: 14.h),
             switch (_tab) {
@@ -129,7 +149,8 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
     );
   }
 
-  String _range(String? s, String? e) => '${formatApiDay(s)} – ${formatApiDay(e)}';
+  String _range(String? s, String? e) =>
+      '${formatApiDay(s)} – ${formatApiDay(e)}';
 
   Widget _books(List<BookPeriod> periods) {
     if (periods.isEmpty) return _empty('No book periods');
@@ -139,7 +160,9 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
         children: [
           for (int i = 0; i < periods.length; i++)
             _row(
-              title: periods[i].periodNo == null ? 'Period' : 'Period ${periods[i].periodNo}',
+              title: periods[i].periodNo == null
+                  ? 'Period'
+                  : 'Period ${periods[i].periodNo}',
               sub: _range(periods[i].startDate, periods[i].endDate),
               pills: [AccPill(StatusMeta$.accPeriod, periods[i].status)],
               last: i == periods.length - 1,
@@ -162,7 +185,8 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
               pills: [
                 _labelled('GSTR-1', periods[i].gstr1Status),
                 _labelled('3B', periods[i].gstr3bStatus),
-                if (periods[i].settled) const StatusPill(label: 'Settled', color: AppColors.navy),
+                if (periods[i].settled)
+                  const StatusPill(label: 'Settled', color: AppColors.navy),
               ],
               onTap: () => _gstSheet(periods[i]),
               last: i == periods.length - 1,
@@ -180,10 +204,14 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
         children: [
           for (int i = 0; i < periods.length; i++)
             _row(
-              title: periods[i].quarter == null ? 'Quarter' : 'Q${periods[i].quarter}',
+              title: periods[i].quarter == null
+                  ? 'Quarter'
+                  : 'Q${periods[i].quarter}',
               sub: _range(periods[i].startDate, periods[i].endDate),
               pills: [AccPill(StatusMeta$.accPeriod, periods[i].status)],
-              onTap: ref.watch(accPermProvider('acc_report')).read ? () => _tdsSheet(periods[i]) : null,
+              onTap: ref.watch(accPermProvider('acc_report')).read
+                  ? () => _tdsSheet(periods[i])
+                  : null,
               last: i == periods.length - 1,
             ),
         ],
@@ -192,7 +220,8 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
   }
 
   Widget _labelled(String prefix, String status) {
-    final meta = StatusMeta$.accPeriod[status] ?? StatusMeta(label(const {}, status), AppColors.textMuted);
+    final meta = StatusMeta$.accPeriod[status] ??
+        StatusMeta(label(const {}, status), AppColors.textMuted);
     return StatusPill(label: '$prefix ${meta.label}', color: meta.color);
   }
 
@@ -214,24 +243,37 @@ class _AccPeriodsScreenState extends ConsumerState<AccPeriodsScreen> {
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 11.h),
-        decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: last
+            ? null
+            : const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(title,
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   if (sub.isNotEmpty) ...[
                     SizedBox(height: 2.h),
-                    Text(sub, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    Text(sub,
+                        style: AppText.custom(
+                            size: 11.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                   SizedBox(height: 6.h),
                   Wrap(spacing: 6.w, runSpacing: 6.h, children: pills),
                 ],
               ),
             ),
-            if (onTap != null) Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+            if (onTap != null)
+              Icon(PhosphorIconsBold.caretRight,
+                  size: 13.sp, color: AppColors.textPlaceholder),
           ],
         ),
       ),
@@ -262,7 +304,9 @@ class _GstPeriodSheet extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'GST ${formatApiDay(period.startDate)} – ${formatApiDay(period.endDate)}'),
+        SheetHeader(
+            title:
+                'GST ${formatApiDay(period.startDate)} – ${formatApiDay(period.endDate)}'),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -303,8 +347,11 @@ class _GstPeriodSheet extends ConsumerWidget {
           ),
           SizedBox(height: 4.h),
           if (c.items.isEmpty)
-            Padding(padding: EdgeInsets.only(top: 8.h), child: Text('No checks', style: AppText.caption())),
-          for (int i = 0; i < c.items.length; i++) _item(c.items[i], i == c.items.length - 1),
+            Padding(
+                padding: EdgeInsets.only(top: 8.h),
+                child: Text('No checks', style: AppText.caption())),
+          for (int i = 0; i < c.items.length; i++)
+            _item(c.items[i], i == c.items.length - 1),
         ],
       ),
     );
@@ -320,7 +367,10 @@ class _GstPeriodSheet extends ConsumerWidget {
           };
     return Container(
       padding: EdgeInsets.symmetric(vertical: 10.h),
-      decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: last
+          ? null
+          : const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -331,10 +381,18 @@ class _GstPeriodSheet extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(it.label ?? label(const {}, it.code),
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 if ((it.detail ?? '').isNotEmpty) ...[
                   SizedBox(height: 2.h),
-                  Text(it.detail!, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.4)),
+                  Text(it.detail!,
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                          height: 1.4)),
                 ],
               ],
             ),
@@ -353,7 +411,10 @@ class _GstPeriodSheet extends ConsumerWidget {
   /// server's and are not documented, so the app does not guess at a netting.
   Widget _summaryCard(GstSummary s) {
     if (s.grandTotals.isEmpty) {
-      return FinanceCard(title: 'Summary', child: Text('Nothing recorded for this period.', style: AppText.caption()));
+      return FinanceCard(
+          title: 'Summary',
+          child: Text('Nothing recorded for this period.',
+              style: AppText.caption()));
     }
     return FinanceCard(
       title: 'Summary',
@@ -364,10 +425,17 @@ class _GstPeriodSheet extends ConsumerWidget {
             Padding(
               padding: EdgeInsets.only(top: 10.h, bottom: 2.h),
               child: Text(label(const {}, section.key).toUpperCase(),
-                  style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+                  style: AppText.custom(
+                      size: 10.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPlaceholder,
+                      letterSpacing: 0.4)),
             ),
             for (final head in section.value.entries)
-              MoneyRow(label: label(const {}, head.key), value: head.value, last: head.key == section.value.keys.last),
+              MoneyRow(
+                  label: label(const {}, head.key),
+                  value: head.value,
+                  last: head.key == section.value.keys.last),
           ],
         ],
       ),
@@ -386,7 +454,9 @@ class _TdsPeriodSheet extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'TDS ${period.quarter == null ? '' : 'Q${period.quarter}'}'.trim()),
+        SheetHeader(
+            title: 'TDS ${period.quarter == null ? '' : 'Q${period.quarter}'}'
+                .trim()),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -397,16 +467,20 @@ class _TdsPeriodSheet extends ConsumerWidget {
                 error: (e, _) => [_error(e)],
                 data: (s) => [
                   if (s.rows.isEmpty)
-                    FinanceCard(child: Text('No TDS deducted in this quarter.', style: AppText.caption()))
+                    FinanceCard(
+                        child: Text('No TDS deducted in this quarter.',
+                            style: AppText.caption()))
                   else
                     for (final r in s.rows) ...[
                       FinanceCard(
-                        title: tdsNatures[r.natureKey] ?? label(const {}, r.natureKey),
+                        title: tdsNatures[r.natureKey] ??
+                            label(const {}, r.natureKey),
                         child: Column(
                           children: [
                             MoneyRow(label: 'Deducted', value: r.deducted),
                             MoneyRow(label: 'Deposited', value: r.deposited),
-                            MoneyRow(label: 'Pending', value: r.pending, last: true),
+                            MoneyRow(
+                                label: 'Pending', value: r.pending, last: true),
                           ],
                         ),
                       ),
@@ -417,9 +491,14 @@ class _TdsPeriodSheet extends ConsumerWidget {
                       title: 'Total',
                       child: Column(
                         children: [
-                          MoneyRow(label: 'Deducted', value: s.totals['deducted']),
-                          MoneyRow(label: 'Deposited', value: s.totals['deposited']),
-                          MoneyRow(label: 'Pending', value: s.totals['pending'], last: true),
+                          MoneyRow(
+                              label: 'Deducted', value: s.totals['deducted']),
+                          MoneyRow(
+                              label: 'Deposited', value: s.totals['deposited']),
+                          MoneyRow(
+                              label: 'Pending',
+                              value: s.totals['pending'],
+                              last: true),
                         ],
                       ),
                     ),
@@ -437,9 +516,14 @@ class _TdsPeriodSheet extends ConsumerWidget {
 
 Widget _spinner() => SizedBox(
       height: 90.h,
-      child: const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)),
+      child: const Center(
+          child: CircularProgressIndicator(
+              strokeWidth: 2.4, color: AppColors.navy)),
     );
 
 Widget _error(Object e) => ErrorState.forError(
-      e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load.'),
+      e is AppError
+          ? e
+          : const AppError(
+              type: AppErrorType.unknown, message: 'Could not load.'),
     );

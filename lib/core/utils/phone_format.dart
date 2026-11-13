@@ -54,10 +54,29 @@ class PhoneFormat {
 
   /// Whether [raw] holds a complete national number. An empty field is **not**
   /// invalid — phone is optional almost everywhere.
-  static bool isComplete(String? raw) =>
-      national(raw).length == nationalDigits;
+  static bool isComplete(String? raw) => national(raw).length == nationalDigits;
 
   static bool isBlank(String? raw) => national(raw).isEmpty;
+
+  /// How a stored number reads on screen: `+91 98765 00107` (UI/UX audit
+  /// #40 — detail pages showed the raw `+919876500107`).
+  ///
+  /// Only an unambiguous Indian number is reshaped: ten digits, or twelve
+  /// starting with 91 (an optional `+` and separators allowed). Anything else —
+  /// a foreign number, a mistyped one — is shown as stored rather than
+  /// trimmed into a different number.
+  static String display(String? raw) {
+    final text = (raw ?? '').trim();
+    final digits = text.replaceAll(RegExp(r'\D'), '');
+    String? ten;
+    if (digits.length == nationalDigits && !text.startsWith('+')) {
+      ten = digits;
+    } else if (digits.length == nationalDigits + 2 && digits.startsWith('91')) {
+      ten = digits.substring(2);
+    }
+    if (ten == null) return text;
+    return '$dialCode ${ten.substring(0, 5)} ${ten.substring(5)}';
+  }
 
   /// The value to send: `+91XXXXXXXXXX`, or null when the field is empty.
   ///

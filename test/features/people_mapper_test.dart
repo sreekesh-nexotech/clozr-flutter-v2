@@ -104,7 +104,8 @@ void main() {
 
       test('active regardless of last login', () {
         expect(statusOf(active: true), 'active');
-        expect(statusOf(active: true, lastLogin: '2026-08-01T10:00:00Z'), 'active');
+        expect(statusOf(active: true, lastLogin: '2026-08-01T10:00:00Z'),
+            'active');
       });
 
       test('disabled after having logged in is deactivated', () {
@@ -129,7 +130,10 @@ void main() {
     test('phone falls back to profile.mobile and scope.label is used', () {
       final json = memberFixture()
         ..['profile'] = {'phone': '', 'mobile': '+91 90000 00000'}
-        ..['scope'] = {'code': 'hierarchy', 'label': 'Self + Reporting Hierarchy'};
+        ..['scope'] = {
+          'code': 'hierarchy',
+          'label': 'Self + Reporting Hierarchy'
+        };
       final m = PeopleRemoteDataSource.memberFromJson(json);
 
       expect(m!.phone, '+91 90000 00000');
@@ -186,7 +190,8 @@ void main() {
   // Designation showed the role name, Role & scope always ended in "—", and
   // Territory and Timezone were literals ("Kerala", "Asia/Kolkata (IST)").
   group('retrieve-only fields', () {
-    test('a detail row fills designation, timezone, territories, protected', () {
+    test('a detail row fills designation, timezone, territories, protected',
+        () {
       final m = PeopleRemoteDataSource.memberFromJson({
         'user_id': 'u-1',
         'full_name': 'Admin Acme',
@@ -240,13 +245,17 @@ void main() {
       expect(m.territories, ['Kerala']);
     });
 
-    test('applyPerformance keeps them — the overlay must not blank the detail', () {
+    test('applyPerformance keeps them — the overlay must not blank the detail',
+        () {
       final base = PeopleRemoteDataSource.memberFromJson({
         'user_id': 'u-1',
         'full_name': 'Admin Acme',
         'is_active': true,
         'is_protected': true,
-        'profile': {'designation': 'Business Owner', 'timezone': 'Asia/Kolkata'},
+        'profile': {
+          'designation': 'Business Owner',
+          'timezone': 'Asia/Kolkata'
+        },
       })!;
 
       final withPerf = PeopleRemoteDataSource.applyPerformance(base, {
@@ -390,7 +399,8 @@ void main() {
       expect(r.caps, ['CRM', 'PMO']); // group keys upper-cased
     });
 
-    test('custom role: editable, scope via grouped_permissions lead module', () {
+    test('custom role: editable, scope via grouped_permissions lead module',
+        () {
       final r = PeopleRemoteDataSource.roleFromJson({
         'role_id': 'r-custom',
         'name': 'Regional Lead',
@@ -449,7 +459,8 @@ void main() {
   group('members filter — reporting manager', () {
     // [managerId] is the identity the facet is keyed by; [manager] is only the
     // label. Two managers can share a name, which is why the uuid decides.
-    Member withManager(String id, String manager, {String managerId = ''}) => Member(
+    Member withManager(String id, String manager, {String managerId = ''}) =>
+        Member(
           id: id,
           name: 'M-$id',
           email: '$id@acme.com',
@@ -486,7 +497,8 @@ void main() {
     test('the exempt sentinel is not offered as a manager', () {
       final spec = buildMembersFilterSpec(const [], members: roster);
 
-      expect(managerField(spec).options.any((o) => o.label.startsWith('—')), isFalse);
+      expect(managerField(spec).options.any((o) => o.label.startsWith('—')),
+          isFalse);
       expect(managerField(spec).options.map((o) => o.id).toList(),
           [uArjun, uLakshmi]);
     });
@@ -505,12 +517,14 @@ void main() {
       final spec = buildMembersFilterSpec(const [],
           members: [withManager('d', '— (exempt)')]);
 
-      expect(spec.sections.expand((s) => s.fields).any((f) => f.id == 'managers'),
+      expect(
+          spec.sections.expand((s) => s.fields).any((f) => f.id == 'managers'),
           isFalse);
     });
 
     test("filtering matches on the manager's uuid, not the display name", () {
-      final values = FilterValues()..['managers'] = ChoiceValue(ids: {uLakshmi});
+      final values = FilterValues()
+        ..['managers'] = ChoiceValue(ids: {uLakshmi});
 
       expect(memberMatchesFilters(roster[0], values), isTrue);
       expect(memberMatchesFilters(roster[2], values), isFalse);

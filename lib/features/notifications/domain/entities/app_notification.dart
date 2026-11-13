@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'notification_action.dart';
+
+export 'notification_action.dart';
+
 /// A notification row. `targetKind`/`targetId` describe the deep-link
 /// destination; the presentation maps them to a route. Ported 1:1 from the
 /// prototype's `notifs` seed.
@@ -22,7 +26,8 @@ class AppNotification {
   final String body;
   final String time; // "7m", "1d"
   final bool unread;
-  final String targetKind; // lead/payment/followup/opstask/ticket/quote/project/list/none
+  final String
+      targetKind; // lead/payment/followup/opstask/ticket/quote/project/list/none
   final String? targetId;
 
   /// `is_pinned` — the server lists pinned rows first.
@@ -30,6 +35,11 @@ class AppNotification {
 
   /// `snooze_until` — set while the row is snoozed (hidden from All).
   final DateTime? snoozeUntil;
+
+  /// The server's tap target (`action`). When present it decides where a tap
+  /// goes; [targetKind] / [targetId] are the text-derived fallback for rows
+  /// that predate it (`action: null`).
+  final NotificationAction? action;
 
   const AppNotification({
     required this.id,
@@ -48,7 +58,15 @@ class AppNotification {
     this.targetId,
     this.pinned = false,
     this.snoozeUntil,
+    this.action,
   });
+
+  /// Id prefix of a row rebuilt from a push that had no `notification_id`
+  /// (in-app notifications off): there is no inbox row to mark read.
+  static const syntheticIdPrefix = 'push-';
+
+  /// True when this row exists in the inbox, i.e. can be marked read.
+  bool get hasInboxRow => !id.startsWith(syntheticIdPrefix);
 
   AppNotification copyWith({bool? unread, bool? pinned}) => AppNotification(
         id: id,
@@ -67,11 +85,17 @@ class AppNotification {
         targetId: targetId,
         pinned: pinned ?? this.pinned,
         snoozeUntil: snoozeUntil,
+        action: action,
       );
 
   bool get snoozed => snoozeUntil != null;
 
-  bool get hasTarget => targetKind != 'none';
+  /// Whether a tap opens anything. An [action] the app has no screen for
+  /// (`call_log`, an unknown resource) opens nothing — the tap only marks
+  /// the row read.
+  bool get hasTarget => action != null
+      ? NotificationAction.openableResources.contains(action!.resource)
+      : targetKind != 'none';
 
   /// Category label shown in the row meta line.
   String get categoryLabel {

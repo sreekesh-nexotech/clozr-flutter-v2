@@ -10,7 +10,8 @@ import 'package:clozrapp/features/shell/presentation/clozr_bottom_nav.dart';
 /// only at paint time — a [BoxDecoration] throws if a borderRadius meets sides
 /// of differing colour, for instance — which `analyze` never sees.
 void main() {
-  testWidgets('bottom nav pill paints without a border assertion', (tester) async {
+  testWidgets('bottom nav pill paints without a border assertion',
+      (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         child: ScreenUtilInit(

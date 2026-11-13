@@ -66,7 +66,8 @@ class NotificationRow extends StatelessWidget {
             Container(
               width: 38.w,
               height: 38.w,
-              decoration: BoxDecoration(color: look.bg, borderRadius: BorderRadius.circular(11.r)),
+              decoration: BoxDecoration(
+                  color: look.bg, borderRadius: BorderRadius.circular(11.r)),
               child: Icon(look.icon, size: 19.sp, color: look.color),
             ),
             SizedBox(width: 11.w),
@@ -77,52 +78,77 @@ class NotificationRow extends StatelessWidget {
                   Text(notif.title,
                       style: AppText.custom(
                           size: 14,
-                          weight: notif.unread ? FontWeight.w700 : FontWeight.w600,
+                          weight:
+                              notif.unread ? FontWeight.w700 : FontWeight.w600,
                           color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
                   Text(notif.body,
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)
+                      style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted2)
                           .copyWith(height: 1.45)),
                   SizedBox(height: 8.h),
                   Row(
                     children: [
                       if (notif.urgent) ...[
                         Container(
-                          padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
-                          decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(7.r)),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 7.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                              color: AppColors.tintRed,
+                              borderRadius: BorderRadius.circular(7.r)),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(PhosphorIconsFill.warning, size: 10.sp, color: AppColors.error),
+                              Icon(PhosphorIconsFill.warning,
+                                  size: 10.sp, color: AppColors.error),
                               SizedBox(width: 4.w),
                               Text('Urgent',
-                                  style: AppText.custom(size: 10.5, weight: FontWeight.w800, color: AppColors.error)),
+                                  style: AppText.custom(
+                                      size: 10.5,
+                                      weight: FontWeight.w800,
+                                      color: AppColors.error)),
                             ],
                           ),
                         ),
                         SizedBox(width: 8.w),
                       ],
                       Text(notif.categoryLabel,
-                          style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                          style: AppText.custom(
+                              size: 11,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPlaceholder)),
                       SizedBox(width: 6.w),
-                      Text('·', style: AppText.custom(size: 11, weight: FontWeight.w500, color: const Color(0xFFC2C6CD))),
+                      Text('·',
+                          style: AppText.custom(
+                              size: 11,
+                              weight: FontWeight.w500,
+                              color: const Color(0xFFC2C6CD))),
                       SizedBox(width: 6.w),
                       Flexible(
                         child: Text(
                             notif.snoozed
-                                ? 'Snoozed until ${DateFormat('d MMM, h:mm a').format(notif.snoozeUntil!.toLocal())}'
+                                ? 'Snoozed until ${DateFormat('dd/MM/yyyy, HH:mm').format(notif.snoozeUntil!.toLocal())}'
                                 : notif.time,
                             overflow: TextOverflow.ellipsis,
-                            style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                            style: AppText.custom(
+                                size: 11,
+                                weight: FontWeight.w500,
+                                color: AppColors.textPlaceholder)),
                       ),
                       if (notif.pinned) ...[
                         SizedBox(width: 6.w),
-                        Icon(PhosphorIconsFill.pushPin, size: 11.sp, color: AppColors.textPlaceholder),
+                        Icon(PhosphorIconsFill.pushPin,
+                            size: 11.sp, color: AppColors.textPlaceholder),
                       ],
                       const Spacer(),
                       if (notif.hasTarget)
                         Text('$_targetLabel →',
-                            style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                            style: AppText.custom(
+                                size: 11.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.blueBright)),
                     ],
                   ),
                 ],
@@ -135,7 +161,9 @@ class NotificationRow extends StatelessWidget {
                   width: 8.w,
                   height: 8.w,
                   decoration: BoxDecoration(
-                    color: notif.unread ? AppColors.blueBright : Colors.transparent,
+                    color: notif.unread
+                        ? AppColors.blueBright
+                        : Colors.transparent,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -146,7 +174,8 @@ class NotificationRow extends StatelessWidget {
                   child: SizedBox(
                     width: 30.w,
                     height: 30.w,
-                    child: Icon(PhosphorIconsBold.dotsThreeVertical, size: 16.sp, color: AppColors.textPlaceholder),
+                    child: Icon(PhosphorIconsBold.dotsThreeVertical,
+                        size: 16.sp, color: AppColors.textPlaceholder),
                   ),
                 ),
               ],

@@ -27,10 +27,12 @@ import 'acc_sheet_scaffold.dart';
 /// Vendors allow no unapplied remainder: the amount must be fully covered by
 /// open bills (409 `PAYMENT_EXCEEDS_OPEN_BILLS` / `NO_OPEN_BILL`). A
 /// prepayment is a vendor advance, which stays on the web app.
-Future<bool?> showVendorPaymentSheet(BuildContext context, {String? vendorId, AccDocument? bill}) =>
+Future<bool?> showVendorPaymentSheet(BuildContext context,
+        {String? vendorId, AccDocument? bill}) =>
     showClozrSheet<bool>(
       context: context,
-      builder: (_) => _VendorPaymentSheet(vendorId: vendorId ?? bill?.vendorId, bill: bill),
+      builder: (_) =>
+          _VendorPaymentSheet(vendorId: vendorId ?? bill?.vendorId, bill: bill),
     );
 
 class _VendorPaymentSheet extends ConsumerStatefulWidget {
@@ -39,7 +41,8 @@ class _VendorPaymentSheet extends ConsumerStatefulWidget {
   final AccDocument? bill;
 
   @override
-  ConsumerState<_VendorPaymentSheet> createState() => _VendorPaymentSheetState();
+  ConsumerState<_VendorPaymentSheet> createState() =>
+      _VendorPaymentSheetState();
 }
 
 class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
@@ -69,8 +72,12 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
     super.initState();
     ref.read(bankAccountsProvider.future).then((accounts) {
       if (!mounted || _bank != null) return;
-      final banks = [for (final a in accounts) if (a.kind == 'BANK') a];
-      final def = banks.where((a) => a.isDefault).firstOrNull ?? (banks.length == 1 ? banks.first : null);
+      final banks = [
+        for (final a in accounts)
+          if (a.kind == 'BANK') a
+      ];
+      final def = banks.where((a) => a.isDefault).firstOrNull ??
+          (banks.length == 1 ? banks.first : null);
       if (def != null) setState(() => _bank = def);
     }).catchError((_) {});
   }
@@ -88,17 +95,22 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
   Future<void> _submit() async {
     final amount = moneyInput(_amount.text);
     if (_vendorId == null) return _fail('Pick the vendor');
-    if (amount == null || moneyIsZero(amount)) return _fail('Enter the amount paid');
-    if (_source == 'BANK' && _bank == null) return _fail('Pick the bank account it was paid from');
-    if (_source == 'OWNER' && _owner.text.trim().isEmpty) return _fail('Say who paid from their own funds');
+    if (amount == null || moneyIsZero(amount))
+      return _fail('Enter the amount paid');
+    if (_source == 'BANK' && _bank == null)
+      return _fail('Pick the bank account it was paid from');
+    if (_source == 'OWNER' && _owner.text.trim().isEmpty)
+      return _fail('Say who paid from their own funds');
     final tds = moneyInput(_tds.text);
-    if (tds != null && !moneyIsZero(tds) && _tdsNature == null) return _fail('Pick the TDS nature');
+    if (tds != null && !moneyIsZero(tds) && _tdsNature == null)
+      return _fail('Pick the TDS nature');
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final out = await ref.read(accountingRepositoryProvider).recordVendorPayment({
+      final out =
+          await ref.read(accountingRepositoryProvider).recordVendorPayment({
         'vendor': _vendorId,
         'amount_paid': amount,
         'source_account_kind': _source,
@@ -159,10 +171,15 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: MoneyField(label: 'Amount paid', required: true, controller: _amount)),
+            Expanded(
+                child: MoneyField(
+                    label: 'Amount paid', required: true, controller: _amount)),
             SizedBox(width: 9.w),
             Expanded(
-              child: AccDateBox(label: 'Paid on', value: _date, showIstHint: true,
+              child: AccDateBox(
+                  label: 'Paid on',
+                  value: _date,
+                  showIstHint: true,
                   onChanged: (d) => setState(() => _date = d ?? _date)),
             ),
           ],
@@ -170,7 +187,11 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
         AccChoiceChips(
           label: 'Paid from',
           required: true,
-          options: const {'BANK': 'Bank', 'CASH': 'Cash', 'OWNER': "Owner's funds"},
+          options: const {
+            'BANK': 'Bank',
+            'CASH': 'Cash',
+            'OWNER': "Owner's funds"
+          },
           selected: _source,
           onSelected: (v) => setState(() => _source = v),
         ),
@@ -181,19 +202,31 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
             value: _bank?.label,
             hint: 'Select account…',
             onTap: () async {
-              final b = await pickBankAccount(context, ref, selectedId: _bank?.id);
+              final b =
+                  await pickBankAccount(context, ref, selectedId: _bank?.id);
               if (b != null) setState(() => _bank = b);
             },
           ),
-        if (_source == 'OWNER') AccInput(label: 'Paid by', required: true, controller: _owner, hint: 'Owner or partner name'),
+        if (_source == 'OWNER')
+          AccInput(
+              label: 'Paid by',
+              required: true,
+              controller: _owner,
+              hint: 'Owner or partner name'),
         if (_source == 'BANK')
           AccChoiceChips(
             label: 'Method',
-            options: {for (final e in paymentMethods.entries) if (e.key != 'cash' && e.key != 'gateway') e.key: e.value},
+            options: {
+              for (final e in paymentMethods.entries)
+                if (e.key != 'cash' && e.key != 'gateway') e.key: e.value
+            },
             selected: _method,
             onSelected: (v) => setState(() => _method = v),
           ),
-        AccInput(label: 'Reference', controller: _reference, hint: 'UTR, cheque no…'),
+        AccInput(
+            label: 'Reference',
+            controller: _reference,
+            hint: 'UTR, cheque no…'),
         AccDisclosure(
           title: 'TDS deducted now',
           children: [
@@ -221,7 +254,9 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
     final async = ref.watch(billsForVendorProvider(vendorId));
     final open = [
       for (final d in async.valueOrNull ?? const <AccDocument>[])
-        if (d.isIssued && (d.paymentState == 'UNPAID' || d.paymentState == 'PARTIAL')) d,
+        if (d.isIssued &&
+            (d.paymentState == 'UNPAID' || d.paymentState == 'PARTIAL'))
+          d,
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,15 +266,26 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
           Text('Loading open bills…', style: AppText.caption())
         else if (open.isEmpty)
           Text('No open bills for this vendor.',
-              style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted))
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted))
         else ...[
-          Text(_targets.isEmpty ? 'Oldest bills first' : '${_targets.length} selected',
-              style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+          Text(
+              _targets.isEmpty
+                  ? 'Oldest bills first'
+                  : '${_targets.length} selected',
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPlaceholder)),
           SizedBox(height: 6.h),
           for (final d in open)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _targets.contains(d.id) ? _targets.remove(d.id) : _targets.add(d.id)),
+              onTap: () => setState(() => _targets.contains(d.id)
+                  ? _targets.remove(d.id)
+                  : _targets.add(d.id)),
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 7.h),
                 child: Row(
@@ -247,7 +293,9 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
                     CrmCheckBox(
                       done: _targets.contains(d.id),
                       size: 22,
-                      onTap: () => setState(() => _targets.contains(d.id) ? _targets.remove(d.id) : _targets.add(d.id)),
+                      onTap: () => setState(() => _targets.contains(d.id)
+                          ? _targets.remove(d.id)
+                          : _targets.add(d.id)),
                     ),
                     SizedBox(width: 10.w),
                     Expanded(
@@ -255,11 +303,17 @@ class _VendorPaymentSheetState extends ConsumerState<_VendorPaymentSheet> {
                         '${d.displayNumber}${(d.vendorInvoiceNo ?? '').isEmpty ? '' : ' · ${d.vendorInvoiceNo}'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textBody),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: AppColors.textBody),
                       ),
                     ),
                     Text(formatMoneyStr(d.openBalance ?? d.payable),
-                        style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
                   ],
                 ),
               ),

@@ -22,7 +22,8 @@ import 'plan_widgets.dart';
 /// the first due date. The server sets the exact amounts. Render only when
 /// `canChooseInstalments(plan)`.
 class PlanScheduleCard extends ConsumerStatefulWidget {
-  const PlanScheduleCard({super.key, required this.plan, required this.canEdit});
+  const PlanScheduleCard(
+      {super.key, required this.plan, required this.canEdit});
 
   final PlanDetail plan;
 
@@ -57,7 +58,8 @@ class _PlanScheduleCardState extends ConsumerState<PlanScheduleCard> {
     super.dispose();
   }
 
-  ScheduleDraft get _draft => ScheduleDraft(count: _count.text, periodDays: _days.text, firstDueDate: _firstDue);
+  ScheduleDraft get _draft => ScheduleDraft(
+      count: _count.text, periodDays: _days.text, firstDueDate: _firstDue);
 
   void _changed() => setState(() {
         _errors = const {};
@@ -96,13 +98,17 @@ class _PlanScheduleCardState extends ConsumerState<PlanScheduleCard> {
   Widget build(BuildContext context) {
     final enabled = widget.canEdit && !_busy;
     final preview = schedulePreviewText(widget.plan.totalInclGst, _draft);
-    final digits = [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(3)];
+    final digits = [
+      FilteringTextInputFormatter.digitsOnly,
+      LengthLimitingTextInputFormatter(3)
+    ];
     return FinanceCard(
       title: 'Instalments',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const PlanHint('Split this plan into instalments. Possible until a payment is recorded or an instalment is invoiced.'),
+          const PlanHint(
+              'Split this plan into instalments. Possible until a payment is recorded or an instalment is invoiced.'),
           SizedBox(height: 12.h),
           if (_failure != null) ...[
             PlanInlineError(_failure!),
@@ -123,7 +129,8 @@ class _PlanScheduleCardState extends ConsumerState<PlanScheduleCard> {
                 ),
                 if (_errors['count'] == null) ...[
                   SizedBox(height: 5.h),
-                  const PlanHint('1 = a single payment (up to $maxInstalments).'),
+                  const PlanHint(
+                      '1 = a single payment (up to $maxInstalments).'),
                 ],
                 SizedBox(height: 12.h),
                 AppTextField(

@@ -53,7 +53,11 @@ class AccHomeScreen extends ConsumerWidget {
     final canInvoice = ref.watch(accPermProvider('acc_document')).create;
     registerAdd(
       ref,
-      canInvoice ? AddAction(label: 'New invoice', run: (ctx) => ctx.push(Routes.accNewInvoice)) : null,
+      canInvoice
+          ? AddAction(
+              label: 'New invoice',
+              run: (ctx) => ctx.push(Routes.accNewInvoice))
+          : null,
     );
     return Column(
       children: [
@@ -68,7 +72,11 @@ class AccHomeScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Accounting', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      Text('Accounting',
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                       SizedBox(height: 1.h),
                       Text('Overview', style: AppText.screenTitle()),
                     ],
@@ -77,7 +85,10 @@ class AccHomeScreen extends ConsumerWidget {
                 Padding(
                   padding: EdgeInsets.only(bottom: 3.h),
                   child: Text(DateFormat('EEE, d MMM').format(DateTime.now()),
-                      style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPlaceholder)),
                 ),
               ],
             ),
@@ -122,7 +133,9 @@ class AccHomeScreen extends ConsumerWidget {
           iconBg: AppColors.tintBlue,
           value: ar == null ? '—' : formatMoneyCompact(ar.grandTotal),
           label: 'Receivable',
-          sub: ar == null ? 'Owed to you' : '90+ days ${formatMoneyCompact(ar.totals['90+'])}',
+          sub: ar == null
+              ? 'Owed to you'
+              : '90+ days ${formatMoneyCompact(ar.totals['90+'])}',
           accent: AppColors.blueBright,
           onTap: () => context.push('${Routes.accReport}?kind=ar_aging'),
         ),
@@ -166,7 +179,9 @@ class AccHomeScreen extends ConsumerWidget {
       rows.add(Row(children: [
         Expanded(child: cards[i]),
         SizedBox(width: 12.w),
-        Expanded(child: i + 1 < cards.length ? cards[i + 1] : const SizedBox.shrink()),
+        Expanded(
+            child:
+                i + 1 < cards.length ? cards[i + 1] : const SizedBox.shrink()),
       ]));
       if (i + 2 < cards.length) rows.add(SizedBox(height: 12.h));
     }
@@ -183,10 +198,16 @@ class AccHomeScreen extends ConsumerWidget {
     for (final p in reg.tdsPeriods) {
       final s = DateTime.tryParse(p.startDate ?? '');
       final e = DateTime.tryParse(p.endDate ?? '');
-      if (s != null && e != null && !today.isBefore(s) && !today.isAfter(e.add(const Duration(days: 1)))) current = p;
+      if (s != null &&
+          e != null &&
+          !today.isBefore(s) &&
+          !today.isAfter(e.add(const Duration(days: 1)))) current = p;
     }
     if (current == null) return null;
-    return ref.watch(tdsSummaryProvider(current.id)).valueOrNull?.totals['pending'];
+    return ref
+        .watch(tdsSummaryProvider(current.id))
+        .valueOrNull
+        ?.totals['pending'];
   }
 
   Widget _actions(BuildContext context, WidgetRef ref) {
@@ -194,10 +215,30 @@ class AccHomeScreen extends ConsumerWidget {
     final settle = ref.watch(accPermProvider('acc_settlement')).create;
     final purchase = ref.watch(accPermProvider('acc_purchase')).create;
     final actions = <(IconData, String, VoidCallback)>[
-      if (doc) (PhosphorIconsRegular.receipt, 'New invoice', () => context.push(Routes.accNewInvoice)),
-      if (settle) (PhosphorIconsRegular.arrowDown, 'Record receipt', () => showRecordReceiptSheet(context)),
-      if (purchase) (PhosphorIconsRegular.shoppingCart, 'Record expense', () => showRecordExpenseSheet(context)),
-      if (settle) (PhosphorIconsRegular.arrowUp, 'Pay vendor', () => showVendorPaymentSheet(context)),
+      if (doc)
+        (
+          PhosphorIconsRegular.receipt,
+          'New invoice',
+          () => context.push(Routes.accNewInvoice)
+        ),
+      if (settle)
+        (
+          PhosphorIconsRegular.arrowDown,
+          'Record receipt',
+          () => showRecordReceiptSheet(context)
+        ),
+      if (purchase)
+        (
+          PhosphorIconsRegular.shoppingCart,
+          'Record expense',
+          () => showRecordExpenseSheet(context)
+        ),
+      if (settle)
+        (
+          PhosphorIconsRegular.arrowUp,
+          'Pay vendor',
+          () => showVendorPaymentSheet(context)
+        ),
     ];
     if (actions.isEmpty) return const SizedBox.shrink();
     return ClozrCard(
@@ -215,14 +256,19 @@ class AccHomeScreen extends ConsumerWidget {
                       width: 44.w,
                       height: 44.w,
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(13.r)),
+                      decoration: BoxDecoration(
+                          color: AppColors.blueSubtle,
+                          borderRadius: BorderRadius.circular(13.r)),
                       child: Icon(a.$1, size: 20.sp, color: AppColors.navy),
                     ),
                     SizedBox(height: 7.h),
                     Text(a.$2,
                         textAlign: TextAlign.center,
                         maxLines: 2,
-                        style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                        style: AppText.custom(
+                            size: 11.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textSecondary)),
                   ],
                 ),
               ),
@@ -236,7 +282,8 @@ class AccHomeScreen extends ConsumerWidget {
     final items = <Widget>[];
     // Postings the ledger refused.
     if (ref.watch(accPermProvider('acc_journal')).read) {
-      for (final e in ref.watch(rejectedEventsProvider).valueOrNull ?? const <LedgerEvent>[]) {
+      for (final e in ref.watch(rejectedEventsProvider).valueOrNull ??
+          const <LedgerEvent>[]) {
         items.add(_row(
           icon: PhosphorIconsFill.xCircle,
           tone: AppColors.error,
@@ -250,7 +297,8 @@ class AccHomeScreen extends ConsumerWidget {
     // Drafts left for more than a week.
     if (ref.watch(accPermProvider('acc_document')).read) {
       final cutoff = DateTime.now().subtract(const Duration(days: 7));
-      for (final d in ref.watch(draftInvoicesProvider).valueOrNull?.results ?? const <AccDocument>[]) {
+      for (final d in ref.watch(draftInvoicesProvider).valueOrNull?.results ??
+          const <AccDocument>[]) {
         final date = DateTime.tryParse(d.documentDate ?? '');
         if (date == null || date.isAfter(cutoff)) continue;
         items.add(_row(
@@ -265,14 +313,18 @@ class AccHomeScreen extends ConsumerWidget {
     // GST periods that have ended but are not settled.
     if (ref.watch(accPermProvider('acc_period')).read) {
       final today = DateTime.now();
-      for (final p in ref.watch(periodRegisterProvider).valueOrNull?.gstPeriods ?? const <GstPeriod>[]) {
+      for (final p
+          in ref.watch(periodRegisterProvider).valueOrNull?.gstPeriods ??
+              const <GstPeriod>[]) {
         final end = DateTime.tryParse(p.endDate ?? '');
         if (end == null || !end.isBefore(today) || p.settled) continue;
         items.add(_row(
           icon: PhosphorIconsFill.calendarX,
           tone: AppColors.pending,
-          title: 'GST ${formatApiDay(p.startDate)} – ${formatApiDay(p.endDate)} not settled',
-          sub: 'GSTR-1 ${label(const {}, p.gstr1Status)} · GSTR-3B ${label(const {}, p.gstr3bStatus)}',
+          title:
+              'GST ${formatApiDay(p.startDate)} – ${formatApiDay(p.endDate)} not settled',
+          sub:
+              'GSTR-1 ${label(const {}, p.gstr1Status)} · GSTR-3B ${label(const {}, p.gstr3bStatus)}',
           onTap: () => context.push(Routes.accPeriods),
         ));
       }
@@ -281,16 +333,26 @@ class AccHomeScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Needs attention', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Needs attention',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
           Text('Rejected postings, old drafts and open GST periods',
-              style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
           if (items.isEmpty)
             Padding(
               padding: EdgeInsets.only(top: 22.h, bottom: 10.h),
               child: Center(
                 child: Text('Nothing needs attention right now.',
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ),
             )
           else
@@ -313,7 +375,8 @@ class AccHomeScreen extends ConsumerWidget {
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h),
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -323,12 +386,19 @@ class AccHomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(title,
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
                   Text(sub,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                 ],
               ),
             ),
@@ -344,20 +414,28 @@ class AccHomeScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
-        title: Text(label(const {}, e.eventType), style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text(label(const {}, e.eventType),
+            style: AppText.custom(
+                size: 17,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
         content: Text(
           [
             e.error ?? 'No reason was recorded.',
-            if (e.receivedAt != null) 'Received ${formatApiDay(e.receivedAt!.split('T').first)}',
+            if (e.receivedAt != null)
+              'Received ${formatApiDay(e.receivedAt!.split('T').first)}',
             'Ask your accountant to review it on the web app.',
           ].join('\n\n'),
-          style: AppText.body(color: AppColors.textMuted).copyWith(height: 1.45),
+          style:
+              AppText.body(color: AppColors.textMuted).copyWith(height: 1.45),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Close', style: AppText.bodyStrong(color: AppColors.navy)),
+            child:
+                Text('Close', style: AppText.bodyStrong(color: AppColors.navy)),
           ),
         ],
       ),

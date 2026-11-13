@@ -72,7 +72,7 @@ void main() {
       expect(log.isMissed, isFalse);
       expect(log.connected, isTrue);
       expect(log.outcome, 'Connected · 3m 45s');
-      expect(log.time, 'Today, 9:32 AM');
+      expect(log.time, 'Today, 09:32');
       expect(log.summary, 'Discussed scope and timeline.');
       expect(log.hasRecording, isFalse);
     });
@@ -160,7 +160,8 @@ void main() {
 
   group('durationLabel', () {
     test('formats hours, minutes and seconds', () {
-      expect(CallLogsRemoteDataSource.durationLabel(const Duration(seconds: 45)),
+      expect(
+          CallLogsRemoteDataSource.durationLabel(const Duration(seconds: 45)),
           '45s');
       expect(
           CallLogsRemoteDataSource.durationLabel(
@@ -178,10 +179,10 @@ void main() {
       String at(DateTime d) =>
           CallLogsRemoteDataSource.callTimeLabel(d, now: now);
 
-      expect(at(DateTime(2026, 8, 6, 9, 32)), 'Today, 9:32 AM');
-      expect(at(DateTime(2026, 8, 5, 17, 10)), 'Yesterday, 5:10 PM');
-      expect(at(DateTime(2026, 8, 4, 11, 4)), '2 days ago, 11:04 AM');
-      expect(at(DateTime(2026, 7, 12, 15, 22)), '12 Jul, 3:22 PM');
+      expect(at(DateTime(2026, 8, 6, 9, 32)), 'Today, 09:32');
+      expect(at(DateTime(2026, 8, 5, 17, 10)), 'Yesterday, 17:10');
+      expect(at(DateTime(2026, 8, 4, 11, 4)), '2 days ago, 11:04');
+      expect(at(DateTime(2026, 7, 12, 15, 22)), '12/07/2026, 15:22');
     });
 
     test('null yields an empty label', () {
@@ -230,7 +231,8 @@ void main() {
       final adapter = _CaptureAdapter();
       final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
         ..httpClientAdapter = adapter;
-      final ds = CallLogsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+      final ds = CallLogsRemoteDataSource(
+          ApiService(tokens: TokenStorage(), dio: dio));
 
       await ds.createOutgoingCall(
         leadId: leadId,
@@ -257,7 +259,8 @@ void main() {
     CallLogsRemoteDataSource dsWith(_CaptureAdapter adapter) {
       final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
         ..httpClientAdapter = adapter;
-      return CallLogsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+      return CallLogsRemoteDataSource(
+          ApiService(tokens: TokenStorage(), dio: dio));
     }
 
     test('sends direction, missed flag and duration', () async {
@@ -283,7 +286,8 @@ void main() {
       expect(body['related_to_id'], leadId);
     });
 
-    test('derives end_time from start + duration, never before start', () async {
+    test('derives end_time from start + duration, never before start',
+        () async {
       final adapter = _CaptureAdapter();
       final start = DateTime.utc(2026, 8, 6, 9, 32);
 
@@ -301,7 +305,8 @@ void main() {
       final startSent = DateTime.parse(body['start_time'] as String);
       final endSent = DateTime.parse(body['end_time'] as String);
       expect(endSent.isBefore(startSent), isFalse); // the API 400s on this
-      expect(endSent.difference(startSent), const Duration(minutes: 4, seconds: 12));
+      expect(endSent.difference(startSent),
+          const Duration(minutes: 4, seconds: 12));
     });
 
     test('a missed call sends a zero duration', () async {
@@ -341,8 +346,11 @@ void main() {
   group('hhmmss', () {
     test('pads every component to two digits', () {
       expect(CallLogsRemoteDataSource.hhmmss(Duration.zero), '00:00:00');
-      expect(CallLogsRemoteDataSource.hhmmss(const Duration(seconds: 5)), '00:00:05');
-      expect(CallLogsRemoteDataSource.hhmmss(const Duration(minutes: 4, seconds: 12)),
+      expect(CallLogsRemoteDataSource.hhmmss(const Duration(seconds: 5)),
+          '00:00:05');
+      expect(
+          CallLogsRemoteDataSource.hhmmss(
+              const Duration(minutes: 4, seconds: 12)),
           '00:04:12');
       expect(
           CallLogsRemoteDataSource.hhmmss(
@@ -353,7 +361,8 @@ void main() {
     test('round-trips through parseDuration', () {
       const d = Duration(hours: 2, minutes: 7, seconds: 33);
       expect(
-        CallLogsRemoteDataSource.parseDuration(CallLogsRemoteDataSource.hhmmss(d)),
+        CallLogsRemoteDataSource.parseDuration(
+            CallLogsRemoteDataSource.hhmmss(d)),
         d,
       );
     });

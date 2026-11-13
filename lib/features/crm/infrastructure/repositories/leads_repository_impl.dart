@@ -51,7 +51,9 @@ class LeadsRepositoryImpl implements LeadsRepository {
   @override
   Future<List<CatalogOption>> getAssignableUsers(String leadId) async {
     await Future<void>.delayed(AppConstants.mockLatency);
-    return [for (final u in MockUsers.reps) CatalogOption(id: u.id, name: u.name)];
+    return [
+      for (final u in MockUsers.reps) CatalogOption(id: u.id, name: u.name)
+    ];
   }
 
   /// Local echo — mock mode has no backend, so the "created" lead is built
@@ -96,7 +98,8 @@ class LeadsRepositoryImpl implements LeadsRepository {
   /// No-op — mock mode has nothing to persist to. Returning null keeps the
   /// form on its toast-only path rather than claiming the edit was saved.
   @override
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version}) async {
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields,
+      {String? version}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return null;
   }

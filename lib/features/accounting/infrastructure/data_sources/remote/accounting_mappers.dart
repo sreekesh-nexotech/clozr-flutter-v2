@@ -143,7 +143,8 @@ AccDocument? mapDocument(Map<String, dynamic> j) {
     terms: _s(j['terms']),
     notes: _s(j['notes']),
     warnings: mapWarnings(j['warnings']),
-    configDraftRows: draftRows is List ? draftRows.length : (_i(draftRows) ?? 0),
+    configDraftRows:
+        draftRows is List ? draftRows.length : (_i(draftRows) ?? 0),
     partySnapshot: _map(j['party_snapshot']),
     lines: [for (final l in _rows(j['lines'])) mapDocumentLine(l)]
       ..sort((a, b) => a.lineNo.compareTo(b.lineNo)),
@@ -266,7 +267,8 @@ PartyTaxProfile mapPartyTaxProfile(Map<String, dynamic> j) {
   );
 }
 
-ProductTaxProfile mapProductTaxProfile(Map<String, dynamic> j) => ProductTaxProfile(
+ProductTaxProfile mapProductTaxProfile(Map<String, dynamic> j) =>
+    ProductTaxProfile(
       taxTreatmentDefault: _s(j['tax_treatment_default']),
       rateVariantKey: _s(j['rate_variant_key']),
       isRcmOutward: _b(j['is_rcm_outward']),
@@ -295,7 +297,10 @@ List<BankAccount> mapBankAccounts(Object? rows) => [
 List<GstState> mapStates(Object? rows) => [
       for (final r in _rows(rows))
         if (_s(r['code']) != null)
-          GstState(code: _s(r['code'])!, name: _s(r['name']) ?? '', alpha: _s(r['alpha']) ?? ''),
+          GstState(
+              code: _s(r['code'])!,
+              name: _s(r['name']) ?? '',
+              alpha: _s(r['alpha']) ?? ''),
     ];
 
 // ── Settlement ──
@@ -458,7 +463,9 @@ LedgerEvent? mapLedgerEvent(Map<String, dynamic> j) {
     id: id,
     eventType: _s(j['event_type']),
     status: _s(j['status']) ?? 'RECEIVED',
-    error: j['error'] is Map ? (_s((j['error'] as Map)['detail']) ?? '${j['error']}') : _s(j['error']),
+    error: j['error'] is Map
+        ? (_s((j['error'] as Map)['detail']) ?? '${j['error']}')
+        : _s(j['error']),
     skipReason: _s(j['skip_reason']),
     receivedAt: _s(j['received_at']),
   );
@@ -526,7 +533,10 @@ PeriodChecklist mapChecklist(Map<String, dynamic> j) => PeriodChecklist(
       blocking: [
         if (j['blocking'] is List)
           for (final b in j['blocking'] as List)
-            if (b is String) b else if (b is Map && _s(b['code']) != null) _s(b['code'])!,
+            if (b is String)
+              b
+            else if (b is Map && _s(b['code']) != null)
+              _s(b['code'])!,
       ],
       canSettle: _b(j['can_settle']) || _b(j['can_close']),
     );
@@ -561,7 +571,10 @@ List<TenantAttribute> mapTenantAttributes(Object? rows) => [
 GatesReport mapGates(Map<String, dynamic> j) => GatesReport(
       gates: [
         for (final g in _rows(j['gates']))
-          GateResult(gate: _s(g['gate']) ?? '—', passed: _b(g['passed']), detail: _s(g['detail'])),
+          GateResult(
+              gate: _s(g['gate']) ?? '—',
+              passed: _b(g['passed']),
+              detail: _s(g['detail'])),
       ],
       canActivate: _b(j['can_activate']),
       activationStatus: _s(j['activation_status']),
@@ -613,7 +626,10 @@ PartyStatement mapStatement(Map<String, dynamic> j) => PartyStatement(
 
 List<ReportAccount> _accounts(Object? rows) => [
       for (final a in _rows(rows))
-        ReportAccount(code: _s(a['code']), name: _s(a['name']) ?? '—', amount: _m(a['amount'])),
+        ReportAccount(
+            code: _s(a['code']),
+            name: _s(a['name']) ?? '—',
+            amount: _m(a['amount'])),
     ];
 
 PnlReport mapPnl(Map<String, dynamic> j) => PnlReport(
@@ -625,7 +641,8 @@ PnlReport mapPnl(Map<String, dynamic> j) => PnlReport(
       netProfit: _m(j['net_profit']),
     );
 
-BalanceSheetReport mapBalanceSheet(Map<String, dynamic> j) => BalanceSheetReport(
+BalanceSheetReport mapBalanceSheet(Map<String, dynamic> j) =>
+    BalanceSheetReport(
       asOf: _s(j['as_of']),
       assets: _accounts(j['assets']),
       liabilities: _accounts(j['liabilities']),
@@ -638,7 +655,8 @@ BalanceSheetReport mapBalanceSheet(Map<String, dynamic> j) => BalanceSheetReport
       balanced: _b(j['balanced']),
     );
 
-TrialBalanceReport mapTrialBalance(Map<String, dynamic> j) => TrialBalanceReport(
+TrialBalanceReport mapTrialBalance(Map<String, dynamic> j) =>
+    TrialBalanceReport(
       asOf: _s(j['as_of']),
       groups: [
         for (final g in _rows(j['groups']))

@@ -13,12 +13,15 @@ import '../../../../core/network/app_error.dart';
 import '../../../../core/utils/money_format.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../accounting/application/providers/accounting_providers.dart';
-import '../../../accounting/presentation/components/acc_pickers.dart' show pickGstState;
+import '../../../accounting/presentation/components/acc_pickers.dart'
+    show pickGstState;
+import '../../../auth/application/providers/auth_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
 import '../../application/providers/quote_builder_providers.dart';
 import '../../application/providers/quotes_providers.dart';
+import '../../application/quote_builder/option_tabs.dart';
 import '../../application/quote_builder/quote_builder_draft.dart';
 import '../../application/quote_builder/quote_lines.dart';
 import '../../application/quote_builder/quote_tax.dart';
@@ -28,6 +31,7 @@ import '../../infrastructure/data_sources/remote/quote_builder_remote_ds.dart';
 import '../components/quote_builder/party_picker_sheet.dart';
 import '../components/quote_builder/qb_kit.dart';
 import '../components/quote_builder/quote_lines_editor.dart';
+import '../components/quote_builder/quote_option_tabs_bar.dart';
 import '../components/quote_builder/quote_template_sections.dart';
 import '../components/quote_builder/quote_totals_block.dart';
 
@@ -81,6 +85,66 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   bool _attemptedSave = false;
   bool _spotConfirmed = false;
 
+  // ── Alternative options (an `options` template, rulebook v1.7) ────────────
+  // The active option's lines and title live in [_draft]; the other options wait
+  // in their tab (see option_tabs.dart).
+  List<OptionTab> _tabs = const [];
+  int _activeTab = 0;
+  int _primaryTab = 0;
+  bool _groupSeeded = false;
+
+  ActiveOption get _activeOption =>
+      (title: _draft.title, items: _draft.items, linesDirty: _draft.linesDirty);
+
+  /// Writes the active option back to its tab and shows tab [index].
+  void _loadTab(List<OptionTab> next, int index) {
+    final t = next[index];
+    setState(() {
+      _tabs = next;
+      _activeTab = index;
+      _draft = _draft.copyWith(
+          title: t.title,
+          items: t.items,
+          linesDirty: t.linesDirty,
+          serverFlip: null);
+      _titleCtrl.text = t.title;
+      _touched = true;
+    });
+  }
+
+  void _selectTab(int index) {
+    if (index != _activeTab)
+      _loadTab(stashActive(_tabs, _activeTab, _activeOption), index);
+  }
+
+  void _addAlternative(int max) {
+    final next = addAlternative(_tabs, _activeTab, _activeOption, max);
+    if (next.length > _tabs.length) _loadTab(next, next.length - 1);
+  }
+
+  void _removeOption(int index) {
+    final r = removeOption(_tabs, _activeTab, _activeOption, index);
+    if (r.tabs.length == _tabs.length) return;
+    setState(() => _primaryTab = primaryAfterRemove(_primaryTab, index));
+    _loadTab(r.tabs, r.active);
+  }
+
+  /// On an edit the primary must be a saved option (a new one has no id yet).
+  void _makePrimary(int index) {
+    if (!_isEdit ||
+        (index < _tabs.length && _tabs[index].quotationId.isNotEmpty)) {
+      setState(() {
+        _primaryTab = index;
+        _touched = true;
+      });
+    }
+  }
+
+  /// The user changed something — closing with the system back then asks
+  /// "Discard changes?" (Cancel and the header arrow close without asking).
+  bool _touched = false;
+  String get _userId => ref.read(sessionControllerProvider).user?.id ?? '';
+
   /// Saved, but needs the user's attention (approval / field warnings).
   SavedQuote? _savedQuote;
 
@@ -113,7 +177,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     _canRevise = q['revise'] == '1';
     if (_isEdit) {
       // Seed the form once, from the first server answer.
-      ref.listenManual<AsyncValue<SavedQuote>>(quoteBuilderQuoteProvider(_quoteId), (_, next) {
+      ref.listenManual<AsyncValue<SavedQuote>>(
+          quoteBuilderQuoteProvider(_quoteId), (_, next) {
         final q = next.valueOrNull;
         if (q == null || _seeded) return;
         // Deferred: this can fire synchronously, mid-lifecycle.
@@ -122,7 +187,33 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         });
       }, fireImmediately: true);
     } else {
-      _draft = BuilderDraft.empty(leadId: _presetLeadId, customerId: _presetLeadId.isEmpty ? _presetCustomerId : '');
+      _draft = BuilderDraft.empty(
+          leadId: _presetLeadId,
+          customerId: _presetLeadId.isEmpty ? _presetCustomerId : '');
+      // A form closed with Cancel comes back as it was (not the lead / customer).
+      final kept = ref.read(quoteNewDraftProvider);
+      if (kept != null && kept.userId == _userId) {
+        _draft = kept.draft.copyWith(
+          leadId: _presetLeadId,
+          customerId: _presetLeadId.isEmpty ? _presetCustomerId : '',
+          quoteFor: _presetLeadId.isEmpty && _presetCustomerId.isNotEmpty
+              ? QuoteFor.customer
+              : QuoteFor.lead,
+        );
+        _titleCtrl.text = _draft.title;
+        _notesCtrl.text = _draft.notes;
+        _contractCtrl.text = _draft.contractRef;
+        _installmentsCtrl.text = _draft.installments;
+        _billingCtrl.text = _draft.billing;
+        _touched = true;
+        final keptTabs = kept.tabs;
+        if (keptTabs != null && keptTabs.isNotEmpty) {
+          _tabs = keptTabs;
+          _activeTab = kept.activeTab.clamp(0, keptTabs.length - 1);
+          _primaryTab = kept.primaryTab.clamp(0, keptTabs.length - 1);
+          _groupSeeded = true;
+        }
+      }
       _seeded = true;
       final ds = ref.read(quoteBuilderDsProvider);
       if (_presetLeadId.isNotEmpty) {
@@ -140,13 +231,93 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   @override
   void dispose() {
     _previewTimer?.cancel();
-    for (final c in [_titleCtrl, _notesCtrl, _contractCtrl, _installmentsCtrl, _billingCtrl]) {
+    for (final c in [
+      _titleCtrl,
+      _notesCtrl,
+      _contractCtrl,
+      _installmentsCtrl,
+      _billingCtrl
+    ]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  void _patch(BuilderDraft Function(BuilderDraft) f) => setState(() => _draft = f(_draft));
+  void _patch(BuilderDraft Function(BuilderDraft) f) => setState(() {
+        _draft = f(_draft);
+        _touched = true;
+      });
+
+  /// Cancel / header arrow: close at once. A new quote's form is kept for the
+  /// next "New quote".
+  void _closeKeepingDraft() {
+    // UAT: Cancel and the header arrow ask "Discard changes?" the same way the
+    // system back does, whenever something was changed.
+    if (_touched && !_saving) {
+      _onDismiss();
+      return;
+    }
+    if (!_isEdit && _touched) {
+      ref.read(quoteNewDraftProvider.notifier).state = (
+        userId: _userId,
+        draft: _draft.copyWith(
+            leadId: '', customerId: '', quoteFor: QuoteFor.lead),
+        // Every option, with the active one's draft written back into its tab.
+        tabs: _groupSeeded && _tabs.isNotEmpty
+            ? stashActive(_tabs, _activeTab, _activeOption)
+            : null,
+        activeTab: _activeTab,
+        primaryTab: _primaryTab,
+      );
+    }
+    context.pop();
+  }
+
+  /// More than one alternative exists: a single-quote template would orphan them.
+  bool _alternativesBlockSwitch(_View v) =>
+      v.groupMode && !_isEdit && v.allTabs.length > 1;
+
+  /// Webapp `templateBlocked`: on an edit a saved option group keeps an
+  /// option-group template, and a single quote cannot be turned into one —
+  /// either switch would drop or orphan the saved options.
+  bool _templateBlocked(_View v, bool buildsGroup, String id) => _isEdit
+      ? (v.groupMode ? !buildsGroup : buildsGroup && id != v.templateId)
+      : (_alternativesBlockSwitch(v) && !buildsGroup && id != v.templateId);
+
+  /// System back / swipe: ask first when something was typed.
+  Future<void> _onDismiss() async {
+    if (_saving) return;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text('Discard changes?',
+            style: AppText.custom(
+                size: 17,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
+        content: Text(
+            'You have unsaved changes. If you close now, they will be lost.',
+            style: AppText.body(color: AppColors.textMuted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Keep editing',
+                  style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Discard',
+                  style: AppText.bodyStrong(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (discard == true && mounted) {
+      if (!_isEdit) ref.read(quoteNewDraftProvider.notifier).state = null;
+      context.pop();
+    }
+  }
 
   void _seedFromQuote(SavedQuote q) {
     _draft = BuilderDraft.fromQuote(q);
@@ -173,7 +344,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     if (req == null || req.key == _requestedKey) return;
     _requestedKey = req.key;
     _previewTimer?.cancel();
-    _previewTimer = Timer(const Duration(milliseconds: 400), () => _runPreview(req));
+    _previewTimer =
+        Timer(const Duration(milliseconds: 400), () => _runPreview(req));
   }
 
   Future<void> _runPreview(PreviewRequest req) async {
@@ -191,7 +363,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       if (!mounted || seq != _previewSeq) return;
       setState(() {
         _answeredKey = req.key;
-        _previewError = previewErrorCopy(e.type == AppErrorType.validation, e.bareMessage);
+        _previewError =
+            previewErrorCopy(e.type == AppErrorType.validation, e.bareMessage);
       });
     }
   }
@@ -220,6 +393,7 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         _draft = _draft.copyWith(customerId: picked.id);
       }
       _spotConfirmed = false;
+      _touched = true;
     });
   }
 
@@ -230,7 +404,10 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     if (!v.canSubmit || v.missingTemplateField) return;
     // A new quote on the Item Quote layout first asks for its dynamic fields;
     // the create continues from the popup's Continue.
-    if (!_isEdit && v.spotAsk.isNotEmpty && !_spotConfirmed && spotOverride == null) {
+    if (!_isEdit &&
+        v.spotAsk.isNotEmpty &&
+        !_spotConfirmed &&
+        spotOverride == null) {
       final values = await _openSpot(v, confirmLabel: 'Continue');
       if (values == null || !mounted) return;
       return _save(v, spotOverride: values);
@@ -244,11 +421,29 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     });
     try {
       final Map<String, dynamic> res;
-      if (_isEdit) {
+      if (_isEdit && v.groupMode) {
+        // An option edits through its group: shared fields once + every option.
+        final body = toGroupPatchJson(v.sharedPatch ?? const {}, v.allTabs,
+            optionsDiffer: v.groupOptionsDiffer,
+            primaryQuotationId:
+                v.groupPrimaryChanged ? v.primaryQuotationId : null);
+        final g = await ds.updateGroup(v.groupId, body);
+        res = _optionOf(g, _quoteId);
+        ref.invalidate(quoteBuilderGroupProvider(v.groupId));
+      } else if (_isEdit) {
         res = await ds.update(_quoteId, v.editPatch!);
       } else {
-        final draft = spotOverride == null ? _draft : _draft.copyWith(spotValues: spotOverride);
-        res = await ds.create(toNewQuoteJson(draft, v.writeCtx));
+        final draft = spotOverride == null
+            ? _draft
+            : _draft.copyWith(spotValues: spotOverride);
+        if (v.groupMode) {
+          // The whole group in one write: the shared fields once + every option's own lines.
+          final g = await ds.createGroup(toNewGroupJson(
+              toNewQuoteJson(draft, v.writeCtx), v.allTabs, _primaryTab));
+          res = _optionOf(g, v.allTabs[_primaryTab].quotationId);
+        } else {
+          res = await ds.create(toNewQuoteJson(draft, v.writeCtx));
+        }
       }
       if (!mounted) return;
       final saved = SavedQuote.fromJson(res);
@@ -287,18 +482,41 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     }
   }
 
+  /// The option (full quote payload) of a group response: [id] when given and
+  /// present, else the primary option, else the first.
+  Map<String, dynamic> _optionOf(Map<String, dynamic> group, String id) {
+    final options = [
+      for (final o
+          in (group['options'] is List ? group['options'] as List : const []))
+        if (o is Map) Map<String, dynamic>.from(o),
+    ];
+    if (options.isEmpty) return group;
+    for (final o in options) {
+      if (id.isNotEmpty && o['quotation_id']?.toString() == id) return o;
+    }
+    final primary = group['primary_quotation_id']?.toString() ?? '';
+    for (final o in options) {
+      if (o['quotation_id']?.toString() == primary) return o;
+    }
+    return options.first;
+  }
+
   void _finish(SavedQuote saved) {
     final toast = ref.read(toastProvider.notifier);
     if (_isEdit) {
       ref.invalidate(quoteBuilderQuoteProvider(_quoteId));
       toast.show('Changes saved');
     } else {
-      toast.show(saved.number.isEmpty ? 'Quote created' : 'Quote ${saved.number} created');
+      ref.read(quoteNewDraftProvider.notifier).state = null;
+      toast.show(saved.number.isEmpty
+          ? 'Quote created'
+          : 'Quote ${saved.number} created');
     }
     context.pop(saved.raw);
   }
 
-  Future<Map<String, String>?> _openSpot(_View v, {required String confirmLabel}) async {
+  Future<Map<String, String>?> _openSpot(_View v,
+      {required String confirmLabel}) async {
     final values = await showSpotInputsSheet(
       context,
       fields: ref.read(quoteSpotInputsProvider(v.spotKey).future),
@@ -322,7 +540,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       _patch((d) => d.copyWith(amountsAreChoice: to));
       return;
     }
-    final needsChoice = _isEdit && !_draft.linesDirty ? _draft.items.isNotEmpty : flipNeedsChoice(_draft.items);
+    final needsChoice = _isEdit && !_draft.linesDirty
+        ? _draft.items.isNotEmpty
+        : flipNeedsChoice(_draft.items);
     if (!needsChoice) {
       _patch((d) => d.copyWith(amountsAreChoice: to, serverFlip: null));
       return;
@@ -349,7 +569,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 ? it.rate
                 : (v.livePriced[it.key]?.firstOrNull?.unitPrice ?? '');
             if (after.isEmpty || before.isEmpty) continue;
-            if (double.tryParse(cleanUnitPrice(before)) == double.tryParse(after)) continue;
+            if (double.tryParse(cleanUnitPrice(before)) ==
+                double.tryParse(after)) continue;
             final qty = toQty(it.qty);
             changes.add(PriceChangeRow(
               name: it.name.isEmpty ? 'Line' : it.name,
@@ -357,12 +578,17 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               after: groupedUnitPrice(displayUnitPrice(after, qty)),
             ));
           }
-          return (grandTotalAfter: res.shownGrandTotal, changes: changes, error: null);
+          return (
+            grandTotalAfter: res.shownGrandTotal,
+            changes: changes,
+            error: null
+          );
         } on AppError catch (e) {
           return (
             grandTotalAfter: null,
             changes: const <PriceChangeRow>[],
-            error: previewErrorCopy(e.type == AppErrorType.validation, e.bareMessage),
+            error: previewErrorCopy(
+                e.type == AppErrorType.validation, e.bareMessage),
           );
         }
       },
@@ -372,12 +598,16 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     setState(() {
       if (plan == FlipPlan.resetToSaved && v.quote != null) {
         _draft = _draft.copyWith(
-            amountsAreChoice: to, items: itemsFromSavedLines(v.quote!.lines), serverFlip: null);
+            amountsAreChoice: to,
+            items: itemsFromSavedLines(v.quote!.lines),
+            serverFlip: null);
         return;
       }
-      final next = applyPriceFlip(_draft.items, flipPriced[choice] ?? const {}, choice);
+      final next =
+          applyPriceFlip(_draft.items, flipPriced[choice] ?? const {}, choice);
       if (plan == FlipPlan.serverFlip) {
-        _draft = _draft.copyWith(amountsAreChoice: to, items: next, serverFlip: choice);
+        _draft = _draft.copyWith(
+            amountsAreChoice: to, items: next, serverFlip: choice);
       } else {
         _draft = _draft.copyWith(
           amountsAreChoice: to,
@@ -394,49 +624,79 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
   _View _buildView() {
     // The draft is seeded by the listener in didChangeDependencies; until then
     // the screen shows its loading state.
-    final quote = _isEdit && _seeded ? ref.watch(quoteBuilderQuoteProvider(_quoteId)).valueOrNull : null;
+    final quote = _isEdit && _seeded
+        ? ref.watch(quoteBuilderQuoteProvider(_quoteId)).valueOrNull
+        : null;
     if (_isEdit) ref.watch(quoteBuilderQuoteProvider(_quoteId));
-    final readOnly = _isEdit && ((quote?.isLocked ?? false) || _lockFailure != null);
+    final readOnly =
+        _isEdit && ((quote?.isLocked ?? false) || _lockFailure != null);
     final leadLocked = !_isEdit && _presetLeadId.isNotEmpty;
-    final customerLocked = !_isEdit && _presetLeadId.isEmpty && _presetCustomerId.isNotEmpty;
-    final mode = leadLocked ? QuoteFor.lead : (customerLocked ? QuoteFor.customer : _draft.quoteFor);
+    final customerLocked =
+        !_isEdit && _presetLeadId.isEmpty && _presetCustomerId.isNotEmpty;
+    final mode = leadLocked
+        ? QuoteFor.lead
+        : (customerLocked ? QuoteFor.customer : _draft.quoteFor);
 
     // Templates.
     final templatesAsync = ref.watch(quoteBuilderTemplatesProvider);
-    final active = [for (final t in templatesAsync.valueOrNull ?? const <QuoteTemplateOption>[]) if (t.isActive) t];
-    final defaultTemplateId = active.where((t) => t.isDefault && t.category.isEmpty).firstOrNull?.id ?? '';
+    final active = [
+      for (final t
+          in templatesAsync.valueOrNull ?? const <QuoteTemplateOption>[])
+        if (t.isActive) t
+    ];
+    final defaultTemplateId = active
+            .where((t) => t.isDefault && t.category.isEmpty)
+            .firstOrNull
+            ?.id ??
+        '';
     final savedTemplateId = quote == null
         ? ''
         : (quote.templateId.isNotEmpty
             ? quote.templateId
-            : active.where((t) => t.name == quote.templateName).firstOrNull?.id ?? '');
-    final templateId = _draft.templateChoice ?? (_isEdit ? savedTemplateId : defaultTemplateId);
-    final templateFallback = templatesAsync.hasError || (templatesAsync.hasValue && active.isEmpty);
+            : active
+                    .where((t) => t.name == quote.templateName)
+                    .firstOrNull
+                    ?.id ??
+                '');
+    final templateId = _draft.templateChoice ??
+        (_isEdit ? savedTemplateId : defaultTemplateId);
+    final templateFallback =
+        templatesAsync.hasError || (templatesAsync.hasValue && active.isEmpty);
     final templateOptions = [
       ...active,
-      if (quote != null && quote.templateId.isNotEmpty && !active.any((t) => t.id == quote.templateId))
+      if (quote != null &&
+          quote.templateId.isNotEmpty &&
+          !active.any((t) => t.id == quote.templateId))
         QuoteTemplateOption(
             id: quote.templateId,
             // "(inactive)" only when the list loaded and lacks it — a role that
             // cannot read templates (403) would otherwise see every quote's own
             // template labelled inactive.
-            name: '${quote.templateName.isEmpty ? 'Current template' : quote.templateName}'
+            name:
+                '${quote.templateName.isEmpty ? 'Current template' : quote.templateName}'
                 '${templatesAsync.hasError ? '' : ' (inactive)'}'),
     ];
 
     final hidden = _isEdit ? hiddenFields(quote) : <String>{};
-    final taxDefaults = readOnly ? null : ref.watch(quoteTaxDefaultsProvider).valueOrNull;
+    final taxDefaults =
+        readOnly ? null : ref.watch(quoteTaxDefaultsProvider).valueOrNull;
     final amountsAre = _draft.amountsAreChoice ?? taxDefaults?.amountsAre ?? '';
-    final recurringEnabled = (taxDefaults?.recurringBillingEnabled ?? false) || quote?.chargeSummary != null;
+    final recurringEnabled = (taxDefaults?.recurringBillingEnabled ?? false) ||
+        quote?.chargeSummary != null;
 
     final fieldsAsync = ref.watch(quoteTemplateFieldsProvider(templateId));
     final templateFields = fieldsAsync.valueOrNull ?? const <TemplateField>[];
     final configAsync = ref.watch(quoteTemplateConfigProvider(templateId));
-    final layoutConfigured = configAsync.valueOrNull?.needsConfiguration ?? false;
-    final headings = layoutConfigured ? configAsync.valueOrNull!.headings : const <SectionHeading>[];
-    final sectionDefaults = configAsync.valueOrNull?.sectionDefaults ?? const <String, String>{};
+    final layoutConfigured =
+        configAsync.valueOrNull?.needsConfiguration ?? false;
+    final headings = layoutConfigured
+        ? configAsync.valueOrNull!.headings
+        : const <SectionHeading>[];
+    final sectionDefaults =
+        configAsync.valueOrNull?.sectionDefaults ?? const <String, String>{};
 
-    final libraryAsync = readOnly ? null : ref.watch(quoteClauseLibraryProvider);
+    final libraryAsync =
+        readOnly ? null : ref.watch(quoteClauseLibraryProvider);
     final library = libraryAsync?.valueOrNull ?? const <LibraryClause>[];
     final productsAsync = ref.watch(productsProvider);
     final catalog = productsAsync.valueOrNull ?? const <Product>[];
@@ -449,32 +709,40 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           if (p.id == it.productId) _productTypeId(p),
     }..remove('');
     final familyDefaults = defaultClauseRows(library, const {}, today);
-    final initialClauses =
-        _isEdit ? savedClauseRows(quote?.clauses ?? const []) : defaultClauseRows(library, productTypeIds, today);
+    final initialClauses = _isEdit
+        ? savedClauseRows(quote?.clauses ?? const [])
+        : defaultClauseRows(library, productTypeIds, today);
     final clauseRows = _draft.clauseRows ?? initialClauses;
     final sectionPicks = _draft.sectionPicks ??
-        (_isEdit && quote != null ? quote.sections : defaultSectionPicks(headings, sectionDefaults, productTypeIds));
+        (_isEdit && quote != null
+            ? quote.sections
+            : defaultSectionPicks(headings, sectionDefaults, productTypeIds));
     final missingSections = missingMandatoryHeadings(headings, sectionPicks);
     final libraryLoaded = libraryAsync == null || !libraryAsync.isLoading;
-    final legacyTerms = _isEdit ? (quote?.clauses.isEmpty ?? true) : (libraryLoaded && familyDefaults.isEmpty);
+    final legacyTerms = _isEdit
+        ? (quote?.clauses.isEmpty ?? true)
+        : (libraryLoaded && familyDefaults.isEmpty);
 
     // Spot inputs.
     final spotKey = (
       templateId: templateId,
       leadId: !_isEdit && mode == QuoteFor.lead ? _draft.leadId : '',
-      customerId: !_isEdit && mode == QuoteFor.customer ? _draft.customerId : '',
+      customerId:
+          !_isEdit && mode == QuoteFor.customer ? _draft.customerId : '',
       quotationId: _isEdit ? _quoteId : '',
     );
     final spotFields = layoutConfigured && !readOnly && templateId.isNotEmpty
-        ? (ref.watch(quoteSpotInputsProvider(spotKey)).valueOrNull ?? const <SpotInputField>[])
+        ? (ref.watch(quoteSpotInputsProvider(spotKey)).valueOrNull ??
+            const <SpotInputField>[])
         : const <SpotInputField>[];
     final spotAsk = fieldsNeedingInput(spotFields);
 
     // Template fields.
     final stored = quote?.fieldValues ?? const <String, dynamic>{};
-    Object valueOf(TemplateField f) => fieldValueOf(f, _draft.fieldEdits, stored, !_isEdit);
-    final missingTemplateField =
-        !hidden.contains('field_values') && templateFields.any((f) => isFieldMissing(f, valueOf(f)));
+    Object valueOf(TemplateField f) =>
+        fieldValueOf(f, _draft.fieldEdits, stored, !_isEdit);
+    final missingTemplateField = !hidden.contains('field_values') &&
+        templateFields.any((f) => isFieldMissing(f, valueOf(f)));
 
     // Live preview.
     final previewCtx = PreviewContext(
@@ -482,45 +750,145 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       linesDirty: _draft.linesDirty,
       savedMode: quote?.amountsAre ?? '',
       quotationId: _isEdit ? _quoteId : null,
-      leadId: !_isEdit && mode == QuoteFor.lead && _draft.leadId.isNotEmpty ? _draft.leadId : null,
-      customerId: !_isEdit && mode == QuoteFor.customer && _draft.customerId.isNotEmpty ? _draft.customerId : null,
+      leadId: !_isEdit && mode == QuoteFor.lead && _draft.leadId.isNotEmpty
+          ? _draft.leadId
+          : null,
+      customerId:
+          !_isEdit && mode == QuoteFor.customer && _draft.customerId.isNotEmpty
+              ? _draft.customerId
+              : null,
       placeOfSupply: _draft.placeOfSupply,
     );
-    final canPreview = !readOnly && _savedQuote == null && (!_isEdit || quote != null);
-    final liveReq = canPreview ? livePreviewRequest(previewCtx, _draft.items, amountsAre, _draft.serverFlip) : null;
+    final canPreview =
+        !readOnly && _savedQuote == null && (!_isEdit || quote != null);
+    final liveReq = canPreview
+        ? livePreviewRequest(
+            previewCtx, _draft.items, amountsAre, _draft.serverFlip)
+        : null;
     if (canPreview) _schedulePreview(liveReq);
-    final hasPricedLines =
-        _isEdit ? _draft.items.isNotEmpty || !_draft.linesDirty : includedLines(_draft.items).isNotEmpty;
-    final livePriced = _preview == null ? <String, List<PricedLine>>{} : mapPreviewLines(_previewRows, _preview!.lines);
-    final priced = readOnly && quote != null ? savedLinePricing(_draft.items, quote.lines) : livePriced;
+    final hasPricedLines = _isEdit
+        ? _draft.items.isNotEmpty || !_draft.linesDirty
+        : includedLines(_draft.items).isNotEmpty;
+    final livePriced = _preview == null
+        ? <String, List<PricedLine>>{}
+        : mapPreviewLines(_previewRows, _preview!.lines);
+    final priced = readOnly && quote != null
+        ? savedLinePricing(_draft.items, quote.lines)
+        : livePriced;
     final updating = _requestedKey != null && _requestedKey != _answeredKey;
+
+    // Alternative options: the template decides on a new quote; an edited option
+    // always goes through its group.
+    final pickedTemplate =
+        templateOptions.where((t) => t.id == templateId).firstOrNull;
+    final groupId = _isEdit ? (quote?.optionGroupId ?? '') : '';
+    final groupMode =
+        _isEdit ? groupId.isNotEmpty : (pickedTemplate?.buildsGroup ?? false);
+    final groupAsync = groupMode && _isEdit
+        ? ref.watch(quoteBuilderGroupProvider(groupId))
+        : null;
+    final group = groupAsync?.valueOrNull;
+    final maxOptions = pickedTemplate?.maxOptions ?? 3;
+    final canChangeSet = !_isEdit || group?.state == 'draft';
+    if (groupMode && !_groupSeeded) {
+      if (!_isEdit) {
+        _groupSeeded = true;
+        _tabs = [firstTab(_activeOption)];
+      } else if (group != null && quote != null && group.options.isNotEmpty) {
+        _groupSeeded = true;
+        _tabs = tabsFromOptions(group.options);
+        _activeTab = group.options
+            .indexWhere((o) => o.id == quote.id)
+            .clamp(0, group.options.length - 1);
+        _primaryTab = group.options
+            .indexWhere((o) => o.id == group.primaryQuotationId)
+            .clamp(0, group.options.length - 1);
+      }
+    } else if (!groupMode &&
+        pickedTemplate != null &&
+        _groupSeeded &&
+        !_isEdit) {
+      // Switched back to a single-quote template (only possible with one option).
+      // Guarded on a known template: while the templates are still loading
+      // `groupMode` is false and this branch wiped the tabs restored from a
+      // kept draft, after which tab A was re-seeded from the active option
+      // (UAT: both options saved with the same lines).
+      _groupSeeded = false;
+      _tabs = const [];
+      _activeTab = 0;
+      _primaryTab = 0;
+    }
+    final allTabs = groupMode && _tabs.isNotEmpty
+        ? stashActive(_tabs, _activeTab, _activeOption)
+        : const <OptionTab>[];
+    final otherOptionProblems = groupMode
+        ? [
+            for (final p in optionProblems(allTabs, _isEdit))
+              if (p.label != optionLabel(_activeTab)) p
+          ]
+        : const <({String label, String problem})>[];
+    final groupLoading = _isEdit && groupMode && group == null;
 
     // Validation.
     final problems = _draft.items.map(lineProblem).toSet();
-    final hasNoLines = includedLines(_draft.items).isEmpty && (!_isEdit || _draft.linesDirty);
-    final validityInPast = validUntilInPast(_draft.validUntil, _isEdit ? (quote?.validUntil ?? '') : '', today);
-    final hasRecurringLine = _draft.items.any((it) => effectiveCharge(it, livePriced[it.key]).isRecurring);
-    final partyChosen = _isEdit || (mode == QuoteFor.lead ? _draft.leadId.isNotEmpty : _draft.customerId.isNotEmpty);
+    final hasNoLines =
+        includedLines(_draft.items).isEmpty && (!_isEdit || _draft.linesDirty);
+    final validityInPast = validUntilInPast(
+        _draft.validUntil, _isEdit ? (quote?.validUntil ?? '') : '', today);
+    final hasRecurringLine = _draft.items
+        .any((it) => effectiveCharge(it, livePriced[it.key]).isRecurring);
+    final partyChosen = _isEdit ||
+        (mode == QuoteFor.lead
+            ? _draft.leadId.isNotEmpty
+            : _draft.customerId.isNotEmpty);
     final writeCtx = BuilderWriteContext(
       templateId: templateId,
       amountsAre: amountsAre,
       fields: templateFields,
       legacyTerms: legacyTerms,
       savedTemplateId: savedTemplateId,
-      statusId: _isEdit ? null : ref.watch(quoteDefaultStatusProvider).valueOrNull,
+      statusId:
+          _isEdit ? null : ref.watch(quoteDefaultStatusProvider).valueOrNull,
     );
-    final editPatch = _isEdit && quote != null ? toQuoteUpdateJson(_draft, quote, writeCtx) : null;
-    final hasChanges = !_isEdit || (editPatch != null && editPatch.isNotEmpty);
-    final recurringWithSubscription = hasRecurringLine && _draft.payType == 'subscription';
+    final editPatch = _isEdit && quote != null
+        ? toQuoteUpdateJson(_draft, quote, writeCtx)
+        : null;
+    final sharedPatch = editPatch == null
+        ? null
+        : (Map<String, dynamic>.from(editPatch)
+          ..remove('line_items')
+          ..remove('quotation_title'));
+    final groupOptionsDiffer =
+        groupMode && _isEdit && group != null && allTabs.isNotEmpty
+            ? optionsChanged(allTabs, group.options)
+            : false;
+    final primaryId = allTabs.isNotEmpty && _primaryTab < allTabs.length
+        ? allTabs[_primaryTab].quotationId
+        : '';
+    final groupPrimaryChanged = groupMode &&
+        _isEdit &&
+        group != null &&
+        primaryId.isNotEmpty &&
+        primaryId != group.primaryQuotationId;
+    final hasChanges = !_isEdit ||
+        (groupMode
+            ? ((sharedPatch?.isNotEmpty ?? false) ||
+                groupOptionsDiffer ||
+                groupPrimaryChanged)
+            : (editPatch != null && editPatch.isNotEmpty));
+    final recurringWithSubscription =
+        hasRecurringLine && _draft.payType == 'subscription';
     final hasTemplate = templateId.isNotEmpty || templateFallback;
-    final block = blockReason(
-      items: _draft.items,
-      validityInPast: validityInPast,
-      recurringWithSubscription: recurringWithSubscription,
-      hasAmountsAre: amountsAre.isNotEmpty,
-      attemptedSave: _attemptedSave,
-      missingTemplateField: missingTemplateField,
-    );
+    final optionBlock = optionBlockReason(otherOptionProblems);
+    final block = optionBlock ??
+        blockReason(
+          items: _draft.items,
+          validityInPast: validityInPast,
+          recurringWithSubscription: recurringWithSubscription,
+          hasAmountsAre: amountsAre.isNotEmpty,
+          attemptedSave: _attemptedSave,
+          missingTemplateField: missingTemplateField,
+        );
     final canSubmit = !readOnly &&
         _savedQuote == null &&
         hasTemplate &&
@@ -535,12 +903,15 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         !recurringWithSubscription &&
         amountsAre.isNotEmpty &&
         hasChanges &&
+        otherOptionProblems.isEmpty &&
+        !groupLoading &&
         !_saving;
 
     return _View(
       quote: quote,
       quoteLoading: _isEdit && quote == null,
-      quoteError: _isEdit ? ref.watch(quoteBuilderQuoteProvider(_quoteId)).error : null,
+      quoteError:
+          _isEdit ? ref.watch(quoteBuilderQuoteProvider(_quoteId)).error : null,
       readOnly: readOnly,
       leadLocked: leadLocked,
       customerLocked: customerLocked,
@@ -555,11 +926,14 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       recurringEnabled: recurringEnabled,
       templateFields: templateFields,
       templateFieldsLoading: templateId.isNotEmpty && fieldsAsync.isLoading,
-      templateFieldsError: fieldsAsync.hasError ? 'The template’s fields could not be loaded.' : null,
+      templateFieldsError: fieldsAsync.hasError
+          ? 'The template’s fields could not be loaded.'
+          : null,
       layoutConfigured: layoutConfigured,
       headings: headings,
       sectionsLoading: configAsync.isLoading,
-      sectionsError: configAsync.hasError ? 'Could not load the quote sections.' : null,
+      sectionsError:
+          configAsync.hasError ? 'Could not load the quote sections.' : null,
       sectionPicks: sectionPicks,
       missingSections: missingSections,
       library: library,
@@ -586,7 +960,21 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
       editPatch: editPatch,
       canSubmit: canSubmit,
       blockReason: block,
-      incompleteReason: incompleteReason(hasTemplate: hasTemplate, partyChosen: partyChosen, hasNoLines: hasNoLines),
+      groupMode: groupMode,
+      groupLoading: groupLoading,
+      groupError: groupAsync?.error,
+      groupId: groupId,
+      allTabs: allTabs,
+      maxOptions: maxOptions,
+      canChangeSet: canChangeSet,
+      sharedPatch: sharedPatch,
+      groupOptionsDiffer: groupOptionsDiffer,
+      groupPrimaryChanged: groupPrimaryChanged,
+      primaryQuotationId: primaryId,
+      incompleteReason: incompleteReason(
+          hasTemplate: hasTemplate,
+          partyChosen: partyChosen,
+          hasNoLines: hasNoLines),
       validityInPast: validityInPast,
     );
   }
@@ -608,36 +996,46 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         : v.readOnly
             ? 'Quote ${v.quote?.number ?? ''}'.trim()
             : 'Edit quote ${v.quote?.number ?? ''}'.trim();
-    return Container(
-      color: AppColors.bgDetail,
-      child: Column(
-        children: [
-          _header(title),
-          Expanded(
-            child: v.quoteLoading
-                ? (v.quoteError != null
-                    ? Padding(
-                        padding: EdgeInsets.all(16.w),
-                        child: QbNotice(
-                          tone: QbTone.danger,
-                          icon: PhosphorIconsRegular.warningCircle,
-                          children: [
-                            qbNoticeText(v.quoteError is AppError
-                                ? (v.quoteError as AppError).message
-                                : 'Could not load the quote.')
-                          ],
-                        ),
-                      )
-                    : const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)))
-                : _savedQuote != null
-                    ? ListView(
-                        padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 20.h),
-                        children: [_savedNotice(_savedQuote!)],
-                      )
-                    : _form(v),
-          ),
-          if (!v.quoteLoading) _actionBar(v),
-        ],
+    final canLeave =
+        _saving ? false : !(_touched && _savedQuote == null && !v.readOnly);
+    return PopScope(
+      canPop: canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onDismiss();
+      },
+      child: Container(
+        color: AppColors.bgDetail,
+        child: Column(
+          children: [
+            _header(title),
+            Expanded(
+              child: v.quoteLoading
+                  ? (v.quoteError != null
+                      ? Padding(
+                          padding: EdgeInsets.all(16.w),
+                          child: QbNotice(
+                            tone: QbTone.danger,
+                            icon: PhosphorIconsRegular.warningCircle,
+                            children: [
+                              qbNoticeText(v.quoteError is AppError
+                                  ? (v.quoteError as AppError).message
+                                  : 'Could not load the quote.')
+                            ],
+                          ),
+                        )
+                      : const Center(
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.4, color: AppColors.navy)))
+                  : _savedQuote != null
+                      ? ListView(
+                          padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 20.h),
+                          children: [_savedNotice(_savedQuote!)],
+                        )
+                      : _form(v),
+            ),
+            if (!v.quoteLoading) _actionBar(v),
+          ],
+        ),
       ),
     );
   }
@@ -663,7 +1061,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               icon: PhosphorIconsRegular.lockSimple,
               // As on web: offered while the quote is revisable, and after a
               // QUOTE_LOCKED refusal only when the server suggests REVISE.
-              action: _canRevise && (_lockFailure == null || _lockFailure!.nextAction == 'REVISE')
+              action: _canRevise &&
+                      (_lockFailure == null ||
+                          _lockFailure!.nextAction == 'REVISE')
                   ? TextButton(
                       onPressed: () => context.pop('revise'),
                       child: const Text('Revise quote'),
@@ -697,7 +1097,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           Padding(
             padding: EdgeInsets.only(top: 8.h),
             child: QbNotice(
-                tone: QbTone.danger, icon: PhosphorIconsRegular.warningCircle, children: [qbNoticeText(_saveError!)]),
+                tone: QbTone.danger,
+                icon: PhosphorIconsRegular.warningCircle,
+                children: [qbNoticeText(_saveError!)]),
           ),
 
         // ── Template + title ──
@@ -705,11 +1107,19 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         const QbFieldLabel('Template', required: true),
         SizedBox(height: 7.h),
         QbPickerBox(
-          text: v.templateOptions.where((t) => t.id == v.templateId).firstOrNull?.name ?? '',
+          text: v.templateOptions
+                  .where((t) => t.id == v.templateId)
+                  .firstOrNull
+                  ?.label ??
+              '',
           placeholder: v.templatesLoading
               ? 'Loading templates…'
               : v.templateFallback
-                  ? (_isEdit ? (q?.templateName.isNotEmpty == true ? q!.templateName : 'Current template') : 'Organisation’s default template')
+                  ? (_isEdit
+                      ? (q?.templateName.isNotEmpty == true
+                          ? q!.templateName
+                          : 'Current template')
+                      : 'Organisation’s default template')
                   : 'Select a template…',
           error: _fieldErrors.containsKey('template'),
           onTap: ro || v.templateFallback
@@ -717,20 +1127,37 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               : () async {
                   final id = await qbPickOne(context,
                       title: 'Template',
-                      options: [for (final t in v.templateOptions) (t.id, t.name)],
+                      options: [
+                        for (final t in v.templateOptions)
+                          // Single-quote templates are not offered while
+                          // alternatives exist (switching would drop them).
+                          if (!_templateBlocked(v, t.buildsGroup, t.id))
+                            (t.id, t.label)
+                      ],
                       selected: v.templateId);
                   if (id != null) {
-                    _patch((d) => d.copyWith(templateChoice: id, sectionPicks: null));
+                    _patch((d) =>
+                        d.copyWith(templateChoice: id, sectionPicks: null));
                     _spotConfirmed = false;
                   }
                 },
         ),
         _fieldError('template'),
+        if (_alternativesBlockSwitch(v))
+          const QbHint(
+              'Remove the alternatives to switch to a single-quote template.')
+        else if (_isEdit && v.groupMode)
+          const QbHint(
+              'This quote has options, so its template stays an options template.'),
         SizedBox(height: 14.h),
         _textField(
-          label: 'Quote title',
+          label: v.groupMode
+              ? 'Option ${optionLabel(_activeTab)} title'
+              : 'Quote title',
           ctrl: _titleCtrl,
-          hint: 'e.g. CRM Annual Plan – ABC Corp',
+          hint: v.groupMode
+              ? 'e.g. Premium package'
+              : 'e.g. CRM Annual Plan – ABC Corp',
           disabled: ro || v.hidden.contains('quotation_title'),
           errorKey: 'quotation_title',
           onChanged: (t) => _patch((d) => d.copyWith(title: t)),
@@ -740,13 +1167,40 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         // ── Party ──
         ..._partySection(v),
 
+        // ── Alternative options: one tab per option; the lines below are the active option's ──
+        if (v.groupMode && v.allTabs.isNotEmpty) ...[
+          SizedBox(height: 8.h),
+          if (_isEdit && v.groupError != null)
+            QbNotice(
+              tone: QbTone.danger,
+              icon: PhosphorIconsRegular.warningCircle,
+              children: [
+                qbNoticeText(
+                    'This quote is one option of a group and is changed through the group, which could not be loaded: ${v.groupError is AppError ? (v.groupError as AppError).bareMessage : v.groupError}')
+              ],
+            ),
+          QuoteOptionTabsBar(
+            tabs: v.allTabs,
+            active: _activeTab,
+            primary: _primaryTab,
+            max: v.maxOptions,
+            disabled: ro,
+            canChangeSet: v.canChangeSet,
+            onSelect: _selectTab,
+            onAdd: () => _addAlternative(v.maxOptions),
+            onRemove: _removeOption,
+            onMakePrimary: _makePrimary,
+          ),
+        ],
+
         // ── Lines ──
         SizedBox(height: 8.h),
         QuoteLinesEditor(
           items: _draft.items,
           // Editing a line hands the lines to the client: a pending
           // server-side flip is dropped.
-          onItemsChange: (items) => _patch((d) => d.copyWith(items: items, linesDirty: true, serverFlip: null)),
+          onItemsChange: (items) => _patch((d) =>
+              d.copyWith(items: items, linesDirty: true, serverFlip: null)),
           catalog: v.catalog,
           catalogLoading: v.catalogLoading,
           priced: v.priced,
@@ -761,14 +1215,21 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
 
         // ── Totals ──
         QuoteTotalsBlock(
-          summary: ro ? q?.taxSummary : (v.hasPricedLines ? _preview?.summary : null),
+          summary: ro
+              ? q?.taxSummary
+              : (v.hasPricedLines ? _preview?.summary : null),
           taxableTotal: v.hasPricedLines ? _preview?.taxableTotal : null,
           grandTotal: v.hasPricedLines ? _preview?.grandTotal : null,
-          loading: !ro && v.hasPricedLines && _preview == null && _previewError == null,
+          loading: !ro &&
+              v.hasPricedLines &&
+              _preview == null &&
+              _previewError == null,
           updating: !ro && _preview != null && v.updating,
           error: !ro && v.hasPricedLines ? _previewError : null,
           discountPct: q?.discountPct ?? '',
-          chargeSummary: ro ? q?.chargeSummary : (v.hasPricedLines ? _preview?.chargeSummary : null),
+          chargeSummary: ro
+              ? q?.chargeSummary
+              : (v.hasPricedLines ? _preview?.chargeSummary : null),
         ),
 
         // ── Payment ──
@@ -823,7 +1284,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               errorKey: 'due_date',
               onPick: (d) => _patch((x) => x.copyWith(dueDate: d)),
               // A date can be changed on an edit, not cleared.
-              onClear: _isEdit ? null : () => _patch((x) => x.copyWith(dueDate: '')),
+              onClear:
+                  _isEdit ? null : () => _patch((x) => x.copyWith(dueDate: '')),
             ),
           ),
         ]),
@@ -834,31 +1296,40 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           label: 'Amounts are',
           required: true,
           disabled: ro,
-          options: [for (final e in quoteAmountsAreLabels.entries) (e.key, e.value)],
+          options: [
+            for (final e in quoteAmountsAreLabels.entries) (e.key, e.value)
+          ],
           selected: v.amountsAre,
           onSelect: (to) => _changeAmountsAre(v, to),
         ),
-        if (v.amountsAre.isEmpty && !ro) QbHint(v.taxDefaults == null ? 'Loading…' : 'Select…'),
+        if (v.amountsAre.isEmpty && !ro)
+          QbHint(v.taxDefaults == null ? 'Loading…' : 'Select…'),
         SizedBox(height: 14.h),
         const QbFieldLabel('Place of supply'),
         SizedBox(height: 7.h),
         QbPickerBox(
-          text: _draft.placeOfSupply.isEmpty ? '' : stateName(_draft.placeOfSupply),
+          text: _draft.placeOfSupply.isEmpty
+              ? ''
+              : stateName(_draft.placeOfSupply),
           placeholder: 'Select a state…',
           error: _fieldErrors.containsKey('place_of_supply_state_code'),
           onTap: ro
               ? null
               : () async {
                   final code = await pickGstState(context, ref,
-                      selected: _draft.placeOfSupply.isEmpty ? null : _draft.placeOfSupply);
-                  if (code != null && mounted) _patch((d) => d.copyWith(placeOfSupply: code));
+                      selected: _draft.placeOfSupply.isEmpty
+                          ? null
+                          : _draft.placeOfSupply);
+                  if (code != null && mounted)
+                    _patch((d) => d.copyWith(placeOfSupply: code));
                 },
           trailing: !ro && _draft.placeOfSupply.isNotEmpty
               ? GestureDetector(
                   onTap: () => _patch((d) => d.copyWith(placeOfSupply: '')),
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6.w),
-                    child: Icon(PhosphorIconsRegular.x, size: 14.sp, color: AppColors.textPlaceholder),
+                    child: Icon(PhosphorIconsRegular.x,
+                        size: 14.sp, color: AppColors.textPlaceholder),
                   ),
                 )
               : null,
@@ -880,7 +1351,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           TemplateFieldsSection(
             fields: v.templateFields,
             valueOf: v.valueOf,
-            onChange: (key, value) => _patch((d) => d.copyWith(fieldEdits: {...d.fieldEdits, key: value})),
+            onChange: (key, value) => _patch(
+                (d) => d.copyWith(fieldEdits: {...d.fieldEdits, key: value})),
             warnings: _isEdit ? (q?.fieldValuesWarnings ?? const []) : const [],
             loading: v.templateFieldsLoading,
             error: v.templateFieldsError,
@@ -905,7 +1377,10 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   _isEdit
                       ? '${v.spotAsk.length} field${v.spotAsk.length == 1 ? '' : 's'} typed for this quote (bill-to / ship-to / reference …).'
                       : '${v.spotAsk.length} field${v.spotAsk.length == 1 ? '' : 's'} to fill in — asked when you create the quote.',
-                  style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
             ),
             SizedBox(width: 8.w),
             GestureDetector(
@@ -919,10 +1394,14 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                   border: Border.all(color: const Color(0xFFE6E7EA)),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(PhosphorIconsRegular.pencilSimple, size: 13.sp, color: AppColors.textLabelAlt),
+                  Icon(PhosphorIconsRegular.pencilSimple,
+                      size: 13.sp, color: AppColors.textLabelAlt),
                   SizedBox(width: 5.w),
                   Text(_isEdit ? 'Edit details' : 'Fill in now',
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textLabelAlt)),
+                      style: AppText.custom(
+                          size: 12.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textLabelAlt)),
                 ]),
               ),
             ),
@@ -933,7 +1412,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           QbNotice(
             tone: QbTone.warning,
             icon: PhosphorIconsRegular.lockSimple,
-            children: [qbNoticeText(mandatoryHeadingsNotice(v.missingSections))],
+            children: [
+              qbNoticeText(mandatoryHeadingsNotice(v.missingSections))
+            ],
           ),
         ],
 
@@ -976,7 +1457,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         AppTextField(
           label: isLead ? 'Lead' : 'Customer',
           readOnly: true,
-          value: isLead ? q!.leadName : (q?.customerName.isNotEmpty == true ? q!.customerName : '—'),
+          value: isLead
+              ? q!.leadName
+              : (q?.customerName.isNotEmpty == true ? q!.customerName : '—'),
           suffixIcon: PhosphorIconsRegular.lockSimple,
         ),
       ];
@@ -992,7 +1475,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           suffixIcon: PhosphorIconsRegular.lockSimple,
         ),
         if ((pick?.sub ?? '').isNotEmpty) QbHint(pick!.sub),
-        if (v.customerLocked && _saveError != null) QbHint(_customerModeError(_saveError!), error: true),
+        if (v.customerLocked && _saveError != null)
+          QbHint(_customerModeError(_saveError!), error: true),
       ];
     }
     final mode = v.mode;
@@ -1033,20 +1517,24 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
             ? 'Search leads by name, company, email or phone…'
             : 'Search customers by name, company, email…',
         suffixIcon: PhosphorIconsRegular.magnifyingGlass,
-        errorText: _fieldErrors[mode == QuoteFor.lead ? 'lead' : 'customer']?.firstOrNull,
+        errorText: _fieldErrors[mode == QuoteFor.lead ? 'lead' : 'customer']
+            ?.firstOrNull,
         onTap: () => _pickParty(mode),
       ),
       if (id.isNotEmpty && (pick?.sub ?? '').isNotEmpty) QbHint(pick!.sub),
-      if (mode == QuoteFor.customer && _saveError != null) QbHint(_customerModeError(_saveError!), error: true),
+      if (mode == QuoteFor.customer && _saveError != null)
+        QbHint(_customerModeError(_saveError!), error: true),
     ];
   }
 
   /// Copy shown inline when the server refuses a customer-mode create.
-  static String _customerModeError(String message) => message.isNotEmpty ? message : customerNoLeadCopy;
+  static String _customerModeError(String message) =>
+      message.isNotEmpty ? message : customerNoLeadCopy;
 
   Widget _validUntilField(_View v) {
     final today = DateTime.now();
-    final error = v.validityInPast ? 'The validity date can’t be in the past.' : null;
+    final error =
+        v.validityInPast ? 'The validity date can’t be in the past.' : null;
     return _dateField(
       label: 'Quote valid until',
       value: _draft.validUntil,
@@ -1100,7 +1588,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 onTap: onClear,
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6.w),
-                  child: Icon(PhosphorIconsRegular.x, size: 14.sp, color: AppColors.textPlaceholder),
+                  child: Icon(PhosphorIconsRegular.x,
+                      size: 14.sp, color: AppColors.textPlaceholder),
                 ),
               )
             : null,
@@ -1147,11 +1636,15 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
     final pending = s.approvalIsPending;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text.rich(TextSpan(
-        style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
+        style: AppText.custom(
+            size: 14, weight: FontWeight.w500, color: AppColors.textBody),
         children: [
           TextSpan(
               text: s.number.isEmpty ? 'The quote' : s.number,
-              style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 14,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
           const TextSpan(text: ' is saved.'),
         ],
       )),
@@ -1161,9 +1654,12 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
           tone: QbTone.warning,
           icon: PhosphorIconsRegular.shieldWarning,
           children: [
-            qbNoticeText(_isEdit ? approvalCopyNeutral : approvalCopy, strong: true),
-            if (s.discountPct.isNotEmpty) qbNoticeText('Discount on this quote: ${pct2(s.discountPct)}.'),
-            qbNoticeText('${_isEdit ? '' : 'Your approver has been notified. '}You can keep working on the quote meanwhile.',
+            qbNoticeText(_isEdit ? approvalCopyNeutral : approvalCopy,
+                strong: true),
+            if (s.discountPct.isNotEmpty)
+              qbNoticeText('Discount on this quote: ${pct2(s.discountPct)}.'),
+            qbNoticeText(
+                '${_isEdit ? '' : 'Your approver has been notified. '}You can keep working on the quote meanwhile.',
                 muted: true),
           ],
         ),
@@ -1181,7 +1677,10 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         )
       else
         Text('Quote total: ${formatMoneyStr(s.raw['total_amount'])}',
-            style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+            style: AppText.custom(
+                size: 13.5,
+                weight: FontWeight.w600,
+                color: AppColors.textBody)),
     ]);
   }
 
@@ -1196,7 +1695,9 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => _savedQuote != null ? _finish(_savedQuote!) : context.pop(),
+            onTap: () => _savedQuote != null
+                ? _finish(_savedQuote!)
+                : _closeKeepingDraft(),
             child: Container(
               width: 38.w,
               height: 38.w,
@@ -1206,7 +1707,8 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 borderRadius: BorderRadius.circular(11.r),
                 border: Border.all(color: const Color(0xFFE6E7EA)),
               ),
-              child: Icon(PhosphorIconsBold.caretLeft, size: 17.sp, color: AppColors.textBody),
+              child: Icon(PhosphorIconsBold.caretLeft,
+                  size: 17.sp, color: AppColors.textBody),
             ),
           ),
           SizedBox(width: 12.w),
@@ -1217,9 +1719,16 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
                 Text(title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    style: AppText.custom(
+                        size: 19,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
                 Text('Line items from the catalog or typed',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
@@ -1235,22 +1744,36 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
             color: AppColors.white,
             border: Border(top: BorderSide(color: AppColors.borderCardSoft)),
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            if (above != null) ...[above, SizedBox(height: 8.h)],
-            Row(children: children),
-          ]),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (above != null) ...[above, SizedBox(height: 8.h)],
+                Row(children: children),
+              ]),
         );
 
     if (_savedQuote != null) {
-      return bar([Expanded(child: qbSheetButton('Done', primary: true, onTap: () => _finish(_savedQuote!)))]);
+      return bar([
+        Expanded(
+            child: qbSheetButton('Done',
+                primary: true, onTap: () => _finish(_savedQuote!)))
+      ]);
     }
     if (v.readOnly) {
-      return bar([Expanded(child: qbSheetButton('Close', primary: false, onTap: () => context.pop()))]);
+      return bar([
+        Expanded(
+            child: qbSheetButton('Close',
+                primary: false, onTap: () => context.pop()))
+      ]);
     }
     // Say why the button is disabled — otherwise a cleared quantity reads as a
     // dead button.
-    final reason = v.blockReason.isNotEmpty ? v.blockReason : v.incompleteReason;
-    final label = _isEdit ? (_saving ? 'Saving…' : 'Save changes') : (_saving ? 'Creating…' : 'Create quote');
+    final reason =
+        v.blockReason.isNotEmpty ? v.blockReason : v.incompleteReason;
+    final label = _isEdit
+        ? (_saving ? 'Saving…' : 'Save changes')
+        : (_saving ? 'Creating…' : 'Create quote');
     return bar(
       above: reason.isEmpty
           ? null
@@ -1258,10 +1781,12 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               style: AppText.custom(
                   size: 12.5,
                   weight: FontWeight.w600,
-                  color: v.blockReason.isNotEmpty ? AppColors.error : AppColors.textMuted)),
+                  color: v.blockReason.isNotEmpty
+                      ? AppColors.error
+                      : AppColors.textMuted)),
       [
         GestureDetector(
-          onTap: _saving ? null : () => context.pop(),
+          onTap: _saving ? null : _closeKeepingDraft,
           child: Container(
             width: 100.w,
             height: 48.h,
@@ -1271,7 +1796,11 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               borderRadius: BorderRadius.circular(12.r),
               border: Border.all(color: const Color(0xFFE6E7EA)),
             ),
-            child: Text('Cancel', style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+            child: Text('Cancel',
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
           ),
         ),
         SizedBox(width: 10.w),
@@ -1282,22 +1811,33 @@ class _AddQuoteScreenState extends ConsumerState<AddQuoteScreen> {
               height: 48.h,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                  color: v.canSubmit ? AppColors.navy : AppColors.textPlaceholder,
+                  color:
+                      v.canSubmit ? AppColors.navy : AppColors.textPlaceholder,
                   borderRadius: BorderRadius.circular(12.r)),
               child: _saving
                   ? Row(mainAxisSize: MainAxisSize.min, children: [
                       SizedBox(
                         width: 16.w,
                         height: 16.w,
-                        child: const CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
+                        child: const CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.white),
                       ),
                       SizedBox(width: 8.w),
-                      Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                      Text(label,
+                          style: AppText.custom(
+                              size: 15,
+                              weight: FontWeight.w700,
+                              color: AppColors.white)),
                     ])
                   : Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
+                      Icon(PhosphorIconsBold.check,
+                          size: 16.sp, color: AppColors.white),
                       SizedBox(width: 8.w),
-                      Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                      Text(label,
+                          style: AppText.custom(
+                              size: 15,
+                              weight: FontWeight.w700,
+                              color: AppColors.white)),
                     ]),
             ),
           ),
@@ -1358,6 +1898,17 @@ class _View {
     required this.canSubmit,
     required this.blockReason,
     required this.incompleteReason,
+    this.groupMode = false,
+    this.groupLoading = false,
+    this.groupError,
+    this.groupId = '',
+    this.allTabs = const [],
+    this.maxOptions = 3,
+    this.canChangeSet = true,
+    this.sharedPatch,
+    this.groupOptionsDiffer = false,
+    this.groupPrimaryChanged = false,
+    this.primaryQuotationId = '',
     required this.validityInPast,
   });
 
@@ -1393,7 +1944,12 @@ class _View {
   final String today;
   final List<Product> catalog;
   final bool catalogLoading;
-  final ({String templateId, String leadId, String customerId, String quotationId}) spotKey;
+  final ({
+    String templateId,
+    String leadId,
+    String customerId,
+    String quotationId
+  }) spotKey;
   final List<SpotInputField> spotAsk;
   final Object Function(TemplateField) valueOf;
   final bool missingTemplateField;
@@ -1408,5 +1964,18 @@ class _View {
   final bool canSubmit;
   final String blockReason;
   final String incompleteReason;
+
+  // Alternative options (an `options` template / an option of a group).
+  final bool groupMode;
+  final bool groupLoading;
+  final Object? groupError;
+  final String groupId;
+  final List<OptionTab> allTabs;
+  final int maxOptions;
+  final bool canChangeSet;
+  final Map<String, dynamic>? sharedPatch;
+  final bool groupOptionsDiffer;
+  final bool groupPrimaryChanged;
+  final String primaryQuotationId;
   final bool validityInPast;
 }

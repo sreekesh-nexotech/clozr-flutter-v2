@@ -94,7 +94,11 @@ void main() {
       final schema = LeadSchemaRemoteDataSource.mapSchema(_schemaBody([
         _column('lead_source', visible: true, label: 'Channel', order: 1),
         _column('custom_fields.budget',
-            visible: true, label: 'Budget', order: 2, custom: true, type: 'number'),
+            visible: true,
+            label: 'Budget',
+            order: 2,
+            custom: true,
+            type: 'number'),
       ]));
 
       expect(schema.labelOf('lead_source', 'Source'), 'Channel');
@@ -115,9 +119,12 @@ void main() {
     test('an unusable body maps to the empty schema, never an error', () {
       expect(LeadSchemaRemoteDataSource.mapSchema(null).isEmpty, isTrue);
       expect(LeadSchemaRemoteDataSource.mapSchema('nope').isEmpty, isTrue);
-      expect(LeadSchemaRemoteDataSource.mapSchema(<String, dynamic>{}).isEmpty, isTrue);
+      expect(LeadSchemaRemoteDataSource.mapSchema(<String, dynamic>{}).isEmpty,
+          isTrue);
       expect(
-        LeadSchemaRemoteDataSource.mapSchema({'all_fields': {'columns': 'bad'}}).isEmpty,
+        LeadSchemaRemoteDataSource.mapSchema({
+          'all_fields': {'columns': 'bad'}
+        }).isEmpty,
         isTrue,
       );
     });
@@ -141,7 +148,11 @@ void main() {
         _column('lead_name', visible: true, order: 1),
         _column('lead_value', visible: true, order: 2),
         _column('custom_fields.budget',
-            visible: true, label: 'Budget', order: 3, custom: true, type: 'number'),
+            visible: true,
+            label: 'Budget',
+            order: 3,
+            custom: true,
+            type: 'number'),
         _column('lead_score', visible: true, label: 'Score', order: 4),
       ]));
 
@@ -189,7 +200,7 @@ void main() {
     test('booleans, dates, lists and whole decimals', () {
       expect(textFor(true, 'boolean'), 'Yes');
       expect(textFor(false, 'boolean'), 'No');
-      expect(textFor('2026-03-15T10:00:00Z', 'date'), '15 Mar 2026');
+      expect(textFor('2026-03-15T10:00:00Z', 'date'), '15/03/2026');
       expect(textFor(['A', 'B'], 'multi_select'), 'A, B');
       expect(textFor(5000.0, 'decimal'), '5000');
       expect(textFor('  ', 'text'), isNull);

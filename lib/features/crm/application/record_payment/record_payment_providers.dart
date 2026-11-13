@@ -12,19 +12,25 @@ final recordPaymentRemoteProvider = Provider<RecordPaymentRemoteDataSource>(
 );
 
 /// The plan picker's results for one (already debounced) search term.
-final recordPaymentPlanSearchProvider = FutureProvider.autoDispose.family<List<PlanOption>, String>(
+final recordPaymentPlanSearchProvider =
+    FutureProvider.autoDispose.family<List<PlanOption>, String>(
   (ref, query) => ref.watch(recordPaymentRemoteProvider).searchPlans(query),
 );
 
 /// One plan with its records, keyed by `payment_id` (uuid).
-final recordPaymentPlanProvider = FutureProvider.autoDispose.family<RecordPaymentPlan?, String>(
-  (ref, planId) => planId.isEmpty ? Future.value(null) : ref.watch(recordPaymentRemoteProvider).getPlan(planId),
+final recordPaymentPlanProvider =
+    FutureProvider.autoDispose.family<RecordPaymentPlan?, String>(
+  (ref, planId) => planId.isEmpty
+      ? Future.value(null)
+      : ref.watch(recordPaymentRemoteProvider).getPlan(planId),
 );
 
 /// After a payment is recorded the server recalculates the plan (paid,
 /// balance, completion, leftover cancellations), so every list and header
 /// that shows it is stale. Pass `ref.invalidate`.
-Future<void> invalidateAfterRecordPayment(void Function(ProviderOrFamily) invalidate, {String? planId}) async {
+Future<void> invalidateAfterRecordPayment(
+    void Function(ProviderOrFamily) invalidate,
+    {String? planId}) async {
   // The offline copies too — otherwise a later network blip serves pre-payment rows.
   await AppCache.remove(AppCache.crmCache, 'payment_records');
   await AppCache.remove(AppCache.crmCache, 'invoices');

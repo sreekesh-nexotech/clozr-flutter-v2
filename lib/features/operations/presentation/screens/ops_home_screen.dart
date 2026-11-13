@@ -7,9 +7,12 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
-import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_refresh.dart';
+import '../../../dashboard/application/providers/dashboard_providers.dart';
+import '../../../dashboard/application/dash_navigation.dart';
+import '../../../dashboard/presentation/components/period_picker_sheet.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/kpi_card.dart';
@@ -43,6 +46,34 @@ class OpsHomeScreen extends ConsumerWidget {
   /// crashing — the catalog is the org's to change.
   static int _rankOf(String priority) => _priRank[priority] ?? _priRank.length;
 
+  /// "My Tasks" order. Priority: Urgent, High, Medium, Low (unknown last), then
+  /// closest due date; Due: closest first. A task with no end date always sorts
+  /// last — an empty ISO string would otherwise compare lowest and lead.
+  static List<OpsTask> sortMyTasks(Iterable<OpsTask> open, String sort) {
+    return open.toList()
+      ..sort((a, b) {
+        if (sort == 'due') return _byDue(a, b);
+        final r = _rankOf(a.pri).compareTo(_rankOf(b.pri));
+        return r != 0 ? r : _byDue(a, b);
+      });
+  }
+
+  /// "My Top Tasks Needing Attention": the five closest due dates, overdue
+  /// first, tasks with no end date last.
+  static List<OpsTask> topAttention(Iterable<OpsTask> open) =>
+      (open.toList()..sort(_byDue)).take(5).toList();
+
+  /// The server KPI whose trend may sit beside a card showing [shown]: only
+  /// when the server measured the same count (see [_kpiGrid]).
+  static OpsKpi? trendFor(OpsKpi? kpi, int shown) =>
+      kpi != null && kpi.count == shown && kpi.hasTrend ? kpi : null;
+
+  static int _byDue(OpsTask a, OpsTask b) {
+    final ae = a.endISO.trim().isEmpty, be = b.endISO.trim().isEmpty;
+    if (ae || be) return ae == be ? 0 : (ae ? 1 : -1);
+    return a.endISO.compareTo(b.endISO);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasksAsync = ref.watch(opsTasksProvider);
@@ -75,7 +106,9 @@ class OpsHomeScreen extends ConsumerWidget {
     if (err != null) {
       final appErr = err is AppError
           ? err
-          : const AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.');
+          : const AppError(
+              type: AppErrorType.unknown,
+              message: 'Something went wrong. Please try again.');
       return ErrorState.forError(appErr, onRetry: () {
         ref.invalidate(opsTasksProvider);
         ref.invalidate(projectsProvider);
@@ -87,7 +120,10 @@ class OpsHomeScreen extends ConsumerWidget {
     final sort = ref.watch(opsSortProvider);
 
     final mineAll = tasks.where((t) => t.isMine).toList();
-    final open = mineAll.where((t) => t.status == 'open' || t.status == 'working' || t.status == 'review').toList();
+    final open = mineAll
+        .where((t) =>
+            t.status == 'open' || t.status == 'working' || t.status == 'review')
+        .toList();
     final done = mineAll.where((t) => t.status == 'completed').toList();
     final total = mineAll.where((t) => t.status != 'cancelled').toList();
     final overdue = open.where((t) => taskDueDelta(t) < 0).toList();
@@ -99,57 +135,131 @@ class OpsHomeScreen extends ConsumerWidget {
     final donePct = total.isEmpty ? 0.0 : done.length / total.length;
 
     String projName(String id) =>
-        projects.where((p) => p.id == id).map((p) => p.name).firstOrNull ?? 'No project';
+        projects.where((p) => p.id == id).map((p) => p.name).firstOrNull ??
+        'No project';
 
-    final myTasks = open.toList()
-      ..sort((a, b) {
-        if (sort == 'due') return a.endISO.compareTo(b.endISO);
-        final r = _rankOf(a.pri).compareTo(_rankOf(b.pri));
-        return r != 0 ? r : a.endISO.compareTo(b.endISO);
-      });
-    final attn = open.toList()..sort((a, b) => a.endISO.compareTo(b.endISO));
+    final myTasks = sortMyTasks(open, sort);
+    // The five most urgent: overdue first (closest dates lead), no-date last.
+    final attn = topAttention(open);
 
-    void goTasks({String tab = 'all'}) {
-      ref.read(myTasksFProvider.notifier).state = true;
-      // Tabs are status ids in API mode: "completed" is the org's done status.
-      final done = ref.read(opsTaskDoneStatusProvider);
-      ref.read(otTabsProvider.notifier).state = tab == 'all'
-          ? const {}
-          : {ApiConfig.apiEnabled && done != null ? done.id : tab};
-      context.go(Routes.opsTasks);
-    }
+    // My Tasks, on the slice the card counted (`mine=1`; `tab=completed` is
+    // the org's done status; `due=overdue` the overdue window). Through dashGo
+    // so any drawer filter the list kept from a Dashboard link is cleared.
+    void goTasks({String tab = 'all', String? due}) => dashGo(
+        context,
+        ref,
+        '${Routes.opsTasks}?mine=1'
+        '${tab == 'all' ? '' : '&tab=$tab'}'
+        '${due == null ? '' : '&due=$due'}');
 
-    return ListView(
-      padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
-      children: [
-        _kpiGrid(
-          active: activeProj.length,
-          overdue: overdue.length,
-          done: done.length,
-          total: total.length,
-          donePct: donePct,
-          // Trends and the cycle time come from the server or not at all — see
-          // [opsKpisProvider]. Counts stay local so the grid never blanks.
-          kpis: ref.watch(opsKpisProvider).valueOrNull,
-          onActive: () {
-            ref.read(myProjectsProvider.notifier).state = true;
-            ref.read(projTabProvider.notifier).state = 'active';
-            context.go(Routes.opsProjects);
-          },
-          onOverdue: () => goTasks(),
-          onCompleted: () => goTasks(tab: 'completed'),
+    return AppRefresh(
+      onRefresh: () => _refresh(ref),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
+        children: [
+          _periodChip(context, ref),
+          SizedBox(height: 14.h),
+          _kpiGrid(
+            active: activeProj.length,
+            overdue: overdue.length,
+            done: done.length,
+            total: total.length,
+            donePct: donePct,
+            // Trends and the cycle time come from the server or not at all — see
+            // [opsKpisProvider]. Counts stay local so the grid never blanks.
+            kpis: ref.watch(opsKpisProvider).valueOrNull,
+            period: ref.watch(dashPeriodProvider),
+            // My projects that are not closed — the header's Open group (the
+            // chips are status names; "active" was no chip, so the list
+            // came up empty beside a card that read 1).
+            onActive: () =>
+                dashGo(context, ref, '${Routes.opsProjects}?mine=1&group=open'),
+            // The card counts overdue tasks, so the list opens on those.
+            onOverdue: () => goTasks(due: 'overdue'),
+            onCompleted: () => goTasks(tab: 'completed'),
+          ),
+          SizedBox(height: 16.h),
+          _myTasksCard(context, ref, myTasks, sort, projName, () => goTasks()),
+          SizedBox(height: 16.h),
+          _attnCard(context, attn, projName),
+          SizedBox(height: 16.h),
+          _gridCard(
+            done,
+            ref.watch(opsCompletedGridProvider).valueOrNull ?? const [],
+            ref.watch(dashPeriodProvider),
+            () => goTasks(tab: 'completed'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pull-to-refresh: the task and project lists behind every card, plus the
+  /// server's KPI figures and completed grid for the selected period.
+  Future<void> _refresh(WidgetRef ref) async {
+    // The lists are cached per query by the scoped family providers, so those
+    // (not just the thin wrappers the screen watches) are what must be dropped
+    // for a pull to reach the network.
+    ref.invalidate(opsTasksScopedProvider);
+    ref.invalidate(projectsScopedProvider);
+    ref.invalidate(myProjectsListProvider);
+    ref.invalidate(opsKpisProvider);
+    ref.invalidate(opsCompletedGridProvider);
+    await settle([
+      ref.read(opsTasksProvider.future),
+      ref.read(projectsProvider.future),
+      ref.read(myProjectsListProvider.future),
+      ref.read(opsKpisProvider.future),
+      ref.read(opsCompletedGridProvider.future),
+    ]);
+  }
+
+  /// The Period the server-measured figures (cycle time, trends, completed
+  /// grid) are for. Shared with the Dashboard tabs' Period selection.
+  Widget _periodChip(BuildContext context, WidgetRef ref) {
+    final label = ref.watch(dashPeriodProvider);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => showDashPeriodPicker(context, ref, label),
+        child: Container(
+          height: 34.h,
+          padding: EdgeInsets.symmetric(horizontal: 12.w),
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(10.r),
+            border: Border.all(color: AppColors.borderCardSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PhosphorIconsRegular.calendarBlank,
+                  size: 15.sp, color: AppColors.textSecondary),
+              SizedBox(width: 7.w),
+              Text('Period',
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
+              SizedBox(width: 6.w),
+              Flexible(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textSecondary)),
+              ),
+              SizedBox(width: 7.w),
+              Icon(PhosphorIconsBold.caretDown,
+                  size: 11.sp,
+                  color: AppColors.textSecondary.withOpacity(0.65)),
+            ],
+          ),
         ),
-        SizedBox(height: 16.h),
-        _myTasksCard(context, ref, myTasks, sort, projName, () => goTasks()),
-        SizedBox(height: 16.h),
-        _attnCard(context, attn, projName),
-        SizedBox(height: 16.h),
-        _gridCard(
-          done,
-          ref.watch(opsCompletedGridProvider).valueOrNull ?? const [],
-          () => goTasks(tab: 'completed'),
-        ),
-      ],
+      ),
     );
   }
 
@@ -171,7 +281,11 @@ class OpsHomeScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Operations', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text('Operations',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                     SizedBox(height: 1.h),
                     Text('Dashboard', style: AppText.screenTitle()),
                   ],
@@ -183,7 +297,10 @@ class OpsHomeScreen extends ConsumerWidget {
                 // "Thu, 9 Jul" — the prototype's frozen date, which read as
                 // stale on every other day of the year.
                 child: Text(DateFormat('EEE, d MMM').format(DateTime.now()),
-                    style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ),
             ],
           ),
@@ -207,12 +324,20 @@ class OpsHomeScreen extends ConsumerWidget {
     required int total,
     required double donePct,
     required OpsKpis? kpis,
+    required String period,
     required VoidCallback onActive,
     required VoidCallback onOverdue,
     required VoidCallback onCompleted,
   }) {
     final cycle = kpis?.avgTaskCycle;
     final cycleDays = cycle?.days;
+    // A trend chip belongs to the figure the server measured. The cards show
+    // counts from the lists below, and the server's `own` scope can count a
+    // different set (an admin's own scope is wider than "projects I'm on"), so
+    // a chip is shown only when the server's count equals the displayed one —
+    // never "29 → ↓100%" beside a card that reads 1.
+    final activeKpi = OpsHomeScreen.trendFor(kpis?.activeProjects, active);
+    final overdueKpi = OpsHomeScreen.trendFor(kpis?.tasksOverdue, overdue);
     return Column(
       children: [
         IntrinsicHeight(
@@ -228,8 +353,10 @@ class OpsHomeScreen extends ConsumerWidget {
                   label: 'My Active Projects',
                   sub: "Projects I'm part of",
                   accent: AppColors.success,
-                  trend: kpis?.activeProjects?.trendLabel,
-                  trendUp: kpis?.activeProjects?.trendUp ?? true,
+                  trend: activeKpi?.hasTrend == true
+                      ? activeKpi!.trendLabel
+                      : null,
+                  trendUp: activeKpi?.trendUp ?? true,
                   onTap: onActive,
                 ),
               ),
@@ -243,11 +370,13 @@ class OpsHomeScreen extends ConsumerWidget {
                   label: 'My Overdue Tasks',
                   sub: 'Past their due date',
                   accent: AppColors.error,
-                  trend: kpis?.tasksOverdue?.trendLabel,
+                  trend: overdueKpi?.hasTrend == true
+                      ? overdueKpi!.trendLabel
+                      : null,
                   // More overdue tasks is worse, so the pill's colour is the
                   // inverse of the direction the arrow points.
-                  trendUp: !(kpis?.tasksOverdue?.trendUp ?? true),
-                  arrowUp: kpis?.tasksOverdue?.trendUp ?? false,
+                  trendUp: !(overdueKpi?.trendUp ?? true),
+                  arrowUp: overdueKpi?.trendUp ?? false,
                   onTap: onOverdue,
                 ),
               ),
@@ -266,7 +395,7 @@ class OpsHomeScreen extends ConsumerWidget {
                   iconBg: AppColors.blueSubtle,
                   value: '$done / $total',
                   label: 'Tasks Completed',
-                  sub: 'All my tasks, this period',
+                  sub: 'All my tasks',
                   accent: AppColors.blueBright,
                   // No trend chip: §1 carries no completed-tasks figure, and
                   // the ratio beside it is already the whole story.
@@ -288,7 +417,7 @@ class OpsHomeScreen extends ConsumerWidget {
                   label: 'My Avg Task Cycle',
                   sub: 'Median completion time',
                   accent: AppColors.success,
-                  trend: cycle?.trendLabel,
+                  trend: cycle?.hasTrend == true ? cycle!.trendLabel : null,
                   // A shorter cycle is better, so falling is the good direction.
                   trendUp: !(cycle?.trendUp ?? true),
                   arrowUp: cycle?.trendUp ?? false,
@@ -305,16 +434,18 @@ class OpsHomeScreen extends ConsumerWidget {
   /// The My Tasks sub-label. Falls back to the bare "Open tasks" rather than a
   /// placeholder name when there is no session (mock mode).
   static String _openTasksFor(WidgetRef ref) {
-    final name = ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
+    final name =
+        ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
     return name.isEmpty ? 'Open tasks' : 'Open tasks · $name';
   }
 
   /// "3.2" rather than "3.2 days" → "3" when the figure is whole.
-  static String _trimDays(double days) =>
-      days == days.roundToDouble() ? days.round().toString() : days.toStringAsFixed(1);
+  static String _trimDays(double days) => days == days.roundToDouble()
+      ? days.round().toString()
+      : days.toStringAsFixed(1);
 
-  Widget _myTasksCard(BuildContext context, WidgetRef ref, List<OpsTask> rows, String sort,
-      String Function(String) projName, VoidCallback onViewMore) {
+  Widget _myTasksCard(BuildContext context, WidgetRef ref, List<OpsTask> rows,
+      String sort, String Function(String) projName, VoidCallback onViewMore) {
     return ClozrCard(
       radius: 16,
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 4.h),
@@ -328,19 +459,26 @@ class OpsHomeScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('My Tasks', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text('My Tasks',
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
                     // The signed-in user, not the prototype's seed name — this
                     // card is "my tasks", so it named the wrong person for
                     // everyone but him.
-                    Text(_openTasksFor(ref), style: AppText.caption(color: AppColors.textPlaceholder)),
+                    Text(_openTasksFor(ref),
+                        style:
+                            AppText.caption(color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
               SegmentedControl(
                 options: const ['Priority', 'Due'],
                 selectedIndex: sort == 'due' ? 1 : 0,
-                onChanged: (i) => ref.read(opsSortProvider.notifier).state = i == 1 ? 'due' : 'priority',
+                onChanged: (i) => ref.read(opsSortProvider.notifier).state =
+                    i == 1 ? 'due' : 'priority',
               ),
             ],
           ),
@@ -350,7 +488,8 @@ class OpsHomeScreen extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 26.h),
               child: Center(
                 child: Text("No open tasks — you're all caught up.",
-                    style: AppText.captionStrong(color: AppColors.textPlaceholder)),
+                    style: AppText.captionStrong(
+                        color: AppColors.textPlaceholder)),
               ),
             )
           else
@@ -363,9 +502,14 @@ class OpsHomeScreen extends ConsumerWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('View more', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.blueBright)),
+                  Text('View more',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: AppColors.blueBright)),
                   SizedBox(width: 6.w),
-                  Icon(PhosphorIconsBold.arrowDown, size: 12.sp, color: AppColors.blueBright),
+                  Icon(PhosphorIconsBold.arrowDown,
+                      size: 12.sp, color: AppColors.blueBright),
                 ],
               ),
             ),
@@ -375,7 +519,8 @@ class OpsHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _myTaskRow(BuildContext context, WidgetRef ref, OpsTask t, String Function(String) projName) {
+  Widget _myTaskRow(BuildContext context, WidgetRef ref, OpsTask t,
+      String Function(String) projName) {
     final delta = taskDueDelta(t);
     final overdue = delta < 0;
     final priColor = StatusMeta$.projectPriority[t.pri] ?? AppColors.textMuted;
@@ -389,16 +534,21 @@ class OpsHomeScreen extends ConsumerWidget {
       onTap: () => context.push('${Routes.opsTaskDetail}?id=${t.id}'),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(t.subject,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             SizedBox(height: 2.h),
-            Text((t.projectName.isNotEmpty ? t.projectName : projName(t.projId)),
+            Text(
+                (t.projectName.isNotEmpty ? t.projectName : projName(t.projId)),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.caption(color: AppColors.textPlaceholder)),
@@ -407,11 +557,15 @@ class OpsHomeScreen extends ConsumerWidget {
               children: [
                 StatusPill(label: t.pri, color: priColor),
                 SizedBox(width: 9.w),
-                Text(t.end.trim().isEmpty ? 'No end date' : 'Due ${opsWhenLabel(t.end, '')}',
+                Text(
+                    t.end.trim().isEmpty
+                        ? 'No end date'
+                        : 'Due ${opsWhenLabel(t.end, '')}',
                     style: AppText.custom(
                         size: 12,
                         weight: overdue ? FontWeight.w700 : FontWeight.w600,
-                        color: overdue ? AppColors.error : AppColors.textMuted2)),
+                        color:
+                            overdue ? AppColors.error : AppColors.textMuted2)),
                 const Spacer(),
                 StatusPill.meta(meta),
               ],
@@ -422,7 +576,8 @@ class OpsHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _attnCard(BuildContext context, List<OpsTask> rows, String Function(String) projName) {
+  Widget _attnCard(BuildContext context, List<OpsTask> rows,
+      String Function(String) projName) {
     return ClozrCard(
       radius: 16,
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 6.h),
@@ -430,29 +585,51 @@ class OpsHomeScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('My Top Tasks Needing Attention',
-              style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
-          Text('Closest due dates first', style: AppText.caption(color: AppColors.textPlaceholder)),
+          Text('Closest due dates first',
+              style: AppText.caption(color: AppColors.textPlaceholder)),
           SizedBox(height: 4.h),
+          if (rows.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 26.h),
+              child: Center(
+                child: Text('Nothing needs attention',
+                    style: AppText.captionStrong(
+                        color: AppColors.textPlaceholder)),
+              ),
+            ),
           for (final t in rows) _attnRow(context, t, projName),
         ],
       ),
     );
   }
 
-  Widget _attnRow(BuildContext context, OpsTask t, String Function(String) projName) {
+  Widget _attnRow(
+      BuildContext context, OpsTask t, String Function(String) projName) {
     final d = taskDueDelta(t);
     final priColor = StatusMeta$.projectPriority[t.pri] ?? AppColors.textMuted;
-    final (Color bg, Color fg) = d < 0
-        ? (AppColors.tintRed, AppColors.error)
-        : (d <= 3 ? (AppColors.tintAmber, AppColors.warningDeep) : (AppColors.tintGreen, AppColors.success));
-    final label = d < 0 ? '${-d}d over' : (d == 0 ? 'Today' : '${d}d');
+    final (Color bg, Color fg) = t.endISO.trim().isEmpty
+        ? (AppColors.bgChipGrey, AppColors.textMuted2)
+        : d < 0
+            ? (AppColors.tintRed, AppColors.error)
+            : (d <= 3
+                ? (AppColors.tintAmber, AppColors.warningDeep)
+                : (AppColors.tintGreen, AppColors.success));
+    final noDate = t.endISO.trim().isEmpty;
+    final label = noDate
+        ? 'No date'
+        : (d < 0 ? '${-d}d over' : (d == 0 ? 'Today' : '${d}d'));
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => context.push('${Routes.opsTaskDetail}?id=${t.id}'),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           children: [
             Expanded(
@@ -462,9 +639,15 @@ class OpsHomeScreen extends ConsumerWidget {
                   Text(t.subject,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
-                  Text((t.projectName.isNotEmpty ? t.projectName : projName(t.projId)),
+                  Text(
+                      (t.projectName.isNotEmpty
+                          ? t.projectName
+                          : projName(t.projId)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.caption(color: AppColors.textPlaceholder)),
@@ -479,8 +662,11 @@ class OpsHomeScreen extends ConsumerWidget {
                 SizedBox(height: 5.h),
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7.r)),
-                  child: Text(label, style: AppText.custom(size: 11, weight: FontWeight.w800, color: fg)),
+                  decoration: BoxDecoration(
+                      color: bg, borderRadius: BorderRadius.circular(7.r)),
+                  child: Text(label,
+                      style: AppText.custom(
+                          size: 11, weight: FontWeight.w800, color: fg)),
                 ),
               ],
             ),
@@ -500,6 +686,7 @@ class OpsHomeScreen extends ConsumerWidget {
   Widget _gridCard(
     List<OpsTask> done,
     List<OpsCompletedRow> rows,
+    String period,
     VoidCallback onRow,
   ) {
     final grid = rows.isNotEmpty
@@ -518,13 +705,19 @@ class OpsHomeScreen extends ConsumerWidget {
                     .length,
               ),
           ];
-    return _gridCardBody(grid, onRow);
+    return _gridCardBody(grid, period, onRow);
   }
 
-  Widget _gridCardBody(List<OpsCompletedRow> grid, VoidCallback onRow) {
-    Widget headCell(String label, {TextAlign align = TextAlign.start}) => Text(label,
-        textAlign: align,
-        style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6));
+  Widget _gridCardBody(
+      List<OpsCompletedRow> grid, String period, VoidCallback onRow) {
+    Widget headCell(String label, {TextAlign align = TextAlign.start}) =>
+        Text(label,
+            textAlign: align,
+            style: AppText.custom(
+                size: 10.5,
+                weight: FontWeight.w700,
+                color: AppColors.textPlaceholder,
+                letterSpacing: 0.6));
 
     return ClozrCard(
       radius: 16,
@@ -533,18 +726,27 @@ class OpsHomeScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Tasks Completed Grid',
-              style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
-          Text('By priority, this period', style: AppText.caption(color: AppColors.textPlaceholder)),
+          Text('By priority · $period',
+              style: AppText.caption(color: AppColors.textPlaceholder)),
           SizedBox(height: 14.h),
           Container(
             padding: EdgeInsets.only(bottom: 9.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
             child: Row(
               children: [
                 Expanded(child: headCell('PRIORITY')),
-                SizedBox(width: 82.w, child: headCell('BEFORE DUE', align: TextAlign.center)),
-                SizedBox(width: 82.w, child: headCell('AFTER DUE', align: TextAlign.center)),
+                SizedBox(
+                    width: 82.w,
+                    child: headCell('BEFORE DUE', align: TextAlign.center)),
+                SizedBox(
+                    width: 82.w,
+                    child: headCell('AFTER DUE', align: TextAlign.center)),
               ],
             ),
           ),
@@ -565,19 +767,31 @@ class OpsHomeScreen extends ConsumerWidget {
             color: bad ? AppColors.tintRed : AppColors.tintGreen,
             shape: BoxShape.circle,
           ),
-          child: Text('$n', style: AppText.custom(size: 12, weight: FontWeight.w800, color: bad ? AppColors.error : AppColors.success)),
+          child: Text('$n',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w800,
+                  color: bad ? AppColors.error : AppColors.success)),
         );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 10.h),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           children: [
-            Expanded(child: Align(alignment: Alignment.centerLeft, child: StatusPill(label: pri, color: priColor))),
-            SizedBox(width: 82.w, child: Center(child: badge(row.beforeDue, bad: false))),
-            SizedBox(width: 82.w, child: Center(child: badge(row.afterDue, bad: true))),
+            Expanded(
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: StatusPill(label: pri, color: priColor))),
+            SizedBox(
+                width: 82.w,
+                child: Center(child: badge(row.beforeDue, bad: false))),
+            SizedBox(
+                width: 82.w,
+                child: Center(child: badge(row.afterDue, bad: true))),
           ],
         ),
       ),

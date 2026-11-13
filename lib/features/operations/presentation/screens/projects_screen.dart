@@ -6,12 +6,14 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
+import '../../../../core/widgets/status_group_bar.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../crm/application/providers/saved_filters_providers.dart';
@@ -21,6 +23,7 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/config/api_config.dart';
 import '../../application/filters/projects_filter_spec.dart';
 import '../../application/providers/projects_providers.dart';
+import '../../../crm/domain/entities/crm_catalog.dart';
 import '../../domain/entities/project.dart';
 import '../../../auth/presentation/components/permission_guard.dart';
 import '../components/ops_widgets.dart';
@@ -48,10 +51,18 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     // week, …) links here with `?end=<chip>` so the list opens on that slice.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final end = GoRouterState.of(context).uri.queryParameters['end'];
-      if (end == null || end.isEmpty) return;
+      final q = GoRouterState.of(context).uri.queryParameters;
+      final end = q['end'];
+      // The dashboard's Project Status donut: one status slice.
+      final status = q['status'];
+      if ((end == null || end.isEmpty) && (status == null || status.isEmpty)) {
+        return;
+      }
       final values = ref.read(projectFiltersProvider).copy();
-      values['end'] = DateValue(chip: end);
+      if (end != null && end.isNotEmpty) values['end'] = DateValue(chip: end);
+      if (status != null && status.isNotEmpty) {
+        values['statuses'] = ChoiceValue(ids: {status});
+      }
       _applyFilters(values);
     });
   }
@@ -97,11 +108,13 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     // loading, failed fetch, mock mode) falls back to the built-in vocabulary,
     // the same "empty is no opinion" contract used everywhere else.
     final statusCatalog = ref.watch(projectStatusOptionsProvider);
-    final counts = ref.watch(projectStatusCountsProvider).valueOrNull ?? const <String, int>{};
+    final counts = ref.watch(projectStatusCountsProvider).valueOrNull ??
+        const <String, int>{};
     final tabDefs = <(String, String)>[
       ('all', 'All'),
       if (statusCatalog.isEmpty)
-        for (final k in StatusMeta$.project.keys) (k, StatusMeta$.project[k]!.label)
+        for (final k in StatusMeta$.project.keys)
+          (k, StatusMeta$.project[k]!.label)
       else
         for (final s in statusCatalog) (s.name, s.name),
     ];
@@ -118,7 +131,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               title: 'Projects',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(projSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () =>
+                  ref.read(projSearchOpenProvider.notifier).state = !searchOpen,
               onFilter: _openFilters,
             ),
             if (searchOpen) ...[
@@ -126,7 +140,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search projects…',
-                onChanged: (v) => ref.read(projSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(projSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(projSearchProvider.notifier).state = '';
@@ -135,23 +150,32 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               ),
             ],
             SizedBox(height: 12.h),
-            SizedBox(
-              height: 40.h,
-              child: TabChipRow(
-                children: [
-                  for (final (k, label) in tabDefs)
-                    TabChip(
-                      // The server's aggregate when it answered, else the rows
-                      // on hand — which only counts what has been downloaded.
-                      label: '$label (${counts[k] ?? projTabCount(base, k, mine: mine)})',
-                      // Multi-select like the webapp: chips OR together and
-                      // "All" clears the selection.
-                      active: k == 'all' ? tab == 'all' : projTabKeys(tab).contains(k),
-                      onTap: () => _toggleTab(k),
-                    ),
-                ],
+            // The org's statuses grouped open / closed (Oct 2026 header); the
+            // flat per-status row only while the catalog is unavailable.
+            if (statusCatalog.isNotEmpty)
+              _groupBar(statusCatalog, tab,
+                  counts: (k) => counts[k] ?? projTabCount(base, k, mine: mine))
+            else
+              SizedBox(
+                height: 40.h,
+                child: TabChipRow(
+                  children: [
+                    for (final (k, label) in tabDefs)
+                      TabChip(
+                        // The server's aggregate when it answered, else the rows
+                        // on hand — which only counts what has been downloaded.
+                        label:
+                            '$label (${counts[k] ?? projTabCount(base, k, mine: mine)})',
+                        // Multi-select like the webapp: chips OR together and
+                        // "All" clears the selection.
+                        active: k == 'all'
+                            ? tab == 'all'
+                            : projTabKeys(tab).contains(k),
+                        onTap: () => _toggleTab(k),
+                      ),
+                  ],
+                ),
               ),
-            ),
             SizedBox(height: 12.h),
             _savedViewRow(mine, filterCount),
             SizedBox(height: 14.h),
@@ -184,7 +208,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                         final p = visible[i];
                         return ProjectCard(
                           project: p,
-                          onTap: () => context.push('${Routes.projectDetail}?id=${p.id}'),
+                          onTap: () => context
+                              .push('${Routes.projectDetail}?id=${p.id}'),
                         );
                       },
                     );
@@ -195,9 +220,64 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     );
   }
 
+  /// The group row: `All`, then Open / Closed; a picked group opens a second
+  /// row with its own statuses, which narrow it further.
+  Widget _groupBar(List<CatalogOption> statuses, String tab,
+      {required int Function(String) counts}) {
+    final picked = projTabKeys(tab).toSet();
+    final open = StatusGroups.displayedGroup(
+      picked: picked,
+      group: ref.watch(projGroupProvider),
+      statuses: statuses,
+      groupOf: StatusGroups.ofProject,
+      keyOf: (s) => s.name,
+    );
+    final server = ref.watch(projectStatusCountsProvider).valueOrNull ??
+        const <String, int>{};
+    int groupCount(String code) =>
+        server[StatusGroups.countKey(code)] ??
+        [
+          for (final s in statuses)
+            if (StatusGroups.ofProject(s) == code) counts(s.name)
+        ].fold(0, (a, b) => a + b);
+    return StatusGroupBar(
+      allCount: counts('all'),
+      allActive: picked.isEmpty && open == null,
+      onAll: () => _toggleTab('all'),
+      groups: [
+        for (final g in StatusGroups.project)
+          StatusGroupChip(
+              code: g.code, label: g.label, count: groupCount(g.code)),
+      ],
+      activeGroup: open,
+      onGroup: (code) {
+        // A group the org has no status in cannot be listed.
+        if (!statuses.any((s) => StatusGroups.ofProject(s) == code)) return;
+        ref.read(projTabProvider.notifier).state = 'all';
+        ref.read(projGroupProvider.notifier).state = code == open ? null : code;
+      },
+      statuses: [
+        for (final s in statuses)
+          if (open != null && StatusGroups.ofProject(s) == open)
+            StatusGroupStatusChip(
+              key: s.name,
+              label: s.name,
+              count: counts(s.name),
+              active: picked.contains(s.name),
+              color: s.color,
+            ),
+      ],
+      onStatus: (name) {
+        _toggleTab(name);
+        ref.read(projGroupProvider.notifier).state = open;
+      },
+    );
+  }
+
   /// A status chip toggled (multi-select), "All" clearing the rest. The list
   /// re-queries with the new `status_name__in`.
   void _toggleTab(String key) {
+    ref.read(projGroupProvider.notifier).state = null;
     final next = projTabToggle(ref.read(projTabProvider), key);
     ref.read(projTabProvider.notifier).state = next;
   }
@@ -207,7 +287,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   bool _isNarrowed() =>
       ref.read(projectFiltersProvider).activeCount > 0 ||
       ref.read(projSearchProvider).trim().isNotEmpty ||
-      ref.read(projTabProvider) != 'all' ||
+      ref.read(projEffectiveTabProvider) != 'all' ||
       ref.read(projectSavedFiltersProvider).activeId != null;
 
   /// The webapp's three empty states: Archived, filtered, and My Projects.
@@ -216,7 +296,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       return EmptyState(
         icon: PhosphorIconsRegular.archive,
         title: 'No archived projects',
-        body: 'Projects you archive show up here — and closed projects, if your organization archives them automatically.',
+        body:
+            'Projects you archive show up here — and closed projects, if your organization archives them automatically.',
         ctaLabel: 'Back to active projects',
         onCta: () {
           ref.read(archivedProjectsProvider.notifier).state = false;
@@ -237,10 +318,12 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       return EmptyState(
         icon: PhosphorIconsRegular.briefcase,
         title: 'No projects assigned to you',
-        body: 'Nothing is assigned to you yet. Create a project, or clear the "My Projects" filter to see the whole team\'s work.',
+        body:
+            'Nothing is assigned to you yet. Create a project, or clear the "My Projects" filter to see the whole team\'s work.',
         ctaLabel: 'New Project',
         onCta: () {
-          if (ensurePermission(ref, 'project', PermVerb.create)) context.push(Routes.createProject);
+          if (ensurePermission(ref, 'project', PermVerb.create))
+            context.push(Routes.createProject);
         },
       );
     }
@@ -250,7 +333,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       body: 'Create your first project to start tracking delivery.',
       ctaLabel: 'New Project',
       onCta: () {
-        if (ensurePermission(ref, 'project', PermVerb.create)) context.push(Routes.createProject);
+        if (ensurePermission(ref, 'project', PermVerb.create))
+          context.push(Routes.createProject);
       },
     );
   }
@@ -261,6 +345,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     _searchCtrl.clear();
     ref.read(projSearchProvider.notifier).state = '';
     ref.read(projTabProvider.notifier).state = 'all';
+    ref.read(projGroupProvider.notifier).state = null;
     ref.read(myProjectsProvider.notifier).state = false;
     _clearFilters();
   }
@@ -298,7 +383,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
       codec: ref.read(projectFilterCodecProvider),
       mine: ref.read(myProjectsProvider),
       search: ref.read(projSearchDebouncedProvider),
-      statusTab: ref.read(projTabProvider),
+      statusTab: ref.read(projEffectiveTabProvider),
     );
     ref.invalidate(projectsScopedProvider(ProjectListQuery(filters: params)));
     ref.read(projectFiltersProvider.notifier).state = values;
@@ -325,7 +410,11 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
               serverApplied: ApiConfig.apiEnabled))
           .length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(projectSavedFiltersProvider).filters.map((f) => f.name).toSet(),
+      existingViewNames: ref
+          .read(projectSavedFiltersProvider)
+          .filters
+          .map((f) => f.name)
+          .toSet(),
       onSaveView: _saveView,
     );
     if (result == null) return;
@@ -352,8 +441,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   /// unknown filter key) come back as user-safe text and are shown as-is.
   Future<void> _saveView(String name, FilterValues draft) async {
     final definition = ref.read(projectFilterCodecProvider).encode(draft);
-    final error =
-        await ref.read(projectSavedFiltersProvider.notifier).save(name, definition);
+    final error = await ref
+        .read(projectSavedFiltersProvider.notifier)
+        .save(name, definition);
     if (!mounted) return;
     ref.read(toastProvider.notifier).show(error ?? 'View "$name" saved');
   }
@@ -390,7 +480,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
           SizedBox(width: 8.w),
           Expanded(
             child: chips.SavedChipRow(
-              views: [for (final f in saved.filters) chips.SavedView(f.id, f.name)],
+              views: [
+                for (final f in saved.filters) chips.SavedView(f.id, f.name)
+              ],
               active: {if (saved.activeId != null) saved.activeId!},
               showClearAlways: filterCount > 0,
               onToggle: _toggleView,
@@ -419,7 +511,9 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.filters.where((f) => f.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     // A filter the server marked invalid fails inert by contract — never run
@@ -442,6 +536,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
     ref.read(projectSavedFiltersProvider.notifier).apply(id);
     // Webapp: applying a view clears the status chips.
     ref.read(projTabProvider.notifier).state = 'all';
+    ref.read(projGroupProvider.notifier).state = null;
     _applyFilters(values);
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
@@ -450,7 +545,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
   /// “<name>”?"). Deleting the applied view drops its chip; its filters stay.
   Future<void> _removeView(String id) async {
     final wasActive = ref.read(projectSavedFiltersProvider).activeId == id;
-    final error = await ref.read(projectSavedFiltersProvider.notifier).remove(id);
+    final error =
+        await ref.read(projectSavedFiltersProvider.notifier).remove(id);
     if (!mounted) return;
     if (error != null) {
       ref.read(toastProvider.notifier).showError(error);

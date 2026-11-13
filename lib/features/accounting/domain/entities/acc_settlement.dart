@@ -175,8 +175,12 @@ class AccVendorAdvance extends Equatable {
 /// for an idempotent replay, a test customer or a date before the ledger
 /// start (handover §4 D) — a distinct success, not a failure.
 class PostOutcome<T> {
-  const PostOutcome.posted(this.value) : skipped = false, skipReason = null;
-  const PostOutcome.skipped(this.skipReason) : value = null, skipped = true;
+  const PostOutcome.posted(this.value)
+      : skipped = false,
+        skipReason = null;
+  const PostOutcome.skipped(this.skipReason)
+      : value = null,
+        skipped = true;
 
   final T? value;
   final bool skipped;

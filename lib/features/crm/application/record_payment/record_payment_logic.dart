@@ -23,9 +23,11 @@ const List<PayMethod> recordPayMethods = [
 const String defaultPayMethodCode = 'bank_transfer';
 
 /// Webapp `adhocAllowedFor`: ad-hoc records exist only on milestone plans.
-bool adhocAllowedFor(String? paymentType) => paymentType == 'installment_custom';
+bool adhocAllowedFor(String? paymentType) =>
+    paymentType == 'installment_custom';
 
-const String adhocUnavailableCopy = 'Ad-hoc amounts are only available on milestone-based plans';
+const String adhocUnavailableCopy =
+    'Ad-hoc amounts are only available on milestone-based plans';
 
 /// The mode actually in force: any non-milestone plan is always "settle",
 /// whatever tab was chosen before the plan was picked.
@@ -44,7 +46,8 @@ String allSettledCopy(String? paymentType) => adhocAllowedFor(paymentType)
 String rupees(num value) {
   final n = (value * 100).round() / 100;
   final whole = (n * 100).round() % 100 == 0;
-  final f = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: whole ? 0 : 2);
+  final f = NumberFormat.currency(
+      locale: 'en_IN', symbol: '₹', decimalDigits: whole ? 0 : 2);
   return n < 0 ? '-${f.format(-n)}' : f.format(n);
 }
 
@@ -75,7 +78,8 @@ String wireMoney(double v) => ((v * 100).round() / 100).toStringAsFixed(2);
 
 /// What is open on an instalment: the server's gross `balance_due` (incl. GST),
 /// falling back to the gross due itself (webapp).
-double openBalance({required double balanceDue, required double amountDueGross}) =>
+double openBalance(
+        {required double balanceDue, required double amountDueGross}) =>
     balanceDue > 0 ? balanceDue : amountDueGross;
 
 /// "Settles as cash received + ₹1,000 TDS + ₹50 bank charge." — null when
@@ -116,22 +120,29 @@ SettleAmount validateSettleAmount({
     owed = balance;
   } else {
     final v = double.tryParse(text);
-    if (v == null || !v.isFinite || v <= 0) return const SettleAmount._(error: 'Enter a valid amount');
+    if (v == null || !v.isFinite || v <= 0)
+      return const SettleAmount._(error: 'Enter a valid amount');
     owed = v;
   }
   if (owed <= 0) return const SettleAmount._(error: 'Enter a valid amount');
   if (owed > balance + 0.005) {
-    return SettleAmount._(error: 'Amount cannot exceed the open balance of ${rupees(balance)}');
+    return SettleAmount._(
+        error: 'Amount cannot exceed the open balance of ${rupees(balance)}');
   }
   final deductions = tds + bankCharge;
-  if (deductions >= owed) return const SettleAmount._(error: 'Deductions cannot cover the whole installment');
-  return SettleAmount._(owed: owed, amountPaid: ((owed - deductions) * 100).round() / 100);
+  if (deductions >= owed)
+    return const SettleAmount._(
+        error: 'Deductions cannot cover the whole installment');
+  return SettleAmount._(
+      owed: owed, amountPaid: ((owed - deductions) * 100).round() / 100);
 }
 
 /// The ad-hoc amount check: a positive amount, not wholly eaten by deductions.
-String? validateAdhocAmount(String raw, {double tds = 0, double bankCharge = 0}) {
+String? validateAdhocAmount(String raw,
+    {double tds = 0, double bankCharge = 0}) {
   final v = double.tryParse(raw.replaceAll(',', '').trim());
-  if (raw.trim().isEmpty || v == null || !v.isFinite || v <= 0) return 'Enter a valid amount';
+  if (raw.trim().isEmpty || v == null || !v.isFinite || v <= 0)
+    return 'Enter a valid amount';
   if (tds + bankCharge >= v) return 'Deductions cannot cover the whole amount';
   return null;
 }
@@ -173,7 +184,8 @@ class SettlementDetails {
         if (willBePaid && tds > 0) 'tds_deducted': wireMoney(tds),
         if (willBePaid && bankCharge > 0) 'bank_charge': wireMoney(bankCharge),
         if (gatewayRef.trim().isNotEmpty) 'gateway_ref': gatewayRef.trim(),
-        if (bankAccountId != null && bankAccountId!.isNotEmpty) 'bank_account_id': bankAccountId,
+        if (bankAccountId != null && bankAccountId!.isNotEmpty)
+          'bank_account_id': bankAccountId,
         if (treatAs != null && treatAs!.isNotEmpty) 'treat_as': treatAs,
       };
 }
@@ -227,24 +239,29 @@ const String conversionSentForApprovalCopy =
     'Conversion sent for approval. Record the payment once an approver has converted the lead.';
 const String conversionAlreadyPendingCopy =
     'A conversion request for this lead is already waiting for approval. Record the payment once it is approved.';
-const String noWonStatusCopy = 'This organisation has no Won status to move the lead to.';
+const String noWonStatusCopy =
+    'This organisation has no Won status to move the lead to.';
 
 String markWonPromptCopy(String wonName) =>
     'This lead isn’t Won yet. Recording a payment will mark it $wonName and convert it to a customer.';
 
-String leadConvertedToast(String? customerName) => (customerName ?? '').trim().isNotEmpty
-    ? 'Lead converted — customer ${customerName!.trim()} created'
-    : 'Lead converted to a customer';
+String leadConvertedToast(String? customerName) =>
+    (customerName ?? '').trim().isNotEmpty
+        ? 'Lead converted — customer ${customerName!.trim()} created'
+        : 'Lead converted to a customer';
 
 /// Webapp `isCustomerRequiredFailure`.
 bool isCustomerRequiredFailure({String? code, String? message}) {
   if (code == 'CUSTOMER_REQUIRED') return true;
-  return (message ?? '').toLowerCase().contains('convert the lead to a customer');
+  return (message ?? '')
+      .toLowerCase()
+      .contains('convert the lead to a customer');
 }
 
 /// A plan whose quote belongs to a lead with no customer yet must convert it
 /// before money is recorded against it.
-bool planNeedsCustomer({required bool hasCustomer, required String quotationUuid}) =>
+bool planNeedsCustomer(
+        {required bool hasCustomer, required String quotationUuid}) =>
     !hasCustomer && quotationUuid.isNotEmpty;
 
 /// Where the lead behind a quote stands (webapp `QuoteLeadConversion`).
@@ -288,7 +305,10 @@ enum ConvertStep {
 ConvertStep convertStepFor(QuoteLeadState s) {
   if (s.isConverted) return ConvertStep.recordNow;
   if (s.pending) return ConvertStep.alreadyPending;
-  if (!s.isWon) return s.wonStatusId == null ? ConvertStep.noWonStatus : ConvertStep.confirmMarkWon;
+  if (!s.isWon)
+    return s.wonStatusId == null
+        ? ConvertStep.noWonStatus
+        : ConvertStep.confirmMarkWon;
   return ConvertStep.convert;
 }
 
@@ -299,7 +319,8 @@ ConvertStep convertStepFor(QuoteLeadState s) {
       if (s['is_won'] == true && s['is_active'] != false) s,
   ];
   if (won.isEmpty) return null;
-  final pick = won.firstWhere((s) => s['is_type_pick'] == true, orElse: () => won.first);
+  final pick =
+      won.firstWhere((s) => s['is_type_pick'] == true, orElse: () => won.first);
   final id = '${pick['lead_status_id'] ?? pick['id'] ?? ''}';
   return id.isEmpty ? null : (id: id, name: '${pick['name'] ?? 'Won'}');
 }
@@ -307,9 +328,14 @@ ConvertStep convertStepFor(QuoteLeadState s) {
 /// Reads [QuoteLeadState] from a lead record (`GET /crm/leads/{id}/`) and the
 /// org's statuses — "Won" by the record's `status_type`, else by the status
 /// whose name matches.
-QuoteLeadState quoteLeadStateFrom(String leadId, Map<String, dynamic> lead, List<Map<String, dynamic>> statuses) {
-  final values = lead['values'] is Map ? Map<String, dynamic>.from(lead['values'] as Map) : lead;
-  final statusName = values['status'] is Map ? (values['status'] as Map)['name'] : values['status'];
+QuoteLeadState quoteLeadStateFrom(String leadId, Map<String, dynamic> lead,
+    List<Map<String, dynamic>> statuses) {
+  final values = lead['values'] is Map
+      ? Map<String, dynamic>.from(lead['values'] as Map)
+      : lead;
+  final statusName = values['status'] is Map
+      ? (values['status'] as Map)['name']
+      : values['status'];
   final current = statuses.where((s) => s['name'] == statusName).firstOrNull;
   final won = pickWonStatus(statuses);
   return QuoteLeadState(

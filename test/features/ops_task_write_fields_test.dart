@@ -45,7 +45,8 @@ void main() {
 
   test('carries every field the form collects, under the documented keys', () {
     UserDirectory.currentUserId = meUuid;
-    UserDirectory.registerJson(const {'user_id': mateUuid, 'first_name': 'Asha'});
+    UserDirectory.registerJson(
+        const {'user_id': mateUuid, 'first_name': 'Asha'});
     final f = build(
       groupId: 'grp-1',
       statusLabel: 'Working',
@@ -91,8 +92,12 @@ void main() {
     expect(build().containsKey('task_group'), isFalse);
   });
 
-  test('a date with no time lands at local midnight, and no date sends no key', () {
-    expect(DateTime.parse(build(end: DateTime(2026, 6, 30))['exp_end_date'] as String).toLocal(),
+  test('a date with no time lands at local midnight, and no date sends no key',
+      () {
+    expect(
+        DateTime.parse(
+                build(end: DateTime(2026, 6, 30))['exp_end_date'] as String)
+            .toLocal(),
         DateTime(2026, 6, 30));
     expect(build().containsKey('exp_start_date'), isFalse);
     expect(build().containsKey('exp_end_date'), isFalse);
@@ -101,7 +106,9 @@ void main() {
   test('stamps go out as an explicit UTC instant, never unlabelled digits', () {
     // Unlabelled, the server guesses the zone: 5 PM IST was being stored as
     // 5 PM UTC and read back as 10:30 PM. The Z is what makes it unambiguous.
-    final f = build(end: DateTime(2026, 6, 30), endTime: const TimeOfDay(hour: 17, minute: 0));
+    final f = build(
+        end: DateTime(2026, 6, 30),
+        endTime: const TimeOfDay(hour: 17, minute: 0));
     final wire = f['exp_end_date'] as String;
 
     expect(wire, endsWith('Z'));

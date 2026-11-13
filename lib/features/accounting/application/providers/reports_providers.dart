@@ -18,7 +18,8 @@ final apAgingProvider = FutureProvider.autoDispose<AgingReport>(
 /// A statement for one party over a date window.
 typedef StatementKey = ({bool vendor, String partyId, String from, String to});
 
-final statementProvider = FutureProvider.autoDispose.family<PartyStatement, StatementKey>(
+final statementProvider =
+    FutureProvider.autoDispose.family<PartyStatement, StatementKey>(
   (ref, k) => ref
       .watch(accountingRepositoryProvider)
       .statement(vendor: k.vendor, partyId: k.partyId, from: k.from, to: k.to),
@@ -29,40 +30,51 @@ final pnlProvider = FutureProvider.autoDispose.family<PnlReport, String>(
   (ref, asOf) => ref.watch(accountingRepositoryProvider).pnl(asOf: asOf),
 );
 
-final balanceSheetProvider = FutureProvider.autoDispose.family<BalanceSheetReport, String>(
-  (ref, asOf) => ref.watch(accountingRepositoryProvider).balanceSheet(asOf: asOf),
+final balanceSheetProvider =
+    FutureProvider.autoDispose.family<BalanceSheetReport, String>(
+  (ref, asOf) =>
+      ref.watch(accountingRepositoryProvider).balanceSheet(asOf: asOf),
 );
 
-final trialBalanceProvider = FutureProvider.autoDispose.family<TrialBalanceReport, String>(
-  (ref, asOf) => ref.watch(accountingRepositoryProvider).trialBalance(asOf: asOf),
+final trialBalanceProvider =
+    FutureProvider.autoDispose.family<TrialBalanceReport, String>(
+  (ref, asOf) =>
+      ref.watch(accountingRepositoryProvider).trialBalance(asOf: asOf),
 );
 
 final periodRegisterProvider = FutureProvider.autoDispose<PeriodRegister>(
   (ref) => ref.watch(accountingRepositoryProvider).periodRegister(),
 );
 
-final gstChecklistProvider = FutureProvider.autoDispose.family<PeriodChecklist, String>(
+final gstChecklistProvider =
+    FutureProvider.autoDispose.family<PeriodChecklist, String>(
   (ref, id) => ref.watch(accountingRepositoryProvider).gstChecklist(id),
 );
 
-final gstSummaryProvider = FutureProvider.autoDispose.family<GstSummary, String>(
+final gstSummaryProvider =
+    FutureProvider.autoDispose.family<GstSummary, String>(
   (ref, id) => ref.watch(accountingRepositoryProvider).gstSummary(id),
 );
 
-final tdsSummaryProvider = FutureProvider.autoDispose.family<TdsSummary, String?>(
-  (ref, id) => ref.watch(accountingRepositoryProvider).tdsSummary(tdsPeriodId: id),
+final tdsSummaryProvider =
+    FutureProvider.autoDispose.family<TdsSummary, String?>(
+  (ref, id) =>
+      ref.watch(accountingRepositoryProvider).tdsSummary(tdsPeriodId: id),
 );
 
 /// Postings the ledger refused — the "needs attention" list.
 final rejectedEventsProvider = FutureProvider.autoDispose<List<LedgerEvent>>(
-  (ref) => ref.watch(accountingRepositoryProvider).ledgerEvents(status: 'REJECTED'),
+  (ref) =>
+      ref.watch(accountingRepositoryProvider).ledgerEvents(status: 'REJECTED'),
 );
 
-final journalEntryProvider = FutureProvider.autoDispose.family<JournalEntry?, String>(
+final journalEntryProvider =
+    FutureProvider.autoDispose.family<JournalEntry?, String>(
   (ref, id) => ref.watch(accountingRepositoryProvider).journalEntry(id),
 );
 
-final tenantAttributesProvider = FutureProvider.autoDispose<List<TenantAttribute>>(
+final tenantAttributesProvider =
+    FutureProvider.autoDispose<List<TenantAttribute>>(
   (ref) => ref.watch(accountingRepositoryProvider).tenantAttributes(),
 );
 
@@ -70,7 +82,8 @@ final gatesProvider = FutureProvider.autoDispose<GatesReport?>(
   (ref) => ref.watch(accountingRepositoryProvider).gates(),
 );
 
-final projectFinancialsProvider = FutureProvider.autoDispose.family<ProjectFinancials?, String>(
+final projectFinancialsProvider =
+    FutureProvider.autoDispose.family<ProjectFinancials?, String>(
   (ref, id) => ref.watch(accountingRepositoryProvider).projectFinancials(id),
 );
 

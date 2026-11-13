@@ -25,7 +25,8 @@ final auditLogRemoteDataSourceProvider =
   if (!ApiConfig.apiEnabled) return null;
   final access = ref.watch(moduleAccessProvider);
   if (access.isLoading && !access.hasValue) return null;
-  if (access.valueOrNull != null && !access.valueOrNull!.can('audit_log')) return null;
+  if (access.valueOrNull != null && !access.valueOrNull!.can('audit_log'))
+    return null;
   return AuditLogRemoteDataSource(ref.watch(apiServiceProvider));
 });
 
@@ -41,8 +42,8 @@ final auditLogRemoteDataSourceProvider =
 ///
 /// `autoDispose` matters here: without it, every lead opened this session would
 /// still be listening and would refetch on every write anywhere.
-final leadActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, leadId) async {
+final leadActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, leadId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
   ref.watch(apiWriteTickProvider);
@@ -64,8 +65,8 @@ final leadActivityLogProvider =
 /// POST/PUT/PATCH/DELETE the app makes refetches it, so a status move, an
 /// Accept & invoice, a note or an edit all appear without each call site having
 /// to remember to invalidate.
-final quoteActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, quotationId) async {
+final quoteActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, quotationId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
   ref.watch(apiWriteTickProvider);
@@ -90,8 +91,8 @@ final quoteActivityLogProvider =
 /// return.
 ///
 /// No status catalog is passed: a product has no status, only `is_active`.
-final productActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, productId) async {
+final productActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, productId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null || productId.isEmpty) return const [];
   ref.watch(apiWriteTickProvider);
@@ -109,8 +110,8 @@ final productActivityLogProvider =
 /// ("Assignee changed · Manoj Varma", "Status changed — New → Open") built from
 /// the ticket's own fields, naming a prototype user who had done nothing. The
 /// backend keeps a real one, SLA events included.
-final ticketActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, issueId) async {
+final ticketActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, issueId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
   ref.watch(apiWriteTickProvider);
@@ -129,8 +130,8 @@ final ticketActivityLogProvider =
 /// Same write-tick dependency as the others: every successful POST/PUT/PATCH/
 /// DELETE refetches it, so a status move, an edit or a note appears without the
 /// call sites having to remember.
-final projectActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, projectId) async {
+final projectActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, projectId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
   ref.watch(apiWriteTickProvider);
@@ -142,8 +143,8 @@ final projectActivityLogProvider =
 /// Same write-tick dependency as the lead log — every successful POST/PUT/
 /// PATCH/DELETE the app makes refetches it, so an edit, a status change, a note
 /// or an upload all show up without each call site having to remember.
-final taskActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, taskId) async {
+final taskActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, taskId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
   ref.watch(apiWriteTickProvider);
@@ -159,8 +160,8 @@ final taskActivityLogProvider =
 
 /// The same log for a follow-up — a Task row underneath, but its entries read
 /// "Created follow-up" / "Updated follow-up", as on the webapp.
-final followupActivityLogProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, taskId) async {
+final followupActivityLogProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, taskId) async {
   final ds = ref.watch(auditLogRemoteDataSourceProvider);
   if (ds == null) return const [];
   ref.watch(apiWriteTickProvider);

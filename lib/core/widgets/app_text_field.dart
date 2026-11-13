@@ -58,9 +58,16 @@ class AppTextField extends StatelessWidget {
         Row(
           children: [
             Text(label,
-                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
             if (required)
-              Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+              Text(' *',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: AppColors.error)),
           ],
         ),
         SizedBox(height: 7.h),
@@ -70,20 +77,24 @@ class AppTextField extends StatelessWidget {
             absorbing: readOnly,
             child: Container(
               constraints: BoxConstraints(minHeight: multiline ? 88.h : 44.h),
-              padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: multiline ? 12.h : 0),
+              padding: EdgeInsets.symmetric(
+                  horizontal: 13.w, vertical: multiline ? 12.h : 0),
               alignment: multiline ? Alignment.topLeft : Alignment.centerLeft,
               decoration: BoxDecoration(
                 color: AppColors.white,
                 borderRadius: BorderRadius.circular(11.r),
                 border: Border.all(
-                  color: errorText != null ? AppColors.error : AppColors.borderInput,
+                  color: errorText != null
+                      ? AppColors.error
+                      : AppColors.borderInput,
                   width: 1.5,
                 ),
               ),
               child: Row(
                 children: [
                   if (prefix != null) ...[
-                    Text(prefix!, style: AppText.body(color: AppColors.textMuted)),
+                    Text(prefix!,
+                        style: AppText.body(color: AppColors.textMuted)),
                     SizedBox(width: 6.w),
                   ],
                   Expanded(
@@ -92,7 +103,8 @@ class AppTextField extends StatelessWidget {
                             value?.isNotEmpty == true ? value! : (hint ?? ''),
                             style: value?.isNotEmpty == true
                                 ? AppText.body()
-                                : AppText.body(color: AppColors.textPlaceholder),
+                                : AppText.body(
+                                    color: AppColors.textPlaceholder),
                           )
                         : TextField(
                             controller: controller,
@@ -107,13 +119,16 @@ class AppTextField extends StatelessWidget {
                               isDense: true,
                               border: InputBorder.none,
                               hintText: hint,
-                              hintStyle: AppText.body(color: AppColors.textPlaceholder),
+                              hintStyle: AppText.body(
+                                  color: AppColors.textPlaceholder),
                             ),
                           ),
                   ),
-                  if (suffixIcon != null) Icon(suffixIcon, size: 17.sp, color: AppColors.textMuted),
+                  if (suffixIcon != null)
+                    Icon(suffixIcon, size: 17.sp, color: AppColors.textMuted),
                   if (showCaret && suffixIcon == null)
-                    Icon(PhosphorIconsBold.caretDown, size: 14.sp, color: AppColors.textPlaceholder),
+                    Icon(PhosphorIconsBold.caretDown,
+                        size: 14.sp, color: AppColors.textPlaceholder),
                 ],
               ),
             ),
@@ -121,7 +136,9 @@ class AppTextField extends StatelessWidget {
         ),
         if (errorText != null) ...[
           SizedBox(height: 5.h),
-          Text(errorText!, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+          Text(errorText!,
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w500, color: AppColors.error)),
         ],
       ],
     );
@@ -130,7 +147,8 @@ class AppTextField extends StatelessWidget {
 
 /// A grouped form section: bold section label + a white card wrapping fields.
 class FormSection extends StatelessWidget {
-  const FormSection({super.key, required this.title, required this.children, this.gap = 14});
+  const FormSection(
+      {super.key, required this.title, required this.children, this.gap = 14});
   final String title;
   final List<Widget> children;
   final double gap;
@@ -143,7 +161,10 @@ class FormSection extends StatelessWidget {
         Padding(
           padding: EdgeInsets.only(left: 2.w, bottom: 10.h),
           child: Text(title,
-              style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
         ),
         for (int i = 0; i < children.length; i++) ...[
           if (i > 0) SizedBox(height: gap.h),

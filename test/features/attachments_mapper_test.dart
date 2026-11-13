@@ -29,8 +29,7 @@ void main() {
         'name': name,
         'file': file,
         'description': 'Signed contract',
-        'uploaded_at':
-            uploadedAt ?? DateTime(2026, 8, 4, 10).toIso8601String(),
+        'uploaded_at': uploadedAt ?? DateTime(2026, 8, 4, 10).toIso8601String(),
         'uploaded_by': {'user_id': uploader, 'full_name': 'Manoj Varma'},
         'related_to_model': 'lead',
         'related_to_object_id': leadId,
@@ -67,15 +66,16 @@ void main() {
 
     test('a query string on the URL does not leak into the name', () {
       final f = AttachmentsRemoteDataSource.fileFromJson(
-          row(name: null, file: 'https://cdn.example.com/a/Deck.pdf?sig=abc123'),
+          row(
+              name: null,
+              file: 'https://cdn.example.com/a/Deck.pdf?sig=abc123'),
           now: now)!;
 
       expect(f.name, 'Deck.pdf');
     });
 
     test('a row with neither name nor URL still renders', () {
-      final f = AttachmentsRemoteDataSource.fileFromJson(
-          {'attachment_id': 'x'},
+      final f = AttachmentsRemoteDataSource.fileFromJson({'attachment_id': 'x'},
           now: now)!;
 
       expect(f.name, 'Attachment');
@@ -93,17 +93,32 @@ void main() {
 
   group('LeadFile.ext', () {
     test('reads the extension from the name', () {
-      const f = LeadFile(id: '1', name: 'Contract.pdf', url: '', uploadedBy: 'me', uploadedAt: '');
+      const f = LeadFile(
+          id: '1',
+          name: 'Contract.pdf',
+          url: '',
+          uploadedBy: 'me',
+          uploadedAt: '');
       expect(f.ext, 'PDF');
     });
 
     test('falls back to the URL when the name has none', () {
-      const f = LeadFile(id: '1', name: 'Contract', url: 'https://cdn/x/c.docx', uploadedBy: 'me', uploadedAt: '');
+      const f = LeadFile(
+          id: '1',
+          name: 'Contract',
+          url: 'https://cdn/x/c.docx',
+          uploadedBy: 'me',
+          uploadedAt: '');
       expect(f.ext, 'DOCX');
     });
 
     test('an extensionless file reads as FILE, not as a URL fragment', () {
-      const f = LeadFile(id: '1', name: 'README', url: 'https://cdn.example.com/files', uploadedBy: 'me', uploadedAt: '');
+      const f = LeadFile(
+          id: '1',
+          name: 'README',
+          url: 'https://cdn.example.com/files',
+          uploadedBy: 'me',
+          uploadedAt: '');
       expect(f.ext, 'FILE');
     });
   });

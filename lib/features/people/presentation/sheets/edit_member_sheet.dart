@@ -137,13 +137,17 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
     ];
     final managerLabel = _managerId.isEmpty
         ? 'No manager'
-        : members.where((m) => m.id == _managerId).map((m) => m.name).firstOrNull ??
+        : members
+                .where((m) => m.id == _managerId)
+                .map((m) => m.name)
+                .firstOrNull ??
             widget.member.reportsTo;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Edit member', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Edit member', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -166,7 +170,8 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
                       required: true,
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
-                      errorText: _showErrors && !_emailOk ? 'Enter an email' : null,
+                      errorText:
+                          _showErrors && !_emailOk ? 'Enter an email' : null,
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
@@ -175,7 +180,9 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
                     child: PhoneInputField(
                       label: 'Phone',
                       controller: _phone,
-                      errorText: _showErrors && !_phoneOk ? phoneDigitsMessage(_phone.rule) : null,
+                      errorText: _showErrors && !_phoneOk
+                          ? phoneDigitsMessage(_phone.rule)
+                          : null,
                       onChanged: () => setState(() {}),
                     ),
                   ),
@@ -255,9 +262,11 @@ class _EditMemberSheetState extends ConsumerState<_EditMemberSheet> {
                         Navigator.of(ctx).pop();
                       },
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 14.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 10.w, vertical: 14.h),
                         decoration: const BoxDecoration(
-                          border: Border(bottom: BorderSide(color: AppColors.bgLight)),
+                          border: Border(
+                              bottom: BorderSide(color: AppColors.bgLight)),
                         ),
                         child: Row(
                           children: [

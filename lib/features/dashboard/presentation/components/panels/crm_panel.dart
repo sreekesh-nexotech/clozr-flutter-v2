@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../../app/router/routes.dart';
 import '../../../../../app/theme/app_colors.dart';
 import '../../../../../app/theme/app_text_styles.dart';
+import '../../../application/dash_navigation.dart';
 import '../../../application/providers/dashboard_providers.dart';
 import '../../../domain/entities/dash_colors.dart';
 import '../../../domain/entities/dashboard_models.dart';
@@ -42,29 +42,57 @@ class CrmPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DashKpiGrid(kpis: data.crmKpis, onTapKpi: (k) => context.go(k.route)),
+        DashKpiGrid(
+            kpis: data.crmKpis,
+            // Leads links carry the tab's period / team / member (the cards
+            // are period figures) — see dashLeadsLink.
+            onTapKpi: (k) => dashGo(context, ref,
+                dashPeriodLink(ref, dashLeadsLink(ref, k.route)))),
         SizedBox(height: 16.h),
         DashSectionCard(
           title: 'Lead Funnel',
           subtitle: 'Lead stages across the pipeline',
           child: Padding(
             padding: EdgeInsets.only(top: 16.h),
-            child: DashBars(bars: data.crmFunnel, chartHeight: 138, gradient: true, dimLast: true, labelFontSize: 10.5),
+            child: DashBars(
+                bars: data.crmFunnel,
+                // A stage bar opens Leads on that stage.
+                onTapBar: (b) => dashGo(
+                    context,
+                    ref,
+                    dashLeadsLink(
+                        ref,
+                        b.id.isEmpty
+                            ? Routes.leads
+                            : '${Routes.leads}?stage=${b.id}')),
+                chartHeight: 138,
+                gradient: true,
+                dimLast: true,
+                labelFontSize: 10.5,
+                emptyTitle: 'No leads in this period',
+                emptyHint:
+                    'Lead stages fill in as leads are created in this period.'),
           ),
         ),
         SizedBox(height: 16.h),
         DashSectionCard(
           title: 'Lead Inflow trend',
-          subtitle: 'Lead created vs Won lead',
+          // The feed is the current calendar year by month: the server ignores
+          // the Period chip for it (Team and Member still narrow it).
+          subtitle: data.crmInflow.year.isEmpty
+              ? 'Lead created vs converted'
+              : 'Lead created vs converted · ${data.crmInflow.year}, by month',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(height: 10.h),
               Row(
                 children: [
-                  const DashTrendLegend(color: DashColors.green, label: 'Lead Won'),
+                  const DashTrendLegend(
+                      color: DashColors.green, label: 'Lead converted'),
                   SizedBox(width: 16.w),
-                  const DashTrendLegend(color: DashColors.blue, label: 'Lead created'),
+                  const DashTrendLegend(
+                      color: DashColors.blue, label: 'Lead created'),
                 ],
               ),
               SizedBox(height: 10.h),
@@ -76,19 +104,29 @@ class CrmPanel extends ConsumerWidget {
                 fillB: 0.26,
                 height: 118,
               ),
+              if (data.crmInflow.year.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Text(
+                    'Always the full calendar year — the Period filter does '
+                    'not change this chart; Team and Member do.',
+                    style: AppText.custom(
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
+              ],
             ],
           ),
         ),
         SizedBox(height: 22.h),
         _attentionHeader(),
         SizedBox(height: 11.h),
-        _attentionGrid(context, data.crmAttention),
+        _attentionGrid(context, ref, data.crmAttention),
         SizedBox(height: 16.h),
         const _SourcesSection(),
         SizedBox(height: 16.h),
         const _StuckSection(),
         SizedBox(height: 16.h),
-        _employees(context, data.crmEmployees),
+        _employees(context, ref, data.crmEmployees),
       ],
     );
   }
@@ -98,21 +136,34 @@ class CrmPanel extends ConsumerWidget {
       padding: EdgeInsets.symmetric(horizontal: 2.w),
       child: Row(
         children: [
-          Icon(PhosphorIconsFill.warningCircle, size: 16.sp, color: DashColors.amber),
+          Icon(PhosphorIconsFill.warningCircle,
+              size: 16.sp, color: DashColors.amber),
           SizedBox(width: 7.w),
-          Text('Attention Needed', style: AppText.custom(size: 16, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Attention Needed',
+              style: AppText.custom(
+                  size: 16,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
         ],
       ),
     );
   }
 
-  Widget _attentionGrid(BuildContext context, List<DashAttentionCard> cards) {
+  Widget _attentionGrid(
+      BuildContext context, WidgetRef ref, List<DashAttentionCard> cards) {
     return DashTwoColGrid(
-      children: [for (final a in cards) AttentionCard(card: a, onTap: () => context.go(a.route))],
+      children: [
+        for (final a in cards)
+          AttentionCard(
+              card: a,
+              onTap: () => dashGo(context, ref,
+                  dashPeriodLink(ref, dashLeadsLink(ref, a.route))))
+      ],
     );
   }
 
-  Widget _employees(BuildContext context, List<DashCrmEmployee> emps) {
+  Widget _employees(
+      BuildContext context, WidgetRef ref, List<DashCrmEmployee> emps) {
     return DashSectionCard(
       title: 'Employee performance',
       subtitle: 'Team activity this period',
@@ -125,10 +176,24 @@ class CrmPanel extends ConsumerWidget {
             DashEmployeeRow(
               rid: e.rid,
               sub: e.metaLine,
-              onTap: () => context.go(Routes.members),
+              // The member's own leads (the figures on the row are theirs);
+              // without an id, the team list.
+              onTap: () => dashGo(
+                  context,
+                  ref,
+                  e.userId.isEmpty
+                      ? Routes.members
+                      // Active = open leads the member OWNS, point-in-time
+                      // (no period): the open pipeline scoped to the owner.
+                      : '${Routes.leads}?pipeline=open&owned=${e.userId}'),
               trailing: DashTrailingValue(primary: e.closed, caption: e.last),
             ),
-          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.members)),
+          // Webapp `goReports`: the per-member figures live in Reports, which
+          // every dashboard role can open (Members is admin-only).
+          DashViewMore(
+              label: 'View more',
+              icon: PhosphorIconsBold.arrowDown,
+              onTap: () => dashGo(context, ref, Routes.reports)),
         ],
       ),
     );
@@ -143,7 +208,8 @@ class _SourcesSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(dashSourceModeProvider);
-    final sources = ref.watch(dashboardDataProvider.select((d) => d.crmSources));
+    final sources =
+        ref.watch(dashboardDataProvider.select((d) => d.crmSources));
 
     return DashSectionCard(
       title: 'Lead Sources',
@@ -156,16 +222,24 @@ class _SourcesSection extends ConsumerWidget {
       ),
       child: Padding(
         padding: EdgeInsets.only(top: 4.h),
-        child: Column(children: [for (final s in sources) _sourceRow(context, s, mode)]),
+        child: Column(children: [
+          for (final s in sources) _sourceRow(context, ref, s, mode)
+        ]),
       ),
     );
   }
 
-  Widget _sourceRow(BuildContext context, DashSource s, int mode) {
+  Widget _sourceRow(
+      BuildContext context, WidgetRef ref, DashSource s, int mode) {
     final primary = mode == 1 ? s.closed : '${s.leads}';
     final primarySub = mode == 1 ? 'closed' : 'leads';
     return DashHairlineRow(
-      onTap: () => context.go(Routes.leads),
+      // Leads from this source.
+      onTap: () => dashGo(
+          context,
+          ref,
+          dashLeadsLink(ref,
+              s.id.isEmpty ? Routes.leads : '${Routes.leads}?source=${s.id}')),
       child: Row(
         children: [
           Expanded(
@@ -174,18 +248,27 @@ class _SourcesSection extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Text(s.name, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(s.name,
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     if (s.up != null) ...[
                       SizedBox(width: 7.w),
                       Container(
                         width: 20.w,
                         height: 20.w,
                         decoration: BoxDecoration(
-                          color: s.up! ? DashColors.tintGreen : DashColors.tintRed,
+                          color:
+                              s.up! ? DashColors.tintGreen : DashColors.tintRed,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(s.up! ? PhosphorIconsBold.arrowUp : PhosphorIconsBold.arrowDown,
-                            size: 10.sp, color: s.up! ? DashColors.green : DashColors.red),
+                        child: Icon(
+                            s.up!
+                                ? PhosphorIconsBold.arrowUp
+                                : PhosphorIconsBold.arrowDown,
+                            size: 10.sp,
+                            color: s.up! ? DashColors.green : DashColors.red),
                       ),
                     ],
                   ],
@@ -194,7 +277,10 @@ class _SourcesSection extends ConsumerWidget {
                 Text(s.metaLine,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ],
             ),
           ),
@@ -202,9 +288,17 @@ class _SourcesSection extends ConsumerWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(primary, style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(primary,
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
               SizedBox(height: 2.h),
-              Text(primarySub, style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              Text(primarySub,
+                  style: AppText.custom(
+                      size: 10.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
             ],
           ),
         ],
@@ -235,7 +329,8 @@ class _StuckSection extends ConsumerWidget {
           DashChipRow(
             labels: [for (final c in _stuckChips) c.$2],
             selectedIndex: idx,
-            onChanged: (i) => ref.read(dashStuckChipProvider.notifier).state = _stuckChips[i].$1,
+            onChanged: (i) => ref.read(dashStuckChipProvider.notifier).state =
+                _stuckChips[i].$1,
           ),
           SizedBox(height: 2.h),
           if (rows.isEmpty)
@@ -243,13 +338,16 @@ class _StuckSection extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 24.h),
               child: Center(
                 child: Text('Nothing stuck here.',
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ),
             )
           else
             for (final r in rows)
               DashHairlineRow(
-                onTap: () => context.go(Routes.leads),
+                onTap: () => dashGo(context, ref, r.route ?? Routes.leads),
                 child: Row(
                   children: [
                     Expanded(
@@ -259,12 +357,18 @@ class _StuckSection extends ConsumerWidget {
                           Text(r.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                              style: AppText.custom(
+                                  size: 14,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary)),
                           SizedBox(height: 2.h),
                           Text(r.sub,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                              style: AppText.custom(
+                                  size: 12,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textPlaceholder)),
                         ],
                       ),
                     ),
@@ -272,9 +376,17 @@ class _StuckSection extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(r.amt, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        Text(r.amt,
+                            style: AppText.custom(
+                                size: 13.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
                         SizedBox(height: 3.h),
-                        Text(r.age, style: AppText.custom(size: 11, weight: FontWeight.w700, color: DashColors.red)),
+                        Text(r.age,
+                            style: AppText.custom(
+                                size: 11,
+                                weight: FontWeight.w700,
+                                color: DashColors.red)),
                       ],
                     ),
                   ],

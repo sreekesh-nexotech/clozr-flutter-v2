@@ -49,7 +49,8 @@ class QuoteItem extends Equatable {
   });
 
   @override
-  List<Object?> get props => [name, qty, rate, amt, amtNum, discount, lineNo, hsn, ratePct];
+  List<Object?> get props =>
+      [name, qty, rate, amt, amtNum, discount, lineNo, hsn, ratePct];
 }
 
 /// A CRM quote. Fields mirror the prototype's `quotes` seed 1:1 so the mock data
@@ -121,6 +122,16 @@ class Quote extends Equatable {
   final String? paymentPlanId;
   final bool isConverted;
 
+  /// Exact list-row figures for the card: the stored sub-total (`total_amount`,
+  /// before GST) and `grand_total` (incl. GST). Null when the row does not carry
+  /// them, so the card can show "—" instead of a made-up ₹0.
+  final double? subTotalExact;
+  final double? grandTotalExact;
+
+  /// `updated_at` / `created_at` — the webapp's ACTIVITY column.
+  final DateTime? updatedAt;
+  final DateTime? createdAt;
+
   const Quote({
     required this.id,
     this.uuid = '',
@@ -144,10 +155,25 @@ class Quote extends Equatable {
     this.grandTotalNum = 0,
     this.paymentPlanId,
     this.isConverted = false,
+    this.subTotalExact,
+    this.grandTotalExact,
+    this.updatedAt,
+    this.createdAt,
+    this.optionGroupId = '',
+    this.optionLabel = '',
+    this.optionRole = '',
   });
 
-  /// Whether the webapp would disable Delete for this quote.
-  bool get isDeleteBlocked => isConverted || (paymentPlanId ?? '').isNotEmpty;
+  /// Alternative-options quote (rulebook v1.7): the group, the option's letter
+  /// and its role (`primary` / `alternative` / `chosen`); '' for a plain quote.
+  final String optionGroupId;
+  final String optionLabel;
+  final String optionRole;
+
+  /// The chip a grouped row shows: "Option B · alternative" (webapp `optionChip`).
+  String get optionChip => optionGroupId.isEmpty
+      ? ''
+      : 'Option ${optionLabel.isEmpty ? '?' : optionLabel}${optionRole.isEmpty ? '' : ' · $optionRole'}';
 
   /// True only when the server has explicitly said the amounts include tax.
   bool get isTaxInclusive => (amountsAre ?? '').toUpperCase() == 'INCLUSIVE';
@@ -155,3 +181,35 @@ class Quote extends Equatable {
   @override
   List<Object?> get props => [id];
 }
+
+/// Webapp `groupedRowOrder`: the options of one alternative-options quote are
+/// separate rows on the wire; on a page they sit together — each group moves up
+/// to where it first appears, in A → C order — so a group reads as one deal with
+/// its alternatives beneath. Rows outside a group keep their order.
+List<Quote> groupedQuoteOrder(List<Quote> rows) {
+  final byGroup = <String, List<Quote>>{};
+  for (final r in rows) {
+    if (r.optionGroupId.isEmpty) continue;
+    byGroup.putIfAbsent(r.optionGroupId, () => []).add(r);
+  }
+  if (byGroup.isEmpty) return List.of(rows);
+  final out = <Quote>[];
+  final placed = <String>{};
+  for (final r in rows) {
+    if (r.optionGroupId.isEmpty) {
+      out.add(r);
+      continue;
+    }
+    if (!placed.add(r.optionGroupId)) continue;
+    final members = [...byGroup[r.optionGroupId]!]
+      ..sort((a, b) => a.optionLabel.compareTo(b.optionLabel));
+    out.addAll(members);
+  }
+  return out;
+}
+
+/// Whether row [i] is a later option of the group directly above it.
+bool isFollowingOption(List<Quote> rows, int i) =>
+    i > 0 &&
+    rows[i].optionGroupId.isNotEmpty &&
+    rows[i - 1].optionGroupId == rows[i].optionGroupId;

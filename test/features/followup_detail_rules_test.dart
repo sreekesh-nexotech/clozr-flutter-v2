@@ -29,19 +29,26 @@ const _lanes = [
 ];
 
 void main() {
-  test('delete message names the notes and files (webapp deleteTaskMessage)', () {
+  test('delete message names the notes and files (webapp deleteTaskMessage)',
+      () {
     expect(followupDeleteMessage(2, 1),
         "This permanently removes the follow-up and its 2 notes and 1 file. This can't be undone.");
-    expect(followupDeleteMessage(0, 0), "This permanently removes the follow-up. This can't be undone.");
+    expect(followupDeleteMessage(0, 0),
+        "This permanently removes the follow-up. This can't be undone.");
     expect(followupDeleteMessage(null, null),
         "This permanently removes the follow-up together with its notes and files. This can't be undone.");
   });
 
   test('chips: lanes by name, Other for no lane, counts per chip', () {
-    final rows = [_fu('Open'), _fu('Completed', status: 'done'), _fu('Waiting')];
+    final rows = [
+      _fu('Open'),
+      _fu('Completed', status: 'done'),
+      _fu('Waiting')
+    ];
     expect(followupTabCount(rows, 'all'), 3);
     expect(followupTabCount(rows, 'Open'), 1);
-    expect(rows.where((f) => followupInNoLane(f, _lanes)).map((f) => f.id), ['Waiting']);
+    expect(rows.where((f) => followupInNoLane(f, _lanes)).map((f) => f.id),
+        ['Waiting']);
     // Webapp chip rules are shared with Tasks.
     expect(toggleCrmTaskChip({'Open'}, 'Completed'), {'Open', 'Completed'});
     expect(toggleCrmTaskChip({'Open'}, crmTaskOtherChip), {crmTaskOtherChip});

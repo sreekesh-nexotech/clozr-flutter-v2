@@ -134,8 +134,8 @@ class ProjectFilterCodec {
     _decodeChoice(def, v, 'statuses', 'status', (id) => _nameOf(statuses, id));
     _decodeChoice(def, v, 'types', 'project_type', (id) => _nameOf(types, id));
     _decodeChoice(def, v, 'pri', 'priority', (id) => id);
-    _decodeChoice(def, v, 'managers', 'manager',
-        (id) => id == currentUserId ? 'me' : id);
+    _decodeChoice(
+        def, v, 'managers', 'manager', (id) => id == currentUserId ? 'me' : id);
     _decodeChoice(def, v, 'assignees', 'assignees',
         (id) => id == currentUserId ? 'me' : id);
     _decodeChoice(def, v, 'teams', 'assigned_team', (id) => id);
@@ -168,8 +168,8 @@ class ProjectFilterCodec {
     String? Function(String serverId) toOptionId,
   ) {
     for (final isNot in [false, true]) {
-      final raw =
-          def['$param${isNot ? '__not_in' : '__in'}'] ?? (isNot ? null : def[param]);
+      final raw = def['$param${isNot ? '__not_in' : '__in'}'] ??
+          (isNot ? null : def[param]);
       final ids = _idList(raw);
       if (ids.isEmpty) continue;
       final mapped = <String>{};
@@ -177,7 +177,8 @@ class ProjectFilterCodec {
         final o = toOptionId(id);
         if (o != null && o.isNotEmpty) mapped.add(o);
       }
-      if (mapped.isNotEmpty) out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
+      if (mapped.isNotEmpty)
+        out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
       return;
     }
   }
@@ -192,7 +193,8 @@ class ProjectFilterCodec {
       return;
     }
     // Stored as ids; the drawer's options are company names.
-    _decodeChoice(def, out, 'customer', 'customer', (id) => _nameOf(customers, id));
+    _decodeChoice(
+        def, out, 'customer', 'customer', (id) => _nameOf(customers, id));
   }
 
   /// Rupees back to the slider's ₹ lakhs.
@@ -210,8 +212,8 @@ class ProjectFilterCodec {
   /// Always restored as explicit bounds, never as the chip that produced them:
   /// a chip is relative to today, so "next 30 days" saved in June would mean
   /// something different in August. The stored dates are what was filtered on.
-  void _decodeDates(
-      Map<String, dynamic> def, FilterValues out, String fieldId, String field) {
+  void _decodeDates(Map<String, dynamic> def, FilterValues out, String fieldId,
+      String field) {
     final from = DateTime.tryParse('${def['${field}_after'] ?? ''}');
     final to = DateTime.tryParse('${def['${field}_before'] ?? ''}');
     if (from == null && to == null) return;
@@ -223,7 +225,9 @@ class ProjectFilterCodec {
     if (raw == null) return const [];
     final parts =
         raw is List ? raw.map((e) => e.toString()) : raw.toString().split(',');
-    return [for (final p in parts) p.trim()].where((s) => s.isNotEmpty).toList();
+    return [for (final p in parts) p.trim()]
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   /// A stored id back to the option id the drawer uses — its name. Drops one

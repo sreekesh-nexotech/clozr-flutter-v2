@@ -64,7 +64,8 @@ void main() {
   });
 
   group('CRM home funnel', () {
-    test('maps org stages, parses hex, derives tab keys and colour fallbacks', () {
+    test('maps org stages, parses hex, derives tab keys and colour fallbacks',
+        () {
       final bars = CrmHomeRemoteDataSource.mapFunnel({
         'crm': {
           'stages': [
@@ -94,11 +95,24 @@ void main() {
   });
 
   group('CRM home attention (missed)', () {
-    test('renders direction labels + signed deltas, empties missing metrics', () {
+    test('renders direction labels + signed deltas, empties missing metrics',
+        () {
       final attn = CrmHomeRemoteDataSource.mapMissed({
-        'payments_missed': {'count': 12, 'trend_pct': 3.0, 'direction': 'worsening'},
-        'followups_missed': {'count': 28, 'trend_pct': 0.0, 'direction': 'steady'},
-        'tasks_missed': {'count': 19, 'trend_pct': -5.0, 'direction': 'improving'},
+        'payments_missed': {
+          'count': 12,
+          'trend_pct': 3.0,
+          'direction': 'worsening'
+        },
+        'followups_missed': {
+          'count': 28,
+          'trend_pct': 0.0,
+          'direction': 'steady'
+        },
+        'tasks_missed': {
+          'count': 19,
+          'trend_pct': -5.0,
+          'direction': 'improving'
+        },
         // lost_after_quote absent → neutral empty card.
       });
 
@@ -124,7 +138,8 @@ void main() {
   });
 
   group('CRM home recent wins (undocumented shape)', () {
-    test('probes nested/flat keys, money fallbacks, lead vs customer routing', () {
+    test('probes nested/flat keys, money fallbacks, lead vs customer routing',
+        () {
       final (wins, count, total) = CrmHomeRemoteDataSource.mapWins({
         'results': [
           {
@@ -167,11 +182,24 @@ void main() {
   });
 
   group('CRM home stuck items', () {
-    test('maps title/owner/value(money vs passthrough)/age + per-chip route', () {
+    test('maps title/owner/value(money vs passthrough)/age + per-chip route',
+        () {
       final rows = CrmHomeRemoteDataSource.mapStuck({
         'items': [
-          {'id': 'q1', 'title': 'Workafella Coworking', 'owner': 'Deepak Raj', 'value': '18400000.00', 'stuck_days': 8},
-          {'id': 'q2', 'title': 'Kalyan Silks', 'owner': {'name': 'Anjana'}, 'value': 'High', 'stuck_days': 1},
+          {
+            'id': 'q1',
+            'title': 'Workafella Coworking',
+            'owner': 'Deepak Raj',
+            'value': '18400000.00',
+            'stuck_days': 8
+          },
+          {
+            'id': 'q2',
+            'title': 'Kalyan Silks',
+            'owner': {'name': 'Anjana'},
+            'value': 'High',
+            'stuck_days': 1
+          },
         ],
       }, 'quotes');
 
@@ -188,10 +216,17 @@ void main() {
       expect(rows[1].age, '1 day ago');
     });
 
-    test('routes differ per chip; owner objects register into the directory', () {
+    test('routes differ per chip; owner objects register into the directory',
+        () {
       final pay = CrmHomeRemoteDataSource.mapStuck({
         'items': [
-          {'id': 'p1', 'title': 'Marari Sands', 'owner': {'user_id': 'u9', 'full_name': 'Fariz Ahmed'}, 'value': 1830000, 'stuck_days': 15},
+          {
+            'id': 'p1',
+            'title': 'Marari Sands',
+            'owner': {'user_id': 'u9', 'full_name': 'Fariz Ahmed'},
+            'value': 1830000,
+            'stuck_days': 15
+          },
         ],
       }, 'pay');
       expect(pay[0].route, Routes.paymentDetail);
@@ -217,6 +252,31 @@ void main() {
       for (final key in const ['fu', 'pay', 'quotes', 'noproj']) {
         expect(data.overdue[key], isEmpty);
       }
+    });
+  });
+
+  group('CRM home follow-ups chip', () {
+    test('lists the user\'s overdue follow-ups, not stale leads', () {
+      final rows = CrmHomeRemoteDataSource.mapFollowups({
+        'results': [
+          {
+            'task_id': 't1',
+            'title': '[Payment Due] QTN-00008 - Subscription 3',
+            'due_date': '2026-10-25',
+            'priority': {'name': 'high'},
+            'related_to': {'label': 'QTN-00008'},
+          },
+          {'task_id': 't2', 'title': 'Call back', 'due_date': '2026-11-03'},
+          {'title': 'no id'},
+        ]
+      }, now: DateTime(2026, 11, 4));
+      expect(rows, hasLength(2));
+      expect(rows[0].route, '/followups/detail');
+      expect(rows[0].id, 't1');
+      expect(rows[0].sub, 'QTN-00008 · High');
+      expect(rows[0].age, '10 days overdue');
+      expect(rows[1].age, '1 day overdue');
+      expect(CrmHomeRemoteDataSource.mapFollowups(null), isEmpty);
     });
   });
 }

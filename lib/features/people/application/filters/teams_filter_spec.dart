@@ -76,11 +76,13 @@ final teamsFilterSpecProvider = Provider<FilterSpec>((ref) {
 });
 
 /// Applied drawer filters for the Teams list (the source of the badge count).
-final teamFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final teamFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Teams list (bookmark chips).
 final teamSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());
 
 /// The Teams list with the search ([visibleTeamsProvider]) AND the applied
 /// drawer filters applied. The screen renders this.

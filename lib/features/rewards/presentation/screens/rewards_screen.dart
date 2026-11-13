@@ -39,14 +39,17 @@ class RewardsScreen extends ConsumerWidget {
                 : state.error != null
                     ? ErrorState.forError(
                         state.error!,
-                        onRetry: () => ref.read(rewardsControllerProvider.notifier).reload(),
+                        onRetry: () => ref
+                            .read(rewardsControllerProvider.notifier)
+                            .reload(),
                       )
                     : ListView(
                         padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 110.h),
                         children: [
                           _profileCard(data.profile),
                           SizedBox(height: 12.h),
-                          if (data.lastUpdated.isNotEmpty) _refreshNote(data.lastUpdated),
+                          if (data.lastUpdated.isNotEmpty)
+                            _refreshNote(data.lastUpdated),
                           if (data.goals.isEmpty)
                             _goalsEmpty()
                           else
@@ -77,7 +80,8 @@ class RewardsScreen extends ConsumerWidget {
       child: const EmptyState(
         icon: PhosphorIconsFill.trophy,
         title: 'No rewards yet',
-        body: 'Your goals and rewards will appear here once your milestones are set up.',
+        body:
+            'Your goals and rewards will appear here once your milestones are set up.',
       ),
     );
   }
@@ -95,24 +99,30 @@ class RewardsScreen extends ConsumerWidget {
       padding: EdgeInsets.fromLTRB(16.w, 54.h, 16.w, 12.h),
       decoration: const BoxDecoration(
         color: AppColors.white,
-        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
+        border: Border(
+            bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
       ),
       child: Row(
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.canPop() ? context.pop() : context.go(Routes.home),
+            onTap: () =>
+                context.canPop() ? context.pop() : context.go(Routes.home),
             child: Padding(
               padding: EdgeInsets.only(right: 4.w),
-              child: Icon(PhosphorIconsBold.caretLeft, size: 22.sp, color: AppColors.textPrimary),
+              child: Icon(PhosphorIconsBold.caretLeft,
+                  size: 22.sp, color: AppColors.textPrimary),
             ),
           ),
           Container(
             width: 38.w,
             height: 38.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(11.r)),
-            child: Icon(PhosphorIconsFill.trophy, size: 20.sp, color: AppColors.navy),
+            decoration: BoxDecoration(
+                color: AppColors.tintNavy,
+                borderRadius: BorderRadius.circular(11.r)),
+            child: Icon(PhosphorIconsFill.trophy,
+                size: 20.sp, color: AppColors.navy),
           ),
           SizedBox(width: 10.w),
           Column(
@@ -120,10 +130,16 @@ class RewardsScreen extends ConsumerWidget {
             children: [
               Text('My Rewards',
                   style: AppText.custom(
-                      size: 20, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+                      size: 20,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.4)),
               SizedBox(height: 2.h),
               Text('Goals & rewards · My progress',
-                  style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
             ],
           ),
         ],
@@ -145,9 +161,13 @@ class RewardsScreen extends ConsumerWidget {
                 width: 48.w,
                 height: 48.w,
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                    color: AppColors.navy, shape: BoxShape.circle),
                 child: Text(p.initials,
-                    style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                    style: AppText.custom(
+                        size: 15,
+                        weight: FontWeight.w700,
+                        color: AppColors.white)),
               ),
               SizedBox(width: 12.w),
               Expanded(
@@ -155,10 +175,16 @@ class RewardsScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(p.name,
-                        style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 17,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
                     Text(p.role,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -169,16 +195,23 @@ class RewardsScreen extends ConsumerWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(PhosphorIconsFill.trophy, size: 15.sp, color: AppColors.warningDeep),
+                      Icon(PhosphorIconsFill.trophy,
+                          size: 15.sp, color: AppColors.warningDeep),
                       SizedBox(width: 5.w),
                       Text('${p.milestones}',
-                          style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                          style: AppText.custom(
+                              size: 19,
+                              weight: FontWeight.w800,
+                              color: AppColors.textPrimary)),
                     ],
                   ),
                   SizedBox(height: 1.h),
                   Text('MILESTONES ACHIEVED',
                       style: AppText.custom(
-                          size: 9, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.7)),
+                          size: 9,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPlaceholder,
+                          letterSpacing: 0.7)),
                 ],
               ),
             ],
@@ -190,46 +223,63 @@ class RewardsScreen extends ConsumerWidget {
             SizedBox(height: 10.h),
             Row(
               children: [
-                Icon(PhosphorIconsBold.arrowElbowDownRight, size: 11.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsBold.arrowElbowDownRight,
+                    size: 11.sp, color: AppColors.textPlaceholder),
                 SizedBox(width: 5.w),
                 Text('Reports to ',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
                 Text(p.reportsTo,
-                    style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w700,
+                        color: AppColors.textSecondary)),
               ],
             ),
           ],
           if (p.currentLevel.isNotEmpty) ...[
-          SizedBox(height: 12.h),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 10.h),
-            decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(12.r)),
-            child: Row(
-              children: [
-                Container(
-                  width: 30.w,
-                  height: 30.w,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
-                  child: Icon(PhosphorIconsFill.crownSimple, size: 14.sp, color: AppColors.white),
-                ),
-                SizedBox(width: 10.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('CURRENT LEVEL',
-                          style: AppText.custom(
-                              size: 9.5, weight: FontWeight.w700, color: AppColors.textBodyMuted, letterSpacing: 0.7)),
-                      SizedBox(height: 1.h),
-                      Text(p.currentLevel,
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                    ],
+            SizedBox(height: 12.h),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 10.h),
+              decoration: BoxDecoration(
+                  color: AppColors.tintGreen,
+                  borderRadius: BorderRadius.circular(12.r)),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30.w,
+                    height: 30.w,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                        color: AppColors.success, shape: BoxShape.circle),
+                    child: Icon(PhosphorIconsFill.crownSimple,
+                        size: 14.sp, color: AppColors.white),
                   ),
-                ),
-              ],
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('CURRENT LEVEL',
+                            style: AppText.custom(
+                                size: 9.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.textBodyMuted,
+                                letterSpacing: 0.7)),
+                        SizedBox(height: 1.h),
+                        Text(p.currentLevel,
+                            style: AppText.custom(
+                                size: 13.5,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           ],
         ],
       ),
@@ -240,25 +290,34 @@ class RewardsScreen extends ConsumerWidget {
   Widget _refreshNote(String lastUpdated) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 11.h),
-      decoration: BoxDecoration(color: AppColors.tintBlue, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: AppColors.tintBlue, borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: EdgeInsets.only(top: 1.h),
-            child: Icon(PhosphorIconsRegular.clock, size: 14.sp, color: AppColors.blueBright),
+            child: Icon(PhosphorIconsRegular.clock,
+                size: 14.sp, color: AppColors.blueBright),
           ),
           SizedBox(width: 8.w),
           Expanded(
             child: Text.rich(
               TextSpan(
-                text: 'Progress refreshes about every 6 hours — not live to the second. Last updated ',
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: RewardsColors.refreshText)
+                text:
+                    'Progress refreshes about every 6 hours — not live to the second. Last updated ',
+                style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: RewardsColors.refreshText)
                     .copyWith(height: 1.5),
                 children: [
                   TextSpan(
                     text: lastUpdated,
-                    style: AppText.custom(size: 12, weight: FontWeight.w700, color: RewardsColors.refreshText),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w700,
+                        color: RewardsColors.refreshText),
                   ),
                   const TextSpan(text: '.'),
                 ],
@@ -279,41 +338,63 @@ class RewardsScreen extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.steps, size: 17.sp, color: AppColors.textPrimary),
+              Icon(PhosphorIconsRegular.steps,
+                  size: 17.sp, color: AppColors.textPrimary),
               SizedBox(width: 8.w),
               Text('Closer Track',
-                  style: AppText.custom(size: 15.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 15.5,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 2.h),
           Text('Level-wise journey · unlocks on achievement',
-              style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
           SizedBox(height: 13.h),
           Container(
             padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 13.h),
-            decoration: BoxDecoration(color: AppColors.bgScreen, borderRadius: BorderRadius.circular(13.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgScreen,
+                borderRadius: BorderRadius.circular(13.r)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('UP NEXT',
                     style: AppText.custom(
-                        size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.7)),
+                        size: 10,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPlaceholder,
+                        letterSpacing: 0.7)),
                 SizedBox(height: 5.h),
                 Text(track.upNextTitle,
-                    style: AppText.custom(size: 14.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 14.5,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 2.h),
-                Text(track.upNextSub, style: AppText.caption(color: AppColors.textMuted)),
+                Text(track.upNextSub,
+                    style: AppText.caption(color: AppColors.textMuted)),
                 SizedBox(height: 10.h),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
                       child: Text(track.progLeft,
-                          style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w800,
+                              color: AppColors.textPrimary)),
                     ),
                     SizedBox(width: 10.w),
                     Text(track.progRight,
-                        style: AppText.custom(size: 12, weight: FontWeight.w700, color: RewardsColors.muted)),
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w700,
+                            color: RewardsColors.muted)),
                   ],
                 ),
                 SizedBox(height: 7.h),
@@ -364,17 +445,24 @@ class RewardsScreen extends ConsumerWidget {
                             style: AppText.custom(
                                 size: 14,
                                 weight: FontWeight.w700,
-                                color: locked ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                                color: locked
+                                    ? AppColors.textPlaceholder
+                                    : AppColors.textPrimary)),
                       ),
                       if (level.here) ...[
                         SizedBox(width: 7.w),
                         Container(
-                          padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 6.w, vertical: 2.h),
                           decoration: BoxDecoration(
-                              color: AppColors.tintNavy, borderRadius: BorderRadius.circular(6.r)),
+                              color: AppColors.tintNavy,
+                              borderRadius: BorderRadius.circular(6.r)),
                           child: Text('YOU ARE HERE',
                               style: AppText.custom(
-                                  size: 9, weight: FontWeight.w800, color: AppColors.navy, letterSpacing: 0.5)),
+                                  size: 9,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.navy,
+                                  letterSpacing: 0.5)),
                         ),
                       ],
                     ],
@@ -386,12 +474,17 @@ class RewardsScreen extends ConsumerWidget {
                       style: AppText.custom(
                           size: 12,
                           weight: FontWeight.w500,
-                          color: locked ? AppColors.textPlaceholder : AppColors.textMuted),
+                          color: locked
+                              ? AppColors.textPlaceholder
+                              : AppColors.textMuted),
                       children: level.hasTail
                           ? [
                               TextSpan(
                                 text: level.subTail,
-                                style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.success),
+                                style: AppText.custom(
+                                    size: 12,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.success),
                               ),
                             ]
                           : null,
@@ -413,8 +506,10 @@ class RewardsScreen extends ConsumerWidget {
           width: 24.w,
           height: 24.w,
           alignment: Alignment.center,
-          decoration: const BoxDecoration(color: AppColors.bgChipGrey, shape: BoxShape.circle),
-          child: Icon(PhosphorIconsFill.lock, size: 11.sp, color: AppColors.textPlaceholder),
+          decoration: const BoxDecoration(
+              color: AppColors.bgChipGrey, shape: BoxShape.circle),
+          child: Icon(PhosphorIconsFill.lock,
+              size: 11.sp, color: AppColors.textPlaceholder),
         );
       case RewardLevelKind.current:
         return Container(
@@ -425,18 +520,22 @@ class RewardsScreen extends ConsumerWidget {
             color: AppColors.navy,
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(color: AppColors.tintNavy, spreadRadius: 3.r, blurRadius: 0),
+              BoxShadow(
+                  color: AppColors.tintNavy, spreadRadius: 3.r, blurRadius: 0),
             ],
           ),
-          child: Icon(PhosphorIconsFill.circle, size: 8.sp, color: AppColors.white),
+          child: Icon(PhosphorIconsFill.circle,
+              size: 8.sp, color: AppColors.white),
         );
       case RewardLevelKind.done:
         return Container(
           width: 24.w,
           height: 24.w,
           alignment: Alignment.center,
-          decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
-          child: Icon(PhosphorIconsBold.check, size: 11.sp, color: AppColors.white),
+          decoration: const BoxDecoration(
+              color: AppColors.success, shape: BoxShape.circle),
+          child: Icon(PhosphorIconsBold.check,
+              size: 11.sp, color: AppColors.white),
         );
     }
   }

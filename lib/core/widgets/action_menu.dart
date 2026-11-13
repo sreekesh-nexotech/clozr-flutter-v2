@@ -58,7 +58,8 @@ class ClozrActionMenu extends StatelessWidget {
       children: [
         if (title != null) SheetHeader(title: title!),
         Padding(
-          padding: EdgeInsets.fromLTRB(12.w, title == null ? 6.h : 0, 12.w, 20.h),
+          padding:
+              EdgeInsets.fromLTRB(12.w, title == null ? 6.h : 0, 12.w, 20.h),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [for (final a in actions) _row(context, a)],
@@ -109,7 +110,9 @@ class ClozrActionMenu extends StatelessWidget {
                         child: Text(a.sublabel!,
                             style: TextStyle(
                               fontFamily: 'Manrope',
-                              fontVariations: const [FontVariation('wght', 500.0)],
+                              fontVariations: const [
+                                FontVariation('wght', 500.0)
+                              ],
                               fontSize: 12.sp,
                               fontWeight: FontWeight.w500,
                               color: AppColors.textMuted,

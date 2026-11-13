@@ -22,19 +22,24 @@ Future<void> showCustomerProductsSheet(
 }) {
   return showClozrSheet<void>(
     context: context,
-    builder: (_) => _ProductsSheet(current: customerProductRows(current), options: options, onSave: onSave),
+    builder: (_) => _ProductsSheet(
+        current: customerProductRows(current),
+        options: options,
+        onSave: onSave),
   );
 }
 
 class _Row {
-  _Row(this.id, this.label, String qty) : qty = TextEditingController(text: qty);
+  _Row(this.id, this.label, String qty)
+      : qty = TextEditingController(text: qty);
   final String id;
   final String label;
   final TextEditingController qty;
 }
 
 class _ProductsSheet extends StatefulWidget {
-  const _ProductsSheet({required this.current, required this.options, required this.onSave});
+  const _ProductsSheet(
+      {required this.current, required this.options, required this.onSave});
 
   final List<({String id, String label, String quantity})> current;
   final List<CatalogOption> options;
@@ -45,7 +50,9 @@ class _ProductsSheet extends StatefulWidget {
 }
 
 class _ProductsSheetState extends State<_ProductsSheet> {
-  late final List<_Row> _rows = [for (final r in widget.current) _Row(r.id, r.label, r.quantity)];
+  late final List<_Row> _rows = [
+    for (final r in widget.current) _Row(r.id, r.label, r.quantity)
+  ];
   String? _error;
   bool _saving = false;
 
@@ -62,7 +69,10 @@ class _ProductsSheetState extends State<_ProductsSheet> {
     final picked = await showOptionPicker(
       context: context,
       title: 'Add product',
-      options: [for (final o in widget.options) if (!taken.contains(o.id)) o],
+      options: [
+        for (final o in widget.options)
+          if (!taken.contains(o.id)) o
+      ],
       selected: const {},
       emptyNote: 'No more products to add.',
     );
@@ -72,7 +82,8 @@ class _ProductsSheetState extends State<_ProductsSheet> {
   }
 
   Future<void> _save() async {
-    final body = customerProductsPatch([for (final r in _rows) (productId: r.id, quantity: r.qty.text)]);
+    final body = customerProductsPatch(
+        [for (final r in _rows) (productId: r.id, quantity: r.qty.text)]);
     if (body.error != null) {
       setState(() => _error = body.error);
       return;
@@ -110,36 +121,52 @@ class _ProductsSheetState extends State<_ProductsSheet> {
                   if (_rows.isEmpty)
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 10.h),
-                      child: Text('No products yet.', style: AppText.caption(color: AppColors.textMuted)),
+                      child: Text('No products yet.',
+                          style: AppText.caption(color: AppColors.textMuted)),
                     ),
                   for (final r in _rows)
                     Container(
                       padding: EdgeInsets.symmetric(vertical: 8.h),
-                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+                      decoration: const BoxDecoration(
+                          border: Border(
+                              bottom: BorderSide(color: Color(0xFFF3F4F5)))),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(r.label,
-                                style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                                style: AppText.custom(
+                                    size: 14,
+                                    weight: FontWeight.w600,
+                                    color: AppColors.textPrimary)),
                           ),
                           SizedBox(
                             width: 70.w,
                             child: TextField(
                               controller: r.qty,
                               textAlign: TextAlign.center,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              style: AppText.custom(
+                                  size: 13.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary),
                               decoration: InputDecoration(
                                 isDense: true,
                                 labelText: 'Qty',
-                                contentPadding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.r)),
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8.w, vertical: 8.h),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8.r)),
                               ),
-                              onChanged: (_) => _error == null ? null : setState(() => _error = null),
+                              onChanged: (_) => _error == null
+                                  ? null
+                                  : setState(() => _error = null),
                             ),
                           ),
                           IconButton(
-                            icon: Icon(PhosphorIconsBold.x, size: 15.sp, color: AppColors.textMuted),
+                            icon: Icon(PhosphorIconsBold.x,
+                                size: 15.sp, color: AppColors.textMuted),
                             onPressed: () => setState(() {
                               r.qty.dispose();
                               _rows.remove(r);
@@ -155,7 +182,8 @@ class _ProductsSheetState extends State<_ProductsSheet> {
                     label: const Text('Add product'),
                   ),
                   if (_error != null)
-                    Text(_error!, style: AppText.caption(color: AppColors.error)),
+                    Text(_error!,
+                        style: AppText.caption(color: AppColors.error)),
                 ],
               ),
             ),
@@ -164,9 +192,17 @@ class _ProductsSheetState extends State<_ProductsSheet> {
             padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 12.h),
             child: Row(
               children: [
-                Expanded(child: PrimaryButton(label: 'Cancel', ghost: true, onTap: () => Navigator.of(context).pop())),
+                Expanded(
+                    child: PrimaryButton(
+                        label: 'Cancel',
+                        ghost: true,
+                        onTap: () => Navigator.of(context).pop())),
                 SizedBox(width: 10.w),
-                Expanded(flex: 2, child: PrimaryButton(label: _saving ? 'Saving…' : 'Save', onTap: _saving ? null : _save)),
+                Expanded(
+                    flex: 2,
+                    child: PrimaryButton(
+                        label: _saving ? 'Saving…' : 'Save',
+                        onTap: _saving ? null : _save)),
               ],
             ),
           ),

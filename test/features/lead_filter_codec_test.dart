@@ -93,11 +93,13 @@ void main() {
       expect(enc('cold'), {'lead_score_max': 44});
     });
 
-    test('an all-defaults draft encodes to {} — the API rejects saving that', () {
+    test('an all-defaults draft encodes to {} — the API rejects saving that',
+        () {
       expect(codec().encode(spec().defaults()), isEmpty);
     });
 
-    test('a value the catalog no longer knows is dropped, not sent as a name', () {
+    test('a value the catalog no longer knows is dropped, not sent as a name',
+        () {
       final v = spec().defaults();
       v['sources'] = ChoiceValue(ids: {'Website', 'Deleted Source'});
       expect(codec().encode(v), {'lead_source__in': 'src-web'});
@@ -152,7 +154,8 @@ void main() {
     });
 
     test('a score range outside the three buckets is dropped, not guessed', () {
-      final back = codec().decode({'lead_score_min': 10, 'lead_score_max': 90}, spec());
+      final back =
+          codec().decode({'lead_score_min': 10, 'lead_score_max': 90}, spec());
       expect(back.radio('score')!.isActive, isFalse);
     });
 
@@ -162,7 +165,8 @@ void main() {
     });
 
     test('an unknown key is ignored rather than throwing', () {
-      final back = codec().decode({'something_new': 'x', 'lead_score_min': 75}, spec());
+      final back =
+          codec().decode({'something_new': 'x', 'lead_score_min': 75}, spec());
       expect(back.radio('score')!.id, 'hot');
     });
   });
@@ -207,9 +211,11 @@ void main() {
     });
 
     test('a row without an id or name is skipped', () {
-      expect(SavedFiltersRemoteDataSource.mapSavedFilter({'name': 'x'}), isNull);
       expect(
-        SavedFiltersRemoteDataSource.mapSavedFilter({'saved_filter_id': 'a', 'name': ' '}),
+          SavedFiltersRemoteDataSource.mapSavedFilter({'name': 'x'}), isNull);
+      expect(
+        SavedFiltersRemoteDataSource.mapSavedFilter(
+            {'saved_filter_id': 'a', 'name': ' '}),
         isNull,
       );
     });

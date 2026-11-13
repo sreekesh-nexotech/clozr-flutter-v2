@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -31,18 +32,24 @@ class TicketCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final meta = StatusMeta$.ticket[ticket.status] ?? StatusMeta$.ticket['new']!;
+    final meta =
+        StatusMeta$.ticket[ticket.status] ?? StatusMeta$.ticket['new']!;
     final facts = ticket.facts;
     // The org's own status, in its own colour (webapp `StatusDotPill`); the
     // folded built-in pill only for mock rows.
-    final statusLabel = facts != null && ticket.statusName.isNotEmpty ? ticket.statusName : meta.label;
+    final statusLabel = facts != null && ticket.statusName.isNotEmpty
+        ? ticket.statusName
+        : meta.label;
     final statusColor = ticketStatusColor(facts?.statusColor) ?? meta.color;
     // The priority as the API stores it — "Critical", never the "Urgent" fold.
-    final priority = ticket.priorityName.isNotEmpty ? ticket.priorityName : ticket.pri;
+    final priority =
+        ticket.priorityName.isNotEmpty ? ticket.priorityName : ticket.pri;
     final cust = ref.watch(ticketDirectoryProvider).customer(ticket.custId);
     // Webapp REQUESTER: customer over contact, "—" for either one missing.
-    final customer = facts != null ? (facts.customerName ?? '—') : (cust?.display ?? '—');
-    final contact = facts?.contactName ?? (ticket.contact.isNotEmpty ? ticket.contact : '—');
+    final customer =
+        facts != null ? (facts.customerName ?? '—') : (cust?.display ?? '—');
+    final contact = facts?.contactName ??
+        (ticket.contact.isNotEmpty ? ticket.contact : '—');
     // An uncategorised ticket reads "—" (webapp), not an invented category.
     final category = facts != null ? (facts.typeName ?? '—') : ticket.cat;
     final ids = ticket.assignees.take(2).toList();
@@ -67,11 +74,15 @@ class TicketCard extends ConsumerWidget {
                           child: Text(ticket.subject,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 15.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                              style: AppText.custom(
+                                  size: 15.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary)),
                         ),
                         if (ticket.taskId != null) ...[
                           SizedBox(width: 6.w),
-                          Icon(PhosphorIconsRegular.linkSimple, size: 13.sp, color: AppColors.textPlaceholder),
+                          Icon(PhosphorIconsRegular.linkSimple,
+                              size: 13.sp, color: AppColors.textPlaceholder),
                         ],
                       ],
                     ),
@@ -79,16 +90,25 @@ class TicketCard extends ConsumerWidget {
                     Text('${ticket.displayRef} · $category',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                     SizedBox(height: 2.h),
                     Text(customer,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: AppColors.textLabelAlt)),
                     Text(contact,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -98,7 +118,10 @@ class TicketCard extends ConsumerWidget {
                 children: [
                   StatusPill(label: statusLabel, color: statusColor),
                   SizedBox(height: 5.h),
-                  StatusPill(label: priority, color: ticketPriorityColor(priority)),
+                  StatusPill(
+                      label: priority, color: ticketPriorityColor(priority)),
+                  PendingApprovalChip(
+                      recordId: ticket.id, padding: EdgeInsets.only(top: 5.h)),
                 ],
               ),
             ],
@@ -115,7 +138,10 @@ class TicketCard extends ConsumerWidget {
                 if (ticket.createdISO != null) ...[
                   if (ids.isNotEmpty) SizedBox(width: 8.w),
                   Text(ticketTimeAgo(ticket.createdISO),
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 ],
                 const Spacer(),
                 TicketSlaPill(chip: ticketListSlaChip(ticket)),
@@ -127,7 +153,8 @@ class TicketCard extends ConsumerWidget {
     );
 
     // Resolved / closed rows are dimmed, as on the webapp list.
-    final body = Opacity(opacity: (facts?.statusResolved ?? false) ? 0.6 : 1, child: card);
+    final body = Opacity(
+        opacity: (facts?.statusResolved ?? false) ? 0.6 : 1, child: card);
     return GestureDetector(
       onLongPress: onLongPress,
       child: body,
@@ -163,7 +190,9 @@ class TicketCard extends ConsumerWidget {
                       ),
                       child: Text(MockUsers.of(ids[i]).initials,
                           style: AppText.custom(
-                              size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                              size: 9,
+                              weight: FontWeight.w700,
+                              color: AppColors.white)),
                     ),
                   ),
               ],
@@ -171,7 +200,11 @@ class TicketCard extends ConsumerWidget {
           ),
         if (more > 0) ...[
           SizedBox(width: 4.w),
-          Text('+$more', style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textMuted2)),
+          Text('+$more',
+              style: AppText.custom(
+                  size: 10.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.textMuted2)),
         ],
       ],
     );
@@ -187,13 +220,16 @@ class TicketSlaPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 4.h),
-      decoration: BoxDecoration(color: chip.bg, borderRadius: BorderRadius.circular(7.r)),
+      decoration: BoxDecoration(
+          color: chip.bg, borderRadius: BorderRadius.circular(7.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(chip.icon, size: 11.sp, color: chip.tone),
           SizedBox(width: 5.w),
-          Text(chip.text, style: AppText.custom(size: 11, weight: FontWeight.w700, color: chip.tone)),
+          Text(chip.text,
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w700, color: chip.tone)),
         ],
       ),
     );

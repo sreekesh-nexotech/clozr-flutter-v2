@@ -69,4 +69,3 @@ String? customerColumnText(Customer customer, ViewColumn column) {
   // whatever the backend returned for it.
   return rawColumnText(customer.raw, column);
 }
-

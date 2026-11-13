@@ -108,7 +108,8 @@ class ModuleAccess extends Equatable {
           : const {},
       sidebar:
           (json['sidebar'] as List? ?? const []).whereType<String>().toList(),
-      moneyPostingBypass: json['money_posting'] is Map && (json['money_posting'] as Map)['bypass'] == true,
+      moneyPostingBypass: json['money_posting'] is Map &&
+          (json['money_posting'] as Map)['bypass'] == true,
       moneyPosting: _moneyPosting(json['money_posting']),
     );
   }
@@ -127,5 +128,6 @@ class ModuleAccess extends Equatable {
   }
 
   @override
-  List<Object?> get props => [fullAccess, hasSubordinates, roles, modules, sidebar];
+  List<Object?> get props =>
+      [fullAccess, hasSubordinates, roles, modules, sidebar];
 }

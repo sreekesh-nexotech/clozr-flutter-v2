@@ -24,7 +24,8 @@ class ProjectFinancialsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(accountingActiveProvider) || !ref.watch(accPermProvider('acc_report')).read) {
+    if (!ref.watch(accountingActiveProvider) ||
+        !ref.watch(accPermProvider('acc_report')).read) {
       return const SizedBox.shrink();
     }
     final async = ref.watch(projectFinancialsProvider(projectId));
@@ -37,7 +38,11 @@ class ProjectFinancialsCard extends ConsumerWidget {
         child: SizedBox(
           height: 48.h,
           child: const Center(
-            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: AppColors.navy)),
+            child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.2, color: AppColors.navy)),
           ),
         ),
       );
@@ -59,13 +64,18 @@ class ProjectFinancialsCard extends ConsumerWidget {
               children: [
                 Expanded(
                   child: Text('Gross margin',
-                      style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ),
                 Text(formatMoneyStr(f.grossMargin),
                     style: AppText.custom(
                         size: 17,
                         weight: FontWeight.w800,
-                        color: moneyNum(f.grossMargin) < 0 ? AppColors.error : AppColors.success)),
+                        color: moneyNum(f.grossMargin) < 0
+                            ? AppColors.error
+                            : AppColors.success)),
               ],
             ),
           ),

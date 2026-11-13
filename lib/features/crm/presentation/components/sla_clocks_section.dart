@@ -40,7 +40,8 @@ class SlaClockChip {
     };
     final wire = '${j['state'] ?? ''}';
     if (layer == null || target == null) return null;
-    if (!const {'running', 'paused', 'met', 'breached'}.contains(wire)) return null;
+    if (!const {'running', 'paused', 'met', 'breached'}.contains(wire))
+      return null;
     final remaining = (j['remaining_seconds'] as num?)?.toInt();
     DateTime? time(String k) => DateTime.tryParse('${j[k] ?? ''}');
     final warningAt = time('warning_at');
@@ -54,7 +55,8 @@ class SlaClockChip {
     if (state == SlaChipState.running) {
       if (remaining != null && remaining < 0) {
         state = SlaChipState.breached;
-      } else if (j['warned_at'] != null || (warningAt != null && !warningAt.isAfter(at))) {
+      } else if (j['warned_at'] != null ||
+          (warningAt != null && !warningAt.isAfter(at))) {
         state = SlaChipState.atRisk;
       }
     }
@@ -65,7 +67,9 @@ class SlaClockChip {
       case SlaChipState.atRisk:
         status = remaining == null ? 'Running' : '${duration(remaining)} left';
       case SlaChipState.breached:
-        status = remaining != null && remaining < 0 ? 'Overdue ${duration(-remaining)}' : 'Breached';
+        status = remaining != null && remaining < 0
+            ? 'Overdue ${duration(-remaining)}'
+            : 'Breached';
       case SlaChipState.met:
         final started = time('started_at');
         final met = time('met_at');
@@ -74,7 +78,9 @@ class SlaClockChip {
             ? 'Met in ${duration(met.difference(started).inSeconds - paused)}'
             : 'Met';
       case SlaChipState.paused:
-        status = remaining == null ? 'Paused' : 'Paused · ${duration(remaining)} left';
+        status = remaining == null
+            ? 'Paused'
+            : 'Paused · ${duration(remaining)} left';
     }
     return SlaClockChip(state: state, text: '$layer · $target — $status');
   }
@@ -91,17 +97,22 @@ class SlaClockChip {
 
 /// `GET /sla/clocks/?module=lead&id=` — re-read every minute like the webapp.
 /// Any failure (404 included) reads as "no clocks".
-final leadSlaClocksProvider = FutureProvider.autoDispose.family<List<SlaClockChip>, (String, String)>((ref, rec) async {
+final leadSlaClocksProvider = FutureProvider.autoDispose
+    .family<List<SlaClockChip>, (String, String)>((ref, rec) async {
   final (module, id) = rec;
   final timer = Timer(const Duration(seconds: 60), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   try {
-    final body = await ref.read(apiServiceProvider).get('/sla/clocks/', query: {'module': module, 'id': id}, quiet: true);
+    final body = await ref
+        .read(apiServiceProvider)
+        .get('/sla/clocks/', query: {'module': module, 'id': id}, quiet: true);
     final clocks = body is Map ? body['clocks'] : null;
     final out = <SlaClockChip>[];
     if (clocks is List) {
       for (final c in clocks) {
-        final chip = c is Map ? SlaClockChip.fromJson(Map<String, dynamic>.from(c)) : null;
+        final chip = c is Map
+            ? SlaClockChip.fromJson(Map<String, dynamic>.from(c))
+            : null;
         if (chip != null) out.add(chip);
       }
     }
@@ -120,7 +131,9 @@ class LeadSlaClocks extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final chips = ref.watch(leadSlaClocksProvider((module, leadId))).valueOrNull ?? const [];
+    final chips =
+        ref.watch(leadSlaClocksProvider((module, leadId))).valueOrNull ??
+            const [];
     if (chips.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.only(bottom: 14.h),
@@ -130,9 +143,11 @@ class LeadSlaClocks extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Icon(PhosphorIconsRegular.timer, size: 15.sp, color: AppColors.textMuted),
+              Icon(PhosphorIconsRegular.timer,
+                  size: 15.sp, color: AppColors.textMuted),
               SizedBox(width: 6.w),
-              Text('SLA', style: AppText.captionStrong(color: AppColors.textMuted)),
+              Text('SLA',
+                  style: AppText.captionStrong(color: AppColors.textMuted)),
             ]),
             SizedBox(height: 10.h),
             Wrap(
@@ -148,19 +163,43 @@ class LeadSlaClocks extends ConsumerWidget {
 
   Widget _chip(SlaClockChip c) {
     final (bg, fg, icon) = switch (c.state) {
-      SlaChipState.running => (AppColors.tintBlue, AppColors.blueBright, PhosphorIconsRegular.clock),
-      SlaChipState.atRisk => (AppColors.tintAmber, AppColors.warningDeep, PhosphorIconsRegular.warningCircle),
-      SlaChipState.breached => (AppColors.tintRed, AppColors.error, PhosphorIconsRegular.warning),
-      SlaChipState.met => (AppColors.tintGreen, AppColors.success, PhosphorIconsBold.check),
-      SlaChipState.paused => (AppColors.bgChipGrey, AppColors.textMuted, PhosphorIconsRegular.pause),
+      SlaChipState.running => (
+          AppColors.tintBlue,
+          AppColors.blueBright,
+          PhosphorIconsRegular.clock
+        ),
+      SlaChipState.atRisk => (
+          AppColors.tintAmber,
+          AppColors.warningDeep,
+          PhosphorIconsRegular.warningCircle
+        ),
+      SlaChipState.breached => (
+          AppColors.tintRed,
+          AppColors.error,
+          PhosphorIconsRegular.warning
+        ),
+      SlaChipState.met => (
+          AppColors.tintGreen,
+          AppColors.success,
+          PhosphorIconsBold.check
+        ),
+      SlaChipState.paused => (
+          AppColors.bgChipGrey,
+          AppColors.textMuted,
+          PhosphorIconsRegular.pause
+        ),
     };
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 13.sp, color: fg),
         SizedBox(width: 5.w),
-        Flexible(child: Text(c.text, style: AppText.custom(size: 12, weight: FontWeight.w700, color: fg))),
+        Flexible(
+            child: Text(c.text,
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w700, color: fg))),
       ]),
     );
   }

@@ -123,12 +123,14 @@ class PeopleRepositoryImpl implements PeopleRepository {
 
   /// The seed members already carry their performance figures.
   @override
-  Future<Member> withPerformance(Member member, {String period = 'all_time'}) async =>
+  Future<Member> withPerformance(Member member,
+          {String period = 'all_time'}) async =>
       member;
 
   /// No activity feed in the seed data; the card falls back to its derived rows.
   @override
-  Future<List<MemberActivity>> getMemberActivity(String userId) async => const [];
+  Future<List<MemberActivity>> getMemberActivity(String userId) async =>
+      const [];
 
   /// No retrieve endpoint in mock mode; the seed row is all there is.
   @override

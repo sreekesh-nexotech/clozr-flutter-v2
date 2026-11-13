@@ -2,6 +2,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/providers/record_presence_providers.dart';
+import '../../../approvals/domain/entities/approval.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
+import '../../../approvals/presentation/components/approval_request_note.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/utils/attachment_link.dart';
@@ -26,6 +29,9 @@ import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/keyboard_visibility.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 import '../../../../core/widgets/notes_thread.dart';
+import '../../../../core/utils/upload_rules.dart';
+import '../../../../core/widgets/file_name_dialog.dart';
+import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/providers/attachments_providers.dart';
@@ -42,7 +48,9 @@ import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead_file.dart';
 import '../../domain/entities/view_schema.dart';
-import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart' show hexColor;
+import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart'
+    show hexColor;
+import '../components/closing_note.dart';
 import '../components/crm_async.dart';
 import '../components/crm_detail_parts.dart';
 import '../components/due_date_change.dart';
@@ -54,7 +62,8 @@ import '../sheets/reschedule_sheet.dart';
 import 'crm_status_sheet.dart';
 import '../../../auth/presentation/components/permission_guard.dart';
 
-export '../../application/followup_detail_rules.dart' show followupDeleteMessage;
+export '../../application/followup_detail_rules.dart'
+    show followupDeleteMessage;
 
 /// Follow-up kind → Phosphor glyph (mirrors the prototype's FUKIND map).
 const _fuKindIcons = <String, IconData>{
@@ -70,9 +79,12 @@ const _fuKindIcons = <String, IconData>{
 
 /// `GET /crm/followup-settings/` — follow-ups keep their own reopen rule;
 /// null on failure.
-final _followupSettingsProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+final _followupSettingsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
   try {
-    final body = await ref.read(apiServiceProvider).get('/crm/followup-settings/', quiet: true);
+    final body = await ref
+        .read(apiServiceProvider)
+        .get('/crm/followup-settings/', quiet: true);
     return body is Map ? Map<String, dynamic>.from(body) : null;
   } on Object {
     return null;
@@ -83,7 +95,8 @@ class FollowupDetailScreen extends ConsumerStatefulWidget {
   const FollowupDetailScreen({super.key});
 
   @override
-  ConsumerState<FollowupDetailScreen> createState() => _FollowupDetailScreenState();
+  ConsumerState<FollowupDetailScreen> createState() =>
+      _FollowupDetailScreenState();
 }
 
 class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
@@ -107,7 +120,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   }
 
   /// The record write path — a follow-up is only found under the flag.
-  static String _path(String id) => '${ApiEndpoints.crmTask(id)}?is_followup=true';
+  static String _path(String id) =>
+      '${ApiEndpoints.crmTask(id)}?is_followup=true';
 
   /// Webapp: inline editing on this page follows the **task** permission
   /// (`useModulePermissions(MODULE_KEYS.task)`); completing, deleting, files
@@ -142,7 +156,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     final ctx = _notesKey.currentContext;
     if (ctx != null && ctx.mounted) {
       await Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 240), alignment: 0.05, curve: Curves.easeOut);
+          duration: const Duration(milliseconds: 240),
+          alignment: 0.05,
+          curve: Curves.easeOut);
     }
     if (!mounted) return;
     _notesKey.currentState?.focusComposer();
@@ -152,20 +168,33 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// override, rolled back on failure with the server's own words (webapp: a
   /// missing note reads "A task must have at least one note before it can be
   /// completed.").
+  ///
+  /// Closing may need approval (Unified Approvals): the "This needs approval"
+  /// comment is asked first, and a move the server holds is rolled back here
+  /// while the shell says it is waiting.
   Future<void> _setLane(Followup fu, CatalogOption lane, String success) async {
-    final key = crmTaskStatusKey(name: lane.name, type: lane.statusType) == 'done'
-        ? 'done'
-        // Completing does not change the due date, so a reopened follow-up
-        // returns to whichever side of today it was already on.
-        : (fu.status == 'overdue' ? 'overdue' : 'due');
+    var requestNote = '';
+    if (ApiConfig.apiEnabled) {
+      final note = await approvalNoteForClose(context, ref,
+          module: ApprovalModules.followup,
+          objectId: fu.id,
+          statusCode: lane.statusType,
+          statusLabel: lane.name);
+      if (note == null || !mounted) return;
+      requestNote = note;
+    }
+    final key =
+        crmTaskStatusKey(name: lane.name, type: lane.statusType) == 'done'
+            ? 'done'
+            // Completing does not change the due date, so a reopened follow-up
+            // returns to whichever side of today it was already on.
+            : (fu.status == 'overdue' ? 'overdue' : 'due');
     final prev = ref.read(followupStatusOverrideProvider);
     ref.read(followupStatusOverrideProvider.notifier).state = {
       ...prev,
       fu.id: FollowupStatusOverride(key: key, name: lane.name),
     };
-    try {
-      await ref.read(crmTasksRepositoryProvider).updateTask(fu.id, {'status_id': lane.id}, isFollowup: true);
-    } on AppError catch (e) {
+    void rollback() {
       final rolled = {...ref.read(followupStatusOverrideProvider)};
       if (prev.containsKey(fu.id)) {
         rolled[fu.id] = prev[fu.id]!;
@@ -173,13 +202,42 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         rolled.remove(fu.id);
       }
       ref.read(followupStatusOverrideProvider.notifier).state = rolled;
+    }
+
+    bool held;
+    try {
+      held = await writeWasHeld(
+          ref,
+          fu.id,
+          () => ref.read(crmTasksRepositoryProvider).updateTask(
+              fu.id, {'status_id': lane.id, ...requestNoteField(requestNote)},
+              isFollowup: true));
+    } on AppError catch (e) {
+      rollback();
+      if (!mounted) return;
+      // UI/UX audit #05 / #59: a required closing note opens the "Add note &
+      // complete" dialog rather than only flashing the refusal.
+      if (key == 'done' && needsClosingNote(e)) {
+        final ok = await completeWithClosingNote(context, ref,
+            taskId: fu.id,
+            title: fu.title.isEmpty ? fu.kind : fu.title,
+            followup: true,
+            cause: e,
+            complete: () => ref.read(crmTasksRepositoryProvider).updateTask(
+                fu.id, {'status_id': lane.id, ...requestNoteField(requestNote)},
+                isFollowup: true));
+        if (ok && mounted) _refreshAfterWrite(fu);
+        return;
+      }
       ref.read(apiServiceProvider).handled(e);
-      if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
+      ref.read(toastProvider.notifier).showError(e.bareMessage);
       return;
     }
+    // Held for approval: the follow-up keeps its status until decided.
+    if (held) rollback();
     if (!mounted) return;
     _refreshAfterWrite(fu);
-    ref.read(toastProvider.notifier).show(success);
+    if (!held) ref.read(toastProvider.notifier).show(success);
   }
 
   /// The org's lanes, awaited when the synchronous view is still empty.
@@ -191,6 +249,21 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       } on Object {
         lanes = const [];
       }
+      // A catalog that failed once (a network blip) stays failed until it
+      // is refetched — Mark complete then did nothing at all. Retry once.
+      if (lanes.isEmpty) {
+        ref.invalidate(taskStatusCatalogProvider);
+        try {
+          lanes = await ref.read(taskStatusCatalogProvider.future);
+        } on Object {
+          lanes = const [];
+        }
+      }
+    }
+    if (lanes.isEmpty && mounted) {
+      ref
+          .read(toastProvider.notifier)
+          .showError("Couldn't load your organisation's statuses. Try again.");
     }
     return lanes;
   }
@@ -213,9 +286,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     }
     final lanes = await _lanes();
     if (!mounted) return;
-    String keyOf(CatalogOption l) => crmTaskStatusKey(name: l.name, type: l.statusType);
+    String keyOf(CatalogOption l) =>
+        crmTaskStatusKey(name: l.name, type: l.statusType);
     final target = done
-        ? (lanes.where((l) => l.statusType == 'open').firstOrNull ?? lanes.where((l) => keyOf(l) != 'done').firstOrNull)
+        ? (lanes.where((l) => l.statusType == 'open').firstOrNull ??
+            lanes.where((l) => keyOf(l) != 'done').firstOrNull)
         : lanes.where((l) => keyOf(l) == 'done').firstOrNull;
     if (target == null) return;
     await _setLane(fu, target, 'Status updated');
@@ -240,7 +315,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           sublabel: noUpdate,
           onTap: () => _reschedule(fu),
         ),
-        MenuAction(icon: PhosphorIconsRegular.notePencil, label: 'Add note', onTap: _focusNotes),
+        MenuAction(
+            icon: PhosphorIconsRegular.notePencil,
+            label: 'Add note',
+            onTap: _focusNotes),
         MenuAction(
           icon: PhosphorIconsRegular.trash,
           label: 'Delete follow-up',
@@ -254,18 +332,26 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// PATCH one or more fields; due-date moves go through the reason flow and
   /// may be sent for approval (202). Webapp toast: "Follow-up updated".
   Future<void> _patch(Followup fu, Map<String, dynamic> fields,
-      {String success = 'Follow-up updated', String dateKey = 'due_date', String fieldLabel = 'Due date'}) async {
+      {String success = 'Follow-up updated',
+      String dateKey = 'due_date',
+      String fieldLabel = 'Due date'}) async {
     final row = ref.read(followupRowProvider(fu.id)).valueOrNull;
     final hadDate = '${row?[dateKey] ?? ''}'.isNotEmpty;
     try {
       final r = await writeWithDueDateFlow(context, ref,
-          path: _path(fu.id), fields: fields, hadDate: hadDate, dateKey: dateKey, fieldLabel: fieldLabel);
+          path: _path(fu.id),
+          fields: fields,
+          hadDate: hadDate,
+          dateKey: dateKey,
+          fieldLabel: fieldLabel);
       if (r == DueDateWrite.cancelled || !mounted) return;
-      if (r == DueDateWrite.saved) ref.read(toastProvider.notifier).show(success);
+      if (r == DueDateWrite.saved)
+        ref.read(toastProvider.notifier).show(success);
     } on AppError catch (e) {
       if (!mounted) return;
       ref.read(apiServiceProvider).handled(e);
-      ref.read(toastProvider.notifier).showError(e.statusCode == 403 && e.code == 'committed_due_date_locked'
+      ref.read(toastProvider.notifier).showError(e.statusCode == 403 &&
+              e.code == 'committed_due_date_locked'
           ? 'The committed date is locked. Only admins and Executive Leadership can change it.'
           : e.bareMessage);
       return;
@@ -288,7 +374,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
   /// Deletes the follow-up, behind the webapp's confirmation.
   Future<void> _delete(Followup fu) async {
-    final notesSeed = CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[], apiModel: 'task');
+    final notesSeed =
+        CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.read(crmNotesProvider(notesSeed)).length;
     final files = ref.read(taskFilesProvider(fu.id)).valueOrNull?.length;
     final ok = await showDialog<bool>(
@@ -297,7 +384,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         title: const Text('Delete follow-up?'),
         content: Text(followupDeleteMessage(notes, files)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('Delete', style: TextStyle(color: AppColors.error)),
@@ -308,7 +397,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     if (ok != true || !mounted) return;
 
     try {
-      await ref.read(crmTasksRepositoryProvider).deleteTask(fu.id, isFollowup: true);
+      await ref
+          .read(crmTasksRepositoryProvider)
+          .deleteTask(fu.id, isFollowup: true);
     } on AppError catch (e) {
       ref.read(apiServiceProvider).handled(e);
       if (mounted) ref.read(toastProvider.notifier).showError(e.bareMessage);
@@ -347,8 +438,14 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       ref: ref,
       title: 'Update follow-up status',
       options: [for (final s in lanes) s.name],
-      meta: {for (final s in lanes) s.name: StatusMeta(s.name, crmTaskStatusColor(s))},
-      current: lanes.where((s) => s.name.trim().toLowerCase() == current).map((s) => s.name).firstOrNull ?? '',
+      meta: {
+        for (final s in lanes) s.name: StatusMeta(s.name, crmTaskStatusColor(s))
+      },
+      current: lanes
+              .where((s) => s.name.trim().toLowerCase() == current)
+              .map((s) => s.name)
+              .firstOrNull ??
+          '',
       onSelect: (name) {
         final lane = lanes.firstWhere((s) => s.name == name);
         final key = crmTaskStatusKey(name: lane.name, type: lane.statusType);
@@ -381,7 +478,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// The status override goes too — it only bridges an optimistic change to the
   /// refetch, and keeping it would let a local guess override the server.
   Future<void> _refresh(String id) async {
-    ref.read(followupStatusOverrideProvider.notifier).update((s) => {...s}..remove(id));
+    ref
+        .read(followupStatusOverrideProvider.notifier)
+        .update((s) => {...s}..remove(id));
     refreshFollowups(ref);
     ref.invalidate(followupRowProvider(id));
     ref.invalidate(taskFilesProvider(id));
@@ -430,7 +529,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     return async.when(
       loading: () => _stateScaffold(const DetailSkeleton()),
       error: (e, _) => _stateScaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => refreshFollowups(ref)),
+        ErrorState.forError(crmAppError(e),
+            onRetry: () => refreshFollowups(ref)),
       ),
       data: (_) => _buildFollowup(context, id),
     );
@@ -441,7 +541,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     if (fu == null) return _stateScaffold(_notFound(context));
     // The row above comes from the loaded list, which can outlive the record:
     // ask the record endpoint, and show the webapp's not-found state on a 404.
-    final gone = ref.watch(recordGoneProvider(RecordProbe(ApiEndpoints.crmTask(fu.id), const {'is_followup': 'true'}))).valueOrNull ?? false;
+    final gone = ref
+            .watch(recordGoneProvider(RecordProbe(
+                ApiEndpoints.crmTask(fu.id), const {'is_followup': 'true'})))
+            .valueOrNull ??
+        false;
     if (gone) return _stateScaffold(_notFound(context));
 
     // Watched so the lanes and the reopen rule are loaded before the first tap.
@@ -458,7 +562,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
     // Notes thread (#13) — follow-ups start with an empty thread; the shared
     // composer stays usable regardless of the follow-up's status.
-    final notesSeed = CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[], apiModel: 'task');
+    final notesSeed =
+        CrmNotesSeed('FU-${fu.id}', () => <NoteEntry>[], apiModel: 'task');
     final notes = ref.watch(crmNotesProvider(notesSeed));
 
     // The notes composer lives inside the list below. With the keyboard up the
@@ -484,49 +589,62 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
             child: AppRefresh(
               onRefresh: () => _refresh(fu.id),
               child: ListView(
-              controller: _notesScrollCtrl,
-              // Dragging the page puts the keyboard away — the only other exit
-              // from the notes composer was submitting or leaving the screen.
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
-              children: [
-                _headCard(fu, meta, row, title, done),
-                SizedBox(height: 14.h),
-                // Webapp: SLA clocks (hidden when the server sends none) then
-                // the pending due-date banner, under the header (a follow-up's
-                // clocks are the task module's).
-                LeadSlaClocks(leadId: fu.id, module: 'task'),
-                PendingDueDateBanner(pending: pending is Map ? Map<String, dynamic>.from(pending) : null),
-                // Webapp actions band: the linked record (Mark complete and
-                // Delete sit in the bottom bar, the mobile home for actions).
-                _relatedBand(row),
-                SizedBox(height: 14.h),
-                _infoCard(fu, row),
-                SizedBox(height: 14.h),
-                _descFilesCard(fu, row),
-                SizedBox(height: 14.h),
-                NotesThread(
-                  author: ref.watch(noteAuthorProvider),
-                  key: _notesKey,
-                  notes: notes,
-                  onAddNote: (body, atts) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addNote(body, atts, ref.read(noteAuthorProvider)),
-                  onAddReply: (noteId, body) =>
-                      ref.read(crmNotesProvider(notesSeed).notifier).addReply(noteId, body, ref.read(noteAuthorProvider)),
-                  // Webapp NotesPanel (`task`): Tag, @mention from the org's
-                  // user directory, and Insert.
-                  webappToolbar: true,
-                  noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
-                  mentionables: ref.watch(taskMentionUsersProvider).valueOrNull ?? const [],
-                  onAddTypedNote: (body, atts, typeId, typeName, mentions) => ref
-                      .read(crmNotesProvider(notesSeed).notifier)
-                      .addNote(body, atts, ref.read(noteAuthorProvider),
-                          noteTypeId: typeId, noteTypeName: typeName, mentionedUserIds: mentions),
-                ),
-                SizedBox(height: 14.h),
-                _auditCard(fu),
-              ],
+                controller: _notesScrollCtrl,
+                // Dragging the page puts the keyboard away — the only other exit
+                // from the notes composer was submitting or leaving the screen.
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
+                children: [
+                  _headCard(fu, meta, row, title, done),
+                  SizedBox(height: 14.h),
+                  // Webapp: SLA clocks (hidden when the server sends none) then
+                  // the pending due-date banner, under the header (a follow-up's
+                  // clocks are the task module's).
+                  LeadSlaClocks(leadId: fu.id, module: 'task'),
+                  PendingDueDateBanner(
+                      pending: pending is Map
+                          ? Map<String, dynamic>.from(pending)
+                          : null),
+                  ApprovalBanner(
+                      module: ApprovalModules.followup, objectId: fu.id),
+                  // Webapp actions band: the linked record (Mark complete and
+                  // Delete sit in the bottom bar, the mobile home for actions).
+                  _relatedBand(row),
+                  SizedBox(height: 14.h),
+                  _infoCard(fu, row),
+                  SizedBox(height: 14.h),
+                  _descFilesCard(fu, row),
+                  SizedBox(height: 14.h),
+                  NotesThread(
+                    author: ref.watch(noteAuthorProvider),
+                    key: _notesKey,
+                    notes: notes,
+                    onAddNote: (body, atts) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .addNote(body, atts, ref.read(noteAuthorProvider)),
+                    onAddReply: (noteId, body) => ref
+                        .read(crmNotesProvider(notesSeed).notifier)
+                        .addReply(noteId, body, ref.read(noteAuthorProvider)),
+                    // Webapp NotesPanel (`task`): Tag, @mention from the org's
+                    // user directory, and Insert.
+                    webappToolbar: true,
+                    noteTypes:
+                        ref.watch(noteTypesProvider).valueOrNull ?? const [],
+                    mentionables:
+                        ref.watch(taskMentionUsersProvider).valueOrNull ??
+                            const [],
+                    onAddTypedNote: (body, atts, typeId, typeName, mentions) =>
+                        ref.read(crmNotesProvider(notesSeed).notifier).addNote(
+                            body, atts, ref.read(noteAuthorProvider),
+                            noteTypeId: typeId,
+                            noteTypeName: typeName,
+                            mentionedUserIds: mentions),
+                  ),
+                  SizedBox(height: 14.h),
+                  _auditCard(fu),
+                ],
               ),
             ),
           ),
@@ -550,10 +668,15 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
   /// Small uppercase section label (webapp `eyebrow`).
   static Widget _eyebrow(String text) => Text(text.toUpperCase(),
-      style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5));
+      style: AppText.custom(
+          size: 11,
+          weight: FontWeight.w700,
+          color: AppColors.textPlaceholder,
+          letterSpacing: 0.5));
 
   static String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts =
+        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.isEmpty) return '?';
     final a = parts.first[0];
     final b = parts.length > 1 ? parts.last[0] : '';
@@ -562,10 +685,12 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
   /// Webapp header: title, "<type> · <related label>", "Due 18 Jun 2026 · In
   /// 3d", then Priority and the Status dropdown.
-  Widget _headCard(Followup fu, StatusMeta meta, Map<String, dynamic>? row, String title, bool done) {
+  Widget _headCard(Followup fu, StatusMeta meta, Map<String, dynamic>? row,
+      String title, bool done) {
     final type = _type(fu, row);
     final subtitle = followupSubtitle(type, _related(row));
-    final dueLabel = followupDueLabel(row?['due_date'], fallback: row == null ? fu.due : '');
+    final dueLabel =
+        followupDueLabel(row?['due_date'], fallback: row == null ? fu.due : '');
     final tone = followupDueTone(fu.dueNote);
     final toneColor = switch (tone) {
       FollowupDueTone.danger => AppColors.error,
@@ -574,8 +699,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     };
     // The org's own priority name and colour (webapp), not a folded bucket.
     final p = row?['priority'];
-    final priorityName = p is Map ? '${p['name'] ?? ''}'.trim() : fu.priority;
-    final priorityColor = (p is Map ? hexColor(p['color']) : null) ?? AppColors.textPrimary;
+    final priorityName = StatusMeta$.priorityLabel(
+        p is Map ? '${p['name'] ?? ''}'.trim() : fu.priority);
+    final priorityColor =
+        (p is Map ? hexColor(p['color']) : null) ?? AppColors.textPrimary;
     return ClozrCard(
       radius: 18,
       padding: EdgeInsets.all(18.r),
@@ -589,27 +716,47 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                 width: 40.w,
                 height: 40.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(11.r)),
-                child: Icon(_fuKindIcons[type] ?? PhosphorIconsRegular.checkSquare, size: 19.sp, color: AppColors.navy),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEEF1F4),
+                    borderRadius: BorderRadius.circular(11.r)),
+                child: Icon(
+                    _fuKindIcons[type] ?? PhosphorIconsRegular.checkSquare,
+                    size: 19.sp,
+                    color: AppColors.navy),
               ),
               SizedBox(width: 12.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    Text(title,
+                        style: AppText.custom(
+                            size: 19,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3)),
                     SizedBox(height: 3.h),
-                    Text(subtitle, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text(subtitle,
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                     if (dueLabel.isNotEmpty) ...[
                       SizedBox(height: 5.h),
                       Row(
                         children: [
-                          Icon(PhosphorIconsRegular.calendarDots, size: 13.sp, color: toneColor),
+                          Icon(PhosphorIconsRegular.calendarDots,
+                              size: 13.sp, color: toneColor),
                           SizedBox(width: 6.w),
                           Flexible(
                             child: Text(
-                              fu.dueNote.isEmpty ? 'Due $dueLabel' : 'Due $dueLabel · ${fu.dueNote}',
-                              style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: toneColor),
+                              fu.dueNote.isEmpty
+                                  ? 'Due $dueLabel'
+                                  : 'Due $dueLabel · ${fu.dueNote}',
+                              style: AppText.custom(
+                                  size: 12.5,
+                                  weight: FontWeight.w700,
+                                  color: toneColor),
                             ),
                           ),
                         ],
@@ -630,7 +777,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                   children: [
                     _eyebrow('Priority'),
                     SizedBox(height: 6.h),
-                    Text(priorityName, style: AppText.custom(size: 17, weight: FontWeight.w800, color: priorityColor)),
+                    Text(priorityName,
+                        style: AppText.custom(
+                            size: 17,
+                            weight: FontWeight.w800,
+                            color: priorityColor)),
                   ],
                 ),
                 SizedBox(width: 24.w),
@@ -644,7 +795,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                     GestureDetector(
                       onTap: () => _pickStatus(fu),
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 12.w, vertical: 8.h),
                         decoration: BoxDecoration(
                           color: AppColors.white,
                           borderRadius: BorderRadius.circular(9.r),
@@ -653,11 +805,20 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(width: 8.w, height: 8.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
+                            Container(
+                                width: 8.w,
+                                height: 8.w,
+                                decoration: BoxDecoration(
+                                    color: meta.color, shape: BoxShape.circle)),
                             SizedBox(width: 8.w),
-                            Text(meta.label, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            Text(meta.label,
+                                style: AppText.custom(
+                                    size: 13.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textPrimary)),
                             SizedBox(width: 8.w),
-                            Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textMuted2),
+                            Icon(PhosphorIconsBold.caretDown,
+                                size: 11.sp, color: AppColors.textMuted2),
                           ],
                         ),
                       ),
@@ -684,15 +845,24 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         radius: 18,
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 15.h),
         child: Row(children: [
-          Icon(PhosphorIconsRegular.circleDashed, size: 17.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsRegular.circleDashed,
+              size: 17.sp, color: AppColors.textPlaceholder),
           SizedBox(width: 10.w),
-          Expanded(child: Text(followupUnlinkedText, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted))),
+          Expanded(
+              child: Text(followupUnlinkedText,
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted))),
         ]),
       );
     }
     final model = '${r['model'] ?? ''}'.toLowerCase();
     final route = followupRelatedRoute(r,
-        lead: Routes.leadDetail, customer: Routes.customerDetail, product: Routes.productDetail, quote: Routes.quoteDetail);
+        lead: Routes.leadDetail,
+        customer: Routes.customerDetail,
+        product: Routes.productDetail,
+        quote: Routes.quoteDetail);
     final icon = switch (model) {
       'lead' => PhosphorIconsRegular.user,
       'customer' => PhosphorIconsRegular.buildings,
@@ -730,13 +900,18 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                     Text(label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
                     Text(followupRelatedCaption(r), style: AppText.caption()),
                   ],
                 ),
               ),
-              if (route != null) Icon(PhosphorIconsRegular.arrowUpRight, size: 16.sp, color: AppColors.textPlaceholder),
+              if (route != null)
+                Icon(PhosphorIconsRegular.arrowUpRight,
+                    size: 16.sp, color: AppColors.textPlaceholder),
             ],
           ),
         ],
@@ -755,10 +930,24 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
   /// Webapp row rules: Name first; description (the Agenda block), status and
   /// the people (their own card) left out; Committed due date after Due date.
-  static const _skipRows = {'title', 'description', 'status', 'assigned_to', 'assignees', 'committed_due_date'};
+  static const _skipRows = {
+    'title',
+    'description',
+    'status',
+    'assigned_to',
+    'assignees',
+    'committed_due_date'
+  };
 
   /// Rows edited through a picker (long-press) rather than a text box.
-  static const _pickerRows = {'priority', 'assigned_team', 'task_type', 'due_date', 'committed_due_date', 'due_time'};
+  static const _pickerRows = {
+    'priority',
+    'assigned_team',
+    'task_type',
+    'due_date',
+    'committed_due_date',
+    'due_time'
+  };
 
   /// Saves one edited field — trimmed title capped at 280, blank or unchanged
   /// ignored (webapp).
@@ -769,33 +958,53 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       if (t.isEmpty || t == fu.title) return;
       value = t;
     }
-    await _patch(fu, {key: value});
+    await _patch(
+        fu,
+        inlineWriteBody(
+            key, value, ref.read(followupRowProvider(fu.id)).valueOrNull));
   }
 
-  Future<void> _pickRow(Followup fu, String name, String label, Map<String, dynamic>? row) async {
+  Future<void> _pickRow(
+      Followup fu, String name, String label, Map<String, dynamic>? row) async {
     if (!ensurePermission(ref, 'task', PermVerb.update)) return;
     switch (name) {
       case 'priority':
-        final opts = [const CatalogOption(id: '__none__', name: 'No priority'), ...ref.read(taskPriorityOptionsProvider)];
-        final p = await showOptionPicker(context: context, title: label, options: opts, selected: const {});
+        final opts = [
+          const CatalogOption(id: '__none__', name: 'No priority'),
+          ...ref.read(taskPriorityOptionsProvider)
+        ];
+        final p = await showOptionPicker(
+            context: context, title: label, options: opts, selected: const {});
         if (p == null || p.isEmpty) return;
         await _patch(fu, {'priority': p.first == '__none__' ? null : p.first});
       case 'assigned_team':
-        final teams = await ref.read(assignableTeamsForModuleProvider('followup').future);
+        final teams =
+            await ref.read(assignableTeamsForModuleProvider('followup').future);
         if (!mounted) return;
         final p = await showOptionPicker(
             context: context,
             title: label,
-            options: [const CatalogOption(id: '__none__', name: 'No team'), ...teams],
+            options: [
+              const CatalogOption(id: '__none__', name: 'No team'),
+              ...teams
+            ],
             selected: const {});
         if (p == null || p.isEmpty) return;
-        await _patch(fu, {'assigned_team': p.first == '__none__' ? null : p.first});
+        await _patch(
+            fu, {'assigned_team': p.first == '__none__' ? null : p.first});
       case 'task_type':
         // The org's follow-up types (the webapp offers the fixed task types
         // here — a known web quirk; the follow-up's own list is what it stores).
-        final types = [for (final t in ref.read(followupTypeOptionsProvider)) CatalogOption(id: t.name, name: t.name)];
+        final types = [
+          for (final t in ref.read(followupTypeOptionsProvider))
+            CatalogOption(id: t.name, name: t.name)
+        ];
         final current = _type(fu, row);
-        final p = await showOptionPicker(context: context, title: label, options: types, selected: {current});
+        final p = await showOptionPicker(
+            context: context,
+            title: label,
+            options: types,
+            selected: {current});
         if (p == null || p.isEmpty || p.first == current) return;
         await _patch(fu, {'task_type': p.first});
       case 'due_time':
@@ -806,17 +1015,23 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         }
         final t = await pickSheetTime(context, '${row?['due_time'] ?? ''}');
         if (t == null || !mounted) return;
-        await _patch(fu, {'due_time': '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'});
+        await _patch(fu, {
+          'due_time':
+              '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'
+        });
       case 'due_date':
       case 'committed_due_date':
         final committed = name == 'committed_due_date';
         if (committed && row?['can_change_committed_date'] != true) {
-          ref.read(toastProvider.notifier).show('Locked once set; admins and Executive Leadership can change it');
+          ref.read(toastProvider.notifier).show(
+              'Locked once set; admins and Executive Leadership can change it');
           return;
         }
         final d = await pickSheetDate(context, '${row?[name] ?? ''}');
         if (d == null || !mounted) return;
-        await _patch(fu, {name: sheetIsoDate(d)}, dateKey: name, fieldLabel: committed ? 'Committed due date' : 'Due date');
+        await _patch(fu, {name: sheetIsoDate(d)},
+            dateKey: name,
+            fieldLabel: committed ? 'Committed due date' : 'Due date');
     }
   }
 
@@ -830,22 +1045,32 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       case 'decimal':
         return num.tryParse(t) == null ? 'Must be a numeric value.' : null;
       case 'date':
-        return DateTime.tryParse(t) == null ? 'Must be a date (YYYY-MM-DD).' : null;
+        return DateTime.tryParse(t) == null
+            ? 'Must be a date (YYYY-MM-DD).'
+            : null;
       case 'email':
-        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t) ? null : 'Must be a valid email address.';
+        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t)
+            ? null
+            : 'Must be a valid email address.';
       case 'url':
-        return RegExp(r'^https?://\S+$').hasMatch(t) ? null : 'Must be a valid URL (http:// or https://).';
+        return RegExp(r'^https?://\S+$').hasMatch(t)
+            ? null
+            : 'Must be a valid URL (http:// or https://).';
       case 'text':
-        return t.length > ViewColumn.customTextMax ? 'Must be at most ${ViewColumn.customTextMax} characters.' : null;
+        return t.length > ViewColumn.customTextMax
+            ? 'Must be at most ${ViewColumn.customTextMax} characters.'
+            : null;
     }
     return null;
   }
 
   /// Edits one custom field — `PATCH {custom_fields: {<key>: value}}`, as the
   /// webapp does — with an input fitting its type.
-  Future<void> _editCustom(Followup fu, ViewColumn c, Map<String, dynamic>? row) async {
+  Future<void> _editCustom(
+      Followup fu, ViewColumn c, Map<String, dynamic>? row) async {
     if (!ensurePermission(ref, 'task', PermVerb.update)) return;
-    final custom = row?['custom_fields'] is Map ? row!['custom_fields'] as Map : const {};
+    final custom =
+        row?['custom_fields'] is Map ? row!['custom_fields'] as Map : const {};
     final current = custom[c.customKey];
     Object? value;
     switch (c.customType) {
@@ -857,8 +1082,13 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         final p = await showOptionPicker(
             context: context,
             title: c.label,
-            options: const [CatalogOption(id: 'true', name: 'Yes'), CatalogOption(id: 'false', name: 'No')],
-            selected: {if (current != null) '$current'});
+            options: const [
+              CatalogOption(id: 'true', name: 'Yes'),
+              CatalogOption(id: 'false', name: 'No')
+            ],
+            selected: {
+              if (current != null) '$current'
+            });
         if (p == null || p.isEmpty) return;
         value = p.first == 'true';
       default:
@@ -866,15 +1096,20 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           final p = await showOptionPicker(
               context: context,
               title: c.label,
-              options: [for (final (v, l) in c.choices) CatalogOption(id: v, name: l)],
-              selected: {if (current != null) '$current'});
+              options: [
+                for (final (v, l) in c.choices) CatalogOption(id: v, name: l)
+              ],
+              selected: {
+                if (current != null) '$current'
+              });
           if (p == null || p.isEmpty) return;
           value = p.first;
           break;
         }
         final text = await showDialog<String>(
           context: context,
-          builder: (_) => _CustomFieldDialog(column: c, initial: current == null ? '' : '$current'),
+          builder: (_) => _CustomFieldDialog(
+              column: c, initial: current == null ? '' : '$current'),
         );
         if (text == null || !mounted) return;
         if (text == '${current ?? ''}') return;
@@ -884,7 +1119,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                 ? num.parse(text)
                 : text;
     }
-    await _patch(fu, {'custom_fields': {c.customKey: value}});
+    await _patch(fu, {
+      'custom_fields': {c.customKey: value}
+    });
   }
 
   /// Webapp "Follow-up information": Name first, then the org's detail layout
@@ -901,7 +1138,12 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         rows.add((r.$1, r.$2, null, ''));
       }
     } else {
-      rows.add(('Name', fu.title.isEmpty ? '—' : fu.title, schema.column('title'), 'title'));
+      rows.add((
+        'Name',
+        fu.title.isEmpty ? '—' : fu.title,
+        schema.column('title'),
+        'title'
+      ));
       var committedAdded = false;
       void addCommitted() {
         if (committedAdded) return;
@@ -909,8 +1151,14 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         final v = '${row['committed_due_date'] ?? ''}';
         final moved = rescheduleLabel(row);
         final text = v.isEmpty ? 'Not committed yet' : dueDateLabel(v);
-        rows.add(('Committed due date', moved == null ? text : '$text\n$moved', null, 'committed_due_date'));
+        rows.add((
+          'Committed due date',
+          moved == null ? text : '$text\n$moved',
+          null,
+          'committed_due_date'
+        ));
       }
+
       for (final r in recordRows(row, schema, skip: _skipRows)) {
         // Webapp: a field the record does not carry has no row.
         if (!followupRecordHasColumn(row, r.column)) continue;
@@ -919,14 +1167,17 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         // The org's own priority name, as the webapp shows it.
         if (r.name == 'priority' && row['priority'] is Map) {
           final n = '${(row['priority'] as Map)['name'] ?? ''}'.trim();
-          value = n.isEmpty ? '—' : n;
+          value = n.isEmpty ? '—' : StatusMeta$.priorityLabel(n);
         }
-        if (r.name == 'related_to') value = followupRelatedRowValue(row['related_to']);
+        if (r.name == 'related_to')
+          value = followupRelatedRowValue(row['related_to']);
         // The record sends the team as an id; its name rides beside it.
         if (r.name == 'assigned_team' && row['assigned_team'] != null) {
           final name = '${row['assigned_team_name'] ?? ''}'.trim();
           final team = row['assigned_team'];
-          value = name.isNotEmpty ? name : (team is Map ? '${team['name'] ?? value}' : 'Team assigned');
+          value = name.isNotEmpty
+              ? name
+              : (team is Map ? '${team['name'] ?? value}' : 'Team assigned');
         }
         rows.add((r.label, value, r.column, r.name));
         if (r.name == 'due_date') addCommitted();
@@ -939,13 +1190,20 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Follow-up information', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Follow-up information',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 6.h),
           // Long-press a row to edit it in place; a row that cannot be edited
           // says why rather than ignoring the press.
           for (int i = 0; i < rows.length; i++)
             Builder(builder: (_) {
-              final line = DetailInfoRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1);
+              final line = DetailInfoRow(
+                  label: rows[i].$1,
+                  value: rows[i].$2,
+                  last: i == rows.length - 1);
               final col = rows[i].$3;
               if (col is ViewColumn && col.isCustom) {
                 // Webapp: a custom field saves as `custom_fields.<key>`.
@@ -965,11 +1223,17 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               return InlineEditRow(
                 label: rows[i].$1,
                 display: rows[i].$2,
-                column: _canEdit ? rows[i].$3 : null,
-                rawValue: rows[i].$4 == 'title' ? fu.title : row?[rows[i].$3?.name],
+                column: rows[i].$3,
+                canEdit: _canEdit,
+                deniedHint: permissionCopy(PermVerb.update),
+                rawValue: rows[i].$4 == 'title'
+                    ? fu.title
+                    : rawFieldValue(row, rows[i].$3),
                 editForm: 'Edit follow-up',
                 onSave: (key, value) => _saveField(fu, key, value),
-                onBlocked: (msg) => ref.read(toastProvider.notifier).show(_canEdit ? msg : permissionCopy(PermVerb.update)),
+                onBlocked: (msg) => ref
+                    .read(toastProvider.notifier)
+                    .show(_canEdit ? msg : permissionCopy(PermVerb.update)),
                 child: line,
               );
             }),
@@ -994,7 +1258,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
 
     final ownerName = owner == null ? '' : nameOf(owner);
     final assignees = [
-      for (final a in (row['assignees'] is List ? row['assignees'] as List : const []))
+      for (final a
+          in (row['assignees'] is List ? row['assignees'] as List : const []))
         if (a is Map && a['user_id'] != null) a,
     ];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1010,22 +1275,35 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
             shape: BoxShape.circle,
           ),
           child: ownerName.isEmpty
-              ? Icon(PhosphorIconsRegular.user, size: 17.sp, color: AppColors.textMuted)
-              : Text(_initials(ownerName), style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.white)),
+              ? Icon(PhosphorIconsRegular.user,
+                  size: 17.sp, color: AppColors.textMuted)
+              : Text(_initials(ownerName),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.white)),
         ),
         SizedBox(width: 11.w),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(ownerName.isEmpty ? 'Unassigned' : ownerName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppText.bodyStrong(color: ownerName.isEmpty ? AppColors.textPlaceholder : AppColors.textPrimary)),
+                style: AppText.bodyStrong(
+                    color: ownerName.isEmpty
+                        ? AppColors.textPlaceholder
+                        : AppColors.textPrimary)),
             Text('Follow-up owner', style: AppText.caption()),
           ]),
         ),
         TextButton.icon(
           onPressed: () => _reassign(fu, ownerId),
-          icon: Icon(ownerName.isEmpty ? PhosphorIconsRegular.userPlus : PhosphorIconsRegular.repeat, size: 15.sp),
+          icon: Icon(
+              ownerName.isEmpty
+                  ? PhosphorIconsRegular.userPlus
+                  : PhosphorIconsRegular.repeat,
+              size: 15.sp),
           label: Text(ownerName.isEmpty ? 'Assign owner' : 'Reassign owner'),
         ),
       ]),
@@ -1033,14 +1311,19 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       Text('Assignees', style: AppText.caption()),
       SizedBox(height: 8.h),
       if (assignees.isEmpty)
-        Text('No assignees yet', style: AppText.caption(color: AppColors.textPlaceholder))
+        Text('No assignees yet',
+            style: AppText.caption(color: AppColors.textPlaceholder))
       else
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
           for (final a in assignees)
             Chip(
               avatar: CircleAvatar(
                 backgroundColor: AppColors.navy,
-                child: Text(_initials(nameOf(a)), style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                child: Text(_initials(nameOf(a)),
+                    style: AppText.custom(
+                        size: 9,
+                        weight: FontWeight.w700,
+                        color: AppColors.white)),
               ),
               label: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(nameOf(a)),
@@ -1050,19 +1333,32 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                   SizedBox(width: 6.w),
                   Tooltip(
                     message: 'Owner',
-                    child: Container(width: 7.w, height: 7.w, decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle)),
+                    child: Container(
+                        width: 7.w,
+                        height: 7.w,
+                        decoration: const BoxDecoration(
+                            color: AppColors.navy, shape: BoxShape.circle)),
                   ),
                 ],
               ]),
               onDeleted: '${a['user_id']}' != ownerId
-                  ? () => _patch(fu, {'assignees': [for (final x in assignees) if (x != a) '${x['user_id']}']}, success: 'Assignee removed')
+                  ? () => _patch(
+                      fu,
+                      {
+                        'assignees': [
+                          for (final x in assignees)
+                            if (x != a) '${x['user_id']}'
+                        ]
+                      },
+                      success: 'Assignee removed')
                   : null,
             ),
         ]),
       Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
-          onPressed: () => _addAssignee(fu, [for (final a in assignees) '${a['user_id']}']),
+          onPressed: () =>
+              _addAssignee(fu, [for (final a in assignees) '${a['user_id']}']),
           icon: Icon(PhosphorIconsRegular.userPlus, size: 15.sp),
           label: const Text('Add assignee'),
         ),
@@ -1078,7 +1374,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DetailUnderlineTabs(labels: const ['Description', 'Files'], index: _tab, onChanged: (i) => setState(() => _tab = i)),
+          DetailUnderlineTabs(
+              labels: const ['Description', 'Files'],
+              index: _tab,
+              onChanged: (i) => setState(() => _tab = i)),
           if (_tab == 0) _descriptionTab(fu, row) else _filesTab(fu),
         ],
       ),
@@ -1086,7 +1385,9 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   }
 
   Widget _descriptionTab(Followup fu, Map<String, dynamic>? row) {
-    final written = row != null ? '${row['description'] ?? ''}'.trim() : fu.description.trim();
+    final written = row != null
+        ? '${row['description'] ?? ''}'.trim()
+        : fu.description.trim();
     final desc = written == 'null' ? '' : written;
     return Padding(
       padding: EdgeInsets.only(top: 14.h),
@@ -1101,7 +1402,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                 onTap: () => _editDescription(fu, desc),
                 child: Padding(
                   padding: EdgeInsets.all(4.r),
-                  child: Icon(PhosphorIconsRegular.pencilSimple, size: 15.sp, color: AppColors.textPlaceholder),
+                  child: Icon(PhosphorIconsRegular.pencilSimple,
+                      size: 15.sp, color: AppColors.textPlaceholder),
                 ),
               ),
           ]),
@@ -1113,7 +1415,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               width: double.infinity,
               child: Text(desc.isEmpty ? 'No description.' : desc,
                   style: AppText.custom(
-                          size: 14, weight: FontWeight.w500, color: desc.isEmpty ? AppColors.textPlaceholder : AppColors.textSecondary)
+                          size: 14,
+                          weight: FontWeight.w500,
+                          color: desc.isEmpty
+                              ? AppColors.textPlaceholder
+                              : AppColors.textSecondary)
                       .copyWith(height: 1.6)),
             ),
           ),
@@ -1149,15 +1455,22 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
               GestureDetector(
                 onTap: _uploading ? null : () => _uploadFiles(fu),
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 8.h),
-                  decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(9.r)),
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 13.w, vertical: 8.h),
+                  decoration: BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.circular(9.r)),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(PhosphorIconsRegular.uploadSimple, size: 14.sp, color: AppColors.white),
+                      Icon(PhosphorIconsRegular.uploadSimple,
+                          size: 14.sp, color: AppColors.white),
                       SizedBox(width: 7.w),
                       Text(_uploading ? 'Uploading…' : 'Upload file',
-                          style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w600,
+                              color: AppColors.white)),
                     ],
                   ),
                 ),
@@ -1168,21 +1481,35 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           if (async.isLoading && files.isEmpty)
             Text('Loading files…', style: AppText.caption())
           else if (async.hasError && files.isEmpty)
-            Text(crmAppError(async.error!).message, style: AppText.caption(color: AppColors.error))
+            Text(crmAppError(async.error!).message,
+                style: AppText.caption(color: AppColors.error))
           else if (files.isEmpty)
             Text('No files yet.', style: AppText.caption())
           else
-            for (int i = 0; i < files.length; i++) _fileRow(fu, files[i], first: i == 0),
+            for (int i = 0; i < files.length; i++)
+              _fileRow(fu, files[i], first: i == 0),
         ],
       ),
     );
+  }
+
+  /// "pdf · Sufail · 2m ago" — type, uploader and when, as the lead's list.
+  String _fileMeta(LeadFile f) {
+    final uploader = MockUsers.of(f.uploadedBy).name.split(' ').first;
+    return [
+      f.ext,
+      if (uploader.isNotEmpty) uploader,
+      if (f.uploadedAt.isNotEmpty) f.uploadedAt
+    ].join(' · ');
   }
 
   /// One attachment: tap opens the stored file, the bin removes it (webapp).
   Widget _fileRow(Followup fu, LeadFile f, {required bool first}) {
     return Container(
       decoration: BoxDecoration(
-        border: first ? null : const Border(top: BorderSide(color: Color(0xFFF3F4F5))),
+        border: first
+            ? null
+            : const Border(top: BorderSide(color: Color(0xFFF3F4F5))),
       ),
       child: Row(
         children: [
@@ -1198,16 +1525,30 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                       width: 34.w,
                       height: 34.w,
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(8.r)),
-                      child: Icon(attachmentIcon(f.ext), size: 17.sp, color: AppColors.navy),
+                      decoration: BoxDecoration(
+                          color: AppColors.bgChipGrey,
+                          borderRadius: BorderRadius.circular(8.r)),
+                      child: Icon(attachmentIcon(f.ext),
+                          size: 17.sp, color: AppColors.navy),
                     ),
                     SizedBox(width: 11.w),
                     Expanded(
-                      child: Text(f.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.navy)
-                              .copyWith(decoration: TextDecoration.underline)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(f.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.custom(
+                                      size: 13.5,
+                                      weight: FontWeight.w600,
+                                      color: AppColors.navy)
+                                  .copyWith(
+                                      decoration: TextDecoration.underline)),
+                          SizedBox(height: 2.h),
+                          Text(_fileMeta(f), style: AppText.caption()),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1217,7 +1558,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
           IconButton(
             tooltip: 'Remove',
             onPressed: () => _removeFile(fu, f),
-            icon: Icon(PhosphorIconsRegular.trash, size: 16.sp, color: AppColors.textMuted),
+            icon: Icon(PhosphorIconsRegular.trash,
+                size: 16.sp, color: AppColors.textMuted),
           ),
         ],
       ),
@@ -1245,7 +1587,8 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     toast.show('File removed');
   }
 
-  Future<List<CatalogOption>> _users() => ref.read(assignableUsersForModuleProvider('followup').future);
+  Future<List<CatalogOption>> _users() =>
+      ref.read(assignableUsersForModuleProvider('followup').future);
 
   Future<void> _reassign(Followup fu, String currentOwner) async {
     final users = await _users();
@@ -1256,12 +1599,16 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       options: users,
       selected: {if (currentOwner.isNotEmpty) currentOwner},
     );
-    if (picked == null || picked.isEmpty || picked.first == currentOwner) return;
+    if (picked == null || picked.isEmpty || picked.first == currentOwner)
+      return;
     await _patch(fu, {'assigned_to': picked.first}, success: 'Owner updated');
   }
 
   Future<void> _addAssignee(Followup fu, List<String> current) async {
-    final users = [for (final u in await _users()) if (!current.contains(u.id)) u];
+    final users = [
+      for (final u in await _users())
+        if (!current.contains(u.id)) u
+    ];
     if (!mounted) return;
     final picked = await showOptionPicker(
       context: context,
@@ -1271,13 +1618,19 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
       emptyNote: 'No more users',
     );
     if (picked == null || picked.isEmpty) return;
-    await _patch(fu, {'assignees': [...current, picked.first]}, success: 'Assignee added');
+    await _patch(
+        fu,
+        {
+          'assignees': [...current, picked.first]
+        },
+        success: 'Assignee added');
   }
 
   /// Hands one attachment to the OS viewer, reporting why if it cannot be.
   Future<void> _openFile(LeadFile f) async {
     final failure = await openAttachment(f.url);
-    if (failure != null && mounted) ref.read(toastProvider.notifier).show(failure);
+    if (failure != null && mounted)
+      ref.read(toastProvider.notifier).show(failure);
   }
 
   /// Picks files off the device and uploads each against this follow-up.
@@ -1302,11 +1655,30 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
     }
     if (picked == null || !mounted) return; // cancelled
 
+    // Refuse a wrong type, an empty or an over-limit file before anything is
+    // sent — the webapp's validation and messages.
+    for (final f in picked.files) {
+      final problem = fileProblem(f.name, f.size);
+      if (problem.isNotEmpty) {
+        toast.showError(problem);
+        return;
+      }
+    }
     final files = [
       for (final f in picked.files)
         if (f.path != null) (path: f.path!, name: f.name),
     ];
     if (files.isEmpty) return;
+
+    // One file: offer its name (the extension stays) like the webapp's dialog.
+    if (files.length == 1) {
+      final typed = await showFileNameDialog(context, files.first.name);
+      if (typed == null || !mounted) return;
+      files[0] = (
+        path: files.first.path,
+        name: storedFileName(typed, files.first.name)
+      );
+    }
 
     if (!ApiConfig.apiEnabled) {
       toast.show('Files upload once the app is connected to the API.');
@@ -1347,20 +1719,44 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
   /// The row styling for one kind of audit event.
   static ActivityItem _activityRow(AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created =>
-        (PhosphorIconsRegular.calendarPlus, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.statusChanged =>
-        (PhosphorIconsRegular.arrowsClockwise, AppColors.blueBright, AppColors.tintBlue),
-      AuditEventKind.noteAdded =>
-        (PhosphorIconsRegular.note, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.childAdded =>
-        (PhosphorIconsRegular.paperclip, AppColors.warningDeep, AppColors.tintAmber),
-      AuditEventKind.deleted =>
-        (PhosphorIconsRegular.trash, AppColors.error, AppColors.bgChipGrey),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.textMuted2, AppColors.bgChipGrey),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.calendarPlus,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.arrowsClockwise,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.paperclip,
+          AppColors.warningDeep,
+          AppColors.tintAmber
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.bgChipGrey
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.textMuted2,
+          AppColors.bgChipGrey
+        ),
     };
     return ActivityItem(
-        icon: icon, tone: tone, bg: bg, title: e.title, sub: e.subtitle, time: relativeTime(e.at));
+        icon: icon,
+        tone: tone,
+        bg: bg,
+        title: e.title,
+        sub: e.subtitle,
+        time: relativeTime(e.at));
   }
 
   /// Webapp "Audit log": the follow-up's real trail — "Created follow-up" /
@@ -1378,9 +1774,14 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16.sp, color: AppColors.navy),
+              Icon(PhosphorIconsRegular.clockCounterClockwise,
+                  size: 16.sp, color: AppColors.navy),
               SizedBox(width: 7.w),
-              Text('Audit log', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Audit log',
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 12.h),
@@ -1388,8 +1789,10 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
             Padding(
               padding: EdgeInsets.only(bottom: 10.h),
               child: async.hasError
-                  ? Text(crmAppError(async.error!).message, style: AppText.caption(color: AppColors.error))
-                  : Text(async.isLoading ? 'Loading…' : 'No activity yet.', style: AppText.caption()),
+                  ? Text(crmAppError(async.error!).message,
+                      style: AppText.caption(color: AppColors.error))
+                  : Text(async.isLoading ? 'Loading…' : 'No activity yet.',
+                      style: AppText.caption()),
             )
           else
             ActivityTimeline(items: items),
@@ -1422,8 +1825,11 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                   height: 48.w,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                      color: AppColors.white, borderRadius: BorderRadius.circular(12.r), border: Border.all(color: AppColors.borderInput)),
-                  child: Icon(PhosphorIconsRegular.trash, size: 21.sp, color: AppColors.error),
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(12.r),
+                      border: Border.all(color: AppColors.borderInput)),
+                  child: Icon(PhosphorIconsRegular.trash,
+                      size: 21.sp, color: AppColors.error),
                 ),
               ),
             ),
@@ -1441,15 +1847,25 @@ class _FollowupDetailScreenState extends ConsumerState<FollowupDetailScreen> {
                   decoration: BoxDecoration(
                     color: done ? AppColors.white : AppColors.success,
                     borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: done ? AppColors.borderInput : AppColors.success),
+                    border: Border.all(
+                        color:
+                            done ? AppColors.borderInput : AppColors.success),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(PhosphorIconsBold.check, size: 17.sp, color: done ? AppColors.textSecondary : AppColors.white),
+                      Icon(PhosphorIconsBold.check,
+                          size: 17.sp,
+                          color:
+                              done ? AppColors.textSecondary : AppColors.white),
                       SizedBox(width: 8.w),
                       Text(followupCompleteLabel(done),
-                          style: AppText.custom(size: 15, weight: FontWeight.w700, color: done ? AppColors.textSecondary : AppColors.white)),
+                          style: AppText.custom(
+                              size: 15,
+                              weight: FontWeight.w700,
+                              color: done
+                                  ? AppColors.textSecondary
+                                  : AppColors.white)),
                     ],
                   ),
                 ),
@@ -1474,7 +1890,8 @@ class _DescriptionDialog extends StatefulWidget {
 }
 
 class _DescriptionDialogState extends State<_DescriptionDialog> {
-  late final TextEditingController _ctrl = TextEditingController(text: widget.initial);
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
 
   @override
   void dispose() {
@@ -1494,8 +1911,12 @@ class _DescriptionDialogState extends State<_DescriptionDialog> {
         keyboardType: TextInputType.multiline,
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        TextButton(onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()), child: const Text('Save')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()),
+            child: const Text('Save')),
       ],
     );
   }
@@ -1514,7 +1935,8 @@ class _CustomFieldDialog extends StatefulWidget {
 }
 
 class _CustomFieldDialogState extends State<_CustomFieldDialog> {
-  late final TextEditingController _ctrl = TextEditingController(text: widget.initial);
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
   String? _error;
 
   @override
@@ -1537,10 +1959,13 @@ class _CustomFieldDialogState extends State<_CustomFieldDialog> {
         decoration: InputDecoration(errorText: _error),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
         TextButton(
           onPressed: () {
-            final problem = _FollowupDetailScreenState.customFieldProblem(c, _ctrl.text);
+            final problem =
+                _FollowupDetailScreenState.customFieldProblem(c, _ctrl.text);
             if (problem != null) {
               setState(() => _error = problem);
               return;

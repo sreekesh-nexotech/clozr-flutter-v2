@@ -118,7 +118,9 @@ class _OfflineBannerState extends ConsumerState<OfflineBanner> {
                           style: AppText.custom(
                               size: 12,
                               weight: FontWeight.w700,
-                              color: offline ? AppColors.error : AppColors.success),
+                              color: offline
+                                  ? AppColors.error
+                                  : AppColors.success),
                         ),
                       ],
                     ),

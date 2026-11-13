@@ -16,7 +16,11 @@ import '../../application/providers/auth_providers.dart';
 /// shows "Loading…"); unknown access (mock mode, a failed fetch) lets the
 /// screen through, and the server still refuses per request.
 class ModuleGuard extends ConsumerWidget {
-  const ModuleGuard({super.key, required this.module, required this.child, this.anyOf = const []});
+  const ModuleGuard(
+      {super.key,
+      required this.module,
+      required this.child,
+      this.anyOf = const []});
 
   final String module;
   final Widget child;
@@ -32,7 +36,8 @@ class ModuleGuard extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
     final access = async.valueOrNull;
-    if (access == null || access.can(module) || anyOf.any(access.can)) return child;
+    if (access == null || access.can(module) || anyOf.any(access.can))
+      return child;
     return ColoredBox(
       color: AppColors.bgScreen,
       child: SafeArea(
@@ -43,7 +48,8 @@ class ModuleGuard extends ConsumerWidget {
               iconColor: AppColors.textMuted,
               iconBg: AppColors.bgLight,
               title: "You don't have access to this area",
-              body: "Your role doesn't include this module. If you think this is a "
+              body:
+                  "Your role doesn't include this module. If you think this is a "
                   'mistake, ask a workspace admin to grant it.',
               ctaLabel: 'Go to dashboard',
               ctaIcon: PhosphorIconsBold.house,

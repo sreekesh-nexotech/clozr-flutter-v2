@@ -7,7 +7,8 @@ void main() {
   final now = DateTime(2026, 8, 4, 10, 0);
 
   group('conversationFromJson', () {
-    test('maps a full row — INT pk stringified, contact fields, window label', () {
+    test('maps a full row — INT pk stringified, contact fields, window label',
+        () {
       final lastAt = now.subtract(const Duration(minutes: 27));
       final row = <String, dynamic>{
         'id': 42,
@@ -97,7 +98,7 @@ void main() {
 
   group('chatMessageFromJson', () {
     final ts = DateTime(2026, 8, 4, 9, 58);
-    final clock = DateFormat('h:mm a').format(ts); // '9:58 AM'
+    final clock = DateFormat('HH:mm').format(ts); // '09:58' (24 h, C17)
 
     test('outbound read message', () {
       final m = chatMessageFromJson(<String, dynamic>{
@@ -201,18 +202,23 @@ void main() {
 
     test('a text message carries no file', () {
       expect(
-          chatMediaFromJson(row({'message_type': 'text', 'body': 'Hi', 'media_url': ''})),
+          chatMediaFromJson(
+              row({'message_type': 'text', 'body': 'Hi', 'media_url': ''})),
           isNull);
       // The live rows send empty strings rather than null for a text message.
       expect(chatMediaFromJson(row({'message_type': 'text'})), isNull);
     });
 
-    test('a document takes its name from the URL and its kind from the mime', () {
-      final m = chatMediaFromJson(row({
-        'message_type': 'document',
-        'media_url': 'https://cdn.example.com/media/fit-out-quote-v2.pdf?token=abc',
-        'media_mime_type': 'application/pdf',
-      }), now: now)!;
+    test('a document takes its name from the URL and its kind from the mime',
+        () {
+      final m = chatMediaFromJson(
+          row({
+            'message_type': 'document',
+            'media_url':
+                'https://cdn.example.com/media/fit-out-quote-v2.pdf?token=abc',
+            'media_mime_type': 'application/pdf',
+          }),
+          now: now)!;
 
       expect(m.name, 'fit-out-quote-v2.pdf'); // query string dropped
       expect(m.meta, startsWith('PDF · '));
@@ -222,22 +228,26 @@ void main() {
     });
 
     test('a caption wins over the file name', () {
-      final m = chatMediaFromJson(row({
-        'message_type': 'image',
-        'media_url': 'https://cdn.example.com/media/IMG_0042.jpg',
-        'media_mime_type': 'image/jpeg',
-        'caption': 'Site photo — east wall',
-      }), now: now)!;
+      final m = chatMediaFromJson(
+          row({
+            'message_type': 'image',
+            'media_url': 'https://cdn.example.com/media/IMG_0042.jpg',
+            'media_mime_type': 'image/jpeg',
+            'caption': 'Site photo — east wall',
+          }),
+          now: now)!;
 
       expect(m.name, 'Site photo — east wall');
       expect(m.meta, startsWith('JPEG · '));
     });
 
     test('a URL with no extension still names something usable', () {
-      final m = chatMediaFromJson(row({
-        'message_type': 'audio',
-        'media_url': 'https://cdn.example.com/media/',
-      }), now: now)!;
+      final m = chatMediaFromJson(
+          row({
+            'message_type': 'audio',
+            'media_url': 'https://cdn.example.com/media/',
+          }),
+          now: now)!;
 
       expect(m.name, 'Audio');
     });
@@ -246,7 +256,8 @@ void main() {
   group('chatLinksFromJson', () {
     test('pulls every URL out of a body, http or bare www', () {
       final links = chatLinksFromJson({
-        'body': 'See https://kairali.in/work/showrooms and www.example.com/pricing',
+        'body':
+            'See https://kairali.in/work/showrooms and www.example.com/pricing',
         'timestamp': now.subtract(const Duration(days: 2)).toIso8601String(),
       }, now: now);
 
@@ -258,7 +269,8 @@ void main() {
     });
 
     test('sentence punctuation is not part of the address', () {
-      final links = chatLinksFromJson({'body': 'Here: https://acme.test/quote.'});
+      final links =
+          chatLinksFromJson({'body': 'Here: https://acme.test/quote.'});
 
       expect(links.single.url, 'https://acme.test/quote');
     });

@@ -23,17 +23,22 @@ double? _optNum(Object? v) {
 
 double _num(Object? v) => _optNum(v) ?? 0;
 
-String _str(Object? v) => v is String ? v.trim() : (v == null ? '' : '$v'.trim());
+String _str(Object? v) =>
+    v is String ? v.trim() : (v == null ? '' : '$v'.trim());
 
-final NumberFormat _inrWhole = NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 0);
-final NumberFormat _inrPaise = NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 2);
-final DateFormat _date = DateFormat('d MMM yyyy');
+final NumberFormat _inrWhole =
+    NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 0);
+final NumberFormat _inrPaise =
+    NumberFormat.currency(locale: 'en_IN', symbol: '', decimalDigits: 2);
+final DateFormat _date = DateFormat('dd/MM/yyyy');
 
 /// Webapp `money`: `₹74,339` for whole rupees, `₹20,999.67` with paise.
 String activityMoney(double? n) {
   if (n == null || n.isNaN || n.isInfinite) return '—';
   final paise = (n.abs() * 100).round();
-  final text = paise % 100 == 0 ? _inrWhole.format(paise ~/ 100) : _inrPaise.format(paise / 100);
+  final text = paise % 100 == 0
+      ? _inrWhole.format(paise ~/ 100)
+      : _inrPaise.format(paise / 100);
   return '${n < 0 && paise > 0 ? '-₹' : '₹'}${text.trim()}';
 }
 
@@ -49,7 +54,8 @@ String activityDate(String? iso) {
 
 /// `UPPER_SNAKE` / `lower_snake` → "Upper snake".
 String humanizeEnum(String? value) {
-  final words = (value ?? '').replaceAll(RegExp(r'[_\-\s]+'), ' ').trim().toLowerCase();
+  final words =
+      (value ?? '').replaceAll(RegExp(r'[_\-\s]+'), ' ').trim().toLowerCase();
   return words.isEmpty ? '' : words[0].toUpperCase() + words.substring(1);
 }
 
@@ -130,9 +136,13 @@ class CustomerPaymentRecord {
     return CustomerPaymentRecord(
       id: _str(r['record_id']),
       // `payment` is the plan FK; `invoice_id` a deprecated alias.
-      invoiceId: _str(r['payment']).isNotEmpty ? _str(r['payment']) : _str(r['invoice_id']),
+      invoiceId: _str(r['payment']).isNotEmpty
+          ? _str(r['payment'])
+          : _str(r['invoice_id']),
       installmentNumber: number,
-      label: notes.isNotEmpty ? notes : 'Installment ${number == 0 ? '' : number}'.trim(),
+      label: notes.isNotEmpty
+          ? notes
+          : 'Installment ${number == 0 ? '' : number}'.trim(),
       amount: _num(r['amount_expected']),
       dueDate: _str(r['due_date']),
       method: _str(r['payment_method']),
@@ -212,22 +222,28 @@ List<CustomerPayment> customerPaymentsFromRows(
           final total = _num(p['total_amount']);
           final paid = _num(p['amount_paid']);
           final sub = p['subscription'];
-          final rows = [...?byPlan[id]]..sort((a, b) => a.installmentNumber.compareTo(b.installmentNumber));
+          final rows = [
+            ...?byPlan[id]
+          ]..sort((a, b) => a.installmentNumber.compareTo(b.installmentNumber));
           return CustomerPayment(
             id: id,
             quoteNumber: _str(p['quotation_number']),
             paymentType: _str(p['payment_type']),
             total: total,
             paid: paid,
-            balance: p['amount_remaining'] != null ? _num(p['amount_remaining']) : total - paid,
+            balance: p['amount_remaining'] != null
+                ? _num(p['amount_remaining'])
+                : total - paid,
             status: _str(p['status']),
             records: rows,
             totalInclGst: _optNum(p['total_incl_gst']),
-            remainingInclGst: _optNum(p['amount_remaining_incl_gst']) ?? _optNum(p['amount_due_incl_gst']),
+            remainingInclGst: _optNum(p['amount_remaining_incl_gst']) ??
+                _optNum(p['amount_due_incl_gst']),
             subscription: sub is Map
                 ? CustomerPaymentSubscription(
                     periodLabel: _str(sub['period_label']),
-                    amountPerPeriodInclGst: _num(sub['amount_per_period_incl_gst']),
+                    amountPerPeriodInclGst:
+                        _num(sub['amount_per_period_incl_gst']),
                     header: _str(sub['header']),
                   )
                 : null,
@@ -247,8 +263,9 @@ class PaymentPlanStat {
 }
 
 /// "Payment plan #QTN-00002 (from accepted quote)".
-String paymentPlanTitle(CustomerPayment p) =>
-    p.quoteNumber.isEmpty ? 'Payment plan' : 'Payment plan #${p.quoteNumber} (from accepted quote)';
+String paymentPlanTitle(CustomerPayment p) => p.quoteNumber.isEmpty
+    ? 'Payment plan'
+    : 'Payment plan #${p.quoteNumber} (from accepted quote)';
 
 /// The header pill: Paid / Cancelled / Due.
 ({String label, bool done}) paymentPlanPill(CustomerPayment p) {
@@ -263,7 +280,11 @@ List<PaymentPlanStat> paymentPlanStats(CustomerPayment p) {
   final paid = PaymentPlanStat('Paid', p.paid, StatTone.success);
   final totalIncl = p.totalInclGst;
   if (totalIncl == null) {
-    return [PaymentPlanStat('Plan total', p.total), paid, PaymentPlanStat('Balance due', p.balance)];
+    return [
+      PaymentPlanStat('Plan total', p.total),
+      paid,
+      PaymentPlanStat('Balance due', p.balance)
+    ];
   }
   final remainingRaw = p.remainingInclGst ?? (totalIncl - p.paid);
   final remaining = remainingRaw < 0 ? 0.0 : remainingRaw;
@@ -273,7 +294,11 @@ List<PaymentPlanStat> paymentPlanStats(CustomerPayment p) {
   final sub = p.subscription;
   if (sub != null) {
     final period = sub.periodLabel.isEmpty ? 'period' : sub.periodLabel;
-    return [PaymentPlanStat('Per $period (incl. GST)', sub.amountPerPeriodInclGst), paid, due];
+    return [
+      PaymentPlanStat('Per $period (incl. GST)', sub.amountPerPeriodInclGst),
+      paid,
+      due
+    ];
   }
   return [PaymentPlanStat('Total (incl. GST)', totalIncl), paid, due];
 }
@@ -308,10 +333,12 @@ class PaymentRowView {
 ({String label, bool done}) _recordStatus(CustomerPaymentRecord r) {
   final status = r.status.toLowerCase();
   if (status == 'cancelled') return (label: 'Cancelled', done: false);
-  if (r.settlementState == 'paid' || (status == 'paid' && r.settlementState != 'partly_paid')) {
+  if (r.settlementState == 'paid' ||
+      (status == 'paid' && r.settlementState != 'partly_paid')) {
     return (label: 'Paid', done: true);
   }
-  if (r.settlementState == 'partly_paid') return (label: 'Partly paid', done: false);
+  if (r.settlementState == 'partly_paid')
+    return (label: 'Partly paid', done: false);
   if (status == 'overdue') return (label: 'Overdue', done: false);
   return (label: 'Due', done: false);
 }
@@ -328,7 +355,9 @@ List<PaymentRowView> paymentPlanRows(CustomerPayment p) {
     for (final r in all)
       () {
         final amount = amountOf(r);
-        final share = p.subscription == null && sum > 0 ? (amount / sum * 100).round() : 0;
+        final share = p.subscription == null && sum > 0
+            ? (amount / sum * 100).round()
+            : 0;
         final status = _recordStatus(r);
         final partly = status.label == 'Partly paid';
         return PaymentRowView(
@@ -360,7 +389,10 @@ String paymentPlanNote(CustomerPayment p) {
   final header = p.subscription?.header ?? '';
   if (header.isNotEmpty) return header;
   final gap = p.unscheduledInclGst;
-  if (p.paymentType == 'installment_custom' && gap != null && gap > 0.005 && !p.isCancelled) {
+  if (p.paymentType == 'installment_custom' &&
+      gap != null &&
+      gap > 0.005 &&
+      !p.isCancelled) {
     return p.records.isEmpty
         ? 'No milestones yet — ${activityMoney(gap)} (incl. GST) is not scheduled. Add the milestones on the payment plan.'
         : '${activityMoney(gap)} (incl. GST) of the quote is not scheduled in a milestone yet.';
@@ -377,7 +409,8 @@ final _hhmmss = RegExp(r'^\d{1,2}:[0-5]\d:[0-5]\d$');
 
 /// Webapp `AddCustomerCallLogModal` checks: From and To are required; an
 /// optional duration must read HH:MM:SS. Null = valid.
-String? validateCustomerCallLog({required String from, required String to, String duration = ''}) {
+String? validateCustomerCallLog(
+    {required String from, required String to, String duration = ''}) {
   if (from.trim().isEmpty || to.trim().isEmpty) return callLogNumbersRequired;
   final d = duration.trim();
   if (d.isNotEmpty && !_hhmmss.hasMatch(d)) return callLogDurationInvalid;
@@ -436,14 +469,17 @@ class CustomerCallRow {
         direction: _str(j['type']),
         medium: _str(j['telephony_medium']),
         duration: _str(j['duration']),
-        startedAt: parseApiDate(j['start_time']) ?? parseApiDate(j['created_at']),
+        startedAt:
+            parseApiDate(j['start_time']) ?? parseApiDate(j['created_at']),
         parentModel: _str(j['related_to_model']),
         parentId: _str(j['related_to_object_id']),
       );
 
   /// "00:05:30 · 2h ago".
-  String metaLine({DateTime? now}) =>
-      [duration, relativeTime(startedAt, now: now)].where((s) => s.isNotEmpty).join(' · ');
+  String metaLine({DateTime? now}) => [
+        duration,
+        relativeTime(startedAt, now: now)
+      ].where((s) => s.isNotEmpty).join(' · ');
 }
 
 // ───────────────────────────── History tags ─────────────────────────────
@@ -457,14 +493,16 @@ String? leadHistoryTag({
   String? reference,
   Map<String, String> leadRefs = const {},
 }) {
-  if (parentModel != 'lead' || parentId.isEmpty || parentId == customerId) return null;
+  if (parentModel != 'lead' || parentId.isEmpty || parentId == customerId)
+    return null;
   final name = (reference ?? '').isNotEmpty ? reference : leadRefs[parentId];
   return (name ?? '').isEmpty ? 'From lead' : 'From lead $name';
 }
 
 /// A task's / follow-up's parent from its raw `related_to` (an object
 /// `{model, id, label, reference}` on the list endpoint).
-({String model, String id, String? reference}) relatedParentOf(Map<String, dynamic> raw) {
+({String model, String id, String? reference}) relatedParentOf(
+    Map<String, dynamic> raw) {
   final rel = raw['related_to'];
   if (rel is Map) {
     return (
@@ -498,29 +536,39 @@ const _sourceKindLabels = {
 /// How a note on the customer's thread is tagged (webapp `noteSourceTag`): its
 /// own notes plain (null); the converted lead's notes "From lead LD-…" and
 /// read-only; other rolled-up notes "Task · Call back".
-({String text, bool readOnly})? noteSourceTag(Object? source, String customerId) {
+({String text, bool readOnly})? noteSourceTag(
+    Object? source, String customerId) {
   if (source is! Map) return null;
   final id = _str(source['id']);
   if (id.isEmpty || id == customerId) return null;
-  final kind = _str(source['kind']).isNotEmpty ? _str(source['kind']) : _str(source['model']);
+  final kind = _str(source['kind']).isNotEmpty
+      ? _str(source['kind'])
+      : _str(source['model']);
   final reference = _str(source['reference']);
   final label = _str(source['label']);
   if (kind == 'lead') {
     final name = reference.isNotEmpty ? reference : label;
-    return (text: name.isEmpty ? 'From lead' : 'From lead $name', readOnly: true);
+    return (
+      text: name.isEmpty ? 'From lead' : 'From lead $name',
+      readOnly: true
+    );
   }
   final kindLabel = _sourceKindLabels[kind] ?? 'Record';
   final name = kind == 'customer'
       ? (reference.isNotEmpty ? reference : label)
       : (label.isNotEmpty ? label : reference);
-  return (text: name.isEmpty ? kindLabel : '$kindLabel · $name', readOnly: false);
+  return (
+    text: name.isEmpty ? kindLabel : '$kindLabel · $name',
+    readOnly: false
+  );
 }
 
 // ───────────────────────────── Tasks ─────────────────────────────
 
 /// Webapp `dueBadge`: Done, else Overdue / Today / Upcoming by the due day;
 /// null when there is no due date (the row then shows the status pill).
-String? taskDueBadge({required DateTime? due, required bool done, DateTime? now}) {
+String? taskDueBadge(
+    {required DateTime? due, required bool done, DateTime? now}) {
   if (done) return 'Done';
   if (due == null) return null;
   final n = now ?? DateTime.now();
@@ -578,7 +626,8 @@ class CustomerLinkedLead {
     if (raw is! List) return const [];
     return [
       for (final e in raw)
-        if (e is Map && _str(e['lead_id']).isNotEmpty) CustomerLinkedLead.fromJson(Map<String, dynamic>.from(e)),
+        if (e is Map && _str(e['lead_id']).isNotEmpty)
+          CustomerLinkedLead.fromJson(Map<String, dynamic>.from(e)),
     ];
   }
 
@@ -589,16 +638,22 @@ class CustomerLinkedLead {
     final relation = _str(j['relation']);
     return CustomerLinkedLead(
       id: _str(j['lead_id']),
-      name: _str(j['lead_name']).isNotEmpty ? _str(j['lead_name']) : _str(j['reference']),
+      name: _str(j['lead_name']).isNotEmpty
+          ? _str(j['lead_name'])
+          : _str(j['reference']),
       reference: _str(j['reference']),
-      relation: relation.isNotEmpty ? relation : (j['is_upsell'] == true ? 'upsell' : 'source'),
+      relation: relation.isNotEmpty
+          ? relation
+          : (j['is_upsell'] == true ? 'upsell' : 'source'),
       isConverted: j['is_converted'] == true,
       statusName: _str(j['status_name']),
       statusColor: _str(j['status_color']),
       value: _optNum(j['lead_value']),
       quotesCount: qc is num ? qc.toInt() : null,
       acceptedQuoteNumber: aq is Map ? _str(aq['quotation_number']) : '',
-      acceptedQuoteTotal: aq is Map ? (_optNum(aq['grand_total']) ?? _optNum(aq['taxable_total'])) : null,
+      acceptedQuoteTotal: aq is Map
+          ? (_optNum(aq['grand_total']) ?? _optNum(aq['taxable_total']))
+          : null,
       ownerName: owner is Map ? _str(owner['name']) : _str(owner),
       createdAt: _str(j['created_at']),
       convertedOn: _str(j['converted_on']),
@@ -611,7 +666,9 @@ class CustomerLinkedLead {
     if (n == null) return null;
     final count = '$n quote${n == 1 ? '' : 's'}';
     if (acceptedQuoteNumber.isEmpty) return count;
-    final total = acceptedQuoteTotal == null ? '' : ' (${activityMoney(acceptedQuoteTotal)} incl. GST)';
+    final total = acceptedQuoteTotal == null
+        ? ''
+        : ' (${activityMoney(acceptedQuoteTotal)} incl. GST)';
     return '$count · $acceptedQuoteNumber accepted$total';
   }
 
@@ -622,6 +679,7 @@ class CustomerLinkedLead {
       ].join(' · ');
 
   /// Owner · quotes · dates.
-  String get metaLine =>
-      [ownerName, quotesLine ?? '', datesLine].where((s) => s.isNotEmpty).join(' · ');
+  String get metaLine => [ownerName, quotesLine ?? '', datesLine]
+      .where((s) => s.isNotEmpty)
+      .join(' · ');
 }

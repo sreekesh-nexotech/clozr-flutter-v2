@@ -12,11 +12,9 @@ import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
 // Prefixed: `finance_widgets` exports its own, lighter `NoteEntry` for the card.
-import '../../../../core/models/note.dart' as notes_model;
 import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/widgets/status_pill.dart';
-import '../../../../data/api/roster.dart';
 import '../../../auth/application/providers/module_perm_providers.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/payment_plan/payment_plan_detail.dart';
@@ -28,6 +26,7 @@ import '../../application/providers/lead_lifecycle_providers.dart';
 import '../../application/providers/payment_plan_providers.dart';
 import '../../application/providers/payments_providers.dart';
 import '../components/finance_widgets.dart';
+import '../components/plan_notes_thread.dart';
 import '../components/lead_lifecycle_sheets.dart' show showCustomerMatchSheet;
 import '../components/payment_plan/add_milestone_sheet.dart';
 import '../components/payment_plan/plan_schedule_card.dart';
@@ -54,13 +53,16 @@ class InvoiceDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final params = GoRouterState.of(context).uri.queryParameters;
-    final raw = (params['uuid'] ?? '').isNotEmpty ? params['uuid']! : (params['id'] ?? '');
+    final raw = (params['uuid'] ?? '').isNotEmpty
+        ? params['uuid']!
+        : (params['id'] ?? '');
 
     Widget scaffold(Widget child) => Container(
           color: AppColors.bgDetail,
           child: Column(
             children: [
-              DetailAppBar(section: 'Payment plan', onBack: () => context.pop()),
+              DetailAppBar(
+                  section: 'Payment plan', onBack: () => context.pop()),
               Expanded(child: child),
             ],
           ),
@@ -73,7 +75,8 @@ class InvoiceDetailScreen extends ConsumerWidget {
     final list = ref.watch(invoicesProvider);
     return list.when(
       loading: () => scaffold(const DetailSkeleton()),
-      error: (e, _) => scaffold(_loadError(context, ref, e, () => ref.invalidate(invoicesProvider))),
+      error: (e, _) => scaffold(
+          _loadError(context, ref, e, () => ref.invalidate(invoicesProvider))),
       data: (_) {
         final iv = ref.watch(invoiceByIdProvider(raw));
         if (iv == null || iv.uuid.isEmpty) return scaffold(_notFound(context));
@@ -99,8 +102,10 @@ Widget _notFound(BuildContext context) => EmptyState(
       onCta: () => _backToPlans(context),
     );
 
-Widget _loadError(BuildContext context, WidgetRef ref, Object e, VoidCallback retry) {
-  if (e is AppError && e.type == AppErrorType.notFound) return _notFound(context);
+Widget _loadError(
+    BuildContext context, WidgetRef ref, Object e, VoidCallback retry) {
+  if (e is AppError && e.type == AppErrorType.notFound)
+    return _notFound(context);
   return EmptyState(
     icon: PhosphorIconsRegular.warning,
     iconColor: AppColors.error,
@@ -159,7 +164,8 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
   String _leadId(PlanDetail p) {
     if (p.leadId.isNotEmpty) return p.leadId;
     if (p.customerId.isNotEmpty) return '';
-    return ref.watch(planQuoteLeadIdProvider(p.quotationUuid)).valueOrNull ?? '';
+    return ref.watch(planQuoteLeadIdProvider(p.quotationUuid)).valueOrNull ??
+        '';
   }
 
   Widget _content(BuildContext context, PlanDetail p) {
@@ -171,7 +177,9 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
     final leadId = _leadId(p);
     // The billing card (PY-030, on hold) still reads the list entity.
     final listInvoice = accounting
-        ? (ref.watch(invoicesProvider).valueOrNull ?? const []).where((i) => i.uuid == p.id).firstOrNull
+        ? (ref.watch(invoicesProvider).valueOrNull ?? const [])
+            .where((i) => i.uuid == p.id)
+            .firstOrNull
         : null;
 
     return Container(
@@ -190,10 +198,15 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
                 children: [
-                  _headerCard(context, p, accounting: accounting, canRecord: canRecord, milestones: milestones, leadId: leadId),
+                  _headerCard(context, p,
+                      accounting: accounting,
+                      canRecord: canRecord,
+                      milestones: milestones,
+                      leadId: leadId),
                   SizedBox(height: 14.h),
                   if (attention.isNotEmpty) ...[
-                    _attentionBanner(context, p, attention, milestones: milestones, leadId: leadId),
+                    _attentionBanner(context, p, attention,
+                        milestones: milestones, leadId: leadId),
                     SizedBox(height: 14.h),
                   ],
                   if (listInvoice != null) ...[
@@ -216,7 +229,8 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
                     ),
                     SizedBox(height: 14.h),
                   ],
-                  _scheduleCard(context, p, attention, accounting: accounting, canRecord: canRecord),
+                  _scheduleCard(context, p, attention,
+                      accounting: accounting, canRecord: canRecord),
                   SizedBox(height: 14.h),
                   _notesCard(p),
                 ],
@@ -240,9 +254,12 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
   }) {
     final meta = planStatusMeta(planStatusKey(p));
     final kpis = planKpis(p, accountingActive: accounting);
-    final adjustments = adjustmentLines(credited: p.amountCredited, refunded: p.amountRefunded);
+    final adjustments =
+        adjustmentLines(credited: p.amountCredited, refunded: p.amountRefunded);
     final split = chargeSplitLink(p);
-    final leadName = p.records.map((r) => r.leadName).firstWhere((n) => n.isNotEmpty, orElse: () => '');
+    final leadName = p.records
+        .map((r) => r.leadName)
+        .firstWhere((n) => n.isNotEmpty, orElse: () => '');
     final who = p.customerName.isNotEmpty ? p.customerName : leadName;
 
     return FinanceCard(
@@ -252,7 +269,11 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const IconChip(icon: PhosphorIconsRegular.fileText, size: 46, radius: 13, iconSize: 22),
+              const IconChip(
+                  icon: PhosphorIconsRegular.fileText,
+                  size: 46,
+                  radius: 13,
+                  iconSize: 22),
               SizedBox(width: 12.w),
               Expanded(
                 child: Column(
@@ -263,8 +284,15 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
                       runSpacing: 4.h,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Text(p.quoteNumber.isNotEmpty ? p.quoteNumber : 'Payment plan',
-                            style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                        Text(
+                            p.quoteNumber.isNotEmpty
+                                ? p.quoteNumber
+                                : 'Payment plan',
+                            style: AppText.custom(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.3)),
                         StatusPill.meta(meta),
                       ],
                     ),
@@ -276,27 +304,46 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
                             child: Text(who,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                                style: AppText.custom(
+                                    size: 12.5,
+                                    weight: FontWeight.w500,
+                                    color: AppColors.textMuted)),
                           ),
-                          if (p.customerId.isEmpty) ...[SizedBox(width: 6.w), const _LeadBadge()],
+                          if (p.customerId.isEmpty) ...[
+                            SizedBox(width: 6.w),
+                            const _LeadBadge()
+                          ],
                         ],
                       ),
                     ],
                     SizedBox(height: 3.h),
                     Text('${planHeaderType(p)} · ${planProgressLabel(p)}',
-                        style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
-                    if (p.chargeSplit != null && p.chargeSplit!.label.isNotEmpty) ...[
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
+                    if (p.chargeSplit != null &&
+                        p.chargeSplit!.label.isNotEmpty) ...[
                       SizedBox(height: 4.h),
                       Text(p.chargeSplit!.label,
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.textSecondary)),
+                          style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w700,
+                              color: AppColors.textSecondary)),
                       if (split != null) ...[
                         SizedBox(height: 2.h),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => context.push('${Routes.invoiceDetail}?id=${split.$1}'),
+                          onTap: () => context
+                              .push('${Routes.invoiceDetail}?id=${split.$1}'),
                           child: Text(split.$2,
-                              style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)
-                                  .copyWith(decoration: TextDecoration.underline, decorationColor: AppColors.blueBright)),
+                              style: AppText.custom(
+                                      size: 12.5,
+                                      weight: FontWeight.w700,
+                                      color: AppColors.blueBright)
+                                  .copyWith(
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: AppColors.blueBright)),
                         ),
                       ],
                     ],
@@ -309,12 +356,22 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
           _kpiGrid(kpis),
           if (adjustments.isNotEmpty) ...[
             SizedBox(height: 10.h),
-            Text('ADJUSTMENTS', style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+            Text('ADJUSTMENTS',
+                style: AppText.custom(
+                    size: 10.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder,
+                    letterSpacing: 0.4)),
             for (final line in adjustments)
-              Text(line, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
+              Text(line,
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.textSecondary)),
           ],
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
-          _actions(context, p, canRecord: canRecord, milestones: milestones, leadId: leadId),
+          _actions(context, p,
+              canRecord: canRecord, milestones: milestones, leadId: leadId),
         ],
       ),
     );
@@ -323,14 +380,20 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
   /// Three KPIs in a row; four (accounting) as a 2 × 2 grid.
   Widget _kpiGrid(List<PlanKpi> kpis) {
     Widget cell(PlanKpi k) => Expanded(child: _kpi(k));
-    if (kpis.length <= 3) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final k in kpis) cell(k)]);
+    if (kpis.length <= 3)
+      return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [for (final k in kpis) cell(k)]);
     return Column(
       children: [
         for (var i = 0; i < kpis.length; i += 2) ...[
           if (i > 0) SizedBox(height: 12.h),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [cell(kpis[i]), if (i + 1 < kpis.length) cell(kpis[i + 1]) else const Spacer()],
+            children: [
+              cell(kpis[i]),
+              if (i + 1 < kpis.length) cell(kpis[i + 1]) else const Spacer()
+            ],
           ),
         ],
       ],
@@ -350,16 +413,27 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(k.label.toUpperCase(),
-              style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.3)),
+              style: AppText.custom(
+                  size: 10,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPlaceholder,
+                  letterSpacing: 0.3)),
           SizedBox(height: 3.h),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(planMoney(k.value), style: AppText.custom(size: 16, weight: FontWeight.w800, color: color)),
+            child: Text(planMoney(k.value),
+                style: AppText.custom(
+                    size: 16, weight: FontWeight.w800, color: color)),
           ),
           if (k.sub != null) ...[
             SizedBox(height: 2.h),
-            Text(k.sub!, maxLines: 2, style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+            Text(k.sub!,
+                maxLines: 2,
+                style: AppText.custom(
+                    size: 10.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPlaceholder)),
           ],
         ],
       ),
@@ -367,12 +441,15 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
   }
 
   Widget _actions(BuildContext context, PlanDetail p,
-      {required bool canRecord, required bool milestones, required String leadId}) {
+      {required bool canRecord,
+      required bool milestones,
+      required String leadId}) {
     final party = p.customerId.isNotEmpty
         ? _ghostButton(
             icon: PhosphorIconsRegular.buildings,
             label: 'Customer',
-            onTap: () => context.push('${Routes.customerDetail}?id=${p.customerId}'),
+            onTap: () =>
+                context.push('${Routes.customerDetail}?id=${p.customerId}'),
           )
         : leadId.isNotEmpty
             ? _ghostButton(
@@ -386,14 +463,16 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
         : _ghostButton(
             icon: PhosphorIconsRegular.fileText,
             label: p.quoteNumber.isNotEmpty ? '#${p.quoteNumber}' : 'Quote',
-            onTap: () => context.push('${Routes.quoteDetail}?id=${p.quoteNumber.isNotEmpty ? p.quoteNumber : p.quotationUuid}'),
+            onTap: () => context.push(
+                '${Routes.quoteDetail}?id=${p.quoteNumber.isNotEmpty ? p.quoteNumber : p.quotationUuid}'),
           );
     return Column(
       children: [
         Row(
           children: [
             if (party != null) Expanded(flex: 9, child: party),
-            if (party != null && (quote != null || canRecord)) SizedBox(width: 10.w),
+            if (party != null && (quote != null || canRecord))
+              SizedBox(width: 10.w),
             if (quote != null) Expanded(flex: 9, child: quote),
             if (quote != null && canRecord) SizedBox(width: 10.w),
             if (canRecord)
@@ -425,18 +504,29 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
     );
   }
 
-  Widget _ghostButton({required IconData icon, required String label, required VoidCallback onTap}) =>
-      PlanButton(label: label, icon: icon, color: AppColors.textBody, height: 44, onTap: onTap);
+  Widget _ghostButton(
+          {required IconData icon,
+          required String label,
+          required VoidCallback onTap}) =>
+      PlanButton(
+          label: label,
+          icon: icon,
+          color: AppColors.textBody,
+          height: 44,
+          onTap: onTap);
 
-  Future<void> _openRecordSheet(BuildContext context, PlanDetail p, {String? recordId}) async {
+  Future<void> _openRecordSheet(BuildContext context, PlanDetail p,
+      {String? recordId}) async {
     if (!ensurePermission(ref, 'payment', PermVerb.create)) return;
-    final ok = await showRecordPaymentSheet(context, planId: p.id, recordId: recordId, lockPlan: true);
+    final ok = await showRecordPaymentSheet(context,
+        planId: p.id, recordId: recordId, lockPlan: true);
     if (ok && mounted) ref.invalidate(paymentPlanDetailProvider(p.id));
   }
 
   // ── Needs attention ──
 
-  Widget _attentionBanner(BuildContext context, PlanDetail p, List<PlanAttention> items,
+  Widget _attentionBanner(
+      BuildContext context, PlanDetail p, List<PlanAttention> items,
       {required bool milestones, required String leadId}) {
     return Container(
       padding: EdgeInsets.all(14.r),
@@ -450,15 +540,24 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
         children: [
           Row(
             children: [
-              Icon(PhosphorIconsFill.warning, size: 15.sp, color: AppColors.warningDeep),
+              Icon(PhosphorIconsFill.warning,
+                  size: 15.sp, color: AppColors.warningDeep),
               SizedBox(width: 7.w),
-              Text('Needs attention', style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text('Needs attention',
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ],
           ),
           for (final a in items) ...[
             SizedBox(height: 10.h),
             Text(attentionText(a),
-                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textSecondary, height: 1.45)),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                    height: 1.45)),
             if (a.code == milestonesRequired && milestones) ...[
               SizedBox(height: 8.h),
               PlanButton(
@@ -514,7 +613,8 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
           case ConversionRequested():
             toast.show('Conversion requested — waiting for approval');
           case Converted(:final customerName):
-            toast.show('Converted to customer${customerName.isNotEmpty ? ' — $customerName' : ''}');
+            toast.show(
+                'Converted to customer${customerName.isNotEmpty ? ' — $customerName' : ''}');
         }
         break;
       }
@@ -529,7 +629,8 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
 
   // ── Schedule ──
 
-  Widget _scheduleCard(BuildContext context, PlanDetail p, List<PlanAttention> attention,
+  Widget _scheduleCard(
+      BuildContext context, PlanDetail p, List<PlanAttention> attention,
       {required bool accounting, required bool canRecord}) {
     final isMilestone = p.ptype == 'installment_custom';
     final unscheduled = p.unscheduledInclGst;
@@ -538,20 +639,30 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (p.records.isNotEmpty && unscheduled != null && unscheduled > 0.005)
+          if (p.records.isNotEmpty &&
+              unscheduled != null &&
+              unscheduled > 0.005)
             Padding(
               padding: EdgeInsets.only(bottom: 4.h),
-              child: Text('${planMoney(unscheduled)} of the quote not yet scheduled',
-                  style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.warningDeep)),
+              child: Text(
+                  '${planMoney(unscheduled)} of the quote not yet scheduled',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: AppColors.warningDeep)),
             ),
           if (p.records.isEmpty)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 10.h),
-              child: PlanHint(isMilestone ? noMilestonesText : 'No instalments on this plan.'),
+              child: PlanHint(isMilestone
+                  ? noMilestonesText
+                  : 'No instalments on this plan.'),
             ),
           for (int i = 0; i < p.records.length; i++)
             _scheduleRow(context, p, p.records[i], attention,
-                accounting: accounting, canRecord: canRecord, last: i == p.records.length - 1 && p.ownerName.isEmpty),
+                accounting: accounting,
+                canRecord: canRecord,
+                last: i == p.records.length - 1 && p.ownerName.isEmpty),
           if (p.ownerName.isNotEmpty) _ownerFooter(p),
         ],
       ),
@@ -559,7 +670,11 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
   }
 
   Widget _ownerFooter(PlanDetail p) {
-    final parts = p.ownerName.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+    final parts = p.ownerName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
     final initials = parts.take(2).map((s) => s[0].toUpperCase()).join();
     return Container(
       padding: EdgeInsets.only(top: 13.h),
@@ -569,20 +684,30 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
             width: 38.w,
             height: 38.w,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+                color: AppColors.navy, shape: BoxShape.circle),
             child: Text(initials.isEmpty ? '?' : initials,
-                style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.white)),
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w700, color: AppColors.white)),
           ),
           SizedBox(width: 11.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(p.ownerName, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                Text('Collection owner${p.ownerEmail.isNotEmpty ? ' · ${p.ownerEmail}' : ''}',
+                Text(p.ownerName,
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                Text(
+                    'Collection owner${p.ownerEmail.isNotEmpty ? ' · ${p.ownerEmail}' : ''}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ],
             ),
           ),
@@ -591,7 +716,8 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
     );
   }
 
-  Widget _scheduleRow(BuildContext context, PlanDetail p, PlanRecord r, List<PlanAttention> attention,
+  Widget _scheduleRow(BuildContext context, PlanDetail p, PlanRecord r,
+      List<PlanAttention> attention,
       {required bool accounting, required bool canRecord, required bool last}) {
     final meta = recordStatusMeta(r);
     final cancelled = r.status == 'cancelled';
@@ -600,7 +726,10 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
     final hint = amountDueHint(r);
     final quoted = quotedAmountNote(r);
     final notes = [
-      ...adjustmentLines(credited: r.amountCredited, refunded: r.amountRefunded, refundNotDue: r.amountRefundNotDue),
+      ...adjustmentLines(
+          credited: r.amountCredited,
+          refunded: r.amountRefunded,
+          refundNotDue: r.amountRefundNotDue),
       if (r.cancelReason.isNotEmpty) r.cancelReason,
     ];
     final dateColor = r.status == 'paid'
@@ -614,7 +743,10 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
       onTap: () => context.push('${Routes.paymentDetail}?id=${r.id}'),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h),
-        decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: last
+            ? null
+            : const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -628,21 +760,36 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
                       style: AppText.custom(
                               size: 13.5,
                               weight: FontWeight.w700,
-                              color: cancelled ? AppColors.textMuted : AppColors.textPrimary)
+                              color: cancelled
+                                  ? AppColors.textMuted
+                                  : AppColors.textPrimary)
                           .copyWith(decoration: strike)),
                   SizedBox(height: 2.h),
                   Text(method.isEmpty ? '—' : method,
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                   SizedBox(height: 2.h),
                   Text(recordRowDate(r),
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: dateColor)),
-                  if (r.isLinkedToDocument) _tag(PhosphorIconsRegular.link, 'Linked to tax invoice', AppColors.navy),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w600,
+                          color: dateColor)),
+                  if (r.isLinkedToDocument)
+                    _tag(PhosphorIconsRegular.link, 'Linked to tax invoice',
+                        AppColors.navy),
                   if (isBlockedForCustomer(r, attention))
-                    _tag(PhosphorIconsRegular.warning, 'Blocked: customer required', AppColors.warningDeep),
+                    _tag(PhosphorIconsRegular.warning,
+                        'Blocked: customer required', AppColors.warningDeep),
                   for (final n in notes)
                     Padding(
                       padding: EdgeInsets.only(top: 3.h),
-                      child: Text(n, style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textMuted)),
+                      child: Text(n,
+                          style: AppText.custom(
+                              size: 11,
+                              weight: FontWeight.w600,
+                              color: AppColors.textMuted)),
                     ),
                   if (accounting) ..._accountingLine(context, r, p.customerId),
                 ],
@@ -653,15 +800,31 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(planMoney(r.amountDueInclGst),
-                    style: AppText.custom(size: 14, weight: FontWeight.w800, color: cancelled ? AppColors.textMuted : AppColors.navy)
+                    style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w800,
+                            color: cancelled
+                                ? AppColors.textMuted
+                                : AppColors.navy)
                         .copyWith(decoration: strike)),
                 if (hint.isNotEmpty)
-                  Text(hint, style: AppText.custom(size: 10.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  Text(hint,
+                      style: AppText.custom(
+                          size: 10.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 if (quoted.isNotEmpty)
-                  Text(quoted, style: AppText.custom(size: 10.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  Text(quoted,
+                      style: AppText.custom(
+                          size: 10.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 if (r.settlementState == 'partly_paid')
                   Text('Balance ${planMoney(r.balanceDue)}',
-                      style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 10.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPlaceholder)),
                 SizedBox(height: 5.h),
                 StatusPill.meta(meta),
                 if (canSettleRecord(r, canRecord: canRecord)) ...[
@@ -689,7 +852,10 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
           children: [
             Icon(icon, size: 11.sp, color: color),
             SizedBox(width: 4.w),
-            Flexible(child: Text(text, style: AppText.custom(size: 11, weight: FontWeight.w700, color: color))),
+            Flexible(
+                child: Text(text,
+                    style: AppText.custom(
+                        size: 11, weight: FontWeight.w700, color: color))),
           ],
         ),
       );
@@ -697,7 +863,8 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
   /// The instalment's accounting state (accounting active only): the invoice
   /// raised for it, whether a receipt posted, and — with no invoice yet —
   /// "Issue invoice".
-  List<Widget> _accountingLine(BuildContext context, PlanRecord r, String customerId) {
+  List<Widget> _accountingLine(
+      BuildContext context, PlanRecord r, String customerId) {
     final doc = r.document;
     final canCreate = ref.watch(accPermProvider('acc_document')).create;
     return [
@@ -708,15 +875,22 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
           onTap: () => context.push('${Routes.accDocumentDetail}?id=${doc.id}'),
           child: Row(
             children: [
-              Icon(PhosphorIconsRegular.receipt, size: 12.sp, color: AppColors.blueBright),
+              Icon(PhosphorIconsRegular.receipt,
+                  size: 12.sp, color: AppColors.blueBright),
               SizedBox(width: 4.w),
               Flexible(
-                child: Text(doc.number.isNotEmpty ? doc.number : 'Draft invoice',
+                child: Text(
+                    doc.number.isNotEmpty ? doc.number : 'Draft invoice',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.blueBright)),
               ),
-              if (doc.paymentState.isNotEmpty && doc.paymentState != 'NA' && doc.status == 'ISSUED') ...[
+              if (doc.paymentState.isNotEmpty &&
+                  doc.paymentState != 'NA' &&
+                  doc.status == 'ISSUED') ...[
                 SizedBox(width: 6.w),
                 PaymentStatePill(doc.paymentState),
               ],
@@ -726,20 +900,30 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
       ],
       if (r.postedReceiptId.isNotEmpty || r.receipt != null) ...[
         SizedBox(height: 4.h),
-        Text('Receipt posted', style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.success)),
+        Text('Receipt posted',
+            style: AppText.custom(
+                size: 11, weight: FontWeight.w700, color: AppColors.success)),
       ],
-      if (!r.isLinkedToDocument && doc == null && r.status != 'cancelled' && canCreate) ...[
+      if (!r.isLinkedToDocument &&
+          doc == null &&
+          r.status != 'cancelled' &&
+          canCreate) ...[
         SizedBox(height: 5.h),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () async {
-            final created = await showInvoiceFromRecordSheet(context, recordId: r.id, customerId: customerId.isEmpty ? null : customerId);
+            final created = await showInvoiceFromRecordSheet(context,
+                recordId: r.id,
+                customerId: customerId.isEmpty ? null : customerId);
             if (created != null && context.mounted) {
               context.push('${Routes.accDocumentDetail}?id=${created.id}');
             }
           },
           child: Text('Issue invoice',
-              style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.blueBright)),
         ),
       ],
     ];
@@ -747,29 +931,10 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
 
   // ── Notes ──
 
-  /// The plan's notes thread, hung off the **source quotation** — `payment`
-  /// is not an accepted `related_to` model, so a plan and its quote share one
-  /// thread. A plan with no source quote keeps a local-only thread.
-  Widget _notesCard(PlanDetail p) {
-    final quoteUuid = p.quotationUuid;
-    final seed = CrmNotesSeed(
-      quoteUuid.isEmpty ? 'PLAN-${p.id}' : quoteUuid,
-      () => const <notes_model.NoteEntry>[],
-      apiModel: quoteUuid.isEmpty ? null : 'quotation',
-    );
-    final thread = ref.watch(crmNotesProvider(seed));
-    return NotesCard(
-      notes: [
-        for (final n in thread)
-          NoteEntry(initials: _initialsOf(n.author), author: n.author, time: n.time, body: n.body),
-      ],
-      countLabel: thread.isEmpty ? null : '${thread.length}',
-      onSend: (body) {
-        ref.read(crmNotesProvider(seed).notifier).addNote(body, const [], ref.read(noteAuthorProvider));
-        ref.read(toastProvider.notifier).show('Note added');
-      },
-    );
-  }
+  /// The plan's notes — the source quotation's thread (see
+  /// [PlanNotesThread]).
+  Widget _notesCard(PlanDetail p) =>
+      PlanNotesThread(quotationUuid: p.quotationUuid, localKey: 'PLAN-${p.id}');
 
   static String _initialsOf(String name) {
     final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
@@ -785,7 +950,14 @@ class _LeadBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.h),
-        decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(4.r)),
-        child: Text('LEAD', style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.3)),
+        decoration: BoxDecoration(
+            color: AppColors.bgChipGrey,
+            borderRadius: BorderRadius.circular(4.r)),
+        child: Text('LEAD',
+            style: AppText.custom(
+                size: 9.5,
+                weight: FontWeight.w700,
+                color: AppColors.textMuted,
+                letterSpacing: 0.3)),
       );
 }

@@ -39,7 +39,8 @@ class CustomerNotesCard extends ConsumerWidget {
             author: 'You',
             time: '2h ago',
             via: 'Call',
-            body: 'Spoke with ${customer.name.split(' ').first}. Ongoing work on track; discussing an upsell.',
+            body:
+                'Spoke with ${customer.name.split(' ').first}. Ongoing work on track; discussing an upsell.',
           ),
           NoteEntry(
             id: '${customer.id}-n1',
@@ -47,7 +48,8 @@ class CustomerNotesCard extends ConsumerWidget {
             time: '1d ago',
             via: 'Email',
             avatarColor: AppColors.blueBright,
-            body: 'Shared the revised BOQ. Client happy with progress on ${customer.project}.',
+            body:
+                'Shared the revised BOQ. Client happy with progress on ${customer.project}.',
           ),
         ],
         apiModel: 'customer',
@@ -57,8 +59,12 @@ class CustomerNotesCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final seed = _seed();
     final notifier = ref.read(crmNotesProvider(seed).notifier);
-    final tags = ref.watch(customerNoteTagsProvider(customer.id)).valueOrNull ?? const {};
-    final history = {for (final e in tags.entries) if (e.value.readOnly) e.key};
+    final tags = ref.watch(customerNoteTagsProvider(customer.id)).valueOrNull ??
+        const {};
+    final history = {
+      for (final e in tags.entries)
+        if (e.value.readOnly) e.key
+    };
 
     // Tagged notes carry their source as the pill; history notes lose their
     // author id so the author-only actions (pin / edit / delete) stay off.
@@ -82,14 +88,16 @@ class CustomerNotesCard extends ConsumerWidget {
           n,
     ];
 
-    void readOnlyToast() =>
-        ref.read(toastProvider.notifier).show('Notes from the converted lead are read-only.');
+    void readOnlyToast() => ref
+        .read(toastProvider.notifier)
+        .show('Notes from the converted lead are read-only.');
 
     return NotesThread(
       key: threadKey,
       author: ref.watch(noteAuthorProvider),
       notes: notes,
-      onAddNote: (body, atts) => notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddNote: (body, atts) =>
+          notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
       onAddReply: (noteId, body) {
         if (history.contains(noteId)) return readOnlyToast();
         notifier.addReply(noteId, body, ref.read(noteAuthorProvider));
@@ -97,11 +105,15 @@ class CustomerNotesCard extends ConsumerWidget {
       webappToolbar: true,
       noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
       mentionables: [
-        for (final u in ref.watch(assignableUsersForModuleProvider('customer')).valueOrNull ?? const <CatalogOption>[])
+        for (final u in ref
+                .watch(assignableUsersForModuleProvider('customer'))
+                .valueOrNull ??
+            const <CatalogOption>[])
           (id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name),
       ],
       currentUserId: UserDirectory.currentUserId,
-      onAddTypedNote: (body, atts, typeId, typeName, mentions) => notifier.addNote(
+      onAddTypedNote: (body, atts, typeId, typeName, mentions) =>
+          notifier.addNote(
         body,
         atts,
         ref.read(noteAuthorProvider),
@@ -114,10 +126,12 @@ class CustomerNotesCard extends ConsumerWidget {
         if (history.contains(id)) return readOnlyToast();
         notifier.togglePin(id);
       },
-      onEditNote: (id, body) async =>
-          history.contains(id) ? 'Notes from the converted lead are read-only.' : notifier.editNote(id, body),
-      onDeleteNote: (id) async =>
-          history.contains(id) ? 'Notes from the converted lead are read-only.' : notifier.deleteNote(id),
+      onEditNote: (id, body) async => history.contains(id)
+          ? 'Notes from the converted lead are read-only.'
+          : notifier.editNote(id, body),
+      onDeleteNote: (id) async => history.contains(id)
+          ? 'Notes from the converted lead are read-only.'
+          : notifier.deleteNote(id),
     );
   }
 }

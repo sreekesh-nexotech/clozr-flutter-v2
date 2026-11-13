@@ -46,7 +46,8 @@ class ModuleSchemaRemoteDataSource {
   ///
   /// [query] carries extra selectors — Products and Packages share one schema
   /// endpoint but each has its own config, picked by `item_type`.
-  Future<ViewSchema> fetchMobileSchema({Map<String, dynamic> query = const {}}) =>
+  Future<ViewSchema> fetchMobileSchema(
+          {Map<String, dynamic> query = const {}}) =>
       _fetch('mobile', rethrowOutage: true, query: query);
 
   /// The detail-panel layout. This is also what the record endpoint trims itself
@@ -64,10 +65,13 @@ class ModuleSchemaRemoteDataSource {
     Map<String, dynamic> query = const {},
   }) async {
     try {
-      final body = await _api.get(schemaPath, query: {'view_type': viewType, ...query});
+      final body =
+          await _api.get(schemaPath, query: {'view_type': viewType, ...query});
       return ViewSchema.fromResponse(body);
     } on AppError catch (e) {
-      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      if (rethrowOutage &&
+          (e.type == AppErrorType.network || e.type == AppErrorType.timeout))
+        rethrow;
       return ViewSchema.empty;
     } on Object {
       return ViewSchema.empty;

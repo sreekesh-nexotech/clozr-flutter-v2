@@ -37,10 +37,35 @@ class LmsRemoteDataSource {
   /// Verified against the dev backend; a user already on the course counts as
   /// skipped rather than failing the whole call.
   Future<int> assignCourse(String courseId, List<String> userIds) async {
-    final body = await _api.post(_assign(courseId), body: {'user_ids': userIds});
+    final body =
+        await _api.post(_assign(courseId), body: {'user_ids': userIds});
     final enrolled = body is Map ? body['enrolled'] : null;
     return enrolled is num ? enrolled.toInt() : 0;
   }
+
+  // ── Course writes (webapp course editor) ──
+
+  static String _course(String id) => '/lms/courses/$id/';
+
+  /// `POST /lms/courses/ {title, status: draft}` → the new `course_id`.
+  Future<String> createCourse(String title) async {
+    final body =
+        await _api.post(_courses, body: {'title': title, 'status': 'draft'});
+    return body is Map && body['course_id'] is String
+        ? body['course_id'] as String
+        : '';
+  }
+
+  Future<void> updateCourse(String courseId, Map<String, dynamic> patch) =>
+      _api.patch(_course(courseId), body: patch);
+
+  Future<void> publishCourse(String courseId) =>
+      _api.post('${_course(courseId)}publish/');
+
+  Future<void> draftCourse(String courseId) =>
+      _api.post('${_course(courseId)}draft/');
+
+  Future<void> deleteCourse(String courseId) => _api.delete(_course(courseId));
 
   static String _nudge(String userId) => '/lms/learners/$userId/nudge/';
 
@@ -53,7 +78,8 @@ class LmsRemoteDataSource {
   static String _videoProgress(String videoResourceId) =>
       '/lms/video-resources/$videoResourceId/progress/';
 
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   /// `course_id → modules_count` from the last course fetch — used to expand
   /// an enrollment's overall percentage into per-module values.
@@ -87,7 +113,8 @@ class LmsRemoteDataSource {
       ..addAll({
         for (final row in rows)
           if (row['course_id'] is String)
-            row['course_id'] as String: (row['modules_count'] as num?)?.toInt() ?? 0,
+            row['course_id'] as String:
+                (row['modules_count'] as num?)?.toInt() ?? 0,
       });
     return mapCourseRows(rows);
   }
@@ -175,12 +202,17 @@ class LmsRemoteDataSource {
       // per-course figure. A completed course reads 100; one in flight reads
       // its percentage (floored to 1 so it counts as started).
       final completed = ((row['completed_courses'] as num?)?.toInt() ?? 0) > 0;
-      final overall = ((row['overall_progress_percentage'] as num?)?.round() ?? 0);
+      final overall =
+          ((row['overall_progress_percentage'] as num?)?.round() ?? 0);
       final started = (row['status'] as String? ?? '') != 'not_started';
-      final pct = completed ? 100 : (started ? (overall > 0 ? overall.clamp(1, 99) : 1) : 0);
+      final pct = completed
+          ? 100
+          : (started ? (overall > 0 ? overall.clamp(1, 99) : 1) : 0);
       out.add(LearnerRecord(
         rid: rid,
-        courses: [CourseProgress(courseId: courseId, mods: [pct])],
+        courses: [
+          CourseProgress(courseId: courseId, mods: [pct])
+        ],
       ));
     }
     return out;
@@ -240,7 +272,9 @@ class LmsRemoteDataSource {
     // payloads carry no module ids, so the notifier often passes '').
     Map<String, dynamic>? module;
     for (final m in modules) {
-      if (m is Map<String, dynamic> && m['module_id'] == moduleId && moduleId.isNotEmpty) {
+      if (m is Map<String, dynamic> &&
+          m['module_id'] == moduleId &&
+          moduleId.isNotEmpty) {
         module = m;
         break;
       }
@@ -255,7 +289,8 @@ class LmsRemoteDataSource {
     if (videos is! List) return;
     final videoIds = [
       for (final v in videos)
-        if (v is Map && v['video_resource_id'] is String) v['video_resource_id'] as String,
+        if (v is Map && v['video_resource_id'] is String)
+          v['video_resource_id'] as String,
     ];
     if (videoIds.isEmpty) return;
 
@@ -292,7 +327,11 @@ class LmsRemoteDataSource {
     (AppColors.blueSubtle, AppColors.blueBright, PhosphorIconsFill.usersThree),
     (AppColors.tintGreen, AppColors.success, PhosphorIconsFill.trendUp),
     (AppColors.tintAmber, AppColors.warningDeep, PhosphorIconsFill.briefcase),
-    (AppColors.tintPurpleSoft, AppColors.pending, PhosphorIconsFill.shieldCheck),
+    (
+      AppColors.tintPurpleSoft,
+      AppColors.pending,
+      PhosphorIconsFill.shieldCheck
+    ),
     (AppColors.tintRed, AppColors.error, PhosphorIconsFill.headset),
     (AppColors.tintNavy, AppColors.navy, PhosphorIconsFill.hardHat),
   ];
@@ -324,7 +363,8 @@ class LmsRemoteDataSource {
       id: id,
       title: row['title'] as String? ?? '',
       sub: desc.isEmpty ? '' : desc.split('\n').first.trim(),
-      status: (row['status'] as String? ?? '') == 'published' || row['is_published'] == true
+      status: (row['status'] as String? ?? '') == 'published' ||
+              row['is_published'] == true
           ? 'published'
           : 'draft',
       sequential: row['is_sequential'] as bool? ?? false,
@@ -342,6 +382,25 @@ class LmsRemoteDataSource {
       accent: visual.$2,
       icon: visual.$3,
       modules: _mapModules(row['modules']),
+      modulesCount: (row['modules_count'] as num?)?.toInt(),
+      enrolledCount: row['enrolled_users'] is List
+          ? (row['enrolled_users'] as List).length
+          : null,
+      completion: (row['completion_percentage'] as num?)?.toDouble(),
+      isGlobal: row['is_global'] == true,
+      audience: row['audience'] is String ? row['audience'] as String : '',
+      isUniversal: row['is_universal'] == true,
+      roleNames: [
+        if (row['assigned_to_roles'] is List)
+          for (final r in row['assigned_to_roles'] as List)
+            // `{role_id: null, name: "all"}` is the server's "All users"
+            // pseudo-role; is_universal already says that, by name.
+            if (r is Map &&
+                r['role_id'] != null &&
+                r['name'] is String &&
+                (r['name'] as String).isNotEmpty)
+              r['name'] as String,
+      ],
     );
   }
 
@@ -372,9 +431,12 @@ class LmsRemoteDataSource {
       final videos = m['video_resources'];
       var seconds = 0;
       var hasVideo = false;
+      var videoTitle = '';
       if (videos is List) {
         for (final v in videos) {
           if (v is! Map) continue;
+          if (!hasVideo && v['title'] is String)
+            videoTitle = v['title'] as String;
           hasVideo = true;
           seconds += (v['duration_seconds'] as num?)?.toInt() ?? 0;
         }
@@ -385,6 +447,7 @@ class LmsRemoteDataSource {
         title: m['title'] as String? ?? '',
         dur: seconds > 0 ? '${(seconds / 60).ceil()} min' : '',
         video: hasVideo,
+        videoTitle: videoTitle,
         res: [
           if (resources is List)
             for (final r in resources)
@@ -399,10 +462,12 @@ class LmsRemoteDataSource {
   /// The list payload has no per-module ints, so the overall
   /// `completion_percentage` is replicated across [moduleCount] modules
   /// (or kept as a single overall value when the count is unknown).
-  static CourseProgress? mapEnrollmentRow(Map<String, dynamic> row, {int moduleCount = 0}) {
+  static CourseProgress? mapEnrollmentRow(Map<String, dynamic> row,
+      {int moduleCount = 0}) {
     final courseId = row['course_id'] as String? ?? '';
     if (courseId.isEmpty) return null;
-    final pct = ((row['completion_percentage'] as num?)?.round() ?? 0).clamp(0, 100);
+    final pct =
+        ((row['completion_percentage'] as num?)?.round() ?? 0).clamp(0, 100);
     return CourseProgress(
       courseId: courseId,
       mods: List<int>.filled(moduleCount > 0 ? moduleCount : 1, pct),
@@ -429,8 +494,10 @@ class LmsRemoteDataSource {
     UserDirectory.register(userId: userId, fullName: name, role: roleName);
 
     final assigned = (row['assigned_courses'] as num?)?.toInt() ?? 0;
-    final completed = ((row['completed_courses'] as num?)?.toInt() ?? 0).clamp(0, assigned);
-    final overall = ((row['overall_progress_percentage'] as num?)?.round() ?? 0).clamp(0, 99);
+    final completed =
+        ((row['completed_courses'] as num?)?.toInt() ?? 0).clamp(0, assigned);
+    final overall = ((row['overall_progress_percentage'] as num?)?.round() ?? 0)
+        .clamp(0, 99);
     final serverStatus = row['status'] as String?;
     final started = (serverStatus ?? '') != 'not_started';
     return LearnerRecord(
@@ -440,7 +507,14 @@ class LmsRemoteDataSource {
         for (var i = 0; i < assigned; i++)
           CourseProgress(
             courseId: 'agg-$i',
-            mods: [if (i < completed) 100 else if (started) (overall > 0 ? overall : 1) else 0],
+            mods: [
+              if (i < completed)
+                100
+              else if (started)
+                (overall > 0 ? overall : 1)
+              else
+                0
+            ],
           ),
       ],
     );
@@ -465,7 +539,9 @@ class LmsRemoteDataSource {
     final courseTitle = row['course_title'] as String? ?? '';
     var what = description.isNotEmpty
         ? description
-        : [action.replaceAll('_', ' '), courseTitle].where((s) => s.isNotEmpty).join(' ');
+        : [action.replaceAll('_', ' '), courseTitle]
+            .where((s) => s.isNotEmpty)
+            .join(' ');
     // The server's `description` already leads with the learner's name
     // ("Admin Acme was enrolled in test"), and the overview renders `who`
     // in bold before `what` — so the row read "Admin Acme Admin Acme was
@@ -485,6 +561,7 @@ class LmsRemoteDataSource {
       who: who,
       what: what,
       time: relativeTime(parseApiDate(row['created_at'])),
+      courseTitle: courseTitle,
     );
   }
 }

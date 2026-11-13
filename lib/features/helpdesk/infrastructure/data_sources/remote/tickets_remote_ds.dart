@@ -1,3 +1,4 @@
+import '../../../../../core/utils/audit_wording.dart';
 import 'dart:ui' show Color;
 
 import 'package:dio/dio.dart' show FormData, MultipartFile;
@@ -6,6 +7,7 @@ import '../../../../../core/config/api_config.dart';
 import '../../../../../core/network/app_error.dart';
 import '../../../../../core/network/api_endpoints.dart';
 import '../../../../../core/network/api_service.dart';
+import '../../../../../core/status_groups/status_groups.dart';
 import '../../../../../core/network/paginated.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
@@ -76,7 +78,8 @@ class TicketsRemoteDataSource {
     try {
       final body =
           await _api.get(ApiEndpoints.issueTypes, query: {'page_size': 100});
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
         if (row['is_active'] == false) continue;
@@ -84,7 +87,8 @@ class TicketsRemoteDataSource {
         final name = (row['name'] ?? '').toString();
         if (id.isEmpty || name.isEmpty) continue;
         final pri = (row['default_priority'] ?? '').toString().trim();
-        out.add(CatalogOption(id: id, name: name, defaultPriority: pri.isEmpty ? null : pri));
+        out.add(CatalogOption(
+            id: id, name: name, defaultPriority: pri.isEmpty ? null : pri));
       }
       return out;
     } on Object {
@@ -114,6 +118,7 @@ class TicketsRemoteDataSource {
           // The org's own dot colour — the status chips and card pills.
           color: rgb == null ? null : Color(0xFF000000 | rgb),
           isClosed: row['is_resolved'] == true,
+          isOnHold: row['is_on_hold'] == true,
           isDefault: row['is_default'] == true,
         ));
       }
@@ -154,6 +159,8 @@ class TicketsRemoteDataSource {
           out[id] = count.toInt();
         }
       }
+      // The header's open / on hold / resolved group totals (Oct 2026).
+      StatusGroups.readGroupCounts(body, out);
       return out;
     } on Object {
       return const {};
@@ -197,7 +204,8 @@ class TicketsRemoteDataSource {
         ApiEndpoints.issueActivity(issueId),
         query: {'page_size': 50},
       );
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       return [
         for (final row in rows)
           if (activityFromJson(row, names: names) case final e?) e,
@@ -239,7 +247,8 @@ class TicketsRemoteDataSource {
         ApiEndpoints.issueTasks(issueId),
         query: {'page_size': 50},
       );
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       return [for (final row in rows) linkedTaskFromJson(row)];
     } on Object {
       return const [];
@@ -260,9 +269,11 @@ class TicketsRemoteDataSource {
           (status is Map ? _str(status['name']) : null) ??
           '',
       priority: _str(json['priority']) ?? '',
-      projectName: _str(json['project_name']) ?? (project is Map ? _str(project['name']) ?? '' : ''),
+      projectName: _str(json['project_name']) ??
+          (project is Map ? _str(project['name']) ?? '' : ''),
       isOverdue: json['is_overdue'] == true,
-      projectId: _str(json['project_id']) ?? (project is Map ? _str(project['project_id']) : _str(project)),
+      projectId: _str(json['project_id']) ??
+          (project is Map ? _str(project['project_id']) : _str(project)),
       assigneeName: assignee is Map
           ? (_str(assignee['full_name']) ?? _str(assignee['username']) ?? '')
           : '',
@@ -273,13 +284,18 @@ class TicketsRemoteDataSource {
 
   /// POST a new issue. Sends only fields the serializer is known to accept.
   Future<Ticket?> createTicket(Map<String, dynamic> fields) async {
-    final body = await _api.post(ApiEndpoints.issues, body: writePayload(fields));
+    final body =
+        await _api.post(ApiEndpoints.issues, body: writePayload(fields));
     return body is Map<String, dynamic> ? mapTicket(body) : null;
   }
 
   /// PATCH subject/description/priority (and channel/customer when valid).
-  Future<void> updateTicket(String id, Map<String, dynamic> fields) =>
-      _api.patch(ApiEndpoints.issue(id), body: writePayload(fields));
+  /// [version] (`updated_at`) goes out as `If-Match`: a ticket changed
+  /// elsewhere since it was read answers 412 instead of being overwritten.
+  Future<void> updateTicket(String id, Map<String, dynamic> fields,
+          {String? version}) =>
+      _api.patch(ApiEndpoints.issue(id),
+          body: writePayload(fields), headers: ifMatchHeaders(version));
 
   /// Resolves the org's issue status whose name maps onto [uiStatusKey]
   /// (`new|open|pending|resolved|closed`) and PATCHes it. The serializer's
@@ -326,8 +342,10 @@ class TicketsRemoteDataSource {
   /// tab says "No child tickets" rather than toasting a refusal.
   Future<List<Ticket>> fetchChildren(String issueId) async {
     if (issueId.isEmpty) return const [];
-    final body = await _api.get(ApiEndpoints.issueChildren(issueId), quiet: true, query: {'page_size': 100});
-    return mapTickets(Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
+    final body = await _api.get(ApiEndpoints.issueChildren(issueId),
+        quiet: true, query: {'page_size': 100});
+    return mapTickets(
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
   }
 
   /// The "Attach a child ticket" candidates: tickets without a parent
@@ -340,27 +358,56 @@ class TicketsRemoteDataSource {
       'page_size': 20,
       if (q.isNotEmpty) 'search': q,
     });
-    return mapTickets(Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
+    return mapTickets(
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
   }
 
   /// Attaches [issueId] under [parentId], or detaches it with null. The write
   /// key is `parent_issue_id` (the read key `parent_issue` is ignored).
-  Future<void> setParent(String issueId, String? parentId) =>
-      _api.patch(ApiEndpoints.issue(issueId), body: {'parent_issue_id': parentId});
+  Future<void> setParent(String issueId, String? parentId) => _api
+      .patch(ApiEndpoints.issue(issueId), body: {'parent_issue_id': parentId});
 
   /// `POST issues/{id}/log-first-response/` — stamps `first_responded_at`
   /// for a response given outside Clozr.
   Future<void> logFirstResponse(String issueId) =>
-      _api.post(ApiEndpoints.issueLogFirstResponse(issueId), body: const <String, dynamic>{});
+      _api.post(ApiEndpoints.issueLogFirstResponse(issueId),
+          body: const <String, dynamic>{});
 
   /// `POST issues/{id}/replies/ {body}` — dispatched by the server through the
   /// ticket's own channel (email / WhatsApp).
   Future<void> sendReply(String issueId, String body) =>
       _api.post(ApiEndpoints.issueReplies(issueId), body: {'body': body});
 
+  /// `GET /crm/issues/deleted/` — the Trash (soft-deleted tickets), newest
+  /// first, with `?search=` and paging.
+  Future<({List<Ticket> rows, bool more})> fetchDeleted(
+      {String search = '', int page = 1}) async {
+    final body = await _api.get(ApiEndpoints.issuesDeleted, query: {
+      'page': page,
+      'page_size': 20,
+      if (search.trim().isNotEmpty) 'search': search.trim(),
+    });
+    final p = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
+    return (
+      rows: [
+        for (final r in p.results)
+          if (mapTicket(r) case final t?) t
+      ],
+      more: p.next != null,
+    );
+  }
+
+  /// `POST /crm/issues/{id}/restore/` — brings a deleted ticket back.
+  Future<void> restoreTicket(String id) =>
+      _api.post(ApiEndpoints.issueRestore(id));
+
+  /// `DELETE /crm/issues/{id}/`.
+  Future<void> deleteTicket(String id) => _api.delete(ApiEndpoints.issue(id));
+
   /// Multipart `POST /crm/attachments/` against the ticket
   /// (`related_to=issue`), as the webapp's Files tab sends it.
-  Future<void> uploadAttachment(String issueId, {required String path, required String name}) async {
+  Future<void> uploadAttachment(String issueId,
+      {required String path, required String name}) async {
     final form = FormData.fromMap({
       'related_to': 'issue',
       'related_to_id': issueId,
@@ -375,7 +422,8 @@ class TicketsRemoteDataSource {
     if (cached != null && cached.isNotEmpty) return cached;
     final body =
         await _api.get(ApiEndpoints.issueStatuses, query: {'page_size': 100});
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     _statusRows = rows;
     return rows;
   }
@@ -396,9 +444,11 @@ class TicketsRemoteDataSource {
     final actorName = actor is Map ? _str(actor['name']) ?? '' : '';
     final event = _str(row['event_type']) ?? '';
 
-    var summary = _str(row['summary']) ?? _humanizeEvent(event);
+    var summary =
+        plainAuditSummary(_str(row['summary']) ?? _humanizeEvent(event));
     names.forEach((uuid, name) {
-      if (uuid.isNotEmpty && name.isNotEmpty) summary = summary.replaceAll(uuid, name);
+      if (uuid.isNotEmpty && name.isNotEmpty)
+        summary = summary.replaceAll(uuid, name);
     });
 
     return AuditEntry(
@@ -421,7 +471,9 @@ class TicketsRemoteDataSource {
     if (event.contains('note') || event.contains('reply')) {
       return AuditEventKind.noteAdded;
     }
-    if (event.contains('status') || event == 'reopened' || event == 'resolved') {
+    if (event.contains('status') ||
+        event == 'reopened' ||
+        event == 'resolved') {
       return AuditEventKind.statusChanged;
     }
     return AuditEventKind.fieldChanged;
@@ -539,10 +591,13 @@ class TicketsRemoteDataSource {
       slaBreachedFlag: json['sla_breached'] == true,
       firstResponseDue: _str(json['first_response_due_at']) != null,
       firstResponded: _str(json['first_responded_at']) != null,
-      firstResponseRemainingSeconds: num_(json['first_response_remaining_seconds']),
+      firstResponseRemainingSeconds:
+          num_(json['first_response_remaining_seconds']),
       firstResponseBreached: json['is_first_response_breached'] == true,
       channelCode: _str(json['channel'])?.toLowerCase(),
-      slaValue: json['sla_value'] is num ? json['sla_value'] as num : num.tryParse('${json['sla_value'] ?? ''}'),
+      slaValue: json['sla_value'] is num
+          ? json['sla_value'] as num
+          : num.tryParse('${json['sla_value'] ?? ''}'),
       slaUnit: _str(json['sla_unit']) ?? '',
       parentIssueId: _parentId(json['parent_issue']),
       parentReference: _str(json['parent_reference']) ?? '',
@@ -550,14 +605,23 @@ class TicketsRemoteDataSource {
       childCount: (json['child_count'] as num?)?.toInt() ?? 0,
       // Falls back to the parent link so a trimmed serializer cannot make a
       // child render as a root (webapp `isChild`).
-      isChild: json['is_child'] == true || _parentId(json['parent_issue']) != null,
+      isChild:
+          json['is_child'] == true || _parentId(json['parent_issue']) != null,
       attachments: _attachments(json['attachments']),
       replies: _replies(json['notes']),
       customFields: _customFields(json['custom_fields']),
+      updatedAt: _str(json['updated_at']) ?? '',
+      canDelete: json['can_delete'] is bool ? json['can_delete'] as bool : null,
+      // `{code, message}` on dev (a plain string tolerated too).
+      deleteBlockedReason: switch (json['delete_blocked_reason']) {
+        final Map m => _str(m['message']) ?? _str(m['code']) ?? '',
+        final Object? v => _str(v) ?? '',
+      },
     );
   }
 
-  static String? _parentId(Object? v) => v is Map ? _str(v['issue_id']) : _str(v);
+  static String? _parentId(Object? v) =>
+      v is Map ? _str(v['issue_id']) : _str(v);
 
   /// `attachments[]` → [TicketAttachment], skipping rows without an id.
   static List<TicketAttachment> _attachments(Object? raw) {
@@ -573,10 +637,12 @@ class TicketsRemoteDataSource {
         name: _str(r['name']) ?? 'File',
         url: _str(r['file_url']) ?? _str(r['file']) ?? '',
         uploadedAt: parseApiDate(r['uploaded_at']),
-        uploadedBy: (by is Map ? (_str(by['name']) ?? _str(by['full_name'])) : null) ??
-            _str(r['uploaded_by_name']) ??
-            '',
-        uploadedById: (by is Map ? _str(by['user_id']) : _str(by)) ?? _str(r['uploaded_by_id']),
+        uploadedBy:
+            (by is Map ? (_str(by['name']) ?? _str(by['full_name'])) : null) ??
+                _str(r['uploaded_by_name']) ??
+                '',
+        uploadedById: (by is Map ? _str(by['user_id']) : _str(by)) ??
+            _str(r['uploaded_by_id']),
       ));
     }
     return out;
@@ -596,9 +662,10 @@ class TicketsRemoteDataSource {
       out.add(TicketReply(
         id: id,
         body: _str(r['content']) ?? '',
-        author: (by is Map ? (_str(by['name']) ?? _str(by['full_name'])) : null) ??
-            _str(r['created_by_name']) ??
-            '',
+        author:
+            (by is Map ? (_str(by['name']) ?? _str(by['full_name'])) : null) ??
+                _str(r['created_by_name']) ??
+                '',
         at: parseApiDate(r['created_at']),
       ));
     }
@@ -610,7 +677,9 @@ class TicketsRemoteDataSource {
     if (raw is! Map) return const {};
     return {
       for (final e in raw.entries)
-        '${e.key}': e.value == null ? '' : (e.value is String ? e.value as String : '${e.value}'),
+        '${e.key}': e.value == null
+            ? ''
+            : (e.value is String ? e.value as String : '${e.value}'),
     };
   }
 
@@ -745,18 +814,25 @@ class TicketsRemoteDataSource {
     }
     final pri = _str(fields['priority']);
     if (pri != null) out['priority'] = _apiPriority(pri);
-    final channel = _channelCodes[(_str(fields['channel']) ?? '').toLowerCase()];
+    final channel =
+        _channelCodes[(_str(fields['channel']) ?? '').toLowerCase()];
     if (channel != null) out['channel'] = channel;
     // `client` (a customer's ticket) or `self` (internal — no customer, no SLA).
     final reportedFor = _str(fields['reported_for']);
-    if (reportedFor == 'client' || reportedFor == 'self') out['reported_for'] = reportedFor;
+    if (reportedFor == 'client' || reportedFor == 'self')
+      out['reported_for'] = reportedFor;
     // The org's issue type, which the category chips now offer verbatim.
     //
     // These links accept an explicit null, which clears them (verified against
     // the dev backend) — so "absent" and "cleared" must stay distinguishable:
     // a key sent as null is "Uncategorised" / no customer / "No contact" /
     // "Unassigned", a missing key leaves the ticket's value alone.
-    for (final key in const ['customer_id', 'issue_type', 'contact_id', 'assigned_to']) {
+    for (final key in const [
+      'customer_id',
+      'issue_type',
+      'contact_id',
+      'assigned_to'
+    ]) {
       if (!fields.containsKey(key)) continue;
       final id = _str(fields[key]);
       if (id == null) {
@@ -779,15 +855,21 @@ class TicketsRemoteDataSource {
     if (statusId != null && _uuidRe.hasMatch(statusId)) {
       out['status_id'] = statusId;
     }
+    // The approver's comment when the change needs approval (Unified
+    // Approvals) — only alongside a gated field.
+    final requestNote = _str(fields['request_note'])?.trim() ?? '';
+    if (requestNote.isNotEmpty) out['request_note'] = requestNote;
     // Billing (handover §9.5). Only when the form sent it.
     if (fields['billable'] is bool) out['billable'] = fields['billable'];
     if (fields.containsKey('billable_amount')) {
       final amount = _str(fields['billable_amount']);
-      out['billable_amount'] = amount != null && double.tryParse(amount) != null ? amount : null;
+      out['billable_amount'] =
+          amount != null && double.tryParse(amount) != null ? amount : null;
     }
     if (fields.containsKey('billable_product_id')) {
       final id = _str(fields['billable_product_id']);
-      out['billable_product_id'] = id != null && _uuidRe.hasMatch(id) ? id : null;
+      out['billable_product_id'] =
+          id != null && _uuidRe.hasMatch(id) ? id : null;
     }
     for (final key in const ['product_id', 'project_id']) {
       if (!fields.containsKey(key)) continue;

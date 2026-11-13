@@ -35,7 +35,8 @@ class _Adapter implements HttpClientAdapter {
   final List<RequestOptions> requests = [];
 
   @override
-  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? _, Future<void>? __) async {
+  Future<ResponseBody> fetch(
+      RequestOptions options, Stream<Uint8List>? _, Future<void>? __) async {
     requests.add(options);
     return ResponseBody.fromString(jsonEncode(body), status, headers: {
       Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -46,8 +47,9 @@ class _Adapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-ApiService _api(_Adapter a) =>
-    ApiService(tokens: TokenStorage(), dio: Dio(BaseOptions(baseUrl: 'https://x/api/v1'))..httpClientAdapter = a);
+ApiService _api(_Adapter a) => ApiService(
+    tokens: TokenStorage(),
+    dio: Dio(BaseOptions(baseUrl: 'https://x/api/v1'))..httpClientAdapter = a);
 
 void main() {
   group('document mapper', () {
@@ -66,17 +68,38 @@ void main() {
       'payment_state': 'PARTIAL',
       'open_balance': '18000.50',
       'warnings': [
-        {'code': 'LATE_INVOICE', 'supply_date': '2026-08-01', 'document_date': '2026-09-20'},
+        {
+          'code': 'LATE_INVOICE',
+          'supply_date': '2026-08-01',
+          'document_date': '2026-09-20'
+        },
         'LEGACY_STRING',
       ],
       'config_draft_rows': [{}, {}],
       'party_snapshot': {'gstin': '32AAAAA0000A1Z5'},
       'lines': [
-        {'line_no': 2, 'description': 'Second', 'qty': '1.000', 'unit_price': '10.00'},
-        {'line_no': 1, 'description': 'First', 'qty': '2.500', 'unit_price': '40000.00', 'hsn_sac': '998313', 'rate_pct': '18.00'},
+        {
+          'line_no': 2,
+          'description': 'Second',
+          'qty': '1.000',
+          'unit_price': '10.00'
+        },
+        {
+          'line_no': 1,
+          'description': 'First',
+          'qty': '2.500',
+          'unit_price': '40000.00',
+          'hsn_sac': '998313',
+          'rate_pct': '18.00'
+        },
       ],
       'tax_lines': [
-        {'head': 'CGST', 'direction': 'OUTPUT', 'amount': '9000.25', 'rate_pct': '9.00'},
+        {
+          'head': 'CGST',
+          'direction': 'OUTPUT',
+          'amount': '9000.25',
+          'rate_pct': '9.00'
+        },
       ],
     };
 
@@ -114,7 +137,13 @@ void main() {
 
     test('a row with no id is skipped, not fatal', () {
       expect(mapDocument({'number': 'X'}), isNull);
-      expect(mapDocuments([row, {'number': 'X'}, 'junk']).length, 1);
+      expect(
+          mapDocuments([
+            row,
+            {'number': 'X'},
+            'junk'
+          ]).length,
+          1);
     });
   });
 
@@ -124,14 +153,27 @@ void main() {
         'pan': 'AAAAA0000A',
         'tds_applicable': true,
         'attributes': [
-          {'attribute': 'REGISTRATION_TYPE', 'value': {'type': 'REGISTERED'}, 'effective_to': null},
-          {'attribute': 'GSTIN', 'value': {'gstin': 'OLD'}, 'effective_to': '2026-01-01'},
-          {'attribute': 'GSTIN', 'value': {'gstin': '27AAPFU0939F1ZV'}, 'effective_to': null},
+          {
+            'attribute': 'REGISTRATION_TYPE',
+            'value': {'type': 'REGISTERED'},
+            'effective_to': null
+          },
+          {
+            'attribute': 'GSTIN',
+            'value': {'gstin': 'OLD'},
+            'effective_to': '2026-01-01'
+          },
+          {
+            'attribute': 'GSTIN',
+            'value': {'gstin': '27AAPFU0939F1ZV'},
+            'effective_to': null
+          },
           {'attribute': 'STATE', 'value': '27'},
         ],
       });
       expect(p.registrationType, 'REGISTERED');
-      expect(p.gstin, '27AAPFU0939F1ZV', reason: 'the open row wins over a closed one');
+      expect(p.gstin, '27AAPFU0939F1ZV',
+          reason: 'the open row wins over a closed one');
       expect(p.stateCode, '27', reason: 'older rows hold a bare scalar');
       expect(p.isB2b, isTrue);
       expect(p.tdsApplicable, isTrue);
@@ -158,7 +200,13 @@ void main() {
       final a = mapAging({
         'as_of': '2026-09-24',
         'rows': [
-          {'vendor_id': 'v1', 'vendor_name': 'Acme', '0-30': '10.00', '90+': 5, 'total': '15.00'},
+          {
+            'vendor_id': 'v1',
+            'vendor_name': 'Acme',
+            '0-30': '10.00',
+            '90+': 5,
+            'total': '15.00'
+          },
         ],
         'totals': {'total': '15.00', '90+': '5.00'},
       }, vendor: true);
@@ -171,7 +219,12 @@ void main() {
       final reg = mapPeriodRegister({
         'fy_label': '2026-27',
         'gst_periods': [
-          {'gst_period_id': 'g1', 'start_date': '2026-09-01', 'end_date': '2026-09-30', 'gstr1_status': 'FILED'},
+          {
+            'gst_period_id': 'g1',
+            'start_date': '2026-09-01',
+            'end_date': '2026-09-30',
+            'gstr1_status': 'FILED'
+          },
         ],
         'tds_periods': [
           {'tds_period_id': 't2', 'quarter': 2, 'status': 'OPEN'},
@@ -199,7 +252,10 @@ void main() {
     AppError fromBody(int status, Object body) => AppError.fromDio(DioException(
           requestOptions: RequestOptions(path: '/x'),
           type: DioExceptionType.badResponse,
-          response: Response(requestOptions: RequestOptions(path: '/x'), statusCode: status, data: body),
+          response: Response(
+              requestOptions: RequestOptions(path: '/x'),
+              statusCode: status,
+              data: body),
         ));
 
     test('a guard keeps code, cause and next', () {
@@ -217,12 +273,21 @@ void main() {
     });
 
     test('the activation gate is recognised', () {
-      final e = fromBody(409, {'code': 'ACCOUNTING_NOT_ACTIVE', 'detail': 'Not active.', 'cause': {}});
+      final e = fromBody(409, {
+        'code': 'ACCOUNTING_NOT_ACTIVE',
+        'detail': 'Not active.',
+        'cause': {}
+      });
       expect(e.isAccountingInactive, isTrue);
     });
 
-    test('a flattened 403 has no string code — never parse it for the plan gate', () {
-      final e = fromBody(403, {'code': 403, 'message': 'Your current plan does not include this feature.'});
+    test(
+        'a flattened 403 has no string code — never parse it for the plan gate',
+        () {
+      final e = fromBody(403, {
+        'code': 403,
+        'message': 'Your current plan does not include this feature.'
+      });
       expect(e.code, isNull);
       expect(e.type, AppErrorType.forbidden);
       expect(e.causeMap, isEmpty);
@@ -231,14 +296,17 @@ void main() {
 
   group('posting paths', () {
     test('a skipped post is its own outcome', () {
-      final out = postOutcome({'skipped': true, 'detail': 'Event skipped'}, mapReceipt);
+      final out =
+          postOutcome({'skipped': true, 'detail': 'Event skipped'}, mapReceipt);
       expect(out.skipped, isTrue);
       expect(out.skipReason, 'Event skipped');
       expect(postOutcome({'receipt_id': 'r1'}, mapReceipt).value?.id, 'r1');
     });
 
     test('record receipt sends the event id and drops blanks', () async {
-      final a = _Adapter(body: {'receipt_id': 'r1', 'amount': '100.00', 'unallocated': '0.00'}, status: 201);
+      final a = _Adapter(
+          body: {'receipt_id': 'r1', 'amount': '100.00', 'unallocated': '0.00'},
+          status: 201);
       final ds = AccountingSettlementRemoteDataSource(_api(a));
       final out = await ds.recordReceipt({
         'customer': 'c1',
@@ -258,14 +326,20 @@ void main() {
     });
 
     test('create invoice posts to the manual route', () async {
-      final a = _Adapter(body: {'document_id': 'd9', 'status': 'DRAFT'}, status: 201);
+      final a =
+          _Adapter(body: {'document_id': 'd9', 'status': 'DRAFT'}, status: 201);
       final ds = AccountingDocumentsRemoteDataSource(_api(a));
       final doc = await ds.createInvoice({
         'doc_type': 'TAX_INVOICE',
         'document_date': '2026-09-24',
         'customer': null,
         'lines': [
-          {'line_no': 1, 'description': 'Work', 'qty': '1', 'unit_price': '100.00'},
+          {
+            'line_no': 1,
+            'description': 'Work',
+            'qty': '1',
+            'unit_price': '100.00'
+          },
         ],
       });
       expect(a.requests.single.path, '/accounting/documents/invoices/');
@@ -275,7 +349,10 @@ void main() {
 
     test('event ids are v4 UUIDs and differ per call', () {
       final a = newEventId();
-      expect(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$').hasMatch(a), isTrue);
+      expect(
+          RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+              .hasMatch(a),
+          isTrue);
       expect(newEventId(), isNot(a));
     });
   });
@@ -297,15 +374,18 @@ void main() {
       final sent = a.requests.single.data as Map;
       expect(sent['status'], 'paid');
       expect(sent['amount_paid'], '9000.50');
-      expect(sent['paid_date'], '2026-09-02', reason: "the customer's date, not today");
+      expect(sent['paid_date'], '2026-09-02',
+          reason: "the customer's date, not today");
       expect(sent['tds_deducted'], '1000.00');
-      expect(sent.containsKey('bank_charge'), isFalse, reason: 'zero is not sent');
+      expect(sent.containsKey('bank_charge'), isFalse,
+          reason: 'zero is not sent');
       expect(sent['bank_account_id'], 'b1');
       expect(sent['treat_as'], 'ADVANCE');
       expect(posted, isTrue);
     });
 
-    test('a record carries the exact amount and what the ledger made of it', () {
+    test('a record carries the exact amount and what the ledger made of it',
+        () {
       final p = paymentRecordFromApi({
         'record_id': 'r1',
         'status': 'pending',
@@ -313,7 +393,12 @@ void main() {
         'due_date': '2026-10-01',
         'linked_document_id': 'd1',
         'record_summary': {
-          'document': {'document_id': 'd1', 'number': 'INV/26-27/0001', 'status': 'ISSUED', 'payment_state': 'UNPAID'},
+          'document': {
+            'document_id': 'd1',
+            'number': 'INV/26-27/0001',
+            'status': 'ISSUED',
+            'payment_state': 'UNPAID'
+          },
         },
       })!;
       expect(p.amountExact, '12500.50');
@@ -331,7 +416,13 @@ void main() {
         amountsAre: 'EXCLUSIVE',
         placeOfSupplyStateCode: '32',
         contractRef: ' PO-7 ',
-        lines: [QuoteDraftLine(description: 'X', quantity: '1.000', unitPrice: '10.00', productId: 'p1')],
+        lines: [
+          QuoteDraftLine(
+              description: 'X',
+              quantity: '1.000',
+              unitPrice: '10.00',
+              productId: 'p1')
+        ],
       );
       final body = draft.toCreateJson();
       expect(body['amounts_are'], 'EXCLUSIVE');
@@ -350,7 +441,8 @@ void main() {
       });
       expect(out['billable'], isTrue);
       expect(out['billable_amount'], '1500.00');
-      expect(out['billable_product_id'], '6f1f0c1e-2b1a-4c1e-9a1e-1a2b3c4d5e6f');
+      expect(
+          out['billable_product_id'], '6f1f0c1e-2b1a-4c1e-9a1e-1a2b3c4d5e6f');
       final cleared = TicketsRemoteDataSource.writePayload({
         'billable': false,
         'billable_amount': null,
@@ -365,7 +457,8 @@ void main() {
     test('GSTIN checksum', () {
       expect(gstinValid('27AAPFU0939F1ZV'), isTrue);
       expect(gstinValid('27aapfu0939f1zv'), isTrue, reason: 'case-insensitive');
-      expect(gstinValid('27AAPFU0939F1ZW'), isFalse, reason: 'wrong check character');
+      expect(gstinValid('27AAPFU0939F1ZW'), isFalse,
+          reason: 'wrong check character');
       expect(gstinValid('27AAPFU0939F1Z'), isFalse);
     });
 
@@ -381,16 +474,23 @@ void main() {
   group('money posting (live /auth/me/modules/ shape)', () {
     Future<AccPerm> permFor(Map<String, dynamic> json, String module) async {
       final c = ProviderContainer(overrides: [
-        moduleAccessProvider.overrideWith((ref) async => ModuleAccess.fromJson(json)),
+        moduleAccessProvider
+            .overrideWith((ref) async => ModuleAccess.fromJson(json)),
       ]);
       addTearDown(c.dispose);
       await c.read(moduleAccessProvider.future);
       return c.read(accPermProvider(module));
     }
 
-    const all = {'can_read': true, 'can_create': true, 'can_update': true, 'can_approve': true};
+    const all = {
+      'can_read': true,
+      'can_create': true,
+      'can_update': true,
+      'can_approve': true
+    };
 
-    test('full-access staff get no posting buttons without the codename', () async {
+    test('full-access staff get no posting buttons without the codename',
+        () async {
       final p = await permFor({
         'is_staff': true,
         'full_access': true,

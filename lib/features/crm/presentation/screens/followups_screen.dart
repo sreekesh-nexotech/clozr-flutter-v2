@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../../core/widgets/row_actions_sheet.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
@@ -9,28 +11,38 @@ import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
 import '../../../../core/filters/filter_sheet.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../core/widgets/app_header_bar.dart';
 import '../../../../core/widgets/app_refresh.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/search_field.dart';
+import '../../../../core/widgets/status_group_bar.dart';
 import '../../../../core/widgets/tab_chip.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../shell/application/providers/contextual_add_provider.dart';
 import '../../../shell/application/providers/shell_providers.dart';
+import '../../application/customer_call.dart';
 import '../../application/filters/followups_filter_spec.dart';
-import '../../application/filters/tasks_filter_spec.dart' show taskSavedFiltersProvider;
+import '../../application/providers/crm_module_schema_providers.dart'
+    show customerRowProvider;
+import '../../application/filters/tasks_filter_spec.dart'
+    show taskSavedFiltersProvider;
 import '../../application/providers/crm_catalog_providers.dart';
-import '../../application/providers/crm_tasks_providers.dart' show toggleCrmTaskChip, crmTaskOtherChip;
+import '../../application/providers/crm_tasks_providers.dart'
+    show toggleCrmTaskChip, crmTaskOtherChip;
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
-import '../../application/providers/saved_filters_providers.dart' show sameFilterDefinition;
+import '../../application/providers/saved_filters_providers.dart'
+    show sameFilterDefinition;
+import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/followup.dart';
 import '../components/followup_card.dart';
 import '../components/saved_chip_row.dart' as chips;
 import '../sheets/add_followup_sheet.dart';
-import 'due_date_approvals_screen.dart' show pendingDueDateCountProvider;
+import 'due_date_approvals_screen.dart'
+    show pendingDueDateCountProvider, approvalCountsProvider;
 
 /// Follow-ups list — checkbox cards grouped overdue→upcoming→done, wired to the
 /// webapp's task drawer, server-side saved views and the contextual Add
@@ -43,6 +55,21 @@ class FollowupsScreen extends ConsumerStatefulWidget {
 }
 
 class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
+  /// Long press: the shared row actions (UI/UX audit #52) — View / Edit.
+  Future<void> _rowMenu(String id, String title) async {
+    final pick = await showRowActionsSheet(context, title: title, actions: [
+      RowAction.view('follow-up'),
+      RowAction.edit('follow-up'),
+    ]);
+    if (pick == null || !mounted) return;
+    if (pick == 'view') {
+      context.push('${Routes.followupDetail}?id=$id');
+      return;
+    }
+    if (!ensurePermission(ref, 'followup', PermVerb.update)) return;
+    context.push('${Routes.editFollowup}?id=$id');
+  }
+
   final _searchCtrl = TextEditingController();
 
   /// Non-status views reachable by deep link (the CRM home "Followups missed"
@@ -81,7 +108,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     }
     // A query left behind by a collapsed box would filter the list with
     // nothing on screen saying so; only keep it while the box is open.
-    if (!ref.read(followupSearchOpenProvider) && ref.read(followupSearchProvider).isNotEmpty) {
+    if (!ref.read(followupSearchOpenProvider) &&
+        ref.read(followupSearchProvider).isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(followupSearchProvider.notifier).state = '';
       });
@@ -106,8 +134,12 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
 
     // Counts come from the server-filtered rows (search, drawer, saved view)
     // and ignore the chip selection — the webapp's board counts.
-    final all = ApiConfig.apiEnabled ? ref.watch(followupsBaseProvider) : ref.watch(followupsAllProvider);
-    final async = ApiConfig.apiEnabled ? ref.watch(followupsQueriedProvider) : ref.watch(followupsProvider);
+    final all = ApiConfig.apiEnabled
+        ? ref.watch(followupsBaseProvider)
+        : ref.watch(followupsAllProvider);
+    final async = ApiConfig.apiEnabled
+        ? ref.watch(followupsQueriedProvider)
+        : ref.watch(followupsProvider);
     final tab = ref.watch(followupTabProvider);
     final selected = ref.watch(followupChipsProvider);
     final searchOpen = ref.watch(followupSearchOpenProvider);
@@ -125,7 +157,15 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     // `+` opens the org's form rather than the built-in one.
     ref.watch(followupFormReadyProvider);
 
-    final otherCount = all.where((f) => followupInNoLane(f, statuses)).length;
+    // The server's aggregate when it answered, else the loaded rows. The
+    // server has no Overdue aggregate, so that view always counts locally.
+    final counts = ref.watch(followupStatusCountsProvider).valueOrNull ??
+        const <String, int>{};
+    int countOf(String k) =>
+        (k == 'overdue' ? null : counts[k.toLowerCase().trim()]) ??
+        followupTabCount(all, k);
+    final otherCount = counts[crmTaskOtherChip] ??
+        all.where((f) => followupInNoLane(f, statuses)).length;
     final tabs = <(String, String, Color?)>[
       ('all', 'All', null),
       if (_deepLinkTabs.containsKey(tab)) (tab, _deepLinkTabs[tab]!, null),
@@ -156,7 +196,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                   _searchCtrl.clear();
                   ref.read(followupSearchProvider.notifier).state = '';
                 }
-                ref.read(followupSearchOpenProvider.notifier).state = !searchOpen;
+                ref.read(followupSearchOpenProvider.notifier).state =
+                    !searchOpen;
               },
               onFilter: _openFilters,
             ),
@@ -165,7 +206,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search follow-ups…',
-                onChanged: (v) => ref.read(followupSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(followupSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(followupSearchProvider.notifier).state = '';
@@ -174,32 +216,38 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
               ),
             ],
             SizedBox(height: 10.h),
-            SizedBox(
-              height: 40.h,
-              child: TabChipRow(
-                children: [
-                  for (final (k, lbl, dot) in tabs)
-                    TabChip(
-                      label: '$lbl (${followupTabCount(all, k)})',
-                      dotColor: dot,
-                      active: k == 'all'
-                          ? tab == 'all' && selected.isEmpty
-                          : _deepLinkTabs.containsKey(k)
-                              ? tab == k
-                              : selected.contains(k),
-                      onTap: () => _tapChip(k),
-                    ),
-                  // Webapp "Other / no status": only when some follow-up sits in
-                  // no lane, or it is selected.
-                  if (otherCount > 0 || selected.contains(crmTaskOtherChip))
-                    TabChip(
-                      label: 'Other / no status ($otherCount)',
-                      active: selected.contains(crmTaskOtherChip),
-                      onTap: () => _tapChip(crmTaskOtherChip),
-                    ),
-                ],
+            // The org's lanes grouped by type (Oct 2026 header); the flat
+            // per-lane row only while `crm-task-statuses` is unavailable.
+            if (statuses.isNotEmpty)
+              _groupBar(statuses, tab, selected,
+                  countOf: countOf, otherCount: otherCount)
+            else
+              SizedBox(
+                height: 40.h,
+                child: TabChipRow(
+                  children: [
+                    for (final (k, lbl, dot) in tabs)
+                      TabChip(
+                        label: '$lbl (${countOf(k)})',
+                        dotColor: dot,
+                        active: k == 'all'
+                            ? tab == 'all' && selected.isEmpty
+                            : _deepLinkTabs.containsKey(k)
+                                ? tab == k
+                                : selected.contains(k),
+                        onTap: () => _tapChip(k),
+                      ),
+                    // Webapp "Other / no status": only when some follow-up sits in
+                    // no lane, or it is selected.
+                    if (otherCount > 0 || selected.contains(crmTaskOtherChip))
+                      TabChip(
+                        label: 'Other / no status ($otherCount)',
+                        active: selected.contains(crmTaskOtherChip),
+                        onTap: () => _tapChip(crmTaskOtherChip),
+                      ),
+                  ],
+                ),
               ),
-            ),
             _approvalsLink(),
             SizedBox(height: 12.h),
             _savedViewRow(filterCount),
@@ -222,7 +270,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                         ? EmptyState(
                             icon: PhosphorIconsRegular.funnel,
                             title: 'No follow-ups match your filters',
-                            body: 'Try widening your search or clearing a filter to see more.',
+                            body:
+                                'Try widening your search or clearing a filter to see more.',
                             ctaLabel: 'Clear filters',
                             ctaIcon: PhosphorIconsBold.xCircle,
                             onCta: _resetListView,
@@ -230,7 +279,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                         : EmptyState(
                             icon: PhosphorIconsRegular.checkCircle,
                             title: 'No follow-ups yet',
-                            body: 'Follow-ups keep your next touchpoint with a lead or customer on schedule. Add your first one to get started.',
+                            body:
+                                'Follow-ups keep your next touchpoint with a lead or customer on schedule. Add your first one to get started.',
                             ctaLabel: 'Add follow-up',
                             ctaIcon: PhosphorIconsBold.plus,
                             onCta: () => _openAddSheet(context),
@@ -242,7 +292,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                 // Scrolling the results puts the search keyboard away. Without
                 // it the only exit is the search field's own × chip, so the
                 // keyboard covered the rows the user had just searched for.
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 itemCount: visible.length,
@@ -255,8 +306,10 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
                     // chip above it always agree on name and colour.
                     status: followupStatusMeta(f, statuses),
                     schema: schema,
-                    onTap: () => context.push('${Routes.followupDetail}?id=${f.id}'),
-                    onCall: () => ref.read(toastProvider.notifier).show('Calling ${_callee(f)}…'),
+                    onTap: () =>
+                        context.push('${Routes.followupDetail}?id=${f.id}'),
+                    onLongPress: () => _rowMenu(f.id, f.title),
+                    onCall: () => _callRelated(f),
                   );
                 },
               );
@@ -267,22 +320,102 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     );
   }
 
+  /// The group row: `All`, the four status types and "Other / no status"; a
+  /// picked type opens a second row with its own lanes. The deep-linked
+  /// "Overdue" view leads the row while it is the one applied.
+  Widget _groupBar(
+    List<CatalogOption> statuses,
+    String tab,
+    Set<String> selected, {
+    required int Function(String) countOf,
+    required int otherCount,
+  }) {
+    final open = tab != 'all'
+        ? null
+        : StatusGroups.displayedGroup(
+            picked: selected,
+            group: ref.watch(followupGroupProvider),
+            statuses: statuses,
+            groupOf: StatusGroups.ofTyped,
+            keyOf: (s) => s.name,
+          );
+    final server = ref.watch(followupStatusCountsProvider).valueOrNull ??
+        const <String, int>{};
+    int groupCount(String code) =>
+        server[StatusGroups.countKey(code)] ??
+        [
+          for (final s in statuses)
+            if (StatusGroups.ofTyped(s) == code) countOf(s.name)
+        ].fold(0, (a, b) => a + b);
+    return StatusGroupBar(
+      leading: [
+        if (_deepLinkTabs.containsKey(tab))
+          TabChip(
+              label: '${_deepLinkTabs[tab]} (${countOf(tab)})',
+              active: true,
+              onTap: () => _tapChip(tab)),
+      ],
+      allCount: countOf('all'),
+      allActive: tab == 'all' && selected.isEmpty && open == null,
+      onAll: () => _tapChip('all'),
+      groups: [
+        for (final g in StatusGroups.task)
+          StatusGroupChip(
+              code: g.code, label: g.label, count: groupCount(g.code)),
+      ],
+      activeGroup: open,
+      onGroup: (code) {
+        ref.read(followupTabProvider.notifier).state = 'all';
+        ref.read(followupChipsProvider.notifier).state = const {};
+        ref.read(followupGroupProvider.notifier).state =
+            code == open ? null : code;
+      },
+      statuses: [
+        for (final s in statuses)
+          if (open != null && StatusGroups.ofTyped(s) == open)
+            StatusGroupStatusChip(
+              key: s.name,
+              label: s.name,
+              count: countOf(s.name),
+              active: selected.contains(s.name),
+              color: crmTaskStatusColor(s),
+            ),
+      ],
+      onStatus: (name) {
+        _tapChip(name);
+        ref.read(followupGroupProvider.notifier).state = open;
+      },
+      trailing: [
+        if (otherCount > 0 || selected.contains(crmTaskOtherChip))
+          TabChip(
+            label: 'Other / no status ($otherCount)',
+            active: selected.contains(crmTaskOtherChip),
+            onTap: () => _tapChip(crmTaskOtherChip),
+          ),
+      ],
+    );
+  }
+
   /// Webapp chip rules: "All" clears; statuses multi-select; Other exclusive.
+  /// Anything but a lane leaves the picked group.
   void _tapChip(String k) {
+    ref.read(followupGroupProvider.notifier).state = null;
     if (_deepLinkTabs.containsKey(k)) {
       ref.read(followupTabProvider.notifier).state = k;
       ref.read(followupChipsProvider.notifier).state = const {};
       return;
     }
     ref.read(followupTabProvider.notifier).state = 'all';
-    ref.read(followupChipsProvider.notifier).update((s) => toggleCrmTaskChip(s, k));
+    ref
+        .read(followupChipsProvider.notifier)
+        .update((s) => toggleCrmTaskChip(s, k));
   }
 
   /// Webapp toolbar "Due date approvals (N)" — the same inbox as on Tasks; the
   /// server decides what each user may approve.
   Widget _approvalsLink() {
     if (!ApiConfig.apiEnabled) return const SizedBox.shrink();
-    final n = ref.watch(pendingDueDateCountProvider).valueOrNull ?? 0;
+    final n = ref.watch(pendingDueDateCountProvider);
     return Align(
       alignment: Alignment.centerLeft,
       child: GestureDetector(
@@ -291,27 +424,70 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
           await context.push(Routes.dueDateApprovals);
           // A decision there changes what is still waiting, and the dates.
           if (mounted) {
-            ref.invalidate(pendingDueDateCountProvider);
+            ref.invalidate(approvalCountsProvider);
             refreshFollowups(ref);
           }
         },
         child: Padding(
           padding: EdgeInsets.only(top: 10.h),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(PhosphorIconsRegular.sealCheck, size: 15.sp, color: AppColors.navy),
+            Icon(PhosphorIconsRegular.sealCheck,
+                size: 15.sp, color: AppColors.navy),
             SizedBox(width: 6.w),
-            Text(n > 0 ? 'Due date approvals ($n)' : 'Due date approvals', style: AppText.captionStrong(color: AppColors.navy)),
+            Text(n > 0 ? 'Due date approvals ($n)' : 'Due date approvals',
+                style: AppText.captionStrong(color: AppColors.navy)),
           ]),
         ),
       ),
     );
   }
 
+  /// The card's Call: opens the dialler on the phone of the record the
+  /// follow-up is about (a lead or a customer), as the webapp's card does.
+  Future<void> _callRelated(Followup f) async {
+    final related = f.raw['related_to'];
+    final model =
+        related is Map ? '${related['model'] ?? ''}'.toLowerCase() : '';
+    var id = related is Map ? '${related['id'] ?? ''}' : '';
+    var isLead = model.contains('lead');
+    if (id.isEmpty) {
+      if ((f.leadId ?? '').isNotEmpty) {
+        id = f.leadId!;
+        isLead = true;
+      } else if ((f.custId ?? '').isNotEmpty) {
+        id = f.custId!;
+        isLead = false;
+      }
+    }
+    final name = _callee(f);
+    if (id.isEmpty) {
+      ref
+          .read(toastProvider.notifier)
+          .show('This follow-up has no related record to call.');
+      return;
+    }
+    Map<String, dynamic>? row;
+    try {
+      row = isLead
+          ? await ref.read(leadRowProvider(id).future)
+          : await ref.read(customerRowProvider(id).future);
+    } on Object {
+      row = null;
+    }
+    if (!mounted) return;
+    final p = row?['phone'] ?? row?['contact_phone'] ?? row?['mobile'];
+    await dialCustomer(ref,
+        phone: p is String ? p : '',
+        name: name,
+        what: isLead ? 'lead' : 'customer');
+  }
+
   /// Who the card's Call button rings: the record the follow-up is about (the
   /// webapp card's call action), else its contact, else its title.
   String _callee(Followup f) {
     final related = f.raw['related_to'];
-    final label = related is Map ? '${related['label'] ?? ''}'.trim() : f.contact.trim();
+    final label =
+        related is Map ? '${related['label'] ?? ''}'.trim() : f.contact.trim();
     return label.isNotEmpty ? label.split(' ').first : f.title;
   }
 
@@ -330,7 +506,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
   /// change short of a restart.
   Future<void> _refresh() async {
     refreshFollowups(ref);
-    ref.invalidate(pendingDueDateCountProvider);
+    ref.invalidate(followupStatusCountsProvider);
+    ref.invalidate(approvalCountsProvider);
     ref.invalidate(followupTypeCatalogProvider);
     ref.invalidate(taskStatusCatalogProvider);
     ref.invalidate(taskPriorityCatalogProvider);
@@ -362,7 +539,8 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
       // count (webapp: "Apply filters").
       previewCount: ApiConfig.apiEnabled
           ? (_) => -1
-          : (draft) => base.where((f) => followupMatchesFilters(f, draft)).length,
+          : (draft) =>
+              base.where((f) => followupMatchesFilters(f, draft)).length,
       activeViewName: activeView?.name,
       existingViewNames: {for (final v in saved.filters) v.name},
       onSaveView: _saveView,
@@ -372,7 +550,9 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     ref.read(followupFiltersProvider.notifier).state = result;
     // Webapp: applying the drawer leaves the saved view.
     if (activeView != null &&
-        !sameFilterDefinition(ref.read(followupFilterCodecProvider).encode(result), activeView.definition)) {
+        !sameFilterDefinition(
+            ref.read(followupFilterCodecProvider).encode(result),
+            activeView.definition)) {
       ref.read(followupSavedFiltersProvider.notifier).deactivate();
     }
     ref.read(toastProvider.notifier).show('Filters applied');
@@ -388,8 +568,13 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
       toast.showError('Add at least one filter before saving.');
       return;
     }
-    final updating = ref.read(followupSavedFiltersProvider).filters.any((f) => f.name.toLowerCase() == name.trim().toLowerCase());
-    final error = await ref.read(followupSavedFiltersProvider.notifier).save(name, definition);
+    final updating = ref
+        .read(followupSavedFiltersProvider)
+        .filters
+        .any((f) => f.name.toLowerCase() == name.trim().toLowerCase());
+    final error = await ref
+        .read(followupSavedFiltersProvider.notifier)
+        .save(name, definition);
     if (error != null) {
       toast.showError(error);
       return;
@@ -403,13 +588,15 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
   /// also clears its filters.
   Future<void> _removeView(String id) async {
     final wasActive = ref.read(followupSavedFiltersProvider).activeId == id;
-    final error = await ref.read(followupSavedFiltersProvider.notifier).remove(id);
+    final error =
+        await ref.read(followupSavedFiltersProvider.notifier).remove(id);
     if (error != null) {
       ref.read(toastProvider.notifier).showError(error);
       return;
     }
     ref.invalidate(taskSavedFiltersProvider);
-    if (wasActive) ref.read(followupFiltersProvider.notifier).state = FilterValues();
+    if (wasActive)
+      ref.read(followupFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('View deleted');
   }
 
@@ -438,15 +625,19 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     }
     final view = saved.filters.where((v) => v.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     // Webapp: applying a view fills the drawer and clears the status chips.
     ref.read(followupSavedFiltersProvider.notifier).apply(id);
     ref.read(followupChipsProvider.notifier).state = const {};
+    ref.read(followupGroupProvider.notifier).state = null;
     ref.read(followupTabProvider.notifier).state = 'all';
-    ref.read(followupFiltersProvider.notifier).state =
-        ref.read(followupFilterCodecProvider).decode(view.definition, ref.read(followupsFilterSpecProvider));
+    ref.read(followupFiltersProvider.notifier).state = ref
+        .read(followupFilterCodecProvider)
+        .decode(view.definition, ref.read(followupsFilterSpecProvider));
     ref.read(toastProvider.notifier).show('View "${view.name}" applied');
   }
 
@@ -456,6 +647,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
       ref.read(followupSearchProvider).trim().isNotEmpty ||
       ref.read(followupFiltersProvider).activeCount > 0 ||
       ref.read(followupChipsProvider).isNotEmpty ||
+      ref.read(followupGroupProvider) != null ||
       ref.read(followupTabProvider) != 'all';
 
   /// The empty state's "Clear filters": search, chip and drawer back to all.
@@ -464,6 +656,7 @@ class _FollowupsScreenState extends ConsumerState<FollowupsScreen> {
     ref.read(followupSearchProvider.notifier).state = '';
     ref.read(followupTabProvider.notifier).state = 'all';
     ref.read(followupChipsProvider.notifier).state = const {};
+    ref.read(followupGroupProvider.notifier).state = null;
     _clearFilters();
   }
 

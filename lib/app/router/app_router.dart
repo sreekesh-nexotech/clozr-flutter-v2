@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../features/crm/presentation/sheets/add_followup_sheet.dart'
+    show AddTaskLauncher;
 import 'package:go_router/go_router.dart';
 
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -24,7 +26,6 @@ import '../../features/crm/presentation/screens/edit_customer_screen.dart';
 import '../../features/crm/presentation/screens/followups_screen.dart';
 import '../../features/crm/presentation/screens/followup_detail_screen.dart';
 import '../../features/crm/presentation/screens/tasks_screen.dart';
-import '../../features/crm/presentation/screens/due_date_approvals_screen.dart';
 import '../../features/crm/presentation/screens/edit_crm_task_screen.dart';
 import '../../features/crm/presentation/screens/task_detail_screen.dart';
 import '../../features/crm/presentation/screens/quotes_screen.dart';
@@ -54,6 +55,9 @@ import '../../features/operations/presentation/screens/edit_task_screen.dart';
 import '../../features/helpdesk/presentation/screens/help_home_screen.dart';
 import '../../features/helpdesk/presentation/screens/tickets_screen.dart';
 import '../../features/helpdesk/presentation/screens/ticket_detail_screen.dart';
+import '../../features/helpdesk/presentation/screens/ticket_trash_screen.dart';
+import '../../features/onboarding/presentation/product_tours_screen.dart';
+import '../../features/onboarding/presentation/tour_popup_observer.dart';
 import '../../features/helpdesk/presentation/screens/create_ticket_screen.dart';
 import '../../features/helpdesk/presentation/screens/edit_ticket_screen.dart';
 import '../../features/helpdesk/presentation/screens/boards_screen.dart';
@@ -66,10 +70,13 @@ import '../../features/training/presentation/screens/lms_learners_screen.dart';
 import '../../features/training/presentation/screens/lms_learner_detail_screen.dart';
 import '../../features/training/presentation/screens/lms_my_courses_screen.dart';
 import '../../features/training/presentation/screens/lms_player_screen.dart';
+import '../../features/training/presentation/components/lms_admin_guard.dart';
 // Cross-cutting
 import '../../features/dashboard/presentation/screens/dashboard_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
 import '../../features/rewards/presentation/screens/rewards_screen.dart';
+import '../../features/approvals/presentation/screens/approval_detail_screen.dart';
+import '../../features/approvals/presentation/screens/approvals_screen.dart';
 import '../../features/people/presentation/screens/members_screen.dart';
 import '../../features/people/presentation/screens/member_detail_screen.dart';
 import '../../features/people/presentation/screens/teams_screen.dart';
@@ -123,12 +130,17 @@ final GoRouter appRouter = GoRouter(
   // observer below: the ShellRoute is pushed once and stays for the whole
   // session, so timing it here would produce one transaction per session
   // instead of one per screen.
-  observers: [SentryNavigatorObserver(enableAutoTransactions: false)],
+  observers: [
+    SentryNavigatorObserver(enableAutoTransactions: false),
+    // Product tours: no offer over a dialog / sheet; a running tour pauses.
+    TourPopupTracker.instance.observer(),
+  ],
   // Auth gate — active only when a backend is configured. Mock mode keeps the
   // original boot-straight-into-the-shell behavior. Merged with
   // [ModuleAccessGate] so the redirect below re-runs the moment the signed-in
   // user's role is actually known, not just on auth transitions.
-  refreshListenable: Listenable.merge([SessionGate.instance, ModuleAccessGate.instance]),
+  refreshListenable:
+      Listenable.merge([SessionGate.instance, ModuleAccessGate.instance]),
   redirect: (context, state) {
     if (!ApiConfig.apiEnabled) return null;
     final status = SessionGate.instance.status;
@@ -148,7 +160,8 @@ final GoRouter appRouter = GoRouter(
     // the role is still loading (`!gate.loaded`), so this is a no-op until
     // the real answer is in.
     final gate = ModuleAccessGate.instance;
-    final landing = gate.loaded ? landingPathFor(gate.access) : Routes.dashboard;
+    final landing =
+        gate.loaded ? landingPathFor(gate.access) : Routes.dashboard;
     if (atAuthRoute) return landing;
     // Self-correct even off the auth route: someone parked on Dashboard while
     // their role was still resolving is moved the instant it resolves, rather
@@ -171,20 +184,25 @@ final GoRouter appRouter = GoRouter(
     // The webapp's Operations URLs, so a shared link (`clozr://app/operations/
     // tasks/<id>`, or the same path from a notification) opens the matching
     // screen — which then applies its own ModuleGuard like the webapp does.
-    GoRoute(path: '/operations/projects', redirect: (_, __) => Routes.opsProjects),
+    GoRoute(
+        path: '/operations/projects', redirect: (_, __) => Routes.opsProjects),
     GoRoute(
       path: '/operations/projects/:id',
-      redirect: (_, s) => '${Routes.projectDetail}?id=${s.pathParameters['id']}',
+      redirect: (_, s) =>
+          '${Routes.projectDetail}?id=${s.pathParameters['id']}',
     ),
     GoRoute(path: '/operations/tasks', redirect: (_, __) => Routes.opsTasks),
     GoRoute(
       path: '/operations/tasks/:id',
-      redirect: (_, s) => '${Routes.opsTaskDetail}?id=${s.pathParameters['id']}',
+      redirect: (_, s) =>
+          '${Routes.opsTaskDetail}?id=${s.pathParameters['id']}',
     ),
     // The webapp's Helpdesk URLs, so a shared ticket link
     // (`clozr://app/helpdesk/tickets/<id>`) opens the ticket on the phone.
     GoRoute(path: '/helpdesk/tickets', redirect: (_, __) => Routes.tickets),
-    GoRoute(path: '/helpdesk/tickets/new', redirect: (_, __) => Routes.createTicket),
+    GoRoute(
+        path: '/helpdesk/tickets/new',
+        redirect: (_, __) => Routes.createTicket),
     GoRoute(
       path: '/helpdesk/tickets/:id',
       redirect: (_, s) => '${Routes.ticketDetail}?id=${s.pathParameters['id']}',
@@ -195,39 +213,78 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state, child) => ClozrShell(child: child),
       // Every screen behind the login gate lives on this navigator, so this is
       // the observer that measures screen loads.
-      observers: [SentryNavigatorObserver()],
+      observers: [
+        SentryNavigatorObserver(),
+        TourPopupTracker.instance.observer(),
+      ],
       routes: [
         // CRM — each module's screens sit behind the webapp's ModuleGuard, so a
         // role without the module gets the lock panel instead of a 403.
         _r(Routes.home, const CrmHomeScreen()),
-        _r(Routes.leads, const ModuleGuard(module: 'lead', child: LeadsScreen())),
-        _push(Routes.leadDetail, const ModuleGuard(module: 'lead', child: LeadDetailScreen())),
-        _push(Routes.addLead, const ModuleGuard(module: 'lead', child: AddLeadScreen())),
-        _r(Routes.customers, const ModuleGuard(module: 'customer', child: CustomersScreen())),
-        _push(Routes.customerDetail, const ModuleGuard(module: 'customer', child: CustomerDetailScreen())),
-        _push(Routes.editCustomer, const ModuleGuard(module: 'customer', child: EditCustomerScreen())),
-        _r(Routes.followups, const ModuleGuard(module: 'followup', child: FollowupsScreen())),
-        _push(Routes.followupDetail, const ModuleGuard(module: 'followup', child: FollowupDetailScreen())),
+        _r(Routes.leads,
+            const ModuleGuard(module: 'lead', child: LeadsScreen())),
+        _push(Routes.leadDetail,
+            const ModuleGuard(module: 'lead', child: LeadDetailScreen())),
+        _push(Routes.addLead,
+            const ModuleGuard(module: 'lead', child: AddLeadScreen())),
+        _r(Routes.customers,
+            const ModuleGuard(module: 'customer', child: CustomersScreen())),
+        _push(
+            Routes.customerDetail,
+            const ModuleGuard(
+                module: 'customer', child: CustomerDetailScreen())),
+        _push(Routes.editCustomer,
+            const ModuleGuard(module: 'customer', child: EditCustomerScreen())),
+        _r(Routes.followups,
+            const ModuleGuard(module: 'followup', child: FollowupsScreen())),
+        _push(
+            Routes.followupDetail,
+            const ModuleGuard(
+                module: 'followup', child: FollowupDetailScreen())),
         // A follow-up is a Task with `is_followup=true`, so the Task edit form
         // serves both — only the schema and the labels differ.
-        _push(Routes.editFollowup, const ModuleGuard(module: 'followup', child: EditCrmTaskScreen(isFollowup: true))),
-        _r(Routes.tasks, const ModuleGuard(module: 'task', child: TasksScreen())),
-        _push(Routes.taskDetail, const ModuleGuard(module: 'task', child: TaskDetailScreen())),
-        _push(Routes.editCrmTask, const ModuleGuard(module: 'task', child: EditCrmTaskScreen())),
+        _push(
+            Routes.editFollowup,
+            const ModuleGuard(
+                module: 'followup',
+                child: EditCrmTaskScreen(isFollowup: true))),
+        _r(Routes.tasks,
+            const ModuleGuard(module: 'task', child: TasksScreen())),
+        _push(Routes.taskDetail,
+            const ModuleGuard(module: 'task', child: TaskDetailScreen())),
+        _push(Routes.editCrmTask,
+            const ModuleGuard(module: 'task', child: EditCrmTaskScreen())),
         // Same schema-driven form, with no `?id=` — which is what puts it in
         // create mode.
-        _push(Routes.addCrmTask, const ModuleGuard(module: 'task', child: EditCrmTaskScreen())),
-        // Webapp: no module guard — the server scopes the rows.
-        _push(Routes.dueDateApprovals, const DueDateApprovalsScreen()),
-        _r(Routes.quotes, const ModuleGuard(module: 'quotation', child: QuotesScreen())),
-        _push(Routes.quoteDetail, const ModuleGuard(module: 'quotation', child: QuoteDetailScreen())),
-        _push(Routes.addQuote, const ModuleGuard(module: 'quotation', child: AddQuoteScreen())),
-        _push(Routes.editQuote, const ModuleGuard(module: 'quotation', child: AddQuoteScreen())),
-        _push(Routes.quoteApprovals, const ModuleGuard(module: 'quotation', child: QuoteApprovalsScreen())),
-        _push(Routes.quoteWinLoss, const ModuleGuard(module: 'quotation', child: QuoteWinLossScreen())),
-        _r(Routes.payments, const ModuleGuard(module: 'payment', child: PaymentsScreen())),
-        _push(Routes.paymentDetail, const ModuleGuard(module: 'payment', child: PaymentDetailScreen())),
-        _push(Routes.invoiceDetail, const ModuleGuard(module: 'payment', child: InvoiceDetailScreen())),
+        _push(Routes.addCrmTask,
+            const ModuleGuard(module: 'task', child: AddTaskLauncher())),
+        // Due-date approvals now live in Unified Approvals (webapp: the old
+        // link lands on `?kind=due_date`).
+        GoRoute(
+            path: Routes.dueDateApprovals,
+            redirect: (_, __) => '${Routes.approvals}?kind=due_date'),
+        _r(Routes.quotes,
+            const ModuleGuard(module: 'quotation', child: QuotesScreen())),
+        _push(Routes.quoteDetail,
+            const ModuleGuard(module: 'quotation', child: QuoteDetailScreen())),
+        _push(Routes.addQuote,
+            const ModuleGuard(module: 'quotation', child: AddQuoteScreen())),
+        _push(Routes.editQuote,
+            const ModuleGuard(module: 'quotation', child: AddQuoteScreen())),
+        _push(
+            Routes.quoteApprovals,
+            const ModuleGuard(
+                module: 'quotation', child: QuoteApprovalsScreen())),
+        _push(
+            Routes.quoteWinLoss,
+            const ModuleGuard(
+                module: 'quotation', child: QuoteWinLossScreen())),
+        _r(Routes.payments,
+            const ModuleGuard(module: 'payment', child: PaymentsScreen())),
+        _push(Routes.paymentDetail,
+            const ModuleGuard(module: 'payment', child: PaymentDetailScreen())),
+        _push(Routes.invoiceDetail,
+            const ModuleGuard(module: 'payment', child: InvoiceDetailScreen())),
         _r(Routes.products, const ProductsScreen()),
         _push(Routes.productDetail, const ProductDetailScreen()),
         _r(Routes.billing, const BillingScreen()),
@@ -237,39 +294,91 @@ final GoRouter appRouter = GoRouter(
         // (`project` for Projects, `project_task` for Tasks), so a role
         // without it — or a link opened by such a role — gets the lock panel
         // and fires no request.
-        _r(Routes.opsHome, const ModuleGuard(module: 'project', anyOf: ['project_task'], child: OpsHomeScreen())),
-        _r(Routes.opsProjects, const ModuleGuard(module: 'project', child: ProjectsScreen())),
-        _push(Routes.projectDetail, const ModuleGuard(module: 'project', child: ProjectDetailScreen())),
-        _push(Routes.createProject, const ModuleGuard(module: 'project', child: CreateProjectScreen())),
-        _push(Routes.editProject, const ModuleGuard(module: 'project', child: EditProjectScreen())),
-        _r(Routes.opsTasks, const ModuleGuard(module: 'project_task', child: OpsTasksScreen())),
-        _push(Routes.opsTaskDetail, const ModuleGuard(module: 'project_task', child: OpsTaskDetailScreen())),
-        _push(Routes.opsSubtask, const ModuleGuard(module: 'project_task', child: SubtaskDetailScreen())),
-        _push(Routes.createTask, const ModuleGuard(module: 'project_task', child: CreateTaskScreen())),
-        _push(Routes.editTask, const ModuleGuard(module: 'project_task', child: EditTaskScreen())),
+        _r(
+            Routes.opsHome,
+            const ModuleGuard(
+                module: 'project',
+                anyOf: ['project_task'],
+                child: OpsHomeScreen())),
+        _r(Routes.opsProjects,
+            const ModuleGuard(module: 'project', child: ProjectsScreen())),
+        _push(Routes.projectDetail,
+            const ModuleGuard(module: 'project', child: ProjectDetailScreen())),
+        _push(Routes.createProject,
+            const ModuleGuard(module: 'project', child: CreateProjectScreen())),
+        _push(Routes.editProject,
+            const ModuleGuard(module: 'project', child: EditProjectScreen())),
+        _r(Routes.opsTasks,
+            const ModuleGuard(module: 'project_task', child: OpsTasksScreen())),
+        _push(
+            Routes.opsTaskDetail,
+            const ModuleGuard(
+                module: 'project_task', child: OpsTaskDetailScreen())),
+        _push(
+            Routes.opsSubtask,
+            const ModuleGuard(
+                module: 'project_task', child: SubtaskDetailScreen())),
+        _push(
+            Routes.createTask,
+            const ModuleGuard(
+                module: 'project_task', child: CreateTaskScreen())),
+        _push(Routes.editTask,
+            const ModuleGuard(module: 'project_task', child: EditTaskScreen())),
         // Helpdesk — the list, boards and forms sit behind the webapp's
         // ModuleGuard('issue'). The ticket itself does not: a ticket's assignee
         // may always read it, even without the Helpdesk module (the server
         // allows it, and the webapp leaves /helpdesk/tickets/:id unguarded).
-        _r(Routes.helpHome, const ModuleGuard(module: 'issue', child: HelpHomeScreen())),
-        _r(Routes.tickets, const ModuleGuard(module: 'issue', child: TicketsScreen())),
+        _r(Routes.helpHome,
+            const ModuleGuard(module: 'issue', child: HelpHomeScreen())),
+        _r(Routes.tickets,
+            const ModuleGuard(module: 'issue', child: TicketsScreen())),
         _push(Routes.ticketDetail, const TicketDetailScreen()),
-        _push(Routes.createTicket, const ModuleGuard(module: 'issue', child: CreateTicketScreen())),
-        _push(Routes.editTicket, const ModuleGuard(module: 'issue', child: EditTicketScreen())),
-        _r(Routes.helpBoards, const ModuleGuard(module: 'issue', child: BoardsScreen())),
+        _push(Routes.createTicket,
+            const ModuleGuard(module: 'issue', child: CreateTicketScreen())),
+        _push(Routes.editTicket,
+            const ModuleGuard(module: 'issue', child: EditTicketScreen())),
+        _push(Routes.ticketTrash,
+            const ModuleGuard(module: 'issue', child: TicketTrashScreen())),
+        _r(Routes.helpBoards,
+            const ModuleGuard(module: 'issue', child: BoardsScreen())),
         // Training
-        _r(Routes.lmsOverview, const LmsOverviewScreen()),
-        _r(Routes.lmsCourses, const LmsCoursesScreen()),
-        _push(Routes.lmsCourseDetail, const LmsCourseDetailScreen()),
-        _push(Routes.lmsBuilder, const LmsBuilderScreen()),
-        _r(Routes.lmsLearners, const LmsLearnersScreen()),
-        _push(Routes.lmsLearnerDetail, const LmsLearnerDetailScreen()),
+        // Admin surfaces sit behind the webapp's TrainingAdminGuard; My
+        // Trainings and the lesson player are every learner's.
+        _r(Routes.lmsOverview, const LmsAdminGuard(child: LmsOverviewScreen())),
+        _r(Routes.lmsCourses, const LmsAdminGuard(child: LmsCoursesScreen())),
+        _push(Routes.lmsCourseDetail,
+            const LmsAdminGuard(child: LmsCourseDetailScreen())),
+        _push(
+            Routes.lmsBuilder, const LmsAdminGuard(child: LmsBuilderScreen())),
+        _r(Routes.lmsLearners, const LmsAdminGuard(child: LmsLearnersScreen())),
+        _push(Routes.lmsLearnerDetail,
+            const LmsAdminGuard(child: LmsLearnerDetailScreen())),
         _r(Routes.lmsMy, const LmsMyCoursesScreen()),
         _push(Routes.lmsPlayer, const LmsPlayerScreen()),
         // Cross-cutting
         _r(Routes.dashboard, const DashboardScreen()),
         _push(Routes.notifications, const NotificationsScreen()),
+        _push(Routes.productTours, const ProductToursScreen()),
         _r(Routes.rewards, const RewardsScreen()),
+        // Unified Approvals. Webapp: no module guard — anyone may have
+        // requests of their own, and the server scopes every row; what a
+        // viewer may do comes from the rows' `can_*` flags.
+        GoRoute(
+          path: Routes.approvals,
+          pageBuilder: (context, state) => NoTransitionPage(
+            key: state.pageKey,
+            name: Routes.approvals,
+            child: ApprovalsScreen(
+              initialTab: state.uri.queryParameters['tab'],
+              initialKind: state.uri.queryParameters['kind'],
+            ),
+          ),
+        ),
+        GoRoute(
+          path: Routes.approvalDetail,
+          builder: (context, state) => ApprovalDetailScreen(
+              approvalId: state.uri.queryParameters['id'] ?? ''),
+        ),
         _r(Routes.members, const MembersScreen()),
         _push(Routes.memberDetail, const MemberDetailScreen()),
         _r(Routes.teams, const TeamsScreen()),

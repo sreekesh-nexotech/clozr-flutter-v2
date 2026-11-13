@@ -45,10 +45,12 @@ class AccDocumentDetailScreen extends ConsumerStatefulWidget {
   const AccDocumentDetailScreen({super.key});
 
   @override
-  ConsumerState<AccDocumentDetailScreen> createState() => _AccDocumentDetailScreenState();
+  ConsumerState<AccDocumentDetailScreen> createState() =>
+      _AccDocumentDetailScreenState();
 }
 
-class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScreen> {
+class _AccDocumentDetailScreenState
+    extends ConsumerState<AccDocumentDetailScreen> {
   int _tab = 0;
   bool _busy = false;
 
@@ -73,12 +75,15 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
       child: Column(
         children: [
           DetailAppBar(
-            section: doc == null ? 'Invoice' : label(docTypeLabels, doc.docType),
+            section:
+                doc == null ? 'Invoice' : label(docTypeLabels, doc.docType),
             name: doc?.displayNumber,
             onBack: () => context.pop(),
             trailing: doc == null
                 ? null
-                : DetailIconAction(icon: PhosphorIconsBold.dotsThreeVertical, onTap: () => _menu(doc)),
+                : DetailIconAction(
+                    icon: PhosphorIconsBold.dotsThreeVertical,
+                    onTap: () => _menu(doc)),
           ),
           Expanded(
             child: AccountingGate(
@@ -86,20 +91,26 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
                 skipLoadingOnRefresh: true,
                 loading: () => const DetailSkeleton(),
                 error: (e, _) => ErrorState.forError(
-                  e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Something went wrong.'),
+                  e is AppError
+                      ? e
+                      : const AppError(
+                          type: AppErrorType.unknown,
+                          message: 'Something went wrong.'),
                   onRetry: _refresh,
                 ),
                 data: (d) => d == null
                     ? const EmptyState(
                         icon: PhosphorIconsRegular.receipt,
                         title: 'Not found',
-                        body: 'This document may have been removed or you no longer have access to it.',
+                        body:
+                            'This document may have been removed or you no longer have access to it.',
                       )
                     : _body(d),
               ),
             ),
           ),
-          if (doc != null && ref.watch(accountingActiveProvider)) _actionBar(doc),
+          if (doc != null && ref.watch(accountingActiveProvider))
+            _actionBar(doc),
         ],
       ),
     );
@@ -115,26 +126,37 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
           _header(d),
           if (d.warnings.isNotEmpty || d.configDraftRows > 0) ...[
             SizedBox(height: 12.h),
-            WarningsStrip(warnings: d.warnings, configDraftRows: d.configDraftRows),
+            WarningsStrip(
+                warnings: d.warnings, configDraftRows: d.configDraftRows),
           ],
           if (d.isCancelled && (d.cancelReason ?? '').isNotEmpty) ...[
             SizedBox(height: 12.h),
-            AccInfoBanner('Cancelled: ${d.cancelReason}', icon: PhosphorIconsRegular.prohibit),
+            AccInfoBanner('Cancelled: ${d.cancelReason}',
+                icon: PhosphorIconsRegular.prohibit),
           ],
           if (d.isDraft) ...[
             SizedBox(height: 12.h),
-            const AccInfoBanner('This is a draft. Items cannot be edited — to change them, void it and create a new one.'),
+            const AccInfoBanner(
+                'This is a draft. Items cannot be edited — to change them, void it and create a new one.'),
           ],
           SizedBox(height: 14.h),
           ClozrCard(
             radius: 18,
             padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 6.h),
-            child: DetailUnderlineTabs(labels: _tabs, index: _tab, onChanged: (i) => setState(() => _tab = i)),
+            child: DetailUnderlineTabs(
+                labels: _tabs,
+                index: _tab,
+                onChanged: (i) => setState(() => _tab = i)),
           ),
           SizedBox(height: 14.h),
           ...switch (_tab) {
             0 => [_details(d)],
-            1 => [AccLinesCard(lines: d.lines), SizedBox(height: 14.h), AccTotalsCard(totals: AccTotalsCard.ofDocument(d), estimated: d.isDraft)],
+            1 => [
+                AccLinesCard(lines: d.lines),
+                SizedBox(height: 14.h),
+                AccTotalsCard(
+                    totals: AccTotalsCard.ofDocument(d), estimated: d.isDraft)
+              ],
             2 => [_tax(d)],
             3 => _journal(d),
             _ => [_links(d)],
@@ -147,7 +169,9 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
   Widget _header(AccDocument d) {
     final party = documentPartyName(ref, d);
     final open = d.isInward ? (d.payable ?? d.openBalance) : d.openBalance;
-    final settled = toMoneyStr((moneyNum(d.isInward ? d.payable : d.grandTotal) - moneyNum(open)).clamp(0, double.infinity));
+    final settled = toMoneyStr(
+        (moneyNum(d.isInward ? d.payable : d.grandTotal) - moneyNum(open))
+            .clamp(0, double.infinity));
     return FinanceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -155,7 +179,11 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconChip(icon: documentSourceIcon(d), size: 46, radius: 13, iconSize: 22),
+              IconChip(
+                  icon: documentSourceIcon(d),
+                  size: 46,
+                  radius: 13,
+                  iconSize: 22),
               SizedBox(width: 12.w),
               Expanded(
                 child: Column(
@@ -167,7 +195,11 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(d.displayNumber,
-                            style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                            style: AppText.custom(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.3)),
                         DocStatusPill(d.status),
                         if (d.isIssued) PaymentStatePill(d.paymentState),
                       ],
@@ -178,11 +210,18 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
                       child: Text(party,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.blueBright)),
+                          style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w600,
+                              color: AppColors.blueBright)),
                     ),
                     SizedBox(height: 3.h),
-                    Text('${label(docTypeLabels, d.docType)} · ${formatApiDay(d.documentDate)}',
-                        style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    Text(
+                        '${label(docTypeLabels, d.docType)} · ${formatApiDay(d.documentDate)}',
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -191,20 +230,33 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
           Row(
             children: [
-              _stat(d.isDraft ? 'EST. TOTAL' : 'TOTAL', formatMoneyStr(d.isInward ? (d.payable ?? d.grandTotal) : d.grandTotal),
+              _stat(
+                  d.isDraft ? 'EST. TOTAL' : 'TOTAL',
+                  formatMoneyStr(
+                      d.isInward ? (d.payable ?? d.grandTotal) : d.grandTotal),
                   AppColors.textPrimary),
               if (d.isIssued) ...[
-                _stat(d.isInward ? 'PAID' : 'SETTLED', formatMoneyStr(settled), AppColors.success),
-                _stat('OPEN', formatMoneyStr(open), moneyIsZero(open) ? AppColors.textMuted : AppColors.error),
+                _stat(d.isInward ? 'PAID' : 'SETTLED', formatMoneyStr(settled),
+                    AppColors.success),
+                _stat('OPEN', formatMoneyStr(open),
+                    moneyIsZero(open) ? AppColors.textMuted : AppColors.error),
               ] else
-                _stat('TAX', formatMoneyStr(toMoneyStr(moneyNum(d.taxCgst) + moneyNum(d.taxSgst) + moneyNum(d.taxIgst) + moneyNum(d.taxCess))),
+                _stat(
+                    'TAX',
+                    formatMoneyStr(toMoneyStr(moneyNum(d.taxCgst) +
+                        moneyNum(d.taxSgst) +
+                        moneyNum(d.taxIgst) +
+                        moneyNum(d.taxCess))),
                     AppColors.textMuted),
             ],
           ),
           if (d.isInward && !moneyIsZero(d.tdsAmount)) ...[
             SizedBox(height: 8.h),
             Text('TDS ${formatMoneyStr(d.tdsAmount)} withheld from the vendor',
-                style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPlaceholder)),
           ],
         ],
       ),
@@ -215,12 +267,19 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
+            Text(label,
+                style: AppText.custom(
+                    size: 10.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder,
+                    letterSpacing: 0.4)),
             SizedBox(height: 3.h),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(value, style: AppText.custom(size: 16, weight: FontWeight.w800, color: color)),
+              child: Text(value,
+                  style: AppText.custom(
+                      size: 16, weight: FontWeight.w800, color: color)),
             ),
           ],
         ),
@@ -235,15 +294,30 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
       if (d.dueDate != null) ('Due date', formatApiDay(d.dueDate)),
       if (d.tosDate != null) ('Time of supply', formatApiDay(d.tosDate)),
       if (d.postingDate != null) ('Posted on', formatApiDay(d.postingDate)),
-      if (d.isInward && d.vendorInvoiceNo != null) ('Vendor invoice no', d.vendorInvoiceNo!),
-      ('Place of supply', d.placeOfSupply == null ? 'Automatic' : state(d.placeOfSupply)),
-      if (d.supply != null) ('Supply', d.supply == 'INTER' ? 'Inter-state' : 'Intra-state'),
-      if (d.transactionClass != null) ('Class', label(transactionClassLabels, d.transactionClass)),
+      if (d.isInward && d.vendorInvoiceNo != null)
+        ('Vendor invoice no', d.vendorInvoiceNo!),
+      (
+        'Place of supply',
+        d.placeOfSupply == null ? 'Automatic' : state(d.placeOfSupply)
+      ),
+      if (d.supply != null)
+        ('Supply', d.supply == 'INTER' ? 'Inter-state' : 'Intra-state'),
+      if (d.transactionClass != null)
+        ('Class', label(transactionClassLabels, d.transactionClass)),
       ('Prices', label(amountsAreLabels, d.amountsAre)),
       if (d.rcmApplies) ('Reverse charge', 'Applies'),
-      if (d.sourceType != null) ('Raised from', label(sourceTypeLabels, d.sourceType)),
-      if (snap['gstin'] is String && (snap['gstin'] as String).isNotEmpty) ('GSTIN', snap['gstin'] as String),
-      if (d.reasonCode != null) ('Reason', label(const {'RETURN': 'Goods returned', 'VALUE_CORRECTION': 'Value correction'}, d.reasonCode)),
+      if (d.sourceType != null)
+        ('Raised from', label(sourceTypeLabels, d.sourceType)),
+      if (snap['gstin'] is String && (snap['gstin'] as String).isNotEmpty)
+        ('GSTIN', snap['gstin'] as String),
+      if (d.reasonCode != null)
+        (
+          'Reason',
+          label(const {
+            'RETURN': 'Goods returned',
+            'VALUE_CORRECTION': 'Value correction'
+          }, d.reasonCode)
+        ),
       if ((d.narration ?? '').isNotEmpty) ('Narration', d.narration!),
       if ((d.terms ?? '').isNotEmpty) ('Terms', d.terms!),
       if ((d.notes ?? '').isNotEmpty) ('Notes', d.notes!),
@@ -252,7 +326,11 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
       title: 'Details',
       child: Column(
         children: [
-          for (int i = 0; i < rows.length; i++) MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+          for (int i = 0; i < rows.length; i++)
+            MetaRow(
+                label: rows[i].$1,
+                value: rows[i].$2,
+                last: i == rows.length - 1),
         ],
       ),
     );
@@ -264,7 +342,10 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
         title: 'Tax',
         child: Padding(
           padding: EdgeInsets.only(top: 4.h),
-          child: Text(d.isDraft ? 'Tax lines are written when the invoice is issued.' : 'No tax on this document.',
+          child: Text(
+              d.isDraft
+                  ? 'Tax lines are written when the invoice is issued.'
+                  : 'No tax on this document.',
               style: AppText.body(color: AppColors.textMuted)),
         ),
       );
@@ -278,7 +359,8 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
               label: [
                 d.taxLines[i].head,
                 if (d.taxLines[i].ratePct != null) '${d.taxLines[i].ratePct}%',
-                if (d.isInward && d.taxLines[i].itcStatus != null) 'ITC ${label(const {}, d.taxLines[i].itcStatus)}',
+                if (d.isInward && d.taxLines[i].itcStatus != null)
+                  'ITC ${label(const {}, d.taxLines[i].itcStatus)}',
               ].join(' · '),
               value: formatMoneyStr(d.taxLines[i].amount),
               last: i == d.taxLines.length - 1,
@@ -310,8 +392,14 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
     final async = ref.watch(documentJournalProvider(d.id));
     return async.when(
       loading: () => [const ListSkeleton(itemCount: 2, itemHeight: 120)],
-      error: (e, _) => [ErrorState.forError(e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load.'),
-          onRetry: () => ref.invalidate(documentJournalProvider(d.id)))],
+      error: (e, _) => [
+        ErrorState.forError(
+            e is AppError
+                ? e
+                : const AppError(
+                    type: AppErrorType.unknown, message: 'Could not load.'),
+            onRetry: () => ref.invalidate(documentJournalProvider(d.id)))
+      ],
       data: (entries) => entries.isEmpty
           ? [
               const DetailTabEmpty(
@@ -321,7 +409,10 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
               ),
             ]
           : [
-              for (final e in entries) ...[JournalEntryCard(entry: e), SizedBox(height: 12.h)],
+              for (final e in entries) ...[
+                JournalEntryCard(entry: e),
+                SizedBox(height: 12.h)
+              ],
             ],
     );
   }
@@ -329,22 +420,53 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
   Widget _links(AccDocument d) {
     final quotes = ref.watch(quotesProvider).valueOrNull ?? const [];
     final invoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
-    final quote = d.quotationId == null ? null : quotes.where((q) => q.uuid == d.quotationId).firstOrNull;
-    final plan = d.paymentPlanId == null ? null : invoices.where((i) => i.uuid == d.paymentPlanId).firstOrNull;
+    final quote = d.quotationId == null
+        ? null
+        : quotes.where((q) => q.uuid == d.quotationId).firstOrNull;
+    final plan = d.paymentPlanId == null
+        ? null
+        : invoices.where((i) => i.uuid == d.paymentPlanId).firstOrNull;
     final links = <(IconData, String, String, VoidCallback?)>[
       if (d.referencesDocument != null)
-        (PhosphorIconsRegular.receipt, 'Original invoice', 'Open',
-            () => context.push('${Routes.accDocumentDetail}?id=${d.referencesDocument}')),
+        (
+          PhosphorIconsRegular.receipt,
+          'Original invoice',
+          'Open',
+          () => context
+              .push('${Routes.accDocumentDetail}?id=${d.referencesDocument}')
+        ),
       if (d.quotationId != null)
-        (PhosphorIconsRegular.fileText, 'Quote', quote?.id ?? 'Linked',
-            quote == null ? null : () => context.push('${Routes.quoteDetail}?id=${quote.id}')),
+        (
+          PhosphorIconsRegular.fileText,
+          'Quote',
+          quote?.id ?? 'Linked',
+          quote == null
+              ? null
+              : () => context.push('${Routes.quoteDetail}?id=${quote.id}')
+        ),
       if (d.paymentPlanId != null)
-        (PhosphorIconsRegular.calendarCheck, 'Payment plan', plan?.id ?? 'Linked',
-            plan == null ? null : () => context.push('${Routes.invoiceDetail}?id=${plan.id}')),
+        (
+          PhosphorIconsRegular.calendarCheck,
+          'Payment plan',
+          plan?.id ?? 'Linked',
+          plan == null
+              ? null
+              : () => context.push('${Routes.invoiceDetail}?id=${plan.id}')
+        ),
       if (d.projectId != null)
-        (PhosphorIconsRegular.kanban, 'Project', 'Open', () => context.push('${Routes.projectDetail}?id=${d.projectId}')),
+        (
+          PhosphorIconsRegular.kanban,
+          'Project',
+          'Open',
+          () => context.push('${Routes.projectDetail}?id=${d.projectId}')
+        ),
       if (d.sourceType == 'TICKET' && d.sourceId != null)
-        (PhosphorIconsRegular.ticket, 'Ticket', 'Open', () => context.push('${Routes.ticketDetail}?id=${d.sourceId}')),
+        (
+          PhosphorIconsRegular.ticket,
+          'Ticket',
+          'Open',
+          () => context.push('${Routes.ticketDetail}?id=${d.sourceId}')
+        ),
     ];
     if (links.isEmpty) {
       return const DetailTabEmpty(
@@ -365,20 +487,31 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
                 padding: EdgeInsets.symmetric(vertical: 11.h),
                 decoration: i == links.length - 1
                     ? null
-                    : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+                    : const BoxDecoration(
+                        border: Border(
+                            bottom: BorderSide(color: Color(0xFFF3F4F5)))),
                 child: Row(
                   children: [
                     Icon(links[i].$1, size: 18.sp, color: AppColors.navy),
                     SizedBox(width: 12.w),
                     Expanded(
-                      child: Text(links[i].$2, style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                      child: Text(links[i].$2,
+                          style: AppText.custom(
+                              size: 13.5,
+                              weight: FontWeight.w600,
+                              color: AppColors.textBody)),
                     ),
                     Text(links[i].$3,
                         style: AppText.custom(
-                            size: 13, weight: FontWeight.w700, color: links[i].$4 == null ? AppColors.textMuted : AppColors.blueBright)),
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: links[i].$4 == null
+                                ? AppColors.textMuted
+                                : AppColors.blueBright)),
                     if (links[i].$4 != null) ...[
                       SizedBox(width: 4.w),
-                      Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.textPlaceholder),
+                      Icon(PhosphorIconsBold.caretRight,
+                          size: 12.sp, color: AppColors.textPlaceholder),
                     ],
                   ],
                 ),
@@ -402,15 +535,27 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
   Widget _actionBar(AccDocument d) {
     final perm = ref.watch(accPermProvider('acc_document'));
     final settle = ref.watch(accPermProvider('acc_settlement'));
-    Widget ghost(String label, IconData icon, VoidCallback? onTap) =>
-        Expanded(child: PrimaryButton(label: label, icon: icon, ghost: true, height: 48, onTap: _busy ? null : onTap));
+    Widget ghost(String label, IconData icon, VoidCallback? onTap) => Expanded(
+        child: PrimaryButton(
+            label: label,
+            icon: icon,
+            ghost: true,
+            height: 48,
+            onTap: _busy ? null : onTap));
     Widget primary(String label, IconData icon, VoidCallback? onTap) =>
-        Expanded(child: PrimaryButton(label: label, icon: icon, height: 48, onTap: _busy ? null : onTap));
+        Expanded(
+            child: PrimaryButton(
+                label: label,
+                icon: icon,
+                height: 48,
+                onTap: _busy ? null : onTap));
 
     final buttons = <Widget>[
       if (d.isDraft) ...[
-        if (perm.update) ghost('Edit', PhosphorIconsRegular.pencilSimple, () => _editDraft(d)),
-        primary('Preview & issue', PhosphorIconsBold.sealCheck, () => _issue(d)),
+        if (perm.update)
+          ghost('Edit', PhosphorIconsRegular.pencilSimple, () => _editDraft(d)),
+        primary(
+            'Preview & issue', PhosphorIconsBold.sealCheck, () => _issue(d)),
       ] else if (d.isIssued && !d.isInward) ...[
         ghost('Share', PhosphorIconsRegular.shareNetwork, () => _share(d)),
         if (settle.create && !moneyIsZero(d.openBalance))
@@ -423,7 +568,10 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
         ghost('Share', PhosphorIconsRegular.shareNetwork, () => _share(d)),
     ];
     final spaced = <Widget>[
-      for (int i = 0; i < buttons.length; i++) ...[if (i > 0) SizedBox(width: 10.w), buttons[i]],
+      for (int i = 0; i < buttons.length; i++) ...[
+        if (i > 0) SizedBox(width: 10.w),
+        buttons[i]
+      ],
     ];
     return StickyActionBar(children: spaced);
   }
@@ -435,11 +583,21 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
       context,
       title: d.displayNumber,
       actions: [
-        MenuAction(icon: PhosphorIconsRegular.shareNetwork, label: 'Share or print', onTap: () => _share(d)),
+        MenuAction(
+            icon: PhosphorIconsRegular.shareNetwork,
+            label: 'Share or print',
+            onTap: () => _share(d)),
         if (active && d.isDraft && perm.update)
-          MenuAction(icon: PhosphorIconsRegular.pencilSimple, label: 'Edit draft', onTap: () => _editDraft(d)),
+          MenuAction(
+              icon: PhosphorIconsRegular.pencilSimple,
+              label: 'Edit draft',
+              onTap: () => _editDraft(d)),
         if (active && d.isDraft && perm.update)
-          MenuAction(icon: PhosphorIconsRegular.trash, label: 'Void draft', destructive: true, onTap: () => _void(d)),
+          MenuAction(
+              icon: PhosphorIconsRegular.trash,
+              label: 'Void draft',
+              destructive: true,
+              onTap: () => _void(d)),
         if (active && d.canCreditNote && perm.create)
           MenuAction(
               icon: PhosphorIconsRegular.arrowUUpLeft,
@@ -447,12 +605,17 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
               sublabel: 'Goods returned or a value correction',
               onTap: () => _creditNote(d)),
         if (active && d.isIssued && perm.approve)
-          MenuAction(icon: PhosphorIconsRegular.prohibit, label: 'Cancel', destructive: true, onTap: () => _cancel(d)),
+          MenuAction(
+              icon: PhosphorIconsRegular.prohibit,
+              label: 'Cancel',
+              destructive: true,
+              onTap: () => _cancel(d)),
       ],
     );
   }
 
-  void _share(AccDocument d) => context.push('${Routes.accDocumentPrint}?id=${d.id}');
+  void _share(AccDocument d) =>
+      context.push('${Routes.accDocumentPrint}?id=${d.id}');
 
   Future<void> _editDraft(AccDocument d) async {
     final saved = await showEditDraftSheet(context, d);
@@ -486,7 +649,8 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
       invalidateAccountingReads(ref.invalidate);
       if (mounted) ref.read(toastProvider.notifier).show('Draft voided');
     } on AppError catch (e) {
-      if (mounted) ref.read(toastProvider.notifier).showError(conflictCopy(e).body);
+      if (mounted)
+        ref.read(toastProvider.notifier).showError(conflictCopy(e).body);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -494,7 +658,8 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
 
   Future<void> _creditNote(AccDocument d) async {
     final note = await showCreditNoteSheet(context, d);
-    if (note != null && mounted) context.push('${Routes.accDocumentDetail}?id=${note.id}');
+    if (note != null && mounted)
+      context.push('${Routes.accDocumentDetail}?id=${note.id}');
   }
 
   Future<void> _cancel(AccDocument d) async {
@@ -503,7 +668,8 @@ class _AccDocumentDetailScreenState extends ConsumerState<AccDocumentDetailScree
   }
 
   Future<void> _payVendor(AccDocument d) async {
-    final ok = await showVendorPaymentSheet(context, vendorId: d.vendorId, bill: d);
+    final ok =
+        await showVendorPaymentSheet(context, vendorId: d.vendorId, bill: d);
     if (ok == true) ref.invalidate(accDocumentProvider(d.id));
   }
 

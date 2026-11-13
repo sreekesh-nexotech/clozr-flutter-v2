@@ -40,10 +40,10 @@ class CrmHomeRemoteDataSource {
   static const kStuckNoProj = 'stuck_noproj';
 
   /// The overdue-module chip → stuck-items `kind`. "Follow ups" has no stuck
-  /// kind of its own, so it approximates to stale `leads` (leads needing a
-  /// follow-up); "Project not created" is `won_nc` (won lead, no project).
+  /// kind of its own — it lists the user's real overdue follow-ups from
+  /// `/crm/tasks/?is_followup=true&is_overdue=true` instead (see
+  /// [mapFollowups]); "Project not created" is `won_nc` (won lead, no project).
   static const _chipKinds = {
-    'fu': 'leads',
     'pay': 'payments',
     'quotes': 'quotes',
     'noproj': 'won_nc',
@@ -51,7 +51,8 @@ class CrmHomeRemoteDataSource {
 
   /// Fetches every CRM Home section concurrently. Values are the decoded JSON
   /// bodies, or null when that call failed — never throws.
-  Future<Map<String, Object?>> fetchSections({List<AppError>? errors}) async {
+  Future<Map<String, Object?>> fetchSections(
+      {List<AppError>? errors, Map<String, dynamic> period = const {}}) async {
     void note(Object err) {
       if (errors != null && err is AppError) errors.add(err);
     }
@@ -69,15 +70,25 @@ class CrmHomeRemoteDataSource {
     }
 
     const base = ApiEndpoints.dashboardCrm; // '/crm/dashboard-crm'
-    const own = {'scope': 'own'};
-    Map<String, dynamic> stuck(String kind) => {'scope': 'own', 'kind': kind};
+    // The webapp passes `scope` + `period` (+ `from` / `to` for a custom
+    // range) to every widget but the recent-wins list.
+    final own = {'scope': 'own', ...period};
+    Map<String, dynamic> stuck(String kind) =>
+        {'scope': 'own', 'kind': kind, ...period};
 
     final sections = <String, Future<Object?>>{
       kKpis: call('$base/kpis/', own),
       kFunnel: call('$base/lead-funnel/', own),
       kMissed: call('$base/missed/', own),
       kWins: call('$base/my-recent-wins/'),
-      kStuckFu: call('$base/stuck-items/', stuck(_chipKinds['fu']!)),
+      // The signed-in user's own overdue follow-ups (the server returns the
+      // caller's records; `assigned_to_me` keeps it explicit).
+      kStuckFu: call(ApiEndpoints.crmTasks, {
+        'is_followup': 'true',
+        'is_overdue': 'true',
+        'assigned_to_me': 'true',
+        'page_size': 20,
+      }),
       kStuckPay: call('$base/stuck-items/', stuck(_chipKinds['pay']!)),
       kStuckQuotes: call('$base/stuck-items/', stuck(_chipKinds['quotes']!)),
       kStuckNoProj: call('$base/stuck-items/', stuck(_chipKinds['noproj']!)),
@@ -103,7 +114,7 @@ class CrmHomeRemoteDataSource {
       winsCount: winsCount,
       winsTotal: winsTotal,
       overdue: {
-        'fu': mapStuck(raw[kStuckFu], 'fu'),
+        'fu': mapFollowups(raw[kStuckFu]),
         'pay': mapStuck(raw[kStuckPay], 'pay'),
         'quotes': mapStuck(raw[kStuckQuotes], 'quotes'),
         'noproj': mapStuck(raw[kStuckNoProj], 'noproj'),
@@ -148,10 +159,13 @@ class CrmHomeRemoteDataSource {
     final cards = <CrmKpiValue>[
       build(m['new_leads'], valueKey: 'count'),
       build(m['win_rate'], valueKey: 'pct', unit: '%'),
-      build(m['quote_to_cash_days'], valueKey: 'median_days', unit: 'days', goodWhenUp: false),
+      build(m['quote_to_cash_days'],
+          valueKey: 'median_days', unit: 'days', goodWhenUp: false),
       build(m['quote_acceptance'], valueKey: 'pct', unit: '%', progress: true),
     ];
-    final fr = m['first_response'] is Map ? _intOf((m['first_response'] as Map)['median_minutes']) : null;
+    final fr = m['first_response'] is Map
+        ? _intOf((m['first_response'] as Map)['median_minutes'])
+        : null;
     return (cards, fr);
   }
 
@@ -184,7 +198,12 @@ class CrmHomeRemoteDataSource {
   /// `/dashboard-crm/missed/` → the four Attention cards (fixed order).
   static List<CrmAttentionValue> mapMissed(Object? json) {
     final m = json is Map ? json : const <Object?, Object?>{};
-    const keys = ['payments_missed', 'followups_missed', 'tasks_missed', 'lost_after_quote'];
+    const keys = [
+      'payments_missed',
+      'followups_missed',
+      'tasks_missed',
+      'lost_after_quote'
+    ];
     return [for (final k in keys) _attn(m[k])];
   }
 
@@ -195,7 +214,8 @@ class CrmHomeRemoteDataSource {
     var direction = _str(node['direction']).toLowerCase();
     if (direction.isEmpty) {
       // All four metrics are bad-when-up (missed / lost).
-      direction = trendPct > 0 ? 'worsening' : (trendPct < 0 ? 'improving' : 'steady');
+      direction =
+          trendPct > 0 ? 'worsening' : (trendPct < 0 ? 'improving' : 'steady');
     }
     final improving = direction == 'improving';
     final steady = direction == 'steady';
@@ -205,7 +225,9 @@ class CrmHomeRemoteDataSource {
       up: improving,
       neutral: steady,
       note: improving ? 'Improving' : (steady ? 'Steady' : 'Worsening'),
-      noteColor: improving ? AppColors.success : (steady ? AppColors.textMuted2 : AppColors.error),
+      noteColor: improving
+          ? AppColors.success
+          : (steady ? AppColors.textMuted2 : AppColors.error),
     );
   }
 
@@ -219,17 +241,25 @@ class CrmHomeRemoteDataSource {
     var total = 0.0;
     for (final row in rows) {
       if (row is! Map) continue;
-      final name = _nameOf(row, const ['name', 'customer_name', 'lead_name', 'title'],
+      final name = _nameOf(
+          row,
+          const ['name', 'customer_name', 'lead_name', 'title'],
           const ['customer', 'lead', 'account']);
       if (name.isEmpty) continue;
-      final amount = parseAmount(
-          row['amount'] ?? row['value'] ?? row['won_amount'] ?? row['total_amount'] ?? row['closed_amount']);
+      final amount = parseAmount(row['amount'] ??
+          row['value'] ??
+          row['won_amount'] ??
+          row['total_amount'] ??
+          row['closed_amount']);
       total += amount;
       UserDirectory.registerJson(row['owner'] ?? row['user']);
       final (route, id) = _winRoute(row);
       out.add(WinRow(
         name: name,
-        deal: _nameOf(row, const ['deal', 'product', 'description', 'project_name'], const ['project', 'product']),
+        deal: _nameOf(
+            row,
+            const ['deal', 'product', 'description', 'project_name'],
+            const ['project', 'product']),
         amt: formatInr(amount),
         when: _wonWhen(row),
         route: route,
@@ -259,6 +289,46 @@ class CrmHomeRemoteDataSource {
         age: _ageLabel(_intOf(row['stuck_days']) ?? 0),
         route: route,
         id: _str(row['id']),
+      ));
+    }
+    return out;
+  }
+
+  /// `/crm/tasks/?is_followup=true&is_overdue=true` → the "Follow ups" chip:
+  /// the follow-up's title, what it relates to, its priority and how long it
+  /// has been overdue. A row opens the follow-up.
+  static List<OverdueRow> mapFollowups(Object? json, {DateTime? now}) {
+    final rows = json is Map ? json['results'] : null;
+    if (rows is! List) return const [];
+    final today = now ?? DateTime.now();
+    final day = DateTime(today.year, today.month, today.day);
+    final out = <OverdueRow>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final id = _str(row['task_id'] ?? row['id']);
+      final title = _str(row['title']);
+      if (id.isEmpty || title.isEmpty) continue;
+      final related = row['related_to'];
+      final label =
+          related is Map ? _str(related['label'] ?? related['reference']) : '';
+      final priority = row['priority'];
+      final prio = priority is Map ? _str(priority['name']) : '';
+      final due = DateTime.tryParse(_str(row['due_date']));
+      final days = due == null
+          ? 0
+          : day.difference(DateTime(due.year, due.month, due.day)).inDays;
+      out.add(OverdueRow(
+        name: title,
+        sub: [
+          label,
+          if (prio.isNotEmpty) prio[0].toUpperCase() + prio.substring(1)
+        ].where((p) => p.isNotEmpty).join(' · '),
+        amt: '',
+        age: days <= 0
+            ? 'Due today'
+            : '$days ${days == 1 ? 'day' : 'days'} overdue',
+        route: Routes.followupDetail,
+        id: id,
       ));
     }
     return out;
@@ -334,7 +404,8 @@ class CrmHomeRemoteDataSource {
 
   /// First non-empty display name from flat keys, then nested `{name}`/string
   /// objects.
-  static String _nameOf(Map row, List<String> flatKeys, List<String> nestedKeys) {
+  static String _nameOf(
+      Map row, List<String> flatKeys, List<String> nestedKeys) {
     for (final k in flatKeys) {
       final s = _str(row[k]);
       if (s.isNotEmpty) return s;
@@ -354,13 +425,17 @@ class CrmHomeRemoteDataSource {
   static final DateFormat _dayMonth = DateFormat('d MMM');
 
   static String _wonWhen(Map row) {
-    final date =
-        parseApiDate(row['won_at'] ?? row['closed_at'] ?? row['won_date'] ?? row['date'] ?? row['updated_at']);
+    final date = parseApiDate(row['won_at'] ??
+        row['closed_at'] ??
+        row['won_date'] ??
+        row['date'] ??
+        row['updated_at']);
     if (date == null) return 'Won';
     return 'Won ${_dayMonth.format(date.toLocal())}';
   }
 
-  static String _ageLabel(int days) => '$days ${days == 1 ? 'day' : 'days'} ago';
+  static String _ageLabel(int days) =>
+      '$days ${days == 1 ? 'day' : 'days'} ago';
 
   static String _ownerName(Object? owner) {
     if (owner is String) return owner.trim();

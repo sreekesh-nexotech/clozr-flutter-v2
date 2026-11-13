@@ -66,5 +66,6 @@ abstract class LeadsRepository {
   /// [version] is the record's `updated_at` as last read; when given it goes
   /// out as `If-Match`, and a save on a lead changed elsewhere since is refused
   /// (412, a conflict) instead of overwriting that change.
-  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields, {String? version});
+  Future<Lead?> updateLead(String leadId, Map<String, dynamic> fields,
+      {String? version});
 }

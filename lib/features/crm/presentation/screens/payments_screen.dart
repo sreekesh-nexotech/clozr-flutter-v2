@@ -58,7 +58,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     super.initState();
     // A query left behind by a collapsed box would filter the list with
     // nothing on screen saying so; only keep it while the box is open.
-    if (!ref.read(paySearchOpenProvider) && ref.read(paySearchProvider).isNotEmpty) {
+    if (!ref.read(paySearchOpenProvider) &&
+        ref.read(paySearchProvider).isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(paySearchProvider.notifier).state = '';
       });
@@ -78,7 +79,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     // Contextual add: the bottom-nav `+` opens the Record payment sheet.
     registerAdd(
       ref,
-      AddAction(label: 'Record payment', module: 'payment', run: (ctx) => showRecordPaymentSheet(ctx)),
+      AddAction(
+          label: 'Record payment',
+          module: 'payment',
+          run: (ctx) => showRecordPaymentSheet(ctx)),
     );
 
     final mode = ref.watch(payModeProvider);
@@ -90,7 +94,29 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     final allInvoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
     final payTab = ref.watch(payTabProvider);
     final invTab = ref.watch(invTabProvider);
-    final filterCount = ref.watch(paymentFiltersProvider).activeCount;
+    // A dashboard row's customer scope counts as a filter (badge + Clear).
+    final filterCount = ref.watch(paymentFiltersProvider).activeCount +
+        (ref.watch(payCustomerProvider).isNotEmpty ? 1 : 0);
+    // The status chips count within that scope, so "Overdue (n)" is the
+    // customer's n, not the org's.
+    final chipCust = ref.watch(payCustomerProvider);
+    // …and within the drawer filters, so "Paid (n)" is what the Paid tab
+    // shows under them (a dashboard period window included), not the org's.
+    final chipFilters = ref.watch(paymentFiltersProvider);
+    final chipLookup = ref.watch(crmPartyLookupProvider);
+    final chipBase = [
+      for (final x in allPayments)
+        if (payCustomerMatches(chipCust, x.custName) &&
+            (chipFilters.isEmpty ||
+                paymentMatchesFilters(x, chipFilters, chipLookup)))
+          x
+    ];
+    final planChipBase = chipCust.isEmpty
+        ? allInvoices
+        : [
+            for (final x in allInvoices)
+              if (payCustomerMatches(chipCust, x.custName)) x
+          ];
 
     const payTabKeys = ['all', 'paid', 'due', 'overdue', 'scheduled'];
     const invTabKeys = ['all', 'unpaid', 'partial', 'completed'];
@@ -125,14 +151,18 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                 ModeOption(PhosphorIconsRegular.wallet, 'Payments'),
               ],
               selectedIndex: isPayments ? 1 : 0,
-              onChanged: (i) => ref.read(payModeProvider.notifier).state = i == 0 ? 'invoices' : 'payments',
+              onChanged: (i) => ref.read(payModeProvider.notifier).state =
+                  i == 0 ? 'invoices' : 'payments',
             ),
             SizedBox(height: 14.h),
             if (searchOpen) ...[
               SearchField(
                 controller: _searchCtrl,
-                hint: isPayments ? 'Search payments..' : 'Search payment plans, customer, quote..',
-                onChanged: (v) => ref.read(paySearchProvider.notifier).state = v,
+                hint: isPayments
+                    ? 'Search payments..'
+                    : 'Search payment plans, customer, quote..',
+                onChanged: (v) =>
+                    ref.read(paySearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(paySearchProvider.notifier).state = '';
@@ -148,17 +178,21 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                     ? [
                         for (final k in payTabKeys)
                           TabChip(
-                            label: '${k == 'all' ? 'All' : StatusMeta$.payment[k]!.label} (${payTabCount(allPayments, k)})',
+                            label:
+                                '${k == 'all' ? 'All' : StatusMeta$.payment[k]!.label} (${payTabCount(chipBase, k)})',
                             active: payTab == k,
-                            onTap: () => ref.read(payTabProvider.notifier).state = k,
+                            onTap: () =>
+                                ref.read(payTabProvider.notifier).state = k,
                           ),
                       ]
                     : [
                         for (final k in invTabKeys)
                           TabChip(
-                            label: '${k == 'all' ? 'All' : StatusMeta$.invoice[k]!.label} (${invTabCount(allInvoices, k)})',
+                            label:
+                                '${k == 'all' ? 'All' : StatusMeta$.invoice[k]!.label} (${invTabCount(planChipBase, k)})',
                             active: invTab == k,
-                            onTap: () => ref.read(invTabProvider.notifier).state = k,
+                            onTap: () =>
+                                ref.read(invTabProvider.notifier).state = k,
                           ),
                       ],
               ),
@@ -170,7 +204,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
             SizedBox(height: 14.h),
           ],
         ),
-        Expanded(child: isPayments ? _paymentsList(context, ref) : _invoicesList(context, ref)),
+        Expanded(
+            child: isPayments
+                ? _paymentsList(context, ref)
+                : _invoicesList(context, ref)),
       ],
     );
   }
@@ -207,7 +244,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       previewCount: (draft) =>
           base.where((p) => paymentMatchesFilters(p, draft, lookup)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(paymentSavedViewsProvider).views.map((v) => v.name).toSet(),
+      existingViewNames:
+          ref.read(paymentSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(paymentSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');
@@ -228,7 +266,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   void _removeView(String id) {
     final wasActive = ref.read(paymentSavedViewsProvider).activeId == id;
     ref.read(paymentSavedViewsProvider.notifier).remove(id);
-    if (wasActive) ref.read(paymentFiltersProvider.notifier).state = FilterValues();
+    if (wasActive)
+      ref.read(paymentFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('View removed');
   }
 
@@ -257,7 +296,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.views.where((v) => v.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     ref.read(paymentSavedViewsProvider.notifier).apply(id);
@@ -269,6 +310,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   /// the webapp then says "match your filters" instead of "yet".
   bool _isNarrowed() =>
       ref.read(paySearchProvider).trim().isNotEmpty ||
+      ref.read(payCustomerProvider).isNotEmpty ||
       ref.read(paymentFiltersProvider).activeCount > 0 ||
       ref.read(payTabProvider) != 'all';
 
@@ -282,6 +324,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
 
   void _clearFilters() {
     ref.read(paymentSavedViewsProvider.notifier).clearActive();
+    ref.read(payCustomerProvider.notifier).state = '';
     ref.read(paymentFiltersProvider.notifier).state = FilterValues();
     ref.read(toastProvider.notifier).show('Filters cleared');
   }
@@ -297,13 +340,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
         final visible = ref.watch(visiblePaymentsProvider);
         if (visible.isEmpty) {
           return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               _isNarrowed()
                   ? EmptyState(
                       icon: PhosphorIconsRegular.funnel,
                       title: 'No payments match your filters',
-                      body: 'Try widening your search or clearing a filter to see more.',
+                      body:
+                          'Try widening your search or clearing a filter to see more.',
                       ctaLabel: 'Clear filters',
                       ctaIcon: PhosphorIconsBold.xCircle,
                       onCta: _resetListView,
@@ -313,7 +357,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   : EmptyState(
                       icon: PhosphorIconsRegular.wallet,
                       title: 'No payments yet',
-                      body: 'Payments appear here once a quote is accepted and its payment schedule is created.',
+                      body:
+                          'Payments appear here once a quote is accepted and its payment schedule is created.',
                       ctaLabel: 'Go to quotes',
                       ctaIcon: PhosphorIconsBold.arrowRight,
                       onCta: () => context.go(Routes.quotes),
@@ -356,7 +401,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
         ],
       );
 
-  void _openPayment(Payment p) => context.push('${Routes.paymentDetail}?id=${p.id}');
+  void _openPayment(Payment p) =>
+      context.push('${Routes.paymentDetail}?id=${p.id}');
 
   // ── Row actions: the webapp row's View / Delete ──
 
@@ -382,7 +428,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       hasDeletePermission: hasPermission(ref, 'payment', PermVerb.delete),
     );
     await showActionMenu(context, title: paymentWho(p).name, actions: [
-      MenuAction(icon: PhosphorIconsRegular.eye, label: 'View', onTap: () => _openPayment(p)),
+      MenuAction(
+          icon: PhosphorIconsRegular.eye,
+          label: 'View',
+          onTap: () => _openPayment(p)),
       if (canDelete)
         MenuAction(
           icon: PhosphorIconsRegular.trash,
@@ -400,7 +449,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
         title: const Text(deleteRecordTitle),
         content: const Text(deleteRecordBody),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('Delete', style: TextStyle(color: AppColors.error)),
@@ -459,7 +510,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   schema: schema,
                   leadName: leads[visible[i].uuid],
                   recordCount: counts[visible[i].uuid],
-                  onTap: () => context.push('${Routes.invoiceDetail}?id=${visible[i].id}'),
+                  onTap: () => context
+                      .push('${Routes.invoiceDetail}?id=${visible[i].id}'),
                 ),
               ],
           ],
@@ -471,20 +523,38 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   Widget _invoiceBanner() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 11.h),
-      decoration: BoxDecoration(color: AppColors.blueSubtle, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: AppColors.blueSubtle,
+          borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsRegular.info, size: 16.sp, color: AppColors.blueBright),
+          Icon(PhosphorIconsRegular.info,
+              size: 16.sp, color: AppColors.blueBright),
           SizedBox(width: 9.w),
           Expanded(
             child: Text.rich(
               TextSpan(
-                text: 'A payment plan is generated when a quote is accepted. It groups that customer\u2019s installments and rolls up to ',
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: _bannerText, height: 1.5),
+                text:
+                    'A payment plan is generated when a quote is accepted. It groups that customer\u2019s installments and rolls up to ',
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: _bannerText,
+                    height: 1.5),
                 children: [
-                  TextSpan(text: 'Completed', style: AppText.custom(size: 12, weight: FontWeight.w700, color: _bannerText)),
-                  TextSpan(text: ' once every installment settles.', style: AppText.custom(size: 12, weight: FontWeight.w500, color: _bannerText)),
+                  TextSpan(
+                      text: 'Completed',
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w700,
+                          color: _bannerText)),
+                  TextSpan(
+                      text: ' once every installment settles.',
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: _bannerText)),
                 ],
               ),
             ),
@@ -498,7 +568,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
 /// "6 payment plans" / "19 payments" — the webapp's list counter.
 Widget _countLabel(String text) => Align(
       alignment: Alignment.centerLeft,
-      child: Text(text, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+      child: Text(text,
+          style: AppText.custom(
+              size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
     );
 
 /// The prototype's `#35507C` info-banner text — no design token exists for it.

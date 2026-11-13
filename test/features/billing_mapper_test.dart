@@ -23,7 +23,8 @@ void main() {
           'paid_at': '2026-08-12T18:01:13.791331Z',
           'line_items': [
             {
-              'description': '1 license(s) added mid-cycle — prorated to cycle end',
+              'description':
+                  '1 license(s) added mid-cycle — prorated to cycle end',
               'item_type': 'prorated',
               'quantity': 1,
               'unit_price': '1999.00',
@@ -61,7 +62,8 @@ void main() {
     });
 
     test('line items carry their prorated flag', () {
-      final item = BillingRemoteDataSource.invoiceFromJson(row()).lineItems.single;
+      final item =
+          BillingRemoteDataSource.invoiceFromJson(row()).lineItems.single;
       expect(item.isProrated, isTrue);
       expect(item.quantity, 1);
       expect(item.subtotal, 1999.00);
@@ -81,7 +83,8 @@ void main() {
       });
       expect(s.unlimited, isTrue);
       expect(s.headline, '8.88 MB');
-      expect(s.fraction, 0, reason: 'a full bar would read as a quota running out');
+      expect(s.fraction, 0,
+          reason: 'a full bar would read as a quota running out');
     });
 
     test('a capped plan reads as used-of-limit', () {

@@ -52,7 +52,8 @@ class _Line {
         'supply_nature': nature,
         'qty': qty,
         'unit_price': unitPrice,
-        if (discount != null && !moneyIsZero(discount)) 'line_discount': discount,
+        if (discount != null && !moneyIsZero(discount))
+          'line_discount': discount,
         'tax_treatment': treatment,
       };
 }
@@ -64,7 +65,8 @@ class AccNewInvoiceScreen extends ConsumerStatefulWidget {
   const AccNewInvoiceScreen({super.key});
 
   @override
-  ConsumerState<AccNewInvoiceScreen> createState() => _AccNewInvoiceScreenState();
+  ConsumerState<AccNewInvoiceScreen> createState() =>
+      _AccNewInvoiceScreenState();
 }
 
 class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
@@ -80,7 +82,8 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
   bool _busy = false;
   AppError? _error;
 
-  bool get _dirty => _customerId != null || _lines.isNotEmpty || _narration.text.isNotEmpty;
+  bool get _dirty =>
+      _customerId != null || _lines.isNotEmpty || _narration.text.isNotEmpty;
 
   bool _prefilled = false;
 
@@ -153,7 +156,9 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
         'place_of_supply_state_code': _pos,
         'amounts_are': _amountsAre,
         'narration': _narration.text.trim(),
-        'lines': [for (int i = 0; i < _lines.length; i++) _lines[i].toJson(i + 1)],
+        'lines': [
+          for (int i = 0; i < _lines.length; i++) _lines[i].toJson(i + 1)
+        ],
       });
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
@@ -208,24 +213,35 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
             icon: PhosphorIconsRegular.magnifyingGlass,
             footnote: 'Needed before the invoice can be issued.',
             onTap: () async {
-              final c = await pickCustomer(context, ref, selectedId: _customerId);
+              final c =
+                  await pickCustomer(context, ref, selectedId: _customerId);
               if (c != null) setState(() => _customerId = c.id);
             },
           ),
           SizedBox(height: 14.h),
-          AccDateBox(label: 'Invoice date', required: true, value: _date, showIstHint: true,
+          AccDateBox(
+              label: 'Invoice date',
+              required: true,
+              value: _date,
+              showIstHint: true,
               onChanged: (d) => setState(() => _date = d ?? _date)),
           SizedBox(height: 14.h),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: AccDateBox(label: 'Supply date', value: _supplyDate, clearable: true,
+                child: AccDateBox(
+                    label: 'Supply date',
+                    value: _supplyDate,
+                    clearable: true,
                     onChanged: (d) => setState(() => _supplyDate = d)),
               ),
               SizedBox(width: 9.w),
               Expanded(
-                child: AccDateBox(label: 'Due date', value: _dueDate, clearable: true,
+                child: AccDateBox(
+                    label: 'Due date',
+                    value: _dueDate,
+                    clearable: true,
                     onChanged: (d) => setState(() => _dueDate = d)),
               ),
             ],
@@ -255,16 +271,27 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
           ],
           Row(
             children: [
-              Expanded(child: _addButton(PhosphorIconsRegular.package, 'Add product', _addProduct)),
+              Expanded(
+                  child: _addButton(PhosphorIconsRegular.package, 'Add product',
+                      _addProduct)),
               SizedBox(width: 10.w),
-              Expanded(child: _addButton(PhosphorIconsRegular.plus, 'Add line', _addFree)),
+              Expanded(
+                  child: _addButton(
+                      PhosphorIconsRegular.plus, 'Add line', _addFree)),
             ],
           ),
           SizedBox(height: 10.h),
           Text('Totals are worked out when you preview the draft.',
-              style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
           const OpsSectionLabel('Narration'),
-          AccInput(label: 'Narration', controller: _narration, hint: 'Shown on the invoice', maxLines: 3,
+          AccInput(
+              label: 'Narration',
+              controller: _narration,
+              hint: 'Shown on the invoice',
+              maxLines: 3,
               onChanged: (_) => setState(() {})),
           if (!isOnline(ref)) const OfflineNote(),
         ],
@@ -289,16 +316,29 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l.description, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(l.description,
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 2.h),
                 Text(
-                  [if (l.hsnSac.isNotEmpty) 'HSN ${l.hsnSac}', label(supplyNatureLabels, l.nature), if (l.productId != null) 'Catalog']
-                      .join(' · '),
-                  style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                  [
+                    if (l.hsnSac.isNotEmpty) 'HSN ${l.hsnSac}',
+                    label(supplyNatureLabels, l.nature),
+                    if (l.productId != null) 'Catalog'
+                  ].join(' · '),
+                  style: AppText.custom(
+                      size: 11.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder),
                 ),
                 SizedBox(height: 2.h),
                 Text('${l.qty} × ${formatMoneyStr(l.unitPrice)}',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
@@ -307,7 +347,8 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
             onTap: () => setState(() => _lines.removeAt(i)),
             child: Padding(
               padding: EdgeInsets.all(4.r),
-              child: Icon(PhosphorIconsRegular.trash, size: 18.sp, color: AppColors.error),
+              child: Icon(PhosphorIconsRegular.trash,
+                  size: 18.sp, color: AppColors.error),
             ),
           ),
         ],
@@ -315,7 +356,8 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
     );
   }
 
-  Widget _addButton(IconData icon, String label, VoidCallback onTap) => GestureDetector(
+  Widget _addButton(IconData icon, String label, VoidCallback onTap) =>
+      GestureDetector(
         onTap: onTap,
         child: Container(
           height: 44.h,
@@ -330,7 +372,11 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
             children: [
               Icon(icon, size: 16.sp, color: AppColors.textSecondary),
               SizedBox(width: 7.w),
-              Text(label, style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textBody)),
+              Text(label,
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w600,
+                      color: AppColors.textBody)),
             ],
           ),
         ),
@@ -341,7 +387,8 @@ class _AccNewInvoiceScreenState extends ConsumerState<AccNewInvoiceScreen> {
 /// server rejects anything else, and a code too short for the turnover band
 /// blocks issue later (`HSN_DIGITS_REQUIRED`), when lines can no longer change.
 Future<_Line?> _showLineSheet(BuildContext context, _Line initial) =>
-    showClozrSheet<_Line>(context: context, builder: (_) => _LineSheet(initial: initial));
+    showClozrSheet<_Line>(
+        context: context, builder: (_) => _LineSheet(initial: initial));
 
 class _LineSheet extends StatefulWidget {
   const _LineSheet({required this.initial});
@@ -356,7 +403,8 @@ class _LineSheetState extends State<_LineSheet> {
   late final _hsn = TextEditingController(text: widget.initial.hsnSac);
   late final _qty = TextEditingController(text: widget.initial.qty);
   late final _price = TextEditingController(text: widget.initial.unitPrice);
-  late final _discount = TextEditingController(text: widget.initial.discount ?? '');
+  late final _discount =
+      TextEditingController(text: widget.initial.discount ?? '');
   late String _nature = widget.initial.nature;
   late String _treatment = widget.initial.treatment;
   String? _hsnError;
@@ -403,18 +451,29 @@ class _LineSheetState extends State<_LineSheet> {
       submitEnabled: ok,
       onSubmit: _save,
       children: [
-        AccInput(label: 'Description', required: true, controller: _desc, hint: 'What is being billed',
-            textCapitalization: TextCapitalization.sentences, onChanged: (_) => setState(() {})),
+        AccInput(
+            label: 'Description',
+            required: true,
+            controller: _desc,
+            hint: 'What is being billed',
+            textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) => setState(() {})),
         AccInput(
           label: 'HSN / SAC',
           controller: _hsn,
           hint: '4 to 8 digits',
           errorText: _hsnError,
           keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(8)
+          ],
           onChanged: (_) => setState(() => _hsnError = null),
         ),
-        AccChoiceChips(label: 'Nature', options: supplyNatureLabels, selected: _nature,
+        AccChoiceChips(
+            label: 'Nature',
+            options: supplyNatureLabels,
+            selected: _nature,
             onSelected: (v) => setState(() => _nature = v)),
         Row(
           children: [
@@ -423,19 +482,32 @@ class _LineSheetState extends State<_LineSheet> {
                 label: 'Qty',
                 required: true,
                 controller: _qty,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,3}'))],
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,3}'))
+                ],
                 onChanged: (_) => setState(() {}),
               ),
             ),
             SizedBox(width: 9.w),
-            Expanded(child: MoneyField(label: 'Unit price', required: true, controller: _price, onChanged: (_) => setState(() {}))),
+            Expanded(
+                child: MoneyField(
+                    label: 'Unit price',
+                    required: true,
+                    controller: _price,
+                    onChanged: (_) => setState(() {}))),
           ],
         ),
         MoneyField(label: 'Discount', controller: _discount, hint: 'Optional'),
         AccChoiceChips(
           label: 'Tax treatment',
-          options: const {'TAXABLE': 'Taxable', 'NIL': 'Nil rated', 'EXEMPT': 'Exempt', 'NON_GST': 'Non-GST'},
+          options: const {
+            'TAXABLE': 'Taxable',
+            'NIL': 'Nil rated',
+            'EXEMPT': 'Exempt',
+            'NON_GST': 'Non-GST'
+          },
           selected: _treatment,
           onSelected: (v) => setState(() => _treatment = v),
         ),

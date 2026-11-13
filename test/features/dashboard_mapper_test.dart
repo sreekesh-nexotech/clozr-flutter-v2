@@ -175,7 +175,8 @@ void main() {
   });
 
   group('stuck items', () {
-    test('formats money values, passes priority names through, keys the tabs', () {
+    test('formats money values, passes priority names through, keys the tabs',
+        () {
       final data = map({
         DashboardRemoteDataSource.kCrmStuckLeads: {
           'kind': 'leads',
@@ -213,7 +214,8 @@ void main() {
       expect(data.crmStuck['quotes']![0].amt, 'High'); // raw string kept
 
       // Kinds whose calls failed fall back to the mock rows untouched.
-      expect(identical(data.crmStuck['payments'], base.crmStuck['payments']), isTrue);
+      expect(identical(data.crmStuck['payments'], base.crmStuck['payments']),
+          isTrue);
       expect(identical(data.crmStuck['wonnc'], base.crmStuck['wonnc']), isTrue);
     });
   });
@@ -249,12 +251,25 @@ void main() {
   });
 
   group('attention needed', () {
-    test('renders direction labels and signed deltas, keeps unmapped cards', () {
+    test('renders direction labels and signed deltas, keeps unmapped cards',
+        () {
       final data = map({
         DashboardRemoteDataSource.kCrmMissed: {
-          'payments_missed': {'count': 12, 'trend_pct': 3.0, 'direction': 'worsening'},
-          'followups_missed': {'count': 28, 'trend_pct': 0.0, 'direction': 'steady'},
-          'tasks_missed': {'count': 19, 'trend_pct': -5.0, 'direction': 'improving'},
+          'payments_missed': {
+            'count': 12,
+            'trend_pct': 3.0,
+            'direction': 'worsening'
+          },
+          'followups_missed': {
+            'count': 28,
+            'trend_pct': 0.0,
+            'direction': 'steady'
+          },
+          'tasks_missed': {
+            'count': 19,
+            'trend_pct': -5.0,
+            'direction': 'improving'
+          },
           // lost_after_quote absent → mock card kept.
         },
       });
@@ -284,8 +299,18 @@ void main() {
           'crm': {
             'stages': [
               {'lead_status_id': 'a', 'name': 'New', 'position': 1, 'count': 4},
-              {'lead_status_id': 'b', 'name': 'Negotiation', 'position': 2, 'count': 7},
-              {'lead_status_id': 'c', 'name': 'Waiting for approval', 'position': 3, 'count': 2},
+              {
+                'lead_status_id': 'b',
+                'name': 'Negotiation',
+                'position': 2,
+                'count': 7
+              },
+              {
+                'lead_status_id': 'c',
+                'name': 'Waiting for approval',
+                'position': 3,
+                'count': 2
+              },
             ],
             'total': 13,
           },
@@ -330,8 +355,9 @@ void main() {
               'won_leads': 1,
               'closed_amount': '1240000.00',
               'first_response_median_minutes': 21,
-              'last_active_at':
-                  DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+              'last_active_at': DateTime.now()
+                  .subtract(const Duration(minutes: 5))
+                  .toIso8601String(),
             },
             {
               'user_id': 'uuid-2',
@@ -420,8 +446,20 @@ void main() {
         DashboardRemoteDataSource.kPmoStatus: {
           'total': 9,
           'statuses': [
-            {'status_id': 'a', 'name': 'Complete', 'color': '#890DB6', 'is_closed': true, 'count': 4},
-            {'status_id': 'b', 'name': 'On track', 'color': '#0E8F3D', 'is_closed': false, 'count': 5},
+            {
+              'status_id': 'a',
+              'name': 'Complete',
+              'color': '#890DB6',
+              'is_closed': true,
+              'count': 4
+            },
+            {
+              'status_id': 'b',
+              'name': 'On track',
+              'color': '#0E8F3D',
+              'is_closed': false,
+              'count': 5
+            },
           ],
         },
       });
@@ -442,7 +480,11 @@ void main() {
               'days_overdue': 18,
               'assigned_to': {'id': 'u9', 'name': 'Manoj Varma'},
               'customer': {'id': 'c9', 'name': 'Kalyan Silks'},
-              'project': {'id': 'p9', 'name': 'Showroom Fit-out', 'value': '4200000.00'},
+              'project': {
+                'id': 'p9',
+                'name': 'Showroom Fit-out',
+                'value': '4200000.00'
+              },
             },
           ],
         },
@@ -487,21 +529,27 @@ void main() {
       expect(identical(data.helpKpis[2], base.helpKpis[2]), isTrue);
     });
 
-    test('issue KPIs map the documented payload, minutes → hours for resolution', () {
+    test(
+        'issue KPIs map the documented payload, minutes → hours for resolution',
+        () {
       final data = map({
         DashboardRemoteDataSource.kIssueKpis: {
           'open_tickets': {'count': 17, 'trend_pct': -5.0},
           'sla_breaches': {'count': 3, 'trend_pct': 50.0},
           'avg_resolution': {'minutes': 412, 'trend_pct': -8.2},
           'first_response': {'minutes': 95, 'trend_pct': 12.0},
-          'reopen_rate': {'pct': 4.8, 'trend_pct': 1.5}, // no slot in the 4-card grid
+          'reopen_rate': {
+            'pct': 4.8,
+            'trend_pct': 1.5
+          }, // no slot in the 4-card grid
         },
       });
       expect(data.helpKpis[0].value, '17');
       expect(data.helpKpis[1].value, '3');
       expect(data.helpKpis[1].trendPositive, isFalse); // more breaches = bad
       expect(data.helpKpis[2].value, '6.9'); // 412 min → 6.87 h → 6.9
-      expect(data.helpKpis[2].unit, 'hours'); // card reads in hours, API in minutes
+      expect(data.helpKpis[2].unit,
+          'hours'); // card reads in hours, API in minutes
       expect(data.helpKpis[2].trendPositive, isTrue); // resolving faster = good
       expect(data.helpKpis[3].value, '95'); // already minutes, no conversion
     });
@@ -538,7 +586,8 @@ void main() {
       expect(data.helpPriority[3].color, DashColors.red);
     });
 
-    test('all-zero SLA blocks still map — an empty helpdesk is not a failure', () {
+    test('all-zero SLA blocks still map — an empty helpdesk is not a failure',
+        () {
       final data = map({
         DashboardRemoteDataSource.kIssueSla: {
           'sla': {'within_sla': 0, 'at_risk': 0, 'breached': 0},
@@ -563,7 +612,8 @@ void main() {
 
   group('full fallback', () {
     test('an all-failed bundle returns the mock sections untouched', () {
-      final data = DashboardRemoteDataSource.mapDashboard(<String, Object?>{}, base);
+      final data =
+          DashboardRemoteDataSource.mapDashboard(<String, Object?>{}, base);
 
       expect(identical(data.adminKpis, base.adminKpis), isTrue);
       expect(data.receivablesTotal, base.receivablesTotal);

@@ -77,8 +77,7 @@ void main() {
       expect(g.achieveSub, 'Reach ₹20,00,000 to unlock the reward');
     });
 
-    test('grant enrichment: approved pill + reward copy from the snapshot',
-        () {
+    test('grant enrichment: approved pill + reward copy from the snapshot', () {
       final data = RewardsRemoteDataSource.mapRewards(
         base: base,
         progressRows: [progressRow(achieved: true, pct: '1.0000')],

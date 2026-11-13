@@ -37,7 +37,8 @@ class LeadsRemoteDataSource {
   /// [_pageSize] is the server's `max_page_size` — fewer round trips for the
   /// same rows. `page_size` above the ceiling is clamped server-side, not
   /// rejected, so this is safe even if the ceiling drops.
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
   static const int _pageSize = 200;
 
   /// Raw lead rows (up to [_maxPages] pages). Exposed separately from
@@ -104,7 +105,8 @@ class LeadsRemoteDataSource {
     try {
       final body =
           await _api.get(ApiEndpoints.leadStatuses, query: {'page_size': 100});
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <String, String>{};
       for (final row in rows) {
         final name = _lower(row['name']);
@@ -170,7 +172,8 @@ class LeadsRemoteDataSource {
       // An explicit "Unassigned" owner is a null the server must see —
       // dropping it lets the server make the creator the owner (webapp
       // sends `lead_owner: null`).
-      if (fields.containsKey('lead_owner') && fields['lead_owner'] == null) 'lead_owner': null,
+      if (fields.containsKey('lead_owner') && fields['lead_owner'] == null)
+        'lead_owner': null,
     });
     if (body is! Map<String, dynamic>) return null;
     try {
@@ -260,8 +263,10 @@ class LeadsRemoteDataSource {
   /// A field this org has not configured as visible is not on the serializer
   /// at all, so the API accepts it, echoes it back and never stores it. Send
   /// only names the schema actually exposes — see [leadWriteFields].
-  Future<Lead?> updateLead(String id, Map<String, dynamic> fields, {String? version}) async {
-    final body = await _api.patch(ApiEndpoints.lead(id), body: fields, headers: ifMatchHeaders(version));
+  Future<Lead?> updateLead(String id, Map<String, dynamic> fields,
+      {String? version}) async {
+    final body = await _api.patch(ApiEndpoints.lead(id),
+        body: fields, headers: ifMatchHeaders(version));
     if (body is! Map<String, dynamic>) return null;
     try {
       return mapLead(body);
@@ -279,9 +284,10 @@ class LeadsRemoteDataSource {
   /// Each row is registered into [UserDirectory] on the way through, so the
   /// picker's avatars and the lead's own owner row resolve to the same person.
   Future<List<CatalogOption>> fetchAssignableUsers(String id) async {
-    final body = await _api.get(ApiEndpoints.leadAssignableUsers(id),
+    final body = await _api.getAllPages(ApiEndpoints.leadAssignableUsers(id),
         query: {'page_size': 200});
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <CatalogOption>[];
     for (final row in rows) {
       UserDirectory.registerJson(row);
@@ -302,7 +308,8 @@ class LeadsRemoteDataSource {
   /// silently ignored. The response echoes the updated record (and a freshly
   /// stamped `stage_entered_at`, which the aging filter reads).
   Future<Lead?> updateLeadStatus(String id, String statusId) async {
-    final body = await _api.patch(ApiEndpoints.lead(id), body: {'status_id': statusId});
+    final body =
+        await _api.patch(ApiEndpoints.lead(id), body: {'status_id': statusId});
     if (body is! Map<String, dynamic>) return null;
     return mapLead(body, statusTypes: await statusTypes());
   }
@@ -352,9 +359,8 @@ class LeadsRemoteDataSource {
 
     final ownerJson = row['lead_owner'];
     UserDirectory.registerJson(ownerJson);
-    final owner = ownerJson is Map
-        ? UserDirectory.mapUserId(_userIdOf(ownerJson))
-        : '';
+    final owner =
+        ownerJson is Map ? UserDirectory.mapUserId(_userIdOf(ownerJson)) : '';
 
     final team = <String>[];
     final assignees = row['assignees'];
@@ -408,11 +414,13 @@ class LeadsRemoteDataSource {
       territory: _refName(row['territory']),
       email: _str(row, 'email'),
       website: _str(row, 'website'),
-      industry: industryName.isNotEmpty ? industryName : _refName(row['industry']),
+      industry:
+          industryName.isNotEmpty ? industryName : _refName(row['industry']),
       location: _str(row, 'location'),
       createdOn: absoluteDate(parseApiDate(row['created_at'])),
       time: relativeTime(parseApiDate(row['activity'])),
-      lastFu: _followupLabel(row['last_followup_type'], row['last_followup_at']),
+      lastFu:
+          _followupLabel(row['last_followup_type'], row['last_followup_at']),
       notif: 0,
       upsell: row['is_upsell'] == true,
       fromCustomerId: _parentCustomerOf(row['parent_customer']),
@@ -467,9 +475,8 @@ class LeadsRemoteDataSource {
     final when = parseApiDate(at);
     if (when == null) return '';
     final t = (type is String ? type : '').trim();
-    final label = t.isEmpty
-        ? 'Follow-up'
-        : '${t[0].toUpperCase()}${t.substring(1)}';
+    final label =
+        t.isEmpty ? 'Follow-up' : '${t[0].toUpperCase()}${t.substring(1)}';
     return '$label · ${relativeTime(when)}';
   }
 

@@ -47,4 +47,26 @@ abstract class LmsRepository {
     required String userId,
     required String courseId,
   });
+
+  // ── Course writes (webapp course editor). Each throws on refusal so the
+  // caller never reports a success the server did not confirm. ──
+
+  /// Creates a draft course; returns its id.
+  Future<String> createCourse({required String title});
+
+  /// Saves the editor's course fields.
+  Future<void> updateCourse(
+    String courseId, {
+    required String title,
+    required String description,
+    required bool sequential,
+    required bool mandatory,
+  });
+
+  Future<void> publishCourse(String courseId);
+
+  /// Moves a published course back to draft.
+  Future<void> draftCourse(String courseId);
+
+  Future<void> deleteCourse(String courseId);
 }

@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../auth/application/providers/auth_providers.dart';
 import '../../../../app/router/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
@@ -88,6 +89,21 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   bool get _internal => _reportedFor == kReportedForInternal;
 
   @override
+  void initState() {
+    super.initState();
+    // A new ticket starts assigned to whoever raises it (UI/UX audit #06 /
+    // #18), so it shows up under "My Tickets" instead of vanishing into the
+    // unassigned queue. Still changeable, or clearable to "Unassigned".
+    if (!_isEditing) {
+      final me = ref.read(sessionControllerProvider).user;
+      if (me != null && me.id.isNotEmpty) {
+        _assigneeId = me.id;
+        _assigneeName = me.fullName.isNotEmpty ? me.fullName : me.email;
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _scroll.dispose();
     _subjectCtrl.dispose();
@@ -102,7 +118,11 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
       });
 
   /// Edit: seed every field from the loaded ticket, once.
+  /// The `updated_at` the form was filled from — sent as `If-Match` (C06).
+  String? _version;
+
   void _seed(Ticket t) {
+    _version = t.facts?.updatedAt;
     final f = t.facts;
     _ticket = t;
     _subjectCtrl.text = t.subject;
@@ -110,7 +130,9 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     _reportedFor = f?.reportedFor ?? kReportedForClient;
     _custId = t.custId.isEmpty ? null : t.custId;
     _savedCustId = _custId;
-    _custLabel = f?.customerName ?? ref.read(ticketDirectoryProvider).customer(_custId)?.display ?? '';
+    _custLabel = f?.customerName ??
+        ref.read(ticketDirectoryProvider).customer(_custId)?.display ??
+        '';
     _contactId = f?.contactId;
     _contactLabel = f?.contactName;
     _channel = t.channel.toLowerCase().replaceAll('-', '');
@@ -120,7 +142,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     _projId = t.projId;
     _projName = t.projName;
     _statusId = t.statusId;
-    _priority = _orgPriority(t.priorityName.isNotEmpty ? t.priorityName : t.pri);
+    _priority =
+        _orgPriority(t.priorityName.isNotEmpty ? t.priorityName : t.pri);
     _priorityPicked = true;
     _assigneeId = f?.assignedToId;
     _assigneeName = f?.assignedToName;
@@ -148,19 +171,26 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     final statuses = ref.watch(ticketStatusOptionsProvider);
 
     if (_isEditing && !_seeded) {
-      final detail = ApiConfig.apiEnabled ? ref.watch(ticketDetailProvider(widget.editId!)) : null;
-      final t = detail?.valueOrNull ?? ref.watch(ticketByIdProvider(widget.editId!));
+      final detail = ApiConfig.apiEnabled
+          ? ref.watch(ticketDetailProvider(widget.editId!))
+          : null;
+      final t =
+          detail?.valueOrNull ?? ref.watch(ticketByIdProvider(widget.editId!));
       if (t != null && (detail == null || !detail.isLoading)) {
         _seed(t);
       } else if (detail != null && detail.isLoading) {
-        return _shell(child: const Center(child: CircularProgressIndicator()), canSave: false);
+        return _shell(
+            child: const Center(child: CircularProgressIndicator()),
+            canSave: false);
       } else {
         return _shell(
           child: Center(
             child: Padding(
               padding: EdgeInsets.all(24.w),
-              child: Text("This ticket couldn't be loaded. Go back and try again.",
-                  textAlign: TextAlign.center, style: AppText.body(color: AppColors.textMuted)),
+              child: Text(
+                  "This ticket couldn't be loaded. Go back and try again.",
+                  textAlign: TextAlign.center,
+                  style: AppText.body(color: AppColors.textMuted)),
             ),
           ),
           canSave: false,
@@ -169,7 +199,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     }
     // A new ticket starts on the org's default status.
     if (!_isEditing && _statusId.isEmpty && statuses.isNotEmpty) {
-      _statusId = (statuses.where((s) => s.isDefault).firstOrNull ?? statuses.first).id;
+      _statusId =
+          (statuses.where((s) => s.isDefault).firstOrNull ?? statuses.first).id;
     }
 
     return _shell(canSave: canSave, child: _form(types, statuses));
@@ -199,13 +230,18 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     // The customer search's first page also tells whether customers are
     // readable at all (a 403 explains itself under the field).
     final firstPage = ref.watch(ticketCustomerSearchProvider(''));
-    final forbidden = firstPage.error is AppError && (firstPage.error! as AppError).type == AppErrorType.forbidden;
-    final helper = customerFieldHelper(forbidden: forbidden, internal: _internal);
+    final forbidden = firstPage.error is AppError &&
+        (firstPage.error! as AppError).type == AppErrorType.forbidden;
+    final helper =
+        customerFieldHelper(forbidden: forbidden, internal: _internal);
 
     final customerChanged = _isEditing && _custId != _savedCustId;
     final resolved = _ticket?.facts?.statusResolved ?? false;
-    final wantSla = _custId != null && (!_isEditing || (customerChanged && !resolved));
-    final sla = wantSla ? ref.watch(ticketCustomerSlaProvider(_custId!)).valueOrNull : null;
+    final wantSla =
+        _custId != null && (!_isEditing || (customerChanged && !resolved));
+    final sla = wantSla
+        ? ref.watch(ticketCustomerSlaProvider(_custId!)).valueOrNull
+        : null;
     final preview = slaPreviewCopy(
       isEditing: _isEditing,
       customerId: _custId,
@@ -215,11 +251,16 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
       customerChanged: customerChanged,
       resolved: resolved,
     );
-    final hint = priorityHint(types: types, typeId: _typeId, priority: _priority, pickedByUser: _priorityPicked);
+    final hint = priorityHint(
+        types: types,
+        typeId: _typeId,
+        priority: _priority,
+        pickedByUser: _priorityPicked);
     final channels = [
       ...kTicketChannels,
       // A ticket that came in some other way (API, …) keeps its channel.
-      if (!kTicketChannels.any((c) => c.$1 == _channel)) (_channel, _channel.isEmpty ? '—' : _channel.toUpperCase()),
+      if (!kTicketChannels.any((c) => c.$1 == _channel))
+        (_channel, _channel.isEmpty ? '—' : _channel.toUpperCase()),
     ];
 
     return ListView(
@@ -249,7 +290,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         TicketChipWrap(
           options: const ['Customer', 'Internal'],
           selected: _internal ? 'Internal' : 'Customer',
-          onSelect: (v) => _touch(() => _reportedFor = v == 'Internal' ? kReportedForInternal : kReportedForClient),
+          onSelect: (v) => _touch(() => _reportedFor =
+              v == 'Internal' ? kReportedForInternal : kReportedForClient),
         ),
         SizedBox(height: 14.h),
         TicketFieldLabel('Customer', required: !_internal),
@@ -257,7 +299,9 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         TicketPickerRow(
           label: _custId == null
               ? 'Search customers…'
-              : (_custLabel.isNotEmpty ? _custLabel : (dir.customer(_custId)?.display ?? 'Selected customer')),
+              : (_custLabel.isNotEmpty
+                  ? _custLabel
+                  : (dir.customer(_custId)?.display ?? 'Selected customer')),
           placeholder: _custId == null,
           icon: PhosphorIconsRegular.magnifyingGlass,
           onTap: _pickCustomer,
@@ -272,19 +316,26 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         SizedBox(height: 7.h),
         TicketChipWrap(
           options: [for (final c in channels) c.$2],
-          selected: channels.firstWhere((c) => c.$1 == _channel, orElse: () => channels.first).$2,
-          onSelect: (v) => _touch(() => _channel = channels.firstWhere((c) => c.$2 == v).$1),
+          selected: channels
+              .firstWhere((c) => c.$1 == _channel, orElse: () => channels.first)
+              .$2,
+          onSelect: (v) =>
+              _touch(() => _channel = channels.firstWhere((c) => c.$2 == v).$1),
         ),
         SizedBox(height: 14.h),
         const TicketFieldLabel('Category'),
         SizedBox(height: 7.h),
         TicketChipWrap(
           options: ['Uncategorised', for (final t in types) t.name],
-          selected: types.where((t) => t.id == _typeId).firstOrNull?.name ?? 'Uncategorised',
+          selected: types.where((t) => t.id == _typeId).firstOrNull?.name ??
+              'Uncategorised',
           onSelect: (v) => _touch(() {
             _typeId = types.where((t) => t.name == v).firstOrNull?.id;
             _priority = priorityAfterCategoryChange(
-                types: types, typeId: _typeId, current: _priority, pickedByUser: _priorityPicked);
+                types: types,
+                typeId: _typeId,
+                current: _priority,
+                pickedByUser: _priorityPicked);
           }),
         ),
         SizedBox(height: 14.h),
@@ -295,7 +346,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
           placeholder: _productId == null,
           icon: PhosphorIconsRegular.magnifyingGlass,
           onTap: () async {
-            final picked = await pickTicketProduct(context, ref, selectedId: _productId);
+            final picked =
+                await pickTicketProduct(context, ref, selectedId: _productId);
             if (picked == null || !mounted) return;
             _touch(() {
               _productId = picked.id;
@@ -312,7 +364,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
           placeholder: _projId == null,
           icon: PhosphorIconsRegular.magnifyingGlass,
           onTap: () async {
-            final picked = await pickTicketProject(context, ref, selectedId: _projId);
+            final picked =
+                await pickTicketProject(context, ref, selectedId: _projId);
             if (picked == null || !mounted) return;
             _touch(() {
               _projId = picked.id;
@@ -331,9 +384,14 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         else
           TicketChipWrap(
             options: [for (final s in statuses) s.name],
-            selected: statuses.where((s) => s.id == _statusId).firstOrNull?.name ?? '',
-            dotColor: (name) => statuses.where((s) => s.name == name).firstOrNull?.color ?? AppColors.textMuted,
-            onSelect: (v) => _touch(() => _statusId = statuses.firstWhere((s) => s.name == v).id),
+            selected:
+                statuses.where((s) => s.id == _statusId).firstOrNull?.name ??
+                    '',
+            dotColor: (name) =>
+                statuses.where((s) => s.name == name).firstOrNull?.color ??
+                AppColors.textMuted,
+            onSelect: (v) => _touch(
+                () => _statusId = statuses.firstWhere((s) => s.name == v).id),
           ),
         SizedBox(height: 14.h),
         const TicketFieldLabel('Priority'),
@@ -352,7 +410,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         const TicketFieldLabel('Assignee'),
         SizedBox(height: 7.h),
         TicketPickerRow(
-          label: _assigneeName ?? (_assigneeId == null ? 'Unassigned' : 'Assigned'),
+          label: _assigneeName ??
+              (_assigneeId == null ? 'Unassigned' : 'Assigned'),
           placeholder: _assigneeId == null,
           icon: PhosphorIconsBold.caretDown,
           onTap: _pickAssignee,
@@ -372,8 +431,10 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     final contacts = ref.watch(ticketContactsProvider(_custId!));
     if (contacts.isLoading) return _placeholderBox('Loading contacts…');
     final options = contacts.valueOrNull ?? const <TicketPickOption>[];
-    if (options.isEmpty) return _placeholderBox('No contacts on file for this customer');
-    final label = options.where((c) => c.id == _contactId).firstOrNull?.name ?? _contactLabel;
+    if (options.isEmpty)
+      return _placeholderBox('No contacts on file for this customer');
+    final label = options.where((c) => c.id == _contactId).firstOrNull?.name ??
+        _contactLabel;
     return TicketPickerRow(
       label: _contactId == null ? 'No contact' : (label ?? 'Selected contact'),
       placeholder: _contactId == null,
@@ -408,7 +469,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         icon: PhosphorIconsRegular.lockSimple,
       );
     }
-    final defaults = _billable ? ref.watch(ticketBillingDefaultsProvider).valueOrNull : null;
+    final defaults =
+        _billable ? ref.watch(ticketBillingDefaultsProvider).valueOrNull : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -425,7 +487,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
             hint: 'e.g. 2500',
             onChanged: (_) => setState(() => _dirty = true),
           ),
-          _helper(billableAmountHint(defaults, hasProduct: _billableProductId != null)),
+          _helper(billableAmountHint(defaults,
+              hasProduct: _billableProductId != null)),
           SizedBox(height: 12.h),
           const TicketFieldLabel('Billable product'),
           SizedBox(height: 7.h),
@@ -434,7 +497,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
             placeholder: _billableProductId == null,
             icon: PhosphorIconsRegular.magnifyingGlass,
             onTap: () async {
-              final picked = await pickTicketProduct(context, ref, selectedId: _billableProductId);
+              final picked = await pickTicketProduct(context, ref,
+                  selectedId: _billableProductId);
               if (picked == null || !mounted) return;
               _touch(() {
                 _billableProductId = picked.id;
@@ -451,7 +515,11 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   String? _billableLabel() {
     if (_billableProductId == null) return null;
     return _billableProductName ??
-        ref.watch(allProductsProvider).where((p) => p.id == _billableProductId).firstOrNull?.name ??
+        ref
+            .watch(allProductsProvider)
+            .where((p) => p.id == _billableProductId)
+            .firstOrNull
+            ?.name ??
         'Selected product';
   }
 
@@ -486,7 +554,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     // An existing assignee who has since lost access stays selectable.
     final options = [
       for (final u in users) (u.id, u.name, ''),
-      if (_assigneeId != null && !users.any((u) => u.id == _assigneeId)) (_assigneeId!, _assigneeName ?? 'Current assignee', ''),
+      if (_assigneeId != null && !users.any((u) => u.id == _assigneeId))
+        (_assigneeId!, _assigneeName ?? 'Current assignee', ''),
     ];
     final picked = await pickTicketLink(
       context,
@@ -508,7 +577,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   Future<void> _save() async {
     if (_saving) return;
     // Nothing is sent without the grant (webapp PermissionGate copy).
-    if (!ensurePermission(ref, 'issue', _isEditing ? PermVerb.update : PermVerb.create)) return;
+    if (!ensurePermission(
+        ref, 'issue', _isEditing ? PermVerb.update : PermVerb.create)) return;
     final amount = moneyInput(_amountCtrl.text);
     final errors = validateTicketInput(
       subject: _subjectCtrl.text,
@@ -520,11 +590,14 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     );
     setState(() => _errors = errors);
     if (errors.isNotEmpty) {
-      _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       return;
     }
     if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show(_isEditing ? 'Ticket updated' : 'Ticket created');
+      ref
+          .read(toastProvider.notifier)
+          .show(_isEditing ? 'Ticket updated' : 'Ticket created');
       _dirty = false;
       _leave();
       return;
@@ -553,27 +626,63 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     final repo = ref.read(ticketsRepositoryProvider);
     try {
       String message = 'Ticket updated';
+      String? createdId;
       if (_isEditing) {
-        await repo.updateTicket(widget.editId!, fields);
+        await repo.updateTicket(widget.editId!, fields, version: _version);
       } else {
         final created = await repo.createTicket(fields);
         final ref_ = created?.reference ?? '';
         message = ref_.isNotEmpty ? 'Ticket $ref_ created' : 'Ticket created';
+        createdId = created?.id;
       }
       refreshTickets(ref);
       ref.invalidate(ticketStatusCountsProvider);
       if (!mounted) return;
       _dirty = false;
       ref.read(toastProvider.notifier).show(message);
+      // A new ticket opens on its detail page (UI/UX audit #06 / #32).
+      if (createdId != null && createdId.isNotEmpty) {
+        context.pushReplacement('${Routes.ticketDetail}?id=$createdId');
+        return;
+      }
       _leave();
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
+      // Changed elsewhere (412, C06) or resolved meanwhile (409, C07): said
+      // inline at the top, the typing kept. A stale form moves to the newer
+      // version, so saving again applies these edits on top of it.
+      if (_isEditing && (isTicketStale(e) || isTicketResolvedLocked(e))) {
+        ref.read(apiServiceProvider).handled(e);
+        if (isTicketStale(e)) {
+          ref.invalidate(ticketDetailProvider(widget.editId!));
+          try {
+            final fresh =
+                await ref.read(ticketDetailProvider(widget.editId!).future);
+            _version = fresh?.facts?.updatedAt ?? _version;
+          } on Object {
+            // Keep the old version; the next save says so again.
+          }
+        }
+        if (!mounted) return;
+        setState(() => _errors = [
+              isTicketStale(e)
+                  ? 'Changed elsewhere — someone updated this ticket after you '
+                      'opened it. Check the fields, then save again to apply '
+                      'your changes on top.'
+                  : ticketResolvedLockedMessage
+            ]);
+        _scroll.animateTo(0,
+            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        return;
+      }
       // The billing guard is a field-level refusal — inline, like the client check.
-      if (isBillableBasisRefusal(fieldErrors: e.fieldErrors, message: e.message)) {
+      if (isBillableBasisRefusal(
+          fieldErrors: e.fieldErrors, message: e.message)) {
         ref.read(apiServiceProvider).handled(e);
         setState(() => _errors = [ticketErrorMessage(e)]);
-        _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        _scroll.animateTo(0,
+            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       } else {
         showTicketError(ref, e);
       }
@@ -586,7 +695,9 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   /// opened straight from a link and has nothing underneath.
   /// The shell navigator's own stack decides: a linked-to form is its only
   /// page there, while the router still reports something to pop.
-  void _leave() => Navigator.of(context).canPop() ? context.pop() : context.go(Routes.tickets);
+  void _leave() => Navigator.of(context).canPop()
+      ? context.pop()
+      : context.go(Routes.tickets);
 
   Future<void> _confirmDiscard() async {
     final discard = await showClozrSheet<bool>(
@@ -601,15 +712,24 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
             SizedBox(height: 4.h),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 2.w),
-              child: Text(_isEditing ? 'Your edits to this ticket will be lost.' : 'This ticket will not be created.',
+              child: Text(
+                  _isEditing
+                      ? 'Your edits to this ticket will be lost.'
+                      : 'This ticket will not be created.',
                   style: AppText.body(color: AppColors.textMuted)),
             ),
             SizedBox(height: 18.h),
             Row(
               children: [
-                Expanded(child: _button('Keep editing', primary: false, onTap: () => Navigator.of(ctx).pop(false))),
+                Expanded(
+                    child: _button('Keep editing',
+                        primary: false,
+                        onTap: () => Navigator.of(ctx).pop(false))),
                 SizedBox(width: 10.w),
-                Expanded(child: _button('Discard', danger: true, onTap: () => Navigator.of(ctx).pop(true))),
+                Expanded(
+                    child: _button('Discard',
+                        danger: true,
+                        onTap: () => Navigator.of(ctx).pop(true))),
               ],
             ),
           ],
@@ -646,8 +766,12 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
                 borderRadius: BorderRadius.circular(11.r),
                 border: Border.all(color: AppColors.borderCard),
               ),
-              child: Icon(_isEditing ? PhosphorIconsBold.caretLeft : PhosphorIconsBold.x,
-                  size: 17.sp, color: AppColors.textBody),
+              child: Icon(
+                  _isEditing
+                      ? PhosphorIconsBold.caretLeft
+                      : PhosphorIconsBold.x,
+                  size: 17.sp,
+                  color: AppColors.textBody),
             ),
           ),
           SizedBox(width: 12.w),
@@ -656,10 +780,19 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(_isEditing ? 'Edit Ticket' : 'New Ticket',
-                    style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    style: AppText.custom(
+                        size: 19,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
                 Text(
-                  _isEditing ? (ref_.isEmpty ? 'Helpdesk' : 'Helpdesk · $ref_') : 'Helpdesk',
-                  style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted),
+                  _isEditing
+                      ? (ref_.isEmpty ? 'Helpdesk' : 'Helpdesk · $ref_')
+                      : 'Helpdesk',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted),
                 ),
               ],
             ),
@@ -670,7 +803,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   }
 
   Widget _footer(bool canSave) {
-    final label = _saving ? 'Saving…' : (_isEditing ? 'Save changes' : 'Create Ticket');
+    final label =
+        _saving ? 'Saving…' : (_isEditing ? 'Save changes' : 'Create Ticket');
     return Container(
       padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 22.h),
       decoration: const BoxDecoration(
@@ -683,16 +817,24 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
           if (!canSave) ...[
             Text(_isEditing ? PermissionCopy.update : PermissionCopy.create,
                 textAlign: TextAlign.center,
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted)),
             SizedBox(height: 8.h),
           ],
           Row(
             children: [
-              SizedBox(width: 100.w, child: _button('Cancel', primary: false, onTap: _saving ? null : _close)),
+              SizedBox(
+                  width: 100.w,
+                  child: _button('Cancel',
+                      primary: false, onTap: _saving ? null : _close)),
               SizedBox(width: 10.w),
               // Greyed without the grant — the webapp's disabled button; a tap
               // still explains why instead of sending anything.
-              Expanded(child: _button(label, enabled: canSave && !_saving, onTap: _save)),
+              Expanded(
+                  child: _button(label,
+                      enabled: canSave && !_saving, onTap: _save)),
             ],
           ),
         ],
@@ -700,8 +842,16 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     );
   }
 
-  Widget _button(String label, {bool primary = true, bool danger = false, bool enabled = true, VoidCallback? onTap}) {
-    final bg = danger ? AppColors.error : (primary ? (enabled ? AppColors.navy : AppColors.textPlaceholder) : AppColors.white);
+  Widget _button(String label,
+      {bool primary = true,
+      bool danger = false,
+      bool enabled = true,
+      VoidCallback? onTap}) {
+    final bg = danger
+        ? AppColors.error
+        : (primary
+            ? (enabled ? AppColors.navy : AppColors.textPlaceholder)
+            : AppColors.white);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -710,13 +860,17 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(12.r),
-          border: primary || danger ? null : Border.all(color: AppColors.borderCard),
+          border: primary || danger
+              ? null
+              : Border.all(color: AppColors.borderCard),
         ),
         child: Text(label,
             style: AppText.custom(
                 size: 14.5,
                 weight: FontWeight.w700,
-                color: primary || danger ? AppColors.white : AppColors.textLabelAlt)),
+                color: primary || danger
+                    ? AppColors.white
+                    : AppColors.textLabelAlt)),
       ),
     );
   }
@@ -724,13 +878,21 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   Widget _section(String title) => Padding(
         padding: EdgeInsets.fromLTRB(2.w, 22.h, 2.w, 12.h),
         child: Text(title.toUpperCase(),
-            style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)),
+            style: AppText.custom(
+                size: 12,
+                weight: FontWeight.w700,
+                color: AppColors.textMuted,
+                letterSpacing: 0.5)),
       );
 
   Widget _helper(String text) => Padding(
         padding: EdgeInsets.only(top: 6.h, left: 2.w),
         child: Text(text,
-            style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted2).copyWith(height: 1.4)),
+            style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted2)
+                .copyWith(height: 1.4)),
       );
 
   Widget _placeholderBox(String text) => Container(
@@ -743,7 +905,11 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
           border: Border.all(color: AppColors.borderInput),
           color: AppColors.bgScreen,
         ),
-        child: Text(text, style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+        child: Text(text,
+            style: AppText.custom(
+                size: 13.5,
+                weight: FontWeight.w500,
+                color: AppColors.textPlaceholder)),
       );
 
   Widget _errorBox() => Container(
@@ -761,7 +927,11 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
               Padding(
                 padding: EdgeInsets.symmetric(vertical: 2.h),
                 child: Text(e,
-                    style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textPrimary).copyWith(height: 1.4)),
+                    style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPrimary)
+                        .copyWith(height: 1.4)),
               ),
           ],
         ),
@@ -770,11 +940,14 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   Widget _slaBox(SlaPreview p) => Container(
         width: double.infinity,
         padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 12.h),
-        decoration: BoxDecoration(color: AppColors.bgScreen, borderRadius: BorderRadius.circular(11.r)),
+        decoration: BoxDecoration(
+            color: AppColors.bgScreen,
+            borderRadius: BorderRadius.circular(11.r)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(PhosphorIconsRegular.timer, size: 15.sp, color: AppColors.navy),
+            Icon(PhosphorIconsRegular.timer,
+                size: 15.sp, color: AppColors.navy),
             SizedBox(width: 9.w),
             Expanded(
               child: Column(
@@ -782,14 +955,19 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
                 children: [
                   if (p.headline != null) ...[
                     Text(p.headline!,
-                        style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 3.h),
                   ],
                   Text(p.detail,
                       style: AppText.custom(
                               size: 12.5,
                               weight: FontWeight.w500,
-                              color: p.headline != null ? AppColors.textMuted : AppColors.textBody)
+                              color: p.headline != null
+                                  ? AppColors.textMuted
+                                  : AppColors.textBody)
                           .copyWith(height: 1.45)),
                 ],
               ),
@@ -807,7 +985,8 @@ class _CustomerSearchSheet extends ConsumerStatefulWidget {
   final String? selectedId;
 
   @override
-  ConsumerState<_CustomerSearchSheet> createState() => _CustomerSearchSheetState();
+  ConsumerState<_CustomerSearchSheet> createState() =>
+      _CustomerSearchSheetState();
 }
 
 class _CustomerSearchSheetState extends ConsumerState<_CustomerSearchSheet> {
@@ -848,9 +1027,14 @@ class _CustomerSearchSheetState extends ConsumerState<_CustomerSearchSheet> {
       failed: err != null && !forbidden,
       query: _typed,
     );
-    final footer = page.hasValue ? customerResultsFooter(rows.length, _last!.$2, _search) : null;
+    final footer = page.hasValue
+        ? customerResultsFooter(rows.length, _last!.$2, _search)
+        : null;
 
-    Widget row(String label, {required bool active, required VoidCallback onTap, bool muted = false}) =>
+    Widget row(String label,
+            {required bool active,
+            required VoidCallback onTap,
+            bool muted = false}) =>
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
@@ -863,16 +1047,21 @@ class _CustomerSearchSheetState extends ConsumerState<_CustomerSearchSheet> {
                       style: AppText.custom(
                           size: 14,
                           weight: FontWeight.w700,
-                          color: muted ? AppColors.textMuted : AppColors.textPrimary)),
+                          color: muted
+                              ? AppColors.textMuted
+                              : AppColors.textPrimary)),
                 ),
-                if (active) Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.blueBright),
+                if (active)
+                  Icon(PhosphorIconsBold.check,
+                      size: 16.sp, color: AppColors.blueBright),
               ],
             ),
           ),
         );
 
     return Padding(
-      padding: EdgeInsets.only(bottom: 24.h + MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+          bottom: 24.h + MediaQuery.of(context).viewInsets.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -892,7 +1081,11 @@ class _CustomerSearchSheetState extends ConsumerState<_CustomerSearchSheet> {
               padding: EdgeInsets.symmetric(horizontal: 18.w),
               children: [
                 if (widget.selectedId != null)
-                  row('No customer', active: false, muted: true, onTap: () => Navigator.of(context).pop((id: null, name: null))),
+                  row('No customer',
+                      active: false,
+                      muted: true,
+                      onTap: () =>
+                          Navigator.of(context).pop((id: null, name: null))),
                 if (notice != null)
                   _note(notice)
                 else if (rows.isEmpty)
@@ -901,7 +1094,8 @@ class _CustomerSearchSheetState extends ConsumerState<_CustomerSearchSheet> {
                   for (final c in rows)
                     row(c.name,
                         active: c.id == widget.selectedId,
-                        onTap: () => Navigator.of(context).pop((id: c.id, name: c.name))),
+                        onTap: () => Navigator.of(context)
+                            .pop((id: c.id, name: c.name))),
                   if (footer != null) _note(footer),
                 ],
               ],
@@ -914,6 +1108,8 @@ class _CustomerSearchSheetState extends ConsumerState<_CustomerSearchSheet> {
 
   Widget _note(String text) => Padding(
         padding: EdgeInsets.symmetric(vertical: 14.h),
-        child: Text(text, style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+        child: Text(text,
+            style: AppText.custom(
+                size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
       );
 }

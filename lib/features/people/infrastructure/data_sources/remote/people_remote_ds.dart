@@ -26,7 +26,8 @@ class PeopleRemoteDataSource {
 
   /// The UI's providers expect a full in-memory list — follow `next` up to a
   /// sane cap instead of paging forever.
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   // ── Reads (raw rows; the repository caches these) ──
 
@@ -125,8 +126,8 @@ class PeopleRemoteDataSource {
   Future<List<Map<String, dynamic>>> fetchMemberActivity(String userId) async {
     if (userId.isEmpty) return const [];
     try {
-      final body = await _api.get(ApiEndpoints.userActivity(userId),
-          query: {'limit': 20});
+      final body = await _api
+          .get(ApiEndpoints.userActivity(userId), query: {'limit': 20});
       final results = body is Map<String, dynamic> ? body['results'] : body;
       return results is List
           ? results.whereType<Map<String, dynamic>>().toList()
@@ -195,7 +196,8 @@ class PeopleRemoteDataSource {
     // write accepts an empty string for it.
     if (phone != null) body['phone'] = phone.trim();
     if (roleId != null && roleId.isNotEmpty) body['role_id'] = roleId;
-    if (managerId != null && managerId.isNotEmpty) body['manager_id'] = managerId;
+    if (managerId != null && managerId.isNotEmpty)
+      body['manager_id'] = managerId;
     if (body.isEmpty) return;
     await _api.patch(ApiEndpoints.user(userId), body: body);
   }
@@ -238,10 +240,12 @@ class PeopleRemoteDataSource {
   /// One call per user; the endpoint takes a single `user_id`. "Already a
   /// member" comes back as a 400, which the caller treats as success rather
   /// than an error — the desired end state is the same.
-  Future<void> addTeamMember({required String teamId, required String userId}) async {
+  Future<void> addTeamMember(
+      {required String teamId, required String userId}) async {
     if (teamId.isEmpty || userId.isEmpty) return;
     try {
-      await _api.post(ApiEndpoints.teamMembers(teamId), body: {'user_id': userId});
+      await _api
+          .post(ApiEndpoints.teamMembers(teamId), body: {'user_id': userId});
     } on AppError catch (e) {
       final already = e.message.toLowerCase().contains('already');
       if (e.type != AppErrorType.validation || !already) rethrow;
@@ -340,7 +344,8 @@ class PeopleRemoteDataSource {
         'description': description.trim(),
       if (groups.isNotEmpty)
         'module_groups': [
-          for (final group in groups) {'group': group, 'visibility': visibility},
+          for (final group in groups)
+            {'group': group, 'visibility': visibility},
         ],
     };
   }
@@ -394,7 +399,8 @@ class PeopleRemoteDataSource {
             .join(' ');
 
     final role = json['role'];
-    final roleName = role is Map ? (role['name'] as String? ?? 'Viewer') : 'Viewer';
+    final roleName =
+        role is Map ? (role['name'] as String? ?? 'Viewer') : 'Viewer';
 
     final scope = json['scope'];
     final manager = json['manager'];
@@ -433,8 +439,9 @@ class PeopleRemoteDataSource {
       phone: phone,
       role: roleName,
       scope: scope is Map ? (scope['label'] as String? ?? '—') : '—',
-      reportsTo:
-          manager is Map ? (manager['full_name'] as String? ?? '— (exempt)') : '— (exempt)',
+      reportsTo: manager is Map
+          ? (manager['full_name'] as String? ?? '— (exempt)')
+          : '— (exempt)',
       managerId: manager is Map ? (manager['user_id'] as String? ?? '') : '',
       team: team,
       status: memberStatusKey(json),
@@ -557,7 +564,8 @@ class PeopleRemoteDataSource {
       scopeCode: _roleScopeCode(json) ?? '',
       // Absent on an older payload: fall back to "editable implies deletable",
       // which is what the screen assumed before this field existed.
-      deletable: json['is_deletable'] as bool? ?? (json['is_editable'] != false),
+      deletable:
+          json['is_deletable'] as bool? ?? (json['is_editable'] != false),
       userCount: (json['user_count'] as num?)?.toInt() ?? 0,
     );
   }
@@ -623,15 +631,16 @@ class PeopleRemoteDataSource {
     }
     bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
     bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
-    final hex =
-        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   static String _percent(num value) {
     final v = value.toDouble();
-    return v == v.roundToDouble() ? '${v.toInt()}%' : '${v.toStringAsFixed(1)}%';
+    return v == v.roundToDouble()
+        ? '${v.toInt()}%'
+        : '${v.toStringAsFixed(1)}%';
   }
 
   Future<List<Map<String, dynamic>>> _pagedRows(

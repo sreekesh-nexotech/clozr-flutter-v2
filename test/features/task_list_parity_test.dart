@@ -7,7 +7,10 @@ import 'package:clozrapp/features/crm/presentation/components/due_date_change.da
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const statuses = [CatalogOption(id: 's-open', name: 'Open'), CatalogOption(id: 's-done', name: 'Completed')];
+  const statuses = [
+    CatalogOption(id: 's-open', name: 'Open'),
+    CatalogOption(id: 's-done', name: 'Completed')
+  ];
   const priorities = [CatalogOption(id: 'p-high', name: 'high')];
   const codec = TaskFilterCodec(statuses: statuses, priorities: priorities);
 
@@ -26,7 +29,9 @@ void main() {
       'is_overdue': 'true',
     });
     // "is not" status sends ids, not names.
-    expect(codec.encode(FilterValues()..['statuses'] = ChoiceValue(ids: {'s-done'}, isNot: true)),
+    expect(
+        codec.encode(FilterValues()
+          ..['statuses'] = ChoiceValue(ids: {'s-done'}, isNot: true)),
         {'status__not': 's-done'});
   });
 
@@ -43,12 +48,17 @@ void main() {
     expect(slipLabel(4), '+4 days');
     expect(slipLabel(-1), '-1 day');
     expect(slipLabel(0), 'No slip');
-    expect(rescheduleLabel({'reschedule_count': 2, 'slip_days': 4}), 'Moved 2×, +4 days');
+    expect(rescheduleLabel({'reschedule_count': 2, 'slip_days': 4}),
+        'Moved 2×, +4 days');
     expect(rescheduleLabel({'reschedule_count': 0}), isNull);
-    expect(dueDateReasonOptions(['Client requested', 'Other', ' Client requested ']), ['Client requested', 'Other']);
+    expect(
+        dueDateReasonOptions(
+            ['Client requested', 'Other', ' Client requested ']),
+        ['Client requested', 'Other']);
   });
 
-  test('a saved filter on yourself ticks your own name in the Assignee list', () {
+  test('a saved filter on yourself ticks your own name in the Assignee list',
+      () {
     // Webapp: "My Tasks" (assigned_to__in = the signed-in user) reopens with that
     // user ticked. It used to come back as `me`, which the list (keyed by real
     // user ids) never matched — "1 selected" with nothing ticked.
@@ -57,7 +67,8 @@ void main() {
     addTearDown(UserDirectory.reset);
     final spec = buildTasksFilterSpec(assignableUsers: const [
       CatalogOption(id: me, name: 'Ashish Nexotech'),
-      CatalogOption(id: 'cadc69f1-aed0-4584-848f-1095751b349c', name: 'Neeraja Pradeep'),
+      CatalogOption(
+          id: 'cadc69f1-aed0-4584-848f-1095751b349c', name: 'Neeraja Pradeep'),
     ]);
     final v = const TaskFilterCodec().decode({'assigned_to__in': me}, spec);
     expect(v.choice('assignees')?.ids, {me});

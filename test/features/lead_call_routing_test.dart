@@ -44,7 +44,8 @@ class _ExotelAdapter implements HttpClientAdapter {
       );
     }
     return ResponseBody.fromString(
-      jsonEncode({'call_sid': 'sid1', 'call_log_id': 'cl1', 'status': 'Ringing'}),
+      jsonEncode(
+          {'call_sid': 'sid1', 'call_log_id': 'cl1', 'status': 'Ringing'}),
       200,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -114,7 +115,8 @@ void main() {
       );
 
   group('Exotel route', () {
-    test('a connected org calls through Exotel and never opens the dialler', () async {
+    test('a connected org calls through Exotel and never opens the dialler',
+        () async {
       final adapter = _ExotelAdapter();
       final logs = _RecordingLogs();
       final out = await service(exotel: _exotelWith(adapter), logs: logs).call(
@@ -124,7 +126,8 @@ void main() {
       );
 
       expect(out.result, LeadCallResult.ringingViaExotel);
-      expect(dialled, isEmpty, reason: 'Exotel rings the agent; nothing to dial');
+      expect(dialled, isEmpty,
+          reason: 'Exotel rings the agent; nothing to dial');
       // The server writes the call log itself — posting ours too would double it.
       expect(logs.logged, isEmpty);
 
@@ -137,7 +140,8 @@ void main() {
       });
     });
 
-    test('enabled but unconfigured is not usable — goes to the dialler', () async {
+    test('enabled but unconfigured is not usable — goes to the dialler',
+        () async {
       final logs = _RecordingLogs();
       final adapter = _ExotelAdapter();
       final out = await service(exotel: _exotelWith(adapter), logs: logs).call(
@@ -173,10 +177,15 @@ void main() {
   });
 
   group('unknown status', () {
-    test('tries Exotel anyway — /status/ is settings-gated for sales users', () async {
+    test('tries Exotel anyway — /status/ is settings-gated for sales users',
+        () async {
       final adapter = _ExotelAdapter();
-      final out = await service(exotel: _exotelWith(adapter), logs: _RecordingLogs())
-          .call(leadId: _leadId, toNumber: _to, status: const ExotelStatus.unknown());
+      final out =
+          await service(exotel: _exotelWith(adapter), logs: _RecordingLogs())
+              .call(
+                  leadId: _leadId,
+                  toNumber: _to,
+                  status: const ExotelStatus.unknown());
 
       expect(out.result, LeadCallResult.ringingViaExotel);
       expect(adapter.requests, hasLength(1));
@@ -184,9 +193,11 @@ void main() {
 
     test('falls back quietly when it is refused — no scary message', () async {
       final out = await service(
-        exotel: _exotelWith(_ExotelAdapter(refuseWith: 'Exotel integration is disabled')),
+        exotel: _exotelWith(
+            _ExotelAdapter(refuseWith: 'Exotel integration is disabled')),
         logs: _RecordingLogs(),
-      ).call(leadId: _leadId, toNumber: _to, status: const ExotelStatus.unknown());
+      ).call(
+          leadId: _leadId, toNumber: _to, status: const ExotelStatus.unknown());
 
       expect(out.result, LeadCallResult.dialledAndLogged);
       expect(out.message, isNull, reason: 'normal for an org without Exotel');
@@ -194,11 +205,12 @@ void main() {
   });
 
   group('dialler route', () {
-    test('an org with telephony off dials and logs, never touching Exotel', () async {
+    test('an org with telephony off dials and logs, never touching Exotel',
+        () async {
       final adapter = _ExotelAdapter();
       final logs = _RecordingLogs();
-      final out = await service(exotel: _exotelWith(adapter), logs: logs)
-          .call(leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
+      final out = await service(exotel: _exotelWith(adapter), logs: logs).call(
+          leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
 
       expect(out.result, LeadCallResult.dialledAndLogged);
       expect(adapter.requests, isEmpty);
@@ -206,8 +218,8 @@ void main() {
     });
 
     test('mock mode (no Exotel data source) dials', () async {
-      final out = await service(logs: _RecordingLogs())
-          .call(leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
+      final out = await service(logs: _RecordingLogs()).call(
+          leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
       expect(out.result, LeadCallResult.dialledAndLogged);
     });
 
@@ -224,8 +236,8 @@ void main() {
 
     test('a rejected log still leaves the call placed', () async {
       final logs = _RecordingLogs()..throwOnLog = true;
-      final out = await service(logs: logs)
-          .call(leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
+      final out = await service(logs: logs).call(
+          leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
       expect(out.result, LeadCallResult.dialledLogFailed);
       expect(dialled, hasLength(1));
     });
@@ -233,15 +245,19 @@ void main() {
 
   group('nothing to call', () {
     test('a lead with no number never dials', () async {
-      final out = await service(logs: _RecordingLogs())
-          .call(leadId: _leadId, toNumber: '   ', status: const ExotelStatus.off());
+      final out = await service(logs: _RecordingLogs()).call(
+          leadId: _leadId, toNumber: '   ', status: const ExotelStatus.off());
       expect(out.result, LeadCallResult.noNumber);
       expect(dialled, isEmpty);
     });
 
     test('a device that cannot dial reports it', () async {
-      final out = await service(logs: _RecordingLogs(), dialler: (_) async => false)
-          .call(leadId: _leadId, toNumber: _to, status: const ExotelStatus.off());
+      final out =
+          await service(logs: _RecordingLogs(), dialler: (_) async => false)
+              .call(
+                  leadId: _leadId,
+                  toNumber: _to,
+                  status: const ExotelStatus.off());
       expect(out.result, LeadCallResult.diallerUnavailable);
     });
   });
@@ -254,9 +270,12 @@ void main() {
     });
 
     test('both flags must hold to be usable', () {
-      expect(const ExotelStatus(enabled: true, configured: true).usable, isTrue);
-      expect(const ExotelStatus(enabled: true, configured: false).usable, isFalse);
-      expect(const ExotelStatus(enabled: false, configured: true).usable, isFalse);
+      expect(
+          const ExotelStatus(enabled: true, configured: true).usable, isTrue);
+      expect(
+          const ExotelStatus(enabled: true, configured: false).usable, isFalse);
+      expect(
+          const ExotelStatus(enabled: false, configured: true).usable, isFalse);
     });
   });
 }

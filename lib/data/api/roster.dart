@@ -38,7 +38,8 @@ final rosterProvider = Provider<List<AppUser>>((ref) {
           UserDirectory.isApiUser(u.id) &&
           // The signed-in user is the `'me'` entry; a copy under the raw id
           // (registered before the session knew who it was) listed them twice.
-          !(u.id == UserDirectory.currentUserId && MockUsers.byId.containsKey('me')))
+          !(u.id == UserDirectory.currentUserId &&
+              MockUsers.byId.containsKey('me')))
       .toList();
   // Keep the signed-in user first for a stable, familiar ordering.
   users.sort((a, b) => a.id == 'me'

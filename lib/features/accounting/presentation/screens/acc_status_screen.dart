@@ -41,7 +41,10 @@ class AccStatusScreen extends ConsumerWidget {
       color: AppColors.bgDetail,
       child: Column(
         children: [
-          DetailAppBar(section: 'Accounting', name: 'Status', onBack: () => context.pop()),
+          DetailAppBar(
+              section: 'Accounting',
+              name: 'Status',
+              onBack: () => context.pop()),
           Expanded(
             child: AppRefresh(
               onRefresh: () => _refresh(ref),
@@ -114,13 +117,22 @@ class AccStatusScreen extends ConsumerWidget {
             SizedBox(height: 6.h),
           ],
           MetaRow(label: 'Legal name', value: p.legalName ?? '—'),
-          MetaRow(label: 'Entity type', value: label(entityTypeLabels, p.entityType)),
+          MetaRow(
+              label: 'Entity type',
+              value: label(entityTypeLabels, p.entityType)),
           MetaRow(label: 'State', value: stateName(p.stateCode)),
           MetaRow(label: 'PAN', value: p.pan ?? '—'),
           MetaRow(label: 'TAN', value: p.tan ?? '—'),
           MetaRow(label: 'Books start', value: formatApiDay(p.ledgerStartDate)),
-          MetaRow(label: 'Prices usually', value: label(amountsAreLabels, p.defaultAmountsAre)),
-          MetaRow(label: 'GST returns', value: label(const {'MONTHLY': 'Monthly', 'QRMP': 'Quarterly (QRMP)'}, p.returnFrequency), last: true),
+          MetaRow(
+              label: 'Prices usually',
+              value: label(amountsAreLabels, p.defaultAmountsAre)),
+          MetaRow(
+              label: 'GST returns',
+              value: label(
+                  const {'MONTHLY': 'Monthly', 'QRMP': 'Quarterly (QRMP)'},
+                  p.returnFrequency),
+              last: true),
         ],
       ),
     );
@@ -128,7 +140,10 @@ class AccStatusScreen extends ConsumerWidget {
 
   Widget _attributesCard(WidgetRef ref) {
     final async = ref.watch(tenantAttributesProvider);
-    final attrs = [for (final a in async.valueOrNull ?? const <TenantAttribute>[]) if (a.isCurrent) a];
+    final attrs = [
+      for (final a in async.valueOrNull ?? const <TenantAttribute>[])
+        if (a.isCurrent) a
+    ];
     if (async.isLoading && attrs.isEmpty) return const _LoadingCard();
     const names = {
       'REGISTRATION_STATUS': 'GST registration',
@@ -147,7 +162,8 @@ class AccStatusScreen extends ConsumerWidget {
               children: [
                 for (int i = 0; i < attrs.length; i++)
                   MetaRow(
-                    label: names[attrs[i].attribute] ?? label(const {}, attrs[i].attribute),
+                    label: names[attrs[i].attribute] ??
+                        label(const {}, attrs[i].attribute),
                     value: attrs[i].attribute == 'REGISTRATION_STATUS'
                         ? label(registrationTypeLabels, attrs[i].display)
                         : attrs[i].display,
@@ -177,21 +193,37 @@ class AccStatusScreen extends ConsumerWidget {
   Widget _gateRow(GateResult g, {required bool last}) {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 10.h),
-      decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+      decoration: last
+          ? null
+          : const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(g.passed ? PhosphorIconsFill.checkCircle : PhosphorIconsFill.xCircle,
-              size: 18.sp, color: g.passed ? AppColors.success : AppColors.error),
+          Icon(
+              g.passed
+                  ? PhosphorIconsFill.checkCircle
+                  : PhosphorIconsFill.xCircle,
+              size: 18.sp,
+              color: g.passed ? AppColors.success : AppColors.error),
           SizedBox(width: 10.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(g.gate, style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(g.gate,
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 if ((g.detail ?? '').isNotEmpty) ...[
                   SizedBox(height: 2.h),
-                  Text(g.detail!, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.4)),
+                  Text(g.detail!,
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                          height: 1.4)),
                 ],
               ],
             ),
@@ -220,7 +252,9 @@ class _LoadingCard extends StatelessWidget {
   Widget build(BuildContext context) => FinanceCard(
         child: SizedBox(
           height: 60.h,
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)),
+          child: const Center(
+              child: CircularProgressIndicator(
+                  strokeWidth: 2.4, color: AppColors.navy)),
         ),
       );
 }

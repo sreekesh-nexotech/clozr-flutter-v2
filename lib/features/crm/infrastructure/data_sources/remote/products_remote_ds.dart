@@ -65,7 +65,8 @@ class ProductsRemoteDataSource {
     try {
       final body =
           await _api.get(ApiEndpoints.productTypes, query: {'page_size': 100});
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
         if (row['is_active'] == false) continue;
@@ -102,13 +103,15 @@ class ProductsRemoteDataSource {
   /// section rather than blocking the whole product page over a side panel.
   Future<ProductUsage> fetchUsage(String id) async {
     try {
-      return ProductUsage.fromJson(await _api.get(ApiEndpoints.productUsage(id)));
+      return ProductUsage.fromJson(
+          await _api.get(ApiEndpoints.productUsage(id)));
     } on Object {
       return const ProductUsage();
     }
   }
 
-  Future<void> deleteProduct(String id) => _api.delete(ApiEndpoints.product(id));
+  Future<void> deleteProduct(String id) =>
+      _api.delete(ApiEndpoints.product(id));
 
   /// `POST /crm/products/` — sends only non-empty fields; maps the created row
   /// back to a [Product] (null when the response shape is unexpected).
@@ -182,7 +185,9 @@ Product? productFromApi(Map<String, dynamic> row) {
     final rate = _int(row['gst']) ??
         _int(row['tax_percent']) ??
         _rate(row['tax_rate']) ??
-        (serverGst != null && price > 0 ? (serverGst / price * 100).round() : null);
+        (serverGst != null && price > 0
+            ? (serverGst / price * 100).round()
+            : null);
     // Absent ≠ zero ≠ 18. The org's Product view config can drop `tax_rate`
     // from the payload entirely, and a card that then prints "18% GST" is
     // stating a tax rate the server never sent.
@@ -207,9 +212,12 @@ Product? productFromApi(Map<String, dynamic> row) {
       kind: isPackage ? 'package' : 'product',
       cat: cat,
       code: _str(row['product_code']) ?? '',
-      hsn: _str(row['hsn_sac']) ?? _str(row['hsn_code']) ?? _str(row['hsn']) ?? '',
+      hsn: _str(row['hsn_sac']) ??
+          _str(row['hsn_code']) ??
+          _str(row['hsn']) ??
+          '',
       unit: _str(row['unit']) ?? _str(row['billing_unit']) ?? '',
-      price: formatInr(price),
+      price: formatInrExact(price),
       // The number behind the display string, which `formatInr` abbreviates
       // beyond recovery.
       priceNum: price,
@@ -221,8 +229,8 @@ Product? productFromApi(Map<String, dynamic> row) {
       // screen needs to know not to present it as fact.
       gstServerComputed: serverGst != null && serverGross != null,
       deprecatedRate: _str(row['deprecated_rate']),
-      gstAmt: formatInr(serverGst ?? price * gst / 100),
-      gross: formatInr(serverGross ?? price * (1 + gst / 100)),
+      gstAmt: formatInrExact(serverGst ?? price * gst / 100),
+      gross: formatInrExact(serverGross ?? price * (1 + gst / 100)),
       deals: deals,
       revenue: revenue > 0 ? formatInr(revenue) : '₹0',
       revNum: revenue.round(),
@@ -248,7 +256,8 @@ PackageComposition? packageCompositionFromApi(Map<String, dynamic> row) {
       row.containsKey('components_subtotal_excl');
   final rawComponents = row['components'];
   final rawAdjustments = row['adjustments'];
-  if (!hasTotals && rawComponents is! List && rawAdjustments is! List) return null;
+  if (!hasTotals && rawComponents is! List && rawAdjustments is! List)
+    return null;
 
   return PackageComposition(
     components: [
@@ -306,7 +315,8 @@ String _category(Map<String, dynamic> row) {
   final name = _str(row['product_type_name']);
   if (name != null) return name;
   final typeRaw = row['product_type'] ?? row['category'] ?? row['type'];
-  if (typeRaw is Map) return _str(typeRaw['name']) ?? _str(typeRaw['type_name']) ?? '';
+  if (typeRaw is Map)
+    return _str(typeRaw['name']) ?? _str(typeRaw['type_name']) ?? '';
   final s = _str(typeRaw);
   // A bare uuid is the id, not a name — nothing to show.
   return s == null || _uuidRe.hasMatch(s) ? '' : s;

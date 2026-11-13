@@ -17,12 +17,15 @@ import 'crm_module_schema_providers.dart';
 ///
 /// Same endpoints and params as the webapp (`customers.api.ts`).
 
-ApiService? _api(Ref ref) => ApiConfig.apiEnabled ? ref.watch(apiServiceProvider) : null;
+ApiService? _api(Ref ref) =>
+    ApiConfig.apiEnabled ? ref.watch(apiServiceProvider) : null;
 
-Future<List<Map<String, dynamic>>> _allRows(ApiService api, String path, Map<String, dynamic> query) async {
+Future<List<Map<String, dynamic>>> _allRows(
+    ApiService api, String path, Map<String, dynamic> query) async {
   final rows = <Map<String, dynamic>>[];
   for (var page = 1; page <= 20; page++) {
-    final body = await api.get(path, query: {...query, if (page > 1) 'page': page});
+    final body =
+        await api.get(path, query: {...query, if (page > 1) 'page': page});
     final chunk = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m);
     rows.addAll(chunk.results);
     if (!chunk.hasMore) break;
@@ -36,8 +39,8 @@ Future<List<Map<String, dynamic>>> _allRows(ApiService api, String path, Map<Str
 // `GET /quotations/payment-records/?customer_id=` (instalments), joined on the
 // plan id — webapp `getCustomerPayments` / `getCustomerPaymentRecords`.
 
-final customerPaymentPlansProvider =
-    FutureProvider.autoDispose.family<List<CustomerPayment>, String>((ref, customerId) async {
+final customerPaymentPlansProvider = FutureProvider.autoDispose
+    .family<List<CustomerPayment>, String>((ref, customerId) async {
   final api = _api(ref);
   if (api == null || customerId.isEmpty) return const [];
   final query = {'customer_id': customerId, 'page_size': 100};
@@ -54,8 +57,8 @@ final customerPaymentPlansProvider =
 /// per-call actions sheet takes.
 typedef CustomerCallItem = ({CustomerCallRow row, CallLog log});
 
-final customerCallItemsProvider =
-    FutureProvider.autoDispose.family<List<CustomerCallItem>, String>((ref, customerId) async {
+final customerCallItemsProvider = FutureProvider.autoDispose
+    .family<List<CustomerCallItem>, String>((ref, customerId) async {
   final api = _api(ref);
   if (api == null || customerId.isEmpty) return const [];
   final raw = await CallLogsRemoteDataSource(api)
@@ -102,8 +105,8 @@ Future<void> createCustomerCallLog(
 // webapp's Opportunities tab reads it. Rides on the detail row the screen has
 // already fetched.
 
-final customerLinkedLeadsProvider =
-    FutureProvider.autoDispose.family<List<CustomerLinkedLead>, String>((ref, customerId) async {
+final customerLinkedLeadsProvider = FutureProvider.autoDispose
+    .family<List<CustomerLinkedLead>, String>((ref, customerId) async {
   if (customerId.isEmpty) return const [];
   final row = await ref.watch(customerRowProvider(customerId).future);
   return CustomerLinkedLead.listFrom(row?['linked_leads']);
@@ -115,16 +118,22 @@ final customerLinkedLeadsProvider =
 // `source`; the mapped NoteEntry drops it, so it is read here and keyed by
 // note id. A failure just leaves every note untagged.
 
-final customerNoteTagsProvider =
-    FutureProvider.autoDispose.family<Map<String, ({String text, bool readOnly})>, String>(
+final customerNoteTagsProvider = FutureProvider.autoDispose
+    .family<Map<String, ({String text, bool readOnly})>, String>(
         (ref, customerId) async {
   final api = _api(ref);
   if (api == null || customerId.isEmpty) return const {};
   try {
     final body = await api.get(ApiEndpoints.notes,
-        query: {'related_to': 'customer', 'related_to_id': customerId, 'page_size': 100}, quiet: true);
+        query: {
+          'related_to': 'customer',
+          'related_to_id': customerId,
+          'page_size': 100
+        },
+        quiet: true);
     final out = <String, ({String text, bool readOnly})>{};
-    for (final n in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
+    for (final n
+        in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
       final id = '${n['note_id'] ?? ''}';
       final tag = noteSourceTag(n['source'], customerId);
       if (id.isNotEmpty && tag != null) out[id] = tag;

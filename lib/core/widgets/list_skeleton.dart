@@ -66,7 +66,8 @@ class ListSkeleton extends StatelessWidget {
     );
   }
 
-  Widget _cardRow(BuildContext context) => SkeletonBox(height: itemHeight.h, radius: 14);
+  Widget _cardRow(BuildContext context) =>
+      SkeletonBox(height: itemHeight.h, radius: 14);
 
   /// Slim row shape for feeds (notifications, messages, chat).
   static Widget row(BuildContext context) {

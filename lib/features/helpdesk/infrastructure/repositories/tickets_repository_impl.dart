@@ -17,7 +17,8 @@ class TicketsRepositoryImpl implements TicketsRepository {
   /// Mock mode has no server-side filtering — the seed is small and the
   /// providers narrow it locally, exactly as they did before.
   @override
-  Future<List<Ticket>> getTickets({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Ticket>> getTickets(
+      {Map<String, dynamic> filters = const {}}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchTickets();
   }
@@ -48,7 +49,8 @@ class TicketsRepositoryImpl implements TicketsRepository {
 
   /// No counts endpoint either; empty means "count the loaded rows".
   @override
-  Future<Map<String, int>> getStatusCounts(Map<String, dynamic> filters) async =>
+  Future<Map<String, int>> getStatusCounts(
+          Map<String, dynamic> filters) async =>
       const {};
 
   /// Mock write: echoes a local ticket built from the submitted fields so the
@@ -83,7 +85,8 @@ class TicketsRepositoryImpl implements TicketsRepository {
   /// Mock write: no-op — the detail/edit screens already update their local
   /// copy for instant UX.
   @override
-  Future<void> updateTicket(String id, Map<String, dynamic> fields) async {}
+  Future<void> updateTicket(String id, Map<String, dynamic> fields,
+      {String? version}) async {}
 
   /// Mock write: no-op — the detail screen's local copyWith handles the UX.
   @override
@@ -121,5 +124,17 @@ class TicketsRepositoryImpl implements TicketsRepository {
   Future<void> sendReply(String issueId, String body) async {}
 
   @override
-  Future<void> uploadAttachment(String issueId, {required String path, required String name}) async {}
+  Future<void> uploadAttachment(String issueId,
+      {required String path, required String name}) async {}
+
+  @override
+  Future<void> deleteTicket(String id) async {}
+
+  @override
+  Future<({List<Ticket> rows, bool more})> getDeletedTickets(
+          {String search = '', int page = 1}) async =>
+      (rows: const <Ticket>[], more: false);
+
+  @override
+  Future<void> restoreTicket(String id) async {}
 }

@@ -39,8 +39,8 @@ void main() {
       expect(q.status, 'sent');
       expect(q.amount, '₹36.5L');
       expect(q.amountNum, 3650000);
-      expect(q.issued, '15 Jun 2026');
-      expect(q.valid, '15 Jul 2126');
+      expect(q.issued, '15/06/2026');
+      expect(q.valid, '15/07/2126');
       expect(q.payType, 'Installments');
       expect(q.currency, 'INR');
       expect(q.owner, 'uuid-other');
@@ -83,7 +83,8 @@ void main() {
       expect(q.owner, 'me');
     });
 
-    test('accounting change: decimal-string quantity, discount and line order', () {
+    test('accounting change: decimal-string quantity, discount and line order',
+        () {
       // The exact shape `GET /quotations/quotations/{id}/` returns after the
       // accounting-readiness change: quantity is a STRING with three decimals,
       // and the new tax columns ride along as nulls.
@@ -135,20 +136,41 @@ void main() {
       expect(second.discount, 0);
     });
 
-    test('accounting change: a fractional quantity survives, zero is not 1', () {
+    test('accounting change: a fractional quantity survives, zero is not 1',
+        () {
       final q = quoteFromApi({
         'quotation_id': 'uuid-q2',
         'quotation_number': 'QTN-01',
         'total_amount': '1000.00',
         'line_items': [
-          {'description': 'Consulting', 'quantity': '2.500', 'unit_price': '400.00', 'total_price': '1000.00'},
+          {
+            'description': 'Consulting',
+            'quantity': '2.500',
+            'unit_price': '400.00',
+            'total_price': '1000.00'
+          },
           // A genuine zero must read as 0, not fall back to the 1 default -
           // that is why the parser returns null only for *unreadable* input.
-          {'description': 'Freebie', 'quantity': '0.000', 'unit_price': '0.00', 'total_price': '0.00'},
+          {
+            'description': 'Freebie',
+            'quantity': '0.000',
+            'unit_price': '0.00',
+            'total_price': '0.00'
+          },
           // A deployment sending a JSON number still works.
-          {'description': 'Legacy', 'quantity': 4, 'unit_price': '10.00', 'total_price': '40.00'},
+          {
+            'description': 'Legacy',
+            'quantity': 4,
+            'unit_price': '10.00',
+            'total_price': '40.00'
+          },
           // Unreadable falls back to 1 rather than silently costing nothing.
-          {'description': 'Junk', 'quantity': 'n/a', 'unit_price': '10.00', 'total_price': '10.00'},
+          {
+            'description': 'Junk',
+            'quantity': 'n/a',
+            'unit_price': '10.00',
+            'total_price': '10.00'
+          },
         ],
       })!;
       expect(q.items[0].qty, 2.5);
@@ -165,28 +187,50 @@ void main() {
         'quotation_number': 'QTN-00057',
         'total_amount': '25490.00',
         'line_items': [
-          {'description': 'NexoCRM Pro', 'quantity': 1, 'unit_price': '14997.00', 'total_price': '14997.00'},
-          {'description': 'Analytics Add-on', 'quantity': 1, 'unit_price': '10493.00', 'total_price': '10493.00'},
+          {
+            'description': 'NexoCRM Pro',
+            'quantity': 1,
+            'unit_price': '14997.00',
+            'total_price': '14997.00'
+          },
+          {
+            'description': 'Analytics Add-on',
+            'quantity': 1,
+            'unit_price': '10493.00',
+            'total_price': '10493.00'
+          },
         ],
       })!;
       expect(q.amountNum, 25490);
       expect(q.items.map((it) => it.amtNum), [14997, 10493]);
     });
 
-    test('a legacy 0.00 total falls back to the line sum; a list row does not', () {
+    test('a legacy 0.00 total falls back to the line sum; a list row does not',
+        () {
       // Quotes written before the fix still store `total_amount: "0.00"`.
       final legacy = quoteFromApi({
         'quotation_number': 'QTN-00053',
         'total_amount': '0.00',
         'line_items': [
-          {'description': 'A', 'quantity': 2, 'unit_price': '100.00', 'total_price': '200.00'},
-          {'description': 'B', 'quantity': 1, 'unit_price': '50.00', 'total_price': '50.00'},
+          {
+            'description': 'A',
+            'quantity': 2,
+            'unit_price': '100.00',
+            'total_price': '200.00'
+          },
+          {
+            'description': 'B',
+            'quantity': 1,
+            'unit_price': '50.00',
+            'total_price': '50.00'
+          },
         ],
       })!;
       expect(legacy.amountNum, 250);
 
       // The list projection has no line items, so a zero stays a zero.
-      final listRow = quoteFromApi({'quotation_number': 'QTN-00053', 'total_amount': '0.00'})!;
+      final listRow = quoteFromApi(
+          {'quotation_number': 'QTN-00053', 'total_amount': '0.00'})!;
       expect(listRow.amountNum, 0);
 
       // A non-zero stored total is the server's word, even when it disagrees
@@ -195,7 +239,12 @@ void main() {
         'quotation_number': 'QTN-00022',
         'total_amount': '449997.00',
         'line_items': [
-          {'description': 'L', 'quantity': 2, 'unit_price': '149999.00', 'total_price': '299998.00'},
+          {
+            'description': 'L',
+            'quantity': 2,
+            'unit_price': '149999.00',
+            'total_price': '299998.00'
+          },
         ],
       })!;
       expect(odd.amountNum, 449997);
@@ -322,11 +371,13 @@ void main() {
       expect(p.method, 'Bank transfer');
       expect(p.status, 'paid');
       // Webapp `rowDate`: the paid date, DD-MON-YYYY.
-      expect(p.date, '12-Jun-2026');
+      expect(p.date, '12/06/2026');
       expect(p.owner, '');
     });
 
-    test('pending future row: Due (web maps pending → due), Installment N label, dash method', () {
+    test(
+        'pending future row: Due (web maps pending → due), Installment N label, dash method',
+        () {
       final p = paymentRecordFromApi({
         'record_id': 'uuid-r2',
         'invoice_id': 'uuid-p',
@@ -345,10 +396,12 @@ void main() {
       expect(p.amountNum, 500000);
       expect(p.method, '—');
       expect(p.status, 'due');
-      expect(p.date, 'Due 01-Jul-2126');
+      expect(p.date, 'Due 01/07/2126');
     });
 
-    test('overdue is the server\'s call: overdue → "Overdue …", a past-due pending stays Due', () {
+    test(
+        'overdue is the server\'s call: overdue → "Overdue …", a past-due pending stays Due',
+        () {
       final p = paymentRecordFromApi({
         'record_id': 'uuid-r3',
         'amount_expected': '1830000.00',
@@ -356,7 +409,7 @@ void main() {
         'status': 'overdue',
       })!;
       expect(p.status, 'overdue');
-      expect(p.date, 'Overdue 24-Jun-2020');
+      expect(p.date, 'Overdue 24/06/2020');
       expect(p.amount, '₹18.3L');
 
       // The webapp does not re-derive overdue from the date (the server runs
@@ -367,11 +420,13 @@ void main() {
         'status': 'pending',
       })!;
       expect(pending.status, 'due');
-      expect(pending.date, 'Due 24-Jun-2020');
+      expect(pending.date, 'Due 24/06/2020');
     });
 
-    test('cancelled rows are kept as Cancelled (web lists them); junk skipped', () {
-      final c = paymentRecordFromApi({'record_id': 'uuid-r4', 'status': 'cancelled'})!;
+    test('cancelled rows are kept as Cancelled (web lists them); junk skipped',
+        () {
+      final c = paymentRecordFromApi(
+          {'record_id': 'uuid-r4', 'status': 'cancelled'})!;
       expect(c.status, 'cancelled');
       expect(c.isCancelled, isTrue);
 
@@ -431,7 +486,11 @@ void main() {
           'due_date': '2026-08-01',
           'status': 'pending',
         },
-        {'record_id': 'rec-3', 'quotation_number': 'QTN-2051', 'status': 'cancelled'},
+        {
+          'record_id': 'rec-3',
+          'quotation_number': 'QTN-2051',
+          'status': 'cancelled'
+        },
         'garbage',
         <String, dynamic>{},
       ]);
@@ -448,7 +507,12 @@ void main() {
 
     test('falls back to the parent uuid when no quotation_number', () {
       final rows = paymentsFromApiRows([
-        {'record_id': 'r1', 'invoice_id': 'pay-9', 'amount_expected': '500.00', 'status': 'pending'},
+        {
+          'record_id': 'r1',
+          'invoice_id': 'pay-9',
+          'amount_expected': '500.00',
+          'status': 'pending'
+        },
       ]);
       expect(rows.single.invId, 'pay-9');
     });

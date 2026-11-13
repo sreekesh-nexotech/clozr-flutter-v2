@@ -102,7 +102,9 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
 
     setState(() => _saving = true);
     try {
-      await ref.read(peopleRepositoryProvider).updateTeam(widget.team.id, fields);
+      await ref
+          .read(peopleRepositoryProvider)
+          .updateTeam(widget.team.id, fields);
     } on AppError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -129,7 +131,8 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Edit team', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Edit team', onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -159,7 +162,10 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
               SizedBox(height: 6.h),
               Text(
                 'Team lead is a designation only — it grants no scope or permissions.',
-                style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder),
               ),
               SizedBox(height: 14.h),
               AppTextField(
@@ -173,7 +179,10 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
               SizedBox(height: 6.h),
               Text(
                 'Unticking a member removes them from the team when you save.',
-                style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder),
               ),
               SizedBox(height: 20.h),
               PrimaryButton(
@@ -195,7 +204,8 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
       builder: (ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SheetHeader(title: 'Team lead', onClose: () => Navigator.of(ctx).pop()),
+          SheetHeader(
+              title: 'Team lead', onClose: () => Navigator.of(ctx).pop()),
           Flexible(
             child: ListView(
               shrinkWrap: true,
@@ -209,12 +219,14 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
                       Navigator.of(ctx).pop();
                     },
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
                       child: Row(
                         children: [
                           Expanded(child: Text(label, style: AppText.body())),
                           if (value == _lead)
-                            Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                            Icon(PhosphorIconsBold.check,
+                                size: 19.sp, color: AppColors.success),
                         ],
                       ),
                     ),
@@ -250,7 +262,8 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
                 children: [
                   if (members.isEmpty)
                     Padding(
-                      padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 18.h, horizontal: 6.w),
                       child: Text(
                         'No teammates have loaded yet.',
                         style: AppText.body(color: AppColors.textMuted),
@@ -265,12 +278,15 @@ class _EditTeamSheetState extends ConsumerState<_EditTeamSheet> {
                             : _members.add(m.id);
                       }),
                       child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 11.h, horizontal: 6.w),
+                        padding: EdgeInsets.symmetric(
+                            vertical: 11.h, horizontal: 6.w),
                         child: Row(
                           children: [
-                            Expanded(child: Text(m.name, style: AppText.body())),
+                            Expanded(
+                                child: Text(m.name, style: AppText.body())),
                             if (_members.contains(m.id))
-                              Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+                              Icon(PhosphorIconsBold.check,
+                                  size: 19.sp, color: AppColors.success),
                           ],
                         ),
                       ),

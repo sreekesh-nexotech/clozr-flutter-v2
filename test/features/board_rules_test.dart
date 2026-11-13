@@ -30,14 +30,24 @@ void main() {
     expect(boardMoreLabel(10, 8), '+2 more →');
     expect(boardMoreLabel(2, 0), 'View in tickets →');
     expect(bucketMoreToast(7, 'Breached'), 'Tickets list — 7 breached tickets');
-    expect(workloadMoreToast(const WorkloadColumn(agentId: 'u', agentName: 'Cijo George', total: 2)), 'Tickets assigned to Cijo');
-    expect(workloadMoreToast(const WorkloadColumn(total: 1)), 'Unassigned tickets — use the Assignee filter');
+    expect(
+        workloadMoreToast(const WorkloadColumn(
+            agentId: 'u', agentName: 'Cijo George', total: 2)),
+        'Tickets assigned to Cijo');
+    expect(workloadMoreToast(const WorkloadColumn(total: 1)),
+        'Unassigned tickets — use the Assignee filter');
     expect(boardDueSoonLabel, 'Due < 60m');
   });
 
   test('summary maps No SLA, workload columns and ordered lanes', () {
     final s = IssueSummary.fromJson({
-      'stats': {'open': 4, 'breached_now': 1, 'due_today': 0, 'closed_today': 0, 'no_sla': 2},
+      'stats': {
+        'open': 4,
+        'breached_now': 1,
+        'due_today': 0,
+        'closed_today': 0,
+        'no_sla': 2
+      },
       'sla_watch': {
         'breached': {
           'total': 1,
@@ -58,12 +68,26 @@ void main() {
       'workload': {
         'unassigned': {'total': 1, 'items': []},
         'by_agent': [
-          {'user': {'user_id': 'u1', 'name': 'Cijo George'}, 'total': 2},
+          {
+            'user': {'user_id': 'u1', 'name': 'Cijo George'},
+            'total': 2
+          },
         ],
       },
       'pipeline': [
-        {'issue_status_id': 's2', 'name': 'In Progress', 'position': 1, 'total': 2},
-        {'issue_status_id': 's1', 'name': 'Open', 'position': 0, 'total': 1, 'color': '#3B82F6'},
+        {
+          'issue_status_id': 's2',
+          'name': 'In Progress',
+          'position': 1,
+          'total': 2
+        },
+        {
+          'issue_status_id': 's1',
+          'name': 'Open',
+          'position': 0,
+          'total': 1,
+          'color': '#3B82F6'
+        },
       ],
     })!;
     expect(s.noSla!.total, 2);
@@ -74,6 +98,12 @@ void main() {
     expect(s.workload[1].agentName, 'Cijo George');
     expect(s.workload[1].total, 2);
     expect(s.lanes.map((l) => l.name), ['Open', 'In Progress']);
-    expect(IssueSummary.fromJson({'stats': {'open': 1}, 'sla_watch': {}})!.noSla, isNull);
+    expect(
+        IssueSummary.fromJson({
+          'stats': {'open': 1},
+          'sla_watch': {}
+        })!
+            .noSla,
+        isNull);
   });
 }

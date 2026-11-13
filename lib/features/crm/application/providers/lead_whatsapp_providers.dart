@@ -120,7 +120,8 @@ class LeadWhatsappService {
     }
 
     if (!openExternally) {
-      return LeadWhatsappOutcome(LeadWhatsappResult.noThread, message: lookupError);
+      return LeadWhatsappOutcome(LeadWhatsappResult.noThread,
+          message: lookupError);
     }
 
     // wa.me takes E.164 digits with no `+`; it opens the installed app and
@@ -154,8 +155,9 @@ final leadWhatsappServiceProvider = Provider<LeadWhatsappService>((ref) {
     ensureLoaded: () => ref.read(whatsappInboxAllowedProvider)
         ? ref.read(conversationsProvider.notifier).ensureLoaded()
         : Future<void>.value(),
-    conversations: () =>
-        ref.read(whatsappInboxAllowedProvider) ? ref.read(conversationsProvider).conversations : const [],
+    conversations: () => ref.read(whatsappInboxAllowedProvider)
+        ? ref.read(conversationsProvider).conversations
+        : const [],
     // externalApplication, or Android may hand a wa.me link to an in-app
     // webview that cannot open the app it redirects to.
     launcher: (uri) => launchUrl(uri, mode: LaunchMode.externalApplication),

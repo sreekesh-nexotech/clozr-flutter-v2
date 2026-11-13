@@ -3,6 +3,7 @@ import '../../../../core/network/api_endpoints.dart';
 import 'server_search_providers.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/crm_task.dart';
@@ -11,6 +12,7 @@ import '../../domain/entities/view_schema.dart';
 import '../../domain/repositories/crm_tasks_repository.dart';
 import '../../infrastructure/data_sources/local/crm_tasks_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/crm_tasks_remote_ds.dart';
+import '../../infrastructure/data_sources/remote/status_counts_remote_ds.dart';
 import '../../infrastructure/repositories/crm_tasks_api_repository.dart';
 import '../../infrastructure/repositories/crm_tasks_repository_impl.dart';
 import '../filters/tasks_filter_spec.dart';
@@ -51,7 +53,8 @@ final taskDetailSchemaFutureProvider = FutureProvider<ViewSchema>((ref) async {
 
 /// Synchronous view of [taskDetailSchemaFutureProvider].
 final taskDetailSchemaProvider = Provider<ViewSchema>(
-  (ref) => ref.watch(taskDetailSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+  (ref) =>
+      ref.watch(taskDetailSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
 );
 
 /// The org's Task layout for the mobile list card
@@ -64,7 +67,8 @@ final taskListSchemaFutureProvider = FutureProvider<ViewSchema>(
 /// so the list paints immediately with the built-in card and adopts the org's
 /// column set when it arrives rather than waiting behind a spinner.
 final taskListSchemaProvider = Provider<ViewSchema>(
-  (ref) => ref.watch(taskListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
+  (ref) =>
+      ref.watch(taskListSchemaFutureProvider).valueOrNull ?? ViewSchema.empty,
 );
 
 /// The raw record row for one task — the values the schema-driven panel renders.
@@ -126,11 +130,57 @@ const crmTaskOtherChip = '__other__';
 /// exclusive both ways.
 Set<String> toggleCrmTaskChip(Set<String> current, String chip) {
   if (chip == 'all') return const {};
-  if (chip == crmTaskOtherChip) return current.contains(chip) ? const {} : const {crmTaskOtherChip};
+  if (chip == crmTaskOtherChip)
+    return current.contains(chip) ? const {} : const {crmTaskOtherChip};
   final next = {...current}..remove(crmTaskOtherChip);
   if (!next.remove(chip)) next.add(chip);
   return next;
 }
+
+/// The status group picked on the Tasks header (`open` / `in_progress` /
+/// `completed` / `cancelled` — the status TYPE), or null for "All". With no
+/// status chip picked inside it, the list shows every lane of that type.
+final crmTaskGroupProvider = StateProvider<String?>((ref) {
+  ref.watch(apiServiceProvider); // reset per session
+  return null;
+});
+
+/// The lane names the header selection stands for — the picked chips, else
+/// every lane of the picked group.
+final crmTaskEffectiveChipsProvider = Provider<Set<String>>(
+  (ref) => StatusGroups.effectiveKeys(
+    picked: ref.watch(crmTaskChipsProvider),
+    group: ref.watch(crmTaskGroupProvider),
+    statuses: ref.watch(taskStatusOptionsProvider),
+    groupOf: StatusGroups.ofTyped,
+    keyOf: (s) => s.name,
+  ),
+);
+
+/// The header's counts from `GET /crm/tasks/status-counts/` for tasks or, with
+/// [isFollowup], follow-ups — "All", each group, each lane (by lower-cased
+/// name) and "Other", under [params] (the drawer, saved view and search).
+///
+/// Empty (mock mode, a failed call) means the header counts the loaded rows.
+Future<Map<String, int>> crmTaskStatusCountsFor(
+  Ref ref,
+  Map<String, dynamic> params, {
+  required bool isFollowup,
+}) async {
+  if (!ApiConfig.apiEnabled) return const {};
+  // A status tick or new task anywhere moves the counts too.
+  ref.watch(apiWriteTickProvider);
+  if (!await settledFor(ref)) return const {};
+  return StatusCountsRemoteDataSource(ref.read(apiServiceProvider)).fetch(
+    ApiEndpoints.crmTaskStatusCounts,
+    {...params, 'is_followup': isFollowup ? 'true' : 'false'},
+  );
+}
+
+final crmTaskStatusCountsProvider = FutureProvider<Map<String, int>>(
+  (ref) => crmTaskStatusCountsFor(ref, ref.watch(crmTaskServerQueryProvider),
+      isFollowup: false),
+);
 
 /// The drawer filters and search as the list endpoint's params — the chips
 /// are applied on top, so counts follow search, filters and saved view.
@@ -138,7 +188,9 @@ final crmTaskServerQueryProvider = Provider<Map<String, dynamic>>((ref) {
   if (!ApiConfig.apiEnabled) return const {};
   final q = ref.watch(crmTaskSearchProvider).trim();
   return {
-    ...ref.watch(taskFilterCodecProvider).encode(ref.watch(crmTaskFiltersProvider)),
+    ...ref
+        .watch(taskFilterCodecProvider)
+        .encode(ref.watch(crmTaskFiltersProvider)),
     if (q.isNotEmpty) 'search': q,
   };
 });
@@ -162,7 +214,9 @@ final crmTasksBaseProvider = Provider<List<CrmTask>>((ref) {
   final catalog = ref.watch(taskStatusOptionsProvider);
   return [
     for (final t in repo)
-      (overrides[t.id] != null && overrides[t.id] != t.status) ? _crmTaskWithStatus(t, overrides[t.id]!, catalog) : t,
+      (overrides[t.id] != null && overrides[t.id] != t.status)
+          ? _crmTaskWithStatus(t, overrides[t.id]!, catalog)
+          : t,
   ];
 });
 
@@ -241,9 +295,11 @@ final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
   // Filters and search are applied server-side (API mode); mock mode keeps
   // filtering on the device.
   final server = ApiConfig.apiEnabled;
-  final all = server ? ref.watch(crmTasksBaseProvider) : ref.watch(crmTasksAllProvider);
+  final all =
+      server ? ref.watch(crmTasksBaseProvider) : ref.watch(crmTasksAllProvider);
   final tab = ref.watch(crmTaskTabProvider);
   final chips = ref.watch(crmTaskChipsProvider);
+  final effective = ref.watch(crmTaskEffectiveChipsProvider);
   final q = ref.watch(crmTaskSearchProvider).trim().toLowerCase();
   final filters = ref.watch(crmTaskFiltersProvider);
 
@@ -258,11 +314,15 @@ final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
   if (chips.contains(crmTaskOtherChip)) {
     final lanes = ref.watch(taskStatusOptionsProvider);
     out = out.where((t) => crmTaskInNoLane(t, lanes));
-  } else if (chips.isNotEmpty) {
-    out = out.where((t) => chips.any((c) => crmTaskInTab(t, c)));
+  } else if (effective.isNotEmpty) {
+    out = out.where((t) => effective.any((c) => crmTaskInTab(t, c)));
+  } else if (ref.watch(crmTaskGroupProvider) != null) {
+    // A group the org has no lane in: nothing can be in it.
+    out = const <CrmTask>[];
   }
   if (server) return out.toList();
-  if (!filters.isEmpty) out = out.where((t) => crmTaskMatchesFilters(t, filters));
+  if (!filters.isEmpty)
+    out = out.where((t) => crmTaskMatchesFilters(t, filters));
   if (q.isNotEmpty) {
     // Same `?search=` the webapp sends: the server also matches description
     // and location, which the task rows do not carry.
@@ -275,8 +335,8 @@ final visibleCrmTasksProvider = Provider<List<CrmTask>>((ref) {
         scope: const {'is_followup': 'false'},
       ),
     );
-    out = out.where((t) => matches(
-        [t.id], t.title.toLowerCase().contains(q) || t.id.toLowerCase().contains(q)));
+    out = out.where((t) => matches([t.id],
+        t.title.toLowerCase().contains(q) || t.id.toLowerCase().contains(q)));
   }
   return out.toList();
 });

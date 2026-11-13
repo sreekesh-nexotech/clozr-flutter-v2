@@ -37,7 +37,9 @@ class _PlanBillingCardState extends ConsumerState<PlanBillingCard> {
     if (_saving || widget.invoice.uuid.isEmpty) return;
     setState(() => _saving = true);
     try {
-      await ref.read(invoicesRepositoryProvider).updatePlanBilling(widget.invoice.uuid, fields);
+      await ref
+          .read(invoicesRepositoryProvider)
+          .updatePlanBilling(widget.invoice.uuid, fields);
       ref.invalidate(invoicesProvider);
       if (mounted) ref.read(toastProvider.notifier).show(done);
     } on AppError catch (e) {
@@ -52,7 +54,9 @@ class _PlanBillingCardState extends ConsumerState<PlanBillingCard> {
   Widget build(BuildContext context) {
     final iv = widget.invoice;
     final projects = ref.watch(projectsProvider).valueOrNull ?? const [];
-    final project = iv.projectId == null ? null : projects.where((p) => p.id == iv.projectId).firstOrNull;
+    final project = iv.projectId == null
+        ? null
+        : projects.where((p) => p.id == iv.projectId).firstOrNull;
     return Opacity(
       opacity: _saving ? 0.6 : 1,
       child: FinanceCard(
@@ -72,20 +76,26 @@ class _PlanBillingCardState extends ConsumerState<PlanBillingCard> {
               label: 'Invoices are raised',
               options: billingModeLabels,
               selected: iv.billingMode,
-              onSelected: (v) => _save({'billing_mode': v}, 'Billing mode saved'),
+              onSelected: (v) =>
+                  _save({'billing_mode': v}, 'Billing mode saved'),
             ),
             if (iv.billingMode != null) ...[
               SizedBox(height: 6.h),
               Text(billingModeHelp[iv.billingMode] ?? '',
-                  style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  style: AppText.custom(
+                      size: 11.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder)),
             ],
-            if (iv.billingMode == 'INVOICE_ON_DUE' || iv.billingMode == 'PERIODIC') ...[
+            if (iv.billingMode == 'INVOICE_ON_DUE' ||
+                iv.billingMode == 'PERIODIC') ...[
               SizedBox(height: 12.h),
               AccCheckRow(
                 label: 'Issue automatically when due',
                 hint: 'Otherwise the draft waits for someone to issue it.',
                 value: iv.autoIssue,
-                onChanged: (v) => _save({'auto_issue': v}, v ? 'Auto-issue on' : 'Auto-issue off'),
+                onChanged: (v) => _save(
+                    {'auto_issue': v}, v ? 'Auto-issue on' : 'Auto-issue off'),
               ),
             ],
             SizedBox(height: 13.h),
@@ -98,7 +108,8 @@ class _PlanBillingCardState extends ConsumerState<PlanBillingCard> {
             SizedBox(height: 13.h),
             AccPickerBox(
               label: 'Project',
-              value: project?.name ?? (iv.projectId == null ? null : 'Linked project'),
+              value: project?.name ??
+                  (iv.projectId == null ? null : 'Linked project'),
               hint: 'None',
               icon: PhosphorIconsRegular.kanban,
               onTap: () async {
@@ -107,13 +118,19 @@ class _PlanBillingCardState extends ConsumerState<PlanBillingCard> {
                   title: 'Project',
                   selected: iv.projectId,
                   empty: 'No projects',
-                  items: [for (final p in projects) PickItem(p.id, p.name, subtitle: p.code)],
+                  items: [
+                    for (final p in projects)
+                      PickItem(p.id, p.name, subtitle: p.code)
+                  ],
                 );
                 if (id != null) await _save({'project': id}, 'Project linked');
               },
             ),
             SizedBox(height: 13.h),
-            _ContractRef(initial: iv.contractRef ?? '', onSave: (v) => _save({'contract_ref': v}, 'Contract reference saved')),
+            _ContractRef(
+                initial: iv.contractRef ?? '',
+                onSave: (v) =>
+                    _save({'contract_ref': v}, 'Contract reference saved')),
           ],
         ),
       ),
@@ -151,7 +168,10 @@ class _ContractRefState extends State<_ContractRef> {
       onFocusChange: (has) {
         if (!has) _commit();
       },
-      child: AccInput(label: 'Contract reference', controller: _ctrl, hint: 'Optional — PO or contract no.'),
+      child: AccInput(
+          label: 'Contract reference',
+          controller: _ctrl,
+          hint: 'Optional — PO or contract no.'),
     );
   }
 }

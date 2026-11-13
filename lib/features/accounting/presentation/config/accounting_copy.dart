@@ -27,7 +27,12 @@ const docTypeLabels = <String, String>{
 };
 
 /// The four types a manual invoice may be created as.
-const manualInvoiceTypes = ['TAX_INVOICE', 'BILL_OF_SUPPLY', 'EXPORT_INVOICE', 'PROFORMA'];
+const manualInvoiceTypes = [
+  'TAX_INVOICE',
+  'BILL_OF_SUPPLY',
+  'EXPORT_INVOICE',
+  'PROFORMA'
+];
 
 const sourceTypeLabels = <String, String>{
   'PLAN_RECORD': 'Payment plan',
@@ -63,7 +68,10 @@ const taxTreatmentLabels = <String, String>{
   'RCM_OUTWARD': 'Reverse charge',
 };
 
-const supplyNatureLabels = <String, String>{'GOODS': 'Goods', 'SERVICE': 'Service'};
+const supplyNatureLabels = <String, String>{
+  'GOODS': 'Goods',
+  'SERVICE': 'Service'
+};
 
 const amountsAreLabels = <String, String>{
   'EXCLUSIVE': 'Tax extra',
@@ -79,8 +87,10 @@ const billingModeLabels = <String, String>{
 
 /// One line of explanation per billing mode, under the chips.
 const billingModeHelp = <String, String>{
-  'INVOICE_ON_DUE': 'A draft invoice is created for each instalment on its due date.',
-  'INVOICE_ON_COMPLETION': 'Invoiced when the linked project milestone completes.',
+  'INVOICE_ON_DUE':
+      'A draft invoice is created for each instalment on its due date.',
+  'INVOICE_ON_COMPLETION':
+      'Invoiced when the linked project milestone completes.',
   'PERIODIC': 'A draft invoice is created for each billing period.',
   'MANUAL': 'Nothing is created automatically — issue invoices yourself.',
 };
@@ -145,7 +155,8 @@ String _humanise(String code) {
 // ── Seed vocabularies (no endpoint; pack v2026.09.20, handover §7.3) ──
 
 class ExpenseCategory {
-  const ExpenseCategory(this.key, this.label, {this.itc = ItcHint.eligible, this.tdsNature});
+  const ExpenseCategory(this.key, this.label,
+      {this.itc = ItcHint.eligible, this.tdsNature});
 
   final String key;
   final String label;
@@ -161,18 +172,22 @@ class ExpenseCategory {
 enum ItcHint { eligible, blocked, notApplicable }
 
 const expenseCategories = <ExpenseCategory>[
-  ExpenseCategory('RENT_PREMISES', 'Rent — premises', tdsNature: 'RENT_LAND_BUILDING'),
+  ExpenseCategory('RENT_PREMISES', 'Rent — premises',
+      tdsNature: 'RENT_LAND_BUILDING'),
   ExpenseCategory('RENT_EQUIPMENT', 'Rent — equipment'),
   ExpenseCategory('RENT_RESIDENTIAL_STAFF', 'Rent — staff housing'),
-  ExpenseCategory('ELECTRICITY_WATER', 'Electricity & water', itc: ItcHint.notApplicable),
+  ExpenseCategory('ELECTRICITY_WATER', 'Electricity & water',
+      itc: ItcHint.notApplicable),
   ExpenseCategory('TELECOM_INTERNET', 'Telecom & internet'),
   ExpenseCategory('SOFTWARE_SAAS_DOMESTIC', 'Software / SaaS (India)'),
   ExpenseCategory('SOFTWARE_CLOUD_IMPORTED', 'Software / cloud (imported)'),
-  ExpenseCategory('PROFESSIONAL_FEES', 'Professional fees', tdsNature: 'PROFESSIONAL'),
+  ExpenseCategory('PROFESSIONAL_FEES', 'Professional fees',
+      tdsNature: 'PROFESSIONAL'),
   ExpenseCategory('LEGAL_FEES', 'Legal fees'),
   ExpenseCategory('AUDIT_ACCOUNTING', 'Audit & accounting'),
   ExpenseCategory('TECHNICAL_SERVICES', 'Technical services'),
-  ExpenseCategory('CONTRACTORS_JOBWORK', 'Contractors & job work', tdsNature: 'CONTRACTOR'),
+  ExpenseCategory('CONTRACTORS_JOBWORK', 'Contractors & job work',
+      tdsNature: 'CONTRACTOR'),
   ExpenseCategory('MANPOWER_SUPPLY', 'Manpower supply'),
   ExpenseCategory('SECURITY_SERVICES', 'Security services'),
   ExpenseCategory('HOUSEKEEPING', 'Housekeeping'),
@@ -184,27 +199,32 @@ const expenseCategories = <ExpenseCategory>[
   ExpenseCategory('DIRECTOR_FEES', 'Director fees'),
   ExpenseCategory('PARTNER_REMUNERATION', 'Partner remuneration',
       itc: ItcHint.notApplicable),
-  ExpenseCategory('STAFF_WELFARE_FOOD', 'Staff welfare & food', itc: ItcHint.blocked),
+  ExpenseCategory('STAFF_WELFARE_FOOD', 'Staff welfare & food',
+      itc: ItcHint.blocked),
   ExpenseCategory('STAFF_INSURANCE', 'Staff insurance', itc: ItcHint.blocked),
   ExpenseCategory('TRAVEL_FARES', 'Travel — fares'),
   ExpenseCategory('TRAVEL_HOTEL', 'Travel — hotel'),
   ExpenseCategory('VEHICLE_HIRE', 'Vehicle hire', itc: ItcHint.blocked),
   ExpenseCategory('FUEL', 'Fuel', itc: ItcHint.notApplicable),
-  ExpenseCategory('VEHICLE_REPAIRS_INSURANCE', 'Vehicle repairs & insurance', itc: ItcHint.blocked),
+  ExpenseCategory('VEHICLE_REPAIRS_INSURANCE', 'Vehicle repairs & insurance',
+      itc: ItcHint.blocked),
   ExpenseCategory('INSURANCE_BUSINESS', 'Business insurance'),
   ExpenseCategory('REPAIRS_BUILDING', 'Repairs — building'),
   ExpenseCategory('REPAIRS_EQUIPMENT', 'Repairs — equipment'),
   ExpenseCategory('PRINTING_STATIONERY', 'Printing & stationery'),
   ExpenseCategory('OFFICE_SUPPLIES', 'Office supplies'),
   ExpenseCategory('GIFTS_SAMPLES', 'Gifts & samples', itc: ItcHint.blocked),
-  ExpenseCategory('ENTERTAINMENT_MEALS', 'Entertainment & meals', itc: ItcHint.blocked),
+  ExpenseCategory('ENTERTAINMENT_MEALS', 'Entertainment & meals',
+      itc: ItcHint.blocked),
   ExpenseCategory('CLUB_MEMBERSHIP', 'Club membership', itc: ItcHint.blocked),
   ExpenseCategory('CSR', 'CSR', itc: ItcHint.blocked),
   ExpenseCategory('DONATIONS', 'Donations', itc: ItcHint.notApplicable),
-  ExpenseCategory('RATES_TAXES_LICENCES', 'Rates, taxes & licences', itc: ItcHint.notApplicable),
+  ExpenseCategory('RATES_TAXES_LICENCES', 'Rates, taxes & licences',
+      itc: ItcHint.notApplicable),
   ExpenseCategory('TRAINING_RECRUITMENT', 'Training & recruitment'),
   ExpenseCategory('SUBSCRIPTIONS_TRADE_BODIES', 'Subscriptions & trade bodies'),
-  ExpenseCategory('PENALTIES_FINES', 'Penalties & fines', itc: ItcHint.notApplicable),
+  ExpenseCategory('PENALTIES_FINES', 'Penalties & fines',
+      itc: ItcHint.notApplicable),
   ExpenseCategory('MISCELLANEOUS', 'Miscellaneous'),
 ];
 
@@ -269,11 +289,20 @@ String warningCopy(DocWarning w) {
   final detail = e.message;
   switch (e.code) {
     case 'ACCOUNTING_NOT_ACTIVE':
-      return (title: 'Accounting is not active', body: 'Set it up on the web app first.');
+      return (
+        title: 'Accounting is not active',
+        body: 'Set it up on the web app first.'
+      );
     case 'CUSTOMER_REQUIRED':
-      return (title: 'Customer needed', body: 'Pick a customer on the draft before issuing.');
+      return (
+        title: 'Customer needed',
+        body: 'Pick a customer on the draft before issuing.'
+      );
     case 'AMOUNTS_ARE_REQUIRED':
-      return (title: 'Tax basis needed', body: 'Choose whether the prices include tax, then issue.');
+      return (
+        title: 'Tax basis needed',
+        body: 'Choose whether the prices include tax, then issue.'
+      );
     case 'HSN_DIGITS_REQUIRED':
       return (
         title: 'HSN/SAC too short',
@@ -284,27 +313,39 @@ String warningCopy(DocWarning w) {
     case 'TRANSACTION_CLASS_NOT_ALLOWED':
       return (
         title: 'Wrong document type',
-        body: '${label(transactionClassLabels, cv('transaction_class'))} supplies need an export invoice.',
+        body:
+            '${label(transactionClassLabels, cv('transaction_class'))} supplies need an export invoice.',
       );
     case 'GSTIN_INVALID':
-      return (title: 'GSTIN is not valid', body: 'Fix the customer\'s GSTIN in their tax profile.');
+      return (
+        title: 'GSTIN is not valid',
+        body: 'Fix the customer\'s GSTIN in their tax profile.'
+      );
     case 'PERIOD_FILED_DATE_IN_OPEN_PERIOD':
       return (
         title: 'Return already filed',
-        body: 'GSTR-1 for that period is filed. Use a later date, or raise a credit note instead.',
+        body:
+            'GSTR-1 for that period is filed. Use a later date, or raise a credit note instead.',
       );
     case 'RATE_VARIANT_REQUIRED':
       return (
         title: 'Pick a tax rate',
-        body: 'HSN/SAC ${cv('hsn_sac')} on line ${cv('line_no')} has more than one rate. '
+        body:
+            'HSN/SAC ${cv('hsn_sac')} on line ${cv('line_no')} has more than one rate. '
             'Choose the one that applies — it is saved on the product.',
       );
     case 'RATE_NOT_FOUND':
       return (title: 'No tax rate found', body: detail);
     case 'CONFIG_NOT_VERIFIED':
-      return (title: 'Rates not verified', body: 'Ask your accountant to verify the tax configuration.');
+      return (
+        title: 'Rates not verified',
+        body: 'Ask your accountant to verify the tax configuration.'
+      );
     case 'NO_SERIES':
-      return (title: 'No numbering series', body: 'Set up invoice numbering on the web app.');
+      return (
+        title: 'No numbering series',
+        body: 'Set up invoice numbering on the web app.'
+      );
     case 'VOID_NOT_ALLOWED':
       return (title: 'Cannot void', body: 'Only a draft can be voided.');
     case 'CANCEL_NOT_ALLOWED':
@@ -312,46 +353,71 @@ String warningCopy(DocWarning w) {
     case 'NOT_DRAFT':
       return (title: 'Already issued', body: 'Only a draft can be edited.');
     case 'NOTE_NOT_ALLOWED':
-      return (title: 'Credit note not allowed', body: _noteReason(cv('reason'), c));
+      return (
+        title: 'Credit note not allowed',
+        body: _noteReason(cv('reason'), c)
+      );
     case 'CN_CUTOFF_PASSED':
       return (
         title: 'Too late for a GST credit note',
-        body: 'The cut-off was ${formatApiDay(cv('cutoff'))}. Raise it without GST instead.',
+        body:
+            'The cut-off was ${formatApiDay(cv('cutoff'))}. Raise it without GST instead.',
       );
     case 'PARTY_HAS_BOOKS':
-      return (title: 'Has accounting history', body: 'It cannot be deleted — deactivate it instead.');
+      return (
+        title: 'Has accounting history',
+        body: 'It cannot be deleted — deactivate it instead.'
+      );
     case 'BANK_ACCOUNT_REQUIRED':
-      return (title: 'Pick a bank account', body: 'Bank money needs the account it moved through.');
+      return (
+        title: 'Pick a bank account',
+        body: 'Bank money needs the account it moved through.'
+      );
     case 'GATEWAY_PROVIDER_REQUIRED':
-      return (title: 'Gateway needed', body: 'Say which payment gateway collected this.');
+      return (
+        title: 'Gateway needed',
+        body: 'Say which payment gateway collected this.'
+      );
     case 'TARGET_NOT_ISSUED':
-      return (title: 'Invoice not issued', body: 'Money can only be applied to an issued invoice.');
+      return (
+        title: 'Invoice not issued',
+        body: 'Money can only be applied to an issued invoice.'
+      );
     case 'AMOUNT_NOT_POSITIVE':
       return (title: 'Amount must be more than zero', body: detail);
     case 'RECEIPT_NOT_POSTED':
     case 'PAYMENT_NOT_POSTED':
-      return (title: 'Already reversed', body: 'This has already been reversed.');
+      return (
+        title: 'Already reversed',
+        body: 'This has already been reversed.'
+      );
     case 'CREDIT_PARTLY_APPLIED':
       return (
         title: 'Credit already used',
-        body: 'The credit this receipt created is applied to an invoice. Undo that on the web app first.',
+        body:
+            'The credit this receipt created is applied to an invoice. Undo that on the web app first.',
       );
     case 'PAYMENT_EXCEEDS_OPEN_BILLS':
       return (
         title: 'More than what is owed',
-        body: 'Vendor payments must match open bills exactly. For a prepayment, record a vendor advance on the web app.',
+        body:
+            'Vendor payments must match open bills exactly. For a prepayment, record a vendor advance on the web app.',
       );
     case 'NO_OPEN_BILL':
       return (
         title: 'No open bill',
-        body: 'This vendor has nothing to pay. For a prepayment, record a vendor advance on the web app.',
+        body:
+            'This vendor has nothing to pay. For a prepayment, record a vendor advance on the web app.',
       );
     case 'TARGET_BILL_INVALID':
       return (title: 'Bill cannot be paid', body: detail);
     case 'PURCHASE_REJECTED':
       return (title: 'Could not post', body: detail);
     case 'ACCOUNTING_POSTING_REJECTED':
-      return (title: 'The ledger refused this', body: _postingReason(cv('code'), c, detail));
+      return (
+        title: 'The ledger refused this',
+        body: _postingReason(cv('code'), c, detail)
+      );
     default:
       return (title: 'Could not complete', body: detail);
   }
@@ -359,8 +425,10 @@ String warningCopy(DocWarning w) {
 
 String _cancelReason(String reason) => switch (reason) {
       'NOT_ISSUED' => 'Only an issued document can be cancelled.',
-      'HAS_RECEIPT' => 'Money has been received against it. Raise a credit note instead.',
-      'PARTIALLY_SETTLED' => 'It is partly settled. Raise a credit note instead.',
+      'HAS_RECEIPT' =>
+        'Money has been received against it. Raise a credit note instead.',
+      'PARTIALLY_SETTLED' =>
+        'It is partly settled. Raise a credit note instead.',
       'GSTR1_FILED' => 'It is in a filed GSTR-1. Raise a credit note instead.',
       'IRN_PRESENT' => 'It has an e-invoice IRN.',
       'EWB_PRESENT' => 'It has an e-way bill.',
@@ -371,15 +439,18 @@ String _cancelReason(String reason) => switch (reason) {
 
 String _noteReason(String reason, Map<String, dynamic> c) => switch (reason) {
       'ORIGINAL_NOT_ISSUED' => 'The original invoice is not issued.',
-      'ORIGINAL_LINE_NOT_FOUND' => 'A line no longer matches the original invoice.',
+      'ORIGINAL_LINE_NOT_FOUND' =>
+        'A line no longer matches the original invoice.',
       'EXCEEDS_ORIGINAL' =>
         'It is more than the original (cap ${formatMoneyStr(c['cap'])}).',
       'NO_GST_NOTE_HAS_TAX' => 'A note without GST cannot carry tax.',
       _ => 'Check the lines and amounts, then try again.',
     };
 
-String _postingReason(String code, Map<String, dynamic> c, String detail) => switch (code) {
-      'NO_OPEN_BOOK_PERIOD' => 'That month is closed in the books. Use a date in an open month.',
+String _postingReason(String code, Map<String, dynamic> c, String detail) =>
+    switch (code) {
+      'NO_OPEN_BOOK_PERIOD' =>
+        'That month is closed in the books. Use a date in an open month.',
       'IDEMPOTENCY_PAYLOAD_MISMATCH' =>
         'This form was already submitted with different values. Close it and start again.',
       'NO_BANK_ACCOUNT_FOR_METHOD' =>

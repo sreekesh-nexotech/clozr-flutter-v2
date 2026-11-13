@@ -13,7 +13,8 @@ import 'quote_template_parts.dart';
 /// Pure, no Flutter.
 
 String _s(Object? v) => v == null ? '' : (v is String ? v : v.toString());
-int? _i(Object? v) => v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
+int? _i(Object? v) =>
+    v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
 
 /// Who the quote is for. Lead mode picks an UNCONVERTED lead; a converted lead
 /// is quoted from its customer, so customer mode sends only the customer and
@@ -100,6 +101,7 @@ class SavedQuote {
     this.clauses = const [],
     this.sections = const [],
     this.isLocked = false,
+    this.optionGroupId = '',
     this.approvalStatus = '',
     this.discountPct = '',
     this.taxSummary,
@@ -110,8 +112,12 @@ class SavedQuote {
 
   factory SavedQuote.fromJson(Map<String, dynamic> j) {
     String fk(Object? v, String idKey) => v is Map ? _s(v[idKey]) : _s(v);
-    List<Map<String, dynamic>> maps(Object? v) =>
-        v is List ? [for (final e in v) if (e is Map) Map<String, dynamic>.from(e)] : const [];
+    List<Map<String, dynamic>> maps(Object? v) => v is List
+        ? [
+            for (final e in v)
+              if (e is Map) Map<String, dynamic>.from(e)
+          ]
+        : const [];
     final amounts = _s(j['amounts_are']);
     return SavedQuote(
       id: _s(j['quotation_id']),
@@ -131,24 +137,34 @@ class SavedQuote {
       dueDate: _s(j['due_date']),
       notes: _s(j['notes']),
       terms: _s(j['terms_and_conditions']),
-      amountsAre: amounts == 'EXCLUSIVE' || amounts == 'INCLUSIVE' ? amounts : '',
+      amountsAre:
+          amounts == 'EXCLUSIVE' || amounts == 'INCLUSIVE' ? amounts : '',
       placeOfSupply: _s(j['place_of_supply_state_code']),
       contractRef: _s(j['contract_ref']),
-      fieldValues: j['field_values'] is Map ? Map<String, dynamic>.from(j['field_values'] as Map) : const {},
+      fieldValues: j['field_values'] is Map
+          ? Map<String, dynamic>.from(j['field_values'] as Map)
+          : const {},
       fieldValuesWarnings: [
         for (final w in maps(j['field_values_warnings']))
           if (_s(w['message']).isNotEmpty) _s(w['message']),
       ],
       clauses: maps(j['clauses']),
       sections: [
-        for (final s in maps(j['sections'])) SectionPick(_s(s['heading_id']), _s(s['content_id'])),
+        for (final s in maps(j['sections']))
+          SectionPick(_s(s['heading_id']), _s(s['content_id'])),
       ],
       isLocked: j['is_locked'] == true,
+      optionGroupId: j['option_group'] is Map
+          ? _s((j['option_group'] as Map)['option_group_id'])
+          : _s(j['option_group']),
       approvalStatus: _s(j['approval_status']),
       discountPct: _s(j['discount_pct']),
       taxSummary: TaxSummary.fromJson(j['tax_summary']),
       chargeSummary: ChargeSummary.fromJson(j['charge_summary']),
-      missingKeys: [for (final k in _builderKeys) if (!j.containsKey(k)) k],
+      missingKeys: [
+        for (final k in _builderKeys)
+          if (!j.containsKey(k)) k
+      ],
       raw: j,
     );
   }
@@ -178,6 +194,9 @@ class SavedQuote {
   final List<Map<String, dynamic>> clauses;
   final List<SectionPick> sections;
   final bool isLocked;
+
+  /// The alternative-options group this quote is one option of ('' = a single quote).
+  final String optionGroupId;
   final String approvalStatus;
   final String discountPct;
   final TaxSummary? taxSummary;
@@ -194,8 +213,10 @@ class SavedQuote {
 
 /// The hideable fields this quote's response did not include — shown
 /// read-only and never written.
-Set<String> hiddenFields(SavedQuote? q) =>
-    {for (final k in q?.missingKeys ?? const <String>[]) if (hideableFieldLabels.containsKey(k)) k};
+Set<String> hiddenFields(SavedQuote? q) => {
+      for (final k in q?.missingKeys ?? const <String>[])
+        if (hideableFieldLabels.containsKey(k)) k
+    };
 
 /// "Not included in your workspace's quote fields, so not editable here: …"
 String hiddenFieldsNotice(Set<String> hidden) =>
@@ -214,7 +235,8 @@ class BuilderDraft {
     this.customerId = '',
     this.items = const [],
     this.linesDirty = false,
-    this.payType = 'lumpsum',
+    // UI/UX audit #56: new quotes start on Milestone-based.
+    this.payType = 'installment_custom',
     this.installments = '',
     this.billing = '',
     this.validUntil = '',
@@ -274,10 +296,13 @@ class BuilderDraft {
   /// "Quote details" values typed in the popup, saved into `field_values`.
   final Map<String, String> spotValues;
 
-  factory BuilderDraft.empty({String leadId = '', String customerId = ''}) => BuilderDraft(
+  factory BuilderDraft.empty({String leadId = '', String customerId = ''}) =>
+      BuilderDraft(
         leadId: leadId,
         customerId: customerId,
-        quoteFor: customerId.isNotEmpty && leadId.isEmpty ? QuoteFor.customer : QuoteFor.lead,
+        quoteFor: customerId.isNotEmpty && leadId.isEmpty
+            ? QuoteFor.customer
+            : QuoteFor.lead,
         items: [QuoteFormItem.blank()],
       );
 
@@ -327,7 +352,9 @@ class BuilderDraft {
   }) =>
       BuilderDraft(
         title: title ?? this.title,
-        templateChoice: templateChoice == _unset ? this.templateChoice : templateChoice as String?,
+        templateChoice: templateChoice == _unset
+            ? this.templateChoice
+            : templateChoice as String?,
         quoteFor: quoteFor ?? this.quoteFor,
         leadId: leadId ?? this.leadId,
         customerId: customerId ?? this.customerId,
@@ -340,13 +367,20 @@ class BuilderDraft {
         dueDate: dueDate ?? this.dueDate,
         notes: notes ?? this.notes,
         terms: terms ?? this.terms,
-        amountsAreChoice: amountsAreChoice == _unset ? this.amountsAreChoice : amountsAreChoice as String?,
-        serverFlip: serverFlip == _unset ? this.serverFlip : serverFlip as String?,
+        amountsAreChoice: amountsAreChoice == _unset
+            ? this.amountsAreChoice
+            : amountsAreChoice as String?,
+        serverFlip:
+            serverFlip == _unset ? this.serverFlip : serverFlip as String?,
         placeOfSupply: placeOfSupply ?? this.placeOfSupply,
         contractRef: contractRef ?? this.contractRef,
         fieldEdits: fieldEdits ?? this.fieldEdits,
-        clauseRows: clauseRows == _unset ? this.clauseRows : clauseRows as List<ClauseRow>?,
-        sectionPicks: sectionPicks == _unset ? this.sectionPicks : sectionPicks as List<SectionPick>?,
+        clauseRows: clauseRows == _unset
+            ? this.clauseRows
+            : clauseRows as List<ClauseRow>?,
+        sectionPicks: sectionPicks == _unset
+            ? this.sectionPicks
+            : sectionPicks as List<SectionPick>?,
         spotValues: spotValues ?? this.spotValues,
       );
 }
@@ -358,7 +392,8 @@ bool validUntilInPast(String validUntil, String savedValidUntil, String today) {
   return validUntil.compareTo(today) < 0;
 }
 
-int? _positiveInt(String raw) => raw.trim().isEmpty ? null : int.tryParse(raw.trim());
+int? _positiveInt(String raw) =>
+    raw.trim().isEmpty ? null : int.tryParse(raw.trim());
 
 /// What the write mappers need besides the draft.
 class BuilderWriteContext {
@@ -399,7 +434,10 @@ Map<String, dynamic> toNewQuoteJson(BuilderDraft d, BuilderWriteContext ctx) {
   return {
     // '' = templates could not be listed: the server applies the org default.
     if (ctx.templateId.isNotEmpty) 'template': ctx.templateId,
-    if (d.quoteFor == QuoteFor.lead) 'lead': d.leadId else 'customer': d.customerId,
+    if (d.quoteFor == QuoteFor.lead)
+      'lead': d.leadId
+    else
+      'customer': d.customerId,
     if (ctx.statusId != null) 'status_id': ctx.statusId,
     if (d.title.isNotEmpty) 'quotation_title': d.title,
     'payment_type': d.payType,
@@ -408,64 +446,84 @@ Map<String, dynamic> toNewQuoteJson(BuilderDraft d, BuilderWriteContext ctx) {
     if (d.validUntil.isNotEmpty) 'valid_until': d.validUntil,
     if (d.dueDate.isNotEmpty) 'due_date': d.dueDate,
     if (d.notes.isNotEmpty) 'notes': d.notes,
-    if (ctx.legacyTerms && d.terms.trim().isNotEmpty) 'terms_and_conditions': d.terms,
+    if (ctx.legacyTerms && d.terms.trim().isNotEmpty)
+      'terms_and_conditions': d.terms,
     if (ctx.amountsAre.isNotEmpty) 'amounts_are': ctx.amountsAre,
-    if (d.placeOfSupply.isNotEmpty) 'place_of_supply_state_code': d.placeOfSupply,
+    if (d.placeOfSupply.isNotEmpty)
+      'place_of_supply_state_code': d.placeOfSupply,
     if (d.contractRef.isNotEmpty) 'contract_ref': d.contractRef,
     if (lines.isNotEmpty) 'line_items': lines,
     if (fieldValues.isNotEmpty) 'field_values': fieldValues,
     if (d.clauseRows != null) 'clauses': toClauseWrites(d.clauseRows!),
-    if (d.sectionPicks != null) 'sections': [for (final p in d.sectionPicks!) p.toJson()],
+    if (d.sectionPicks != null)
+      'sections': [for (final p in d.sectionPicks!) p.toJson()],
   };
 }
 
 /// An edit: only the keys that differ from the saved quote. Empty = nothing
 /// to save (the Save button stays disabled).
-Map<String, dynamic> toQuoteUpdateJson(BuilderDraft d, SavedQuote q, BuilderWriteContext ctx) {
+Map<String, dynamic> toQuoteUpdateJson(
+    BuilderDraft d, SavedQuote q, BuilderWriteContext ctx) {
   final patch = <String, dynamic>{};
   final flags = paymentFlags(d.payType);
   final hidden = hiddenFields(q);
   bool shown(String k) => !hidden.contains(k);
 
-  if (shown('quotation_title') && d.title != q.title) patch['quotation_title'] = d.title;
-  final savedTemplate = q.templateId.isNotEmpty ? q.templateId : ctx.savedTemplateId;
-  if (d.templateChoice != null && d.templateChoice!.isNotEmpty && d.templateChoice != savedTemplate) {
+  if (shown('quotation_title') && d.title != q.title)
+    patch['quotation_title'] = d.title;
+  final savedTemplate =
+      q.templateId.isNotEmpty ? q.templateId : ctx.savedTemplateId;
+  if (d.templateChoice != null &&
+      d.templateChoice!.isNotEmpty &&
+      d.templateChoice != savedTemplate) {
     patch['template'] = d.templateChoice;
   }
   if (d.payType != q.paymentType) patch['payment_type'] = d.payType;
   final installments = flags.installments ? _positiveInt(d.installments) : null;
-  if (installments != null && installments != q.numInstallments) patch['num_installments'] = installments;
+  if (installments != null && installments != q.numInstallments)
+    patch['num_installments'] = installments;
   final billing = flags.billing ? _positiveInt(d.billing) : null;
-  if (billing != null && billing != q.billingPeriodDays) patch['billing_period_days'] = billing;
+  if (billing != null && billing != q.billingPeriodDays)
+    patch['billing_period_days'] = billing;
   // A date can be changed here, not cleared (the API takes a date, not a blank).
-  if (shown('valid_until') && d.validUntil.isNotEmpty && d.validUntil != q.validUntil) {
+  if (shown('valid_until') &&
+      d.validUntil.isNotEmpty &&
+      d.validUntil != q.validUntil) {
     patch['valid_until'] = d.validUntil;
   }
-  if (shown('due_date') && d.dueDate.isNotEmpty && d.dueDate != q.dueDate) patch['due_date'] = d.dueDate;
+  if (shown('due_date') && d.dueDate.isNotEmpty && d.dueDate != q.dueDate)
+    patch['due_date'] = d.dueDate;
   if (shown('notes') && d.notes != q.notes) patch['notes'] = d.notes;
   if (shown('terms_and_conditions') && ctx.legacyTerms && d.terms != q.terms) {
     patch['terms_and_conditions'] = d.terms;
   }
   if (d.placeOfSupply != q.placeOfSupply) {
-    patch['place_of_supply_state_code'] = d.placeOfSupply.isEmpty ? null : d.placeOfSupply;
+    patch['place_of_supply_state_code'] =
+        d.placeOfSupply.isEmpty ? null : d.placeOfSupply;
   }
-  if (shown('contract_ref') && d.contractRef != q.contractRef) patch['contract_ref'] = d.contractRef;
+  if (shown('contract_ref') && d.contractRef != q.contractRef)
+    patch['contract_ref'] = d.contractRef;
   if (ctx.amountsAre.isNotEmpty && ctx.amountsAre != q.amountsAre) {
     patch['amounts_are'] = ctx.amountsAre;
     // Lines untouched: the server converts its own saved prices.
     if (d.serverFlip != null) patch['price_conversion'] = d.serverFlip;
   }
-  if (shown('line_items') && d.linesDirty) patch['line_items'] = toLineRows(d.items);
-  if (shown('field_values') && (d.fieldEdits.isNotEmpty || d.spotValues.isNotEmpty)) {
-    final payload = toFieldValuesPayload(ctx.fields, d.fieldEdits, q.fieldValues, false);
+  if (shown('line_items') && d.linesDirty)
+    patch['line_items'] = toLineRows(d.items);
+  if (shown('field_values') &&
+      (d.fieldEdits.isNotEmpty || d.spotValues.isNotEmpty)) {
+    final payload =
+        toFieldValuesPayload(ctx.fields, d.fieldEdits, q.fieldValues, false);
     // A typed spot value replaces the stored one; a blanked one clears it.
     for (final e in d.spotValues.entries) {
       payload[e.key] = e.value.trim();
     }
-    if (fieldValuesChanged(payload, q.fieldValues)) patch['field_values'] = payload;
+    if (fieldValuesChanged(payload, q.fieldValues))
+      patch['field_values'] = payload;
   }
   if (d.clauseRows != null) patch['clauses'] = toClauseWrites(d.clauseRows!);
-  if (d.sectionPicks != null && sectionPicksChanged(d.sectionPicks!, q.sections)) {
+  if (d.sectionPicks != null &&
+      sectionPicksChanged(d.sectionPicks!, q.sections)) {
     patch['sections'] = [for (final p in d.sectionPicks!) p.toJson()];
   }
   return patch;
@@ -474,7 +532,10 @@ Map<String, dynamic> toQuoteUpdateJson(BuilderDraft d, SavedQuote q, BuilderWrit
 // ── Footer hints (the disabled-button reasons, web wording) ────────────────
 
 /// Muted "nothing chosen yet" reasons, in order.
-String incompleteReason({required bool hasTemplate, required bool partyChosen, required bool hasNoLines}) {
+String incompleteReason(
+    {required bool hasTemplate,
+    required bool partyChosen,
+    required bool hasNoLines}) {
   if (!hasTemplate) return 'Choose a template.';
   if (!partyChosen) return 'Choose who the quote is for.';
   if (hasNoLines) return 'Add at least one line item.';
@@ -491,7 +552,8 @@ String blockReason({
   required bool missingTemplateField,
 }) {
   final problems = items.map(lineProblem).toSet();
-  if (problems.contains(LineProblem.qty)) return 'Enter a quantity (at most 1,00,00,000) for every line.';
+  if (problems.contains(LineProblem.qty))
+    return 'Enter a quantity (at most 1,00,00,000) for every line.';
   if (problems.contains(LineProblem.price)) {
     return 'Enter a unit price (up to 6 decimals, at most ₹100 crore) for every typed line.';
   }
@@ -502,12 +564,14 @@ String blockReason({
     return 'Check the typed lines’ tax: HSN/SAC is 4 to 8 digits, GST rate 0–100%.';
   }
   if (validityInPast) return 'The validity date can’t be in the past.';
-  if (problems.contains(LineProblem.charge)) return 'Complete the billing period of every recurring line.';
+  if (problems.contains(LineProblem.charge))
+    return 'Complete the billing period of every recurring line.';
   if (recurringWithSubscription) {
     return 'Recurring lines bill on their own schedule: choose lump sum or instalments for the one-time part.';
   }
   if (!hasAmountsAre) return 'Choose whether amounts include GST.';
-  if (attemptedSave && missingTemplateField) return 'Fill the required template fields.';
+  if (attemptedSave && missingTemplateField)
+    return 'Fill the required template fields.';
   return '';
 }
 
@@ -522,8 +586,10 @@ const paymentLockedCopy =
     'in the Accept dialog (and can be re-split on the payment plan until something is paid or invoiced). '
     'To change anything else, revise the quote — the revision is sent again before it is accepted.';
 
-const approvalCopy = 'Discount above your limit — needs approval before it can be sent.';
-const approvalCopyNeutral = 'Discount above the approval limit — needs approval before it can be sent.';
+const approvalCopy =
+    'Discount above your limit — needs approval before it can be sent.';
+const approvalCopyNeutral =
+    'Discount above the approval limit — needs approval before it can be sent.';
 
 const leadModeHint = 'Converted leads are quoted from their customer.';
 const customerModeHint =
@@ -531,7 +597,8 @@ const customerModeHint =
 const customerNoLeadCopy =
     'This customer has no lead to quote against. Create an upsell lead for the customer first.';
 
-const estimateNote = 'GST shown is an estimate; the tax invoice from Accounting carries the final figures.';
+const estimateNote =
+    'GST shown is an estimate; the tax invoice from Accounting carries the final figures.';
 
 /// `"20"` → "20.00%".
 String pct2(String raw) => '${(double.tryParse(raw) ?? 0).toStringAsFixed(2)}%';

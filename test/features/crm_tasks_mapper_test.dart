@@ -43,7 +43,7 @@ void main() {
       expect(t.status, 'todo');
       expect(t.priority, 'High');
       expect(t.assignee, 'u-anjana');
-      expect(t.due, '16 Jun 2026');
+      expect(t.due, '16/06/2026');
       expect(t.dueNote, '2d overdue');
     });
 
@@ -68,8 +68,9 @@ void main() {
     });
 
     test('related_to null and non-lead variants leave leadId null', () {
-      final noRelated =
-          CrmTasksRemoteDataSource.taskFromJson({...row(), 'related_to': null}, now: now)!;
+      final noRelated = CrmTasksRemoteDataSource.taskFromJson(
+          {...row(), 'related_to': null},
+          now: now)!;
       expect(noRelated.leadId, isNull);
 
       final customer = CrmTasksRemoteDataSource.taskFromJson({
@@ -81,7 +82,8 @@ void main() {
 
     test('is defensive: skips rows without task_id, tolerates junk fields', () {
       expect(CrmTasksRemoteDataSource.taskFromJson({'title': 'No id'}), isNull);
-      expect(CrmTasksRemoteDataSource.taskFromJson({...row(), 'task_id': ''}), isNull);
+      expect(CrmTasksRemoteDataSource.taskFromJson({...row(), 'task_id': ''}),
+          isNull);
 
       final junk = CrmTasksRemoteDataSource.taskFromJson({
         'task_id': 't-1',
@@ -103,44 +105,81 @@ void main() {
     });
 
     test('mapRows drops only the malformed rows', () {
-      final rows = [row(), {'title': 'no id'}, {...row(), 'task_id': 't-2'}];
+      final rows = [
+        row(),
+        {'title': 'no id'},
+        {...row(), 'task_id': 't-2'}
+      ];
       expect(CrmTasksRemoteDataSource.mapRows(rows, now: now).length, 2);
     });
   });
 
   group('CrmTasksRemoteDataSource.dueNoteFor', () {
     test('derives overdue / today / upcoming buckets from a fixed now', () {
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 16), now: now), '2d overdue');
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 17), now: now), '1d overdue');
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 18), now: now), 'Today');
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 21), now: now), 'In 3d');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 16), now: now),
+          '2d overdue');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 17), now: now),
+          '1d overdue');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 18), now: now),
+          'Today');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 21), now: now),
+          'In 3d');
       // Webapp: tomorrow and 4+ days out carry no caption.
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 19), now: now), '');
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 25), now: now), '');
-      expect(CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 26), now: now), '');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 19), now: now),
+          '');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 25), now: now),
+          '');
+      expect(
+          CrmTasksRemoteDataSource.dueNoteFor(DateTime(2026, 6, 26), now: now),
+          '');
       expect(CrmTasksRemoteDataSource.dueNoteFor(null, now: now), '');
     });
   });
 
   group('CrmTasksRemoteDataSource.statusIdForKey', () {
     final statuses = [
-      {'crm_task_status_id': 's-open', 'name': 'Open', 'status_type': 'open', 'is_default': true},
-      {'crm_task_status_id': 's-prog', 'name': 'Working on it', 'status_type': 'in_progress'},
-      {'crm_task_status_id': 's-done', 'name': 'Finished', 'status_type': 'completed'},
+      {
+        'crm_task_status_id': 's-open',
+        'name': 'Open',
+        'status_type': 'open',
+        'is_default': true
+      },
+      {
+        'crm_task_status_id': 's-prog',
+        'name': 'Working on it',
+        'status_type': 'in_progress'
+      },
+      {
+        'crm_task_status_id': 's-done',
+        'name': 'Finished',
+        'status_type': 'completed'
+      },
     ];
 
     test('resolves a UI key via name or status_type', () {
-      expect(CrmTasksRemoteDataSource.statusIdForKey(statuses, 'todo'), 's-open');
-      expect(CrmTasksRemoteDataSource.statusIdForKey(statuses, 'inprogress'), 's-prog');
-      expect(CrmTasksRemoteDataSource.statusIdForKey(statuses, 'done'), 's-done');
-      expect(CrmTasksRemoteDataSource.statusIdForKey(statuses, 'blocked'), isNull);
+      expect(
+          CrmTasksRemoteDataSource.statusIdForKey(statuses, 'todo'), 's-open');
+      expect(CrmTasksRemoteDataSource.statusIdForKey(statuses, 'inprogress'),
+          's-prog');
+      expect(
+          CrmTasksRemoteDataSource.statusIdForKey(statuses, 'done'), 's-done');
+      expect(
+          CrmTasksRemoteDataSource.statusIdForKey(statuses, 'blocked'), isNull);
     });
   });
 
   group('CrmTasksRemoteDataSource.isoDateOrNull', () {
     test('accepts ISO and the UI display format, rejects junk', () {
-      expect(CrmTasksRemoteDataSource.isoDateOrNull('2026-06-24'), '2026-06-24');
-      expect(CrmTasksRemoteDataSource.isoDateOrNull('24 Jun 2026'), '2026-06-24');
+      expect(
+          CrmTasksRemoteDataSource.isoDateOrNull('2026-06-24'), '2026-06-24');
+      expect(
+          CrmTasksRemoteDataSource.isoDateOrNull('24/06/2026'), '2026-06-24');
       expect(CrmTasksRemoteDataSource.isoDateOrNull('garbage'), isNull);
       expect(CrmTasksRemoteDataSource.isoDateOrNull(''), isNull);
       expect(CrmTasksRemoteDataSource.isoDateOrNull(null), isNull);

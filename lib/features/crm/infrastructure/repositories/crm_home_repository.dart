@@ -17,14 +17,18 @@ class CrmHomeRepository {
 
   static const _cacheKey = 'crm_home:own';
 
-  Future<CrmHomeData> getHome() async {
+  Future<CrmHomeData> getHome({Map<String, dynamic> period = const {}}) async {
     final errors = <AppError>[];
-    final raw = await _remote.fetchSections(errors: errors);
+    final raw = await _remote.fetchSections(errors: errors, period: period);
+    // Only the default period is cached: a stale month must never stand in
+    // for another one.
+    final cacheable = period.isEmpty;
     if (raw.values.any((v) => v != null)) {
-      await AppCache.put(AppCache.crmCache, _cacheKey, raw);
+      if (cacheable) await AppCache.put(AppCache.crmCache, _cacheKey, raw);
       return CrmHomeRemoteDataSource.mapHome(raw);
     }
-    final cached = AppCache.get(AppCache.crmCache, _cacheKey)?.data;
+    final cached =
+        cacheable ? AppCache.get(AppCache.crmCache, _cacheKey)?.data : null;
     if (cached is Map) {
       return CrmHomeRemoteDataSource.mapHome(Map<String, Object?>.from(cached));
     }

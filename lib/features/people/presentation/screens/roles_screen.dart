@@ -45,8 +45,11 @@ class RolesScreen extends ConsumerWidget {
             SizedBox(height: 14.h),
             Row(
               children: [
-                Expanded(child: Text('Roles & permissions', style: AppText.screenTitle())),
-                PeopleCreateButton(label: 'Add role', onTap: () => showAddRoleSheet(context)),
+                Expanded(
+                    child: Text('Roles & permissions',
+                        style: AppText.screenTitle())),
+                PeopleCreateButton(
+                    label: 'Add role', onTap: () => showAddRoleSheet(context)),
               ],
             ),
             SizedBox(height: 6.h),
@@ -63,7 +66,8 @@ class RolesScreen extends ConsumerWidget {
             onRetry: () => ref.invalidate(rolesProvider),
             onRefresh: () => _refresh(ref),
             data: (roles) {
-              final members = ref.watch(membersProvider).valueOrNull ?? const [];
+              final members =
+                  ref.watch(membersProvider).valueOrNull ?? const [];
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
@@ -71,8 +75,13 @@ class RolesScreen extends ConsumerWidget {
                   const InfoBanner(
                     spans: [
                       TextSpan(text: 'Predefined roles have a '),
-                      TextSpan(text: 'fixed capability matrix and one visibility scope each', style: TextStyle(fontWeight: FontWeight.w700)),
-                      TextSpan(text: '. Settings, Integrations & Billing stay with the System Admin.'),
+                      TextSpan(
+                          text:
+                              'fixed capability matrix and one visibility scope each',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      TextSpan(
+                          text:
+                              '. Settings, Integrations & Billing stay with the System Admin.'),
                     ],
                   ),
                   if (roles.isEmpty)
@@ -81,7 +90,8 @@ class RolesScreen extends ConsumerWidget {
                       child: EmptyState(
                         icon: PhosphorIconsRegular.shieldCheck,
                         title: 'No roles yet',
-                        body: 'Roles decide who sees what. Add a custom role to extend access beyond the predefined ones.',
+                        body:
+                            'Roles decide who sees what. Add a custom role to extend access beyond the predefined ones.',
                         ctaLabel: 'Add role',
                         ctaIcon: PhosphorIconsBold.plus,
                         onCta: () => showAddRoleSheet(context),
@@ -92,13 +102,16 @@ class RolesScreen extends ConsumerWidget {
                       SizedBox(height: 10.h),
                       RoleCard(
                         role: role,
-                        memberCount: members.where((m) => m.role == role.name).length,
+                        memberCount:
+                            members.where((m) => m.role == role.name).length,
                         // Seeded roles open too — read-only, with Save greyed
                         // out. They cannot be edited (the PATCH is a 403), but
                         // the sheet is where a role's scope and capability
                         // cards are actually legible.
                         onTap: () => showEditRoleSheet(context, role),
-                        onDelete: role.locked ? null : () => _confirmDelete(context, ref, role),
+                        onDelete: role.locked
+                            ? null
+                            : () => _confirmDelete(context, ref, role),
                       ),
                     ],
                 ],
@@ -128,7 +141,8 @@ class RolesScreen extends ConsumerWidget {
   /// the `UserRole` FK cascades and a bare delete would strip those people of
   /// their role. `is_deletable` says so up front, so that case is answered
   /// without a round trip — and with the count, which is the actionable part.
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, Role role) async {
+  Future<void> _confirmDelete(
+      BuildContext context, WidgetRef ref, Role role) async {
     final toast = ref.read(toastProvider.notifier);
     if (!role.deletable) {
       final n = role.userCount;
@@ -146,7 +160,9 @@ class RolesScreen extends ConsumerWidget {
           '"${role.name}" will be removed. This cannot be undone.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('Delete', style: TextStyle(color: AppColors.error)),

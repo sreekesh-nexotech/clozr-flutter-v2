@@ -35,9 +35,11 @@ const _default = PhoneRule(4, 15);
 
 /// The digit-length rule for [iso2], or the generic E.164 ceiling for a
 /// country not in the confirmed table above.
-PhoneRule phoneRuleFor(String iso2) => _rulesByIso2[iso2.toUpperCase()] ?? _default;
+PhoneRule phoneRuleFor(String iso2) =>
+    _rulesByIso2[iso2.toUpperCase()] ?? _default;
 
 /// "Enter 10 digits" / "Enter 8–11 digits" — every phone field's incomplete-
 /// number error, phrased for whichever rule the selected country carries.
-String phoneDigitsMessage(PhoneRule rule) =>
-    rule.min == rule.max ? 'Enter ${rule.min} digits' : 'Enter ${rule.min}–${rule.max} digits';
+String phoneDigitsMessage(PhoneRule rule) => rule.min == rule.max
+    ? 'Enter ${rule.min} digits'
+    : 'Enter ${rule.min}–${rule.max} digits';

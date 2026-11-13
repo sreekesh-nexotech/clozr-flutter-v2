@@ -1,3 +1,5 @@
+import '../../../../data/mock/status_meta.dart';
+import '../../../../data/api/user_directory.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,8 +14,11 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../shell/application/providers/shell_providers.dart';
 import '../../application/filters/followups_filter_spec.dart';
+import '../../application/filters/tasks_filter_spec.dart'
+    show kBuiltinTaskTypes;
 import '../../application/followup_form_rules.dart';
 import '../../application/providers/crm_catalog_providers.dart';
+import '../../application/providers/crm_tasks_providers.dart';
 import '../../application/providers/followup_form_providers.dart';
 import '../../application/providers/followups_providers.dart';
 import '../../application/providers/leads_providers.dart';
@@ -21,7 +26,8 @@ import '../../domain/entities/followup.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../components/option_picker_sheet.dart';
-import '../screens/edit_crm_task_screen.dart' show RecordSearchSheet, taskFormDefaultsProvider;
+import '../screens/edit_crm_task_screen.dart'
+    show RecordSearchSheet, taskFormDefaultsProvider;
 import 'add_sheet_kit.dart';
 import 'linked_record_banner.dart';
 
@@ -55,7 +61,34 @@ Future<void> showAddFollowupSheet(BuildContext context, WidgetRef ref,
   if (!context.mounted) return;
   return showClozrSheet<void>(
     context: context,
-    builder: (_) => _AddFollowupSheet(lead: lead, customer: lead == null ? customer : null),
+    builder: (_) =>
+        _AddFollowupSheet(lead: lead, customer: lead == null ? customer : null),
+  );
+}
+
+/// New task — the same fixed webapp form (`AddTaskModal`) without the
+/// follow-up-only Reminder: Title, Related to, Type*, Status, Due date / time,
+/// Priority, Team, Assign to, Additional assignees, the meeting window +
+/// Location, Description and the task custom fields.
+Future<void> showAddTaskFormSheet(BuildContext context, WidgetRef ref,
+    {Lead? lead, ({String id, String label})? customer}) async {
+  try {
+    await Future.wait([
+      ref.read(taskTypeCatalogProvider.future),
+      ref.read(taskStatusCatalogProvider.future),
+      ref.read(taskPriorityCatalogProvider.future),
+      ref.read(assignableUsersForModuleProvider('task').future),
+    ]).timeout(const Duration(seconds: 6));
+  } on Object {
+    // Slow or failed — open with whatever has arrived.
+  }
+  if (!context.mounted) return;
+  return showClozrSheet<void>(
+    context: context,
+    builder: (_) => _AddFollowupSheet(
+        isFollowup: false,
+        lead: lead,
+        customer: lead == null ? customer : null),
   );
 }
 
@@ -63,7 +96,10 @@ Future<void> showAddFollowupSheet(BuildContext context, WidgetRef ref,
 const _none = '__none__';
 
 class _AddFollowupSheet extends ConsumerStatefulWidget {
-  const _AddFollowupSheet({this.lead, this.customer});
+  const _AddFollowupSheet({this.isFollowup = true, this.lead, this.customer});
+
+  /// False for the Add task form (task types / custom fields).
+  final bool isFollowup;
 
   /// The lead this follow-up is being scheduled against, when opened from one.
   final Lead? lead;
@@ -92,6 +128,25 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
   String? _priorityChoice;
 
   String _assignee = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // UI/UX audit #18: "Assign to" starts on the lead's owner when the task
+    // is raised from a lead, otherwise on the signed-in user — never
+    // "Unassigned". Still changeable, or clearable.
+    _assignee = _ownerOf(widget.lead?.raw['lead_owner']) ??
+        UserDirectory.currentUserId ??
+        '';
+  }
+
+  /// A `lead_owner` value — a uuid string or a nested user object.
+  static String? _ownerOf(Object? v) {
+    final id = v is Map ? v['user_id'] ?? v['id'] : v;
+    final s = id == null ? '' : '$id'.trim();
+    return s.isEmpty ? null : s;
+  }
+
   final List<String> _extraAssignees = [];
   String _teamId = '';
   DateTime? _dueDate;
@@ -127,6 +182,11 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
   /// The org's follow-up types by name — a follow-up's `task_type` is written
   /// by name. Mock mode (no API) falls back to the built-in vocabulary.
   List<String> get _types {
+    if (!widget.isFollowup) {
+      final tasks = ref.read(taskTypeOptionsProvider);
+      if (tasks.isNotEmpty) return [for (final t in tasks) t.id];
+      return ApiConfig.apiEnabled ? const [] : kBuiltinTaskTypes;
+    }
     final catalog = ref.read(followupTypeOptionsProvider);
     if (catalog.isNotEmpty) return [for (final t in catalog) t.name];
     return ApiConfig.apiEnabled ? const [] : kBuiltinFollowupTypes;
@@ -146,25 +206,47 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
   List<CatalogOption> get _statusOptions {
     final all = ref.read(taskStatusOptionsProvider);
     final creatable = _defaults?.creatable ?? const <String>{};
-    if (creatable.isNotEmpty) return [for (final s in all) if (creatable.contains(s.id)) s];
-    return [for (final s in all) if (s.statusType != 'completed' && s.statusType != 'cancelled') s];
+    if (creatable.isNotEmpty)
+      return [
+        for (final s in all)
+          if (creatable.contains(s.id)) s
+      ];
+    return [
+      for (final s in all)
+        if (s.statusType != 'completed' && s.statusType != 'cancelled') s
+    ];
   }
 
   String get _statusId => _statusChoice ?? _defaults?.status ?? '';
-  List<CatalogOption> get _priorityOptions => ref.read(taskPriorityOptionsProvider);
+  // Capitalised, as every module shows priority (UI/UX audit #28); the id
+  // sent is unchanged.
+  List<CatalogOption> get _priorityOptions => [
+        for (final o in ref.read(taskPriorityOptionsProvider))
+          CatalogOption(id: o.id, name: StatusMeta$.priorityLabel(o.name)),
+      ];
   String get _priorityId => _priorityChoice ?? _defaults?.priority ?? '';
-  List<CatalogOption> get _users => ref.read(assignableUsersForModuleProvider('followup')).valueOrNull ?? const [];
-  List<CatalogOption> get _teams => ref.read(assignableTeamsForModuleProvider('followup')).valueOrNull ?? const [];
+  List<CatalogOption> get _users =>
+      ref.read(assignableUsersForModuleProvider(_module)).valueOrNull ??
+      const [];
+  List<CatalogOption> get _teams =>
+      ref.read(assignableTeamsForModuleProvider(_module)).valueOrNull ??
+      const [];
 
-  AsyncValue<List<TaskCustomFieldDef>> get _customAsync => ref.read(taskCustomFieldDefsProvider);
+  String get _module => widget.isFollowup ? 'followup' : 'task';
+  String get _noun => widget.isFollowup ? 'follow-up' : 'task';
+
+  AsyncValue<List<TaskCustomFieldDef>> get _customAsync =>
+      ref.read(taskCustomFieldDefsProvider);
 
   /// The custom fields that belong on a follow-up (`all` + `followup`).
   List<TaskCustomFieldDef> get _customDefs =>
-      customFieldsForKind(_customAsync.valueOrNull ?? const [], isFollowup: true);
+      customFieldsForKind(_customAsync.valueOrNull ?? const [],
+          isFollowup: widget.isFollowup);
 
   bool get _linkFixed => widget.lead != null || widget.customer != null;
 
-  String _nameOf(List<CatalogOption> options, String id, {String fallback = ''}) =>
+  String _nameOf(List<CatalogOption> options, String id,
+          {String fallback = ''}) =>
       options.where((o) => o.id == id).firstOrNull?.name ?? fallback;
 
   FollowupDraft get _draft {
@@ -199,17 +281,23 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
 
   /// Webapp `canSave`: a title, a type, and the custom fields known — or a
   /// required one is skipped again.
-  bool get _canSave => followupCanSave(_draft) && !_customAsync.isLoading && !_saving;
+  bool get _canSave =>
+      followupCanSave(_draft) && !_customAsync.isLoading && !_saving;
 
   bool get _showMeeting =>
-      _meetingOpen || isMeetingType(_type) || _meetingFrom != null || _meetingTo != null || _location.text.isNotEmpty;
+      _meetingOpen ||
+      isMeetingType(_type) ||
+      _meetingFrom != null ||
+      _meetingTo != null ||
+      _location.text.isNotEmpty;
 
   void _clearError(String key) {
     if (!_errors.containsKey(key)) return;
     setState(() => _errors = {..._errors}..remove(key));
   }
 
-  GlobalKey _anchor(String key) => _errorAnchors.putIfAbsent(key, GlobalKey.new);
+  GlobalKey _anchor(String key) =>
+      _errorAnchors.putIfAbsent(key, GlobalKey.new);
 
   // ── save ──
 
@@ -229,7 +317,8 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       // the bottom of a long sheet.
       final ctx = _errorAnchors[found.keys.first]?.currentContext;
       if (ctx != null) {
-        Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 250));
+        Scrollable.ensureVisible(ctx,
+            alignment: 0.3, duration: const Duration(milliseconds: 250));
       }
       return;
     }
@@ -239,11 +328,16 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Create an overdue follow-up?'),
-          content: Text('The due date $when has already passed, so this follow-up will be overdue as soon as it is created.'),
+          title: Text('Create an overdue $_noun?'),
+          content: Text(
+              'The due date $when has already passed, so this $_noun will be overdue as soon as it is created.'),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Change date')),
-            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Create follow-up')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Change date')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text('Create $_noun')),
           ],
         ),
       );
@@ -251,14 +345,22 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       return _save(overdueConfirmed: true);
     }
 
-    final body = buildFollowupCreateBody(draft, collectCustomFields(defs, _customDrafts).values);
+    final body = buildFollowupCreateBody(
+        draft, collectCustomFields(defs, _customDrafts).values);
+    if (!widget.isFollowup) {
+      // A task keeps its reminder too (UI/UX audit #38): the Task model
+      // stores `reminder_choice` for tasks and follow-ups alike.
+      body['is_followup'] = false;
+    }
     setState(() {
       _errors = const {};
       _formError = null;
       _saving = true;
     });
     try {
-      if (ApiConfig.apiEnabled) {
+      if (ApiConfig.apiEnabled && !widget.isFollowup) {
+        await ref.read(crmTasksRepositoryProvider).createTask(body);
+      } else if (ApiConfig.apiEnabled) {
         await ref.read(followupsRepositoryProvider).createFollowupFields(body);
       } else {
         _addMockDraft(draft);
@@ -268,12 +370,21 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       ref.read(apiServiceProvider).handled(e);
       // Keep the message in the form too — the toast fades while the user
       // fixes it (webapp). Field errors the form has a slot for go under it.
-      const slots = {'due_date': 'dueDate', 'reminder_choice': 'reminder', 'meeting_to': 'meetingTo', 'meeting_from': 'meetingTo'};
-      final inline = {
-        for (final f in (e.fieldErrors ?? const <String, List<String>>{}).entries)
-          if (f.value.isNotEmpty && slots.containsKey(f.key)) slots[f.key]!: f.value.first,
+      const slots = {
+        'due_date': 'dueDate',
+        'reminder_choice': 'reminder',
+        'meeting_to': 'meetingTo',
+        'meeting_from': 'meetingTo'
       };
-      final msg = e.bareMessage.isEmpty ? 'Could not create the follow-up.' : e.bareMessage;
+      final inline = {
+        for (final f
+            in (e.fieldErrors ?? const <String, List<String>>{}).entries)
+          if (f.value.isNotEmpty && slots.containsKey(f.key))
+            slots[f.key]!: f.value.first,
+      };
+      final msg = e.bareMessage.isEmpty
+          ? 'Could not create the $_noun.'
+          : e.bareMessage;
       setState(() {
         _errors = inline;
         _formError = msg;
@@ -287,16 +398,24 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       rethrow;
     }
     if (!mounted) return;
-    refreshFollowups(ref);
-    // Every lead's Follow-ups tab reads its own scoped fetch.
-    ref.invalidate(leadFollowupsProvider);
-    toast.show('Follow-up created');
+    if (widget.isFollowup) {
+      refreshFollowups(ref);
+      // Every lead's Follow-ups tab reads its own scoped fetch.
+      ref.invalidate(leadFollowupsProvider);
+    } else {
+      ref.invalidate(crmTasksProvider);
+      ref.invalidate(leadTasksProvider);
+    }
+    toast.show(widget.isFollowup ? 'Follow-up created' : 'Task created');
     Navigator.of(context).pop();
   }
 
   /// Mock mode (no API): the follow-up goes straight into the local drafts.
   void _addMockDraft(FollowupDraft d) {
-    final contact = widget.lead?.name ?? widget.customer?.label ?? _related?.label ?? d.title.trim();
+    final contact = widget.lead?.name ??
+        widget.customer?.label ??
+        _related?.label ??
+        d.title.trim();
     final fu = Followup(
       id: genId('F'),
       kind: d.type,
@@ -311,12 +430,16 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       title: d.title.trim(),
       description: d.description.trim(),
     );
-    ref.read(followupDraftsProvider.notifier).state = [fu, ...ref.read(followupDraftsProvider)];
+    ref.read(followupDraftsProvider.notifier).state = [
+      fu,
+      ...ref.read(followupDraftsProvider)
+    ];
   }
 
   // ── pickers ──
 
-  Future<String?> _pickOne(String title, List<CatalogOption> options, String selected) async {
+  Future<String?> _pickOne(
+      String title, List<CatalogOption> options, String selected) async {
     FocusManager.instance.primaryFocus?.unfocus();
     final picked = await showOptionPicker(
       context: context,
@@ -335,7 +458,11 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
     var initial = _dueDate ?? now;
     if (initial.isBefore(followupDueDateMin)) initial = followupDueDateMin;
     if (initial.isAfter(max)) initial = max;
-    final picked = await showDatePicker(context: context, initialDate: initial, firstDate: followupDueDateMin, lastDate: max);
+    final picked = await showDatePicker(
+        context: context,
+        initialDate: initial,
+        firstDate: followupDueDateMin,
+        lastDate: max);
     if (picked == null || !mounted) return;
     setState(() {
       _dueDate = picked;
@@ -347,25 +474,30 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
 
   Future<DateTime?> _pickDateTime(DateTime? current) async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final d = await pickSheetDate(context, current == null ? '' : sheetIsoDate(current));
+    final d = await pickSheetDate(
+        context, current == null ? '' : sheetIsoDate(current));
     if (d == null || !mounted) return null;
-    final t = await pickSheetTime(context, current == null ? '' : sheetTimeLabel(TimeOfDay.fromDateTime(current)));
+    final t = await pickSheetTime(context,
+        current == null ? '' : sheetTimeLabel(TimeOfDay.fromDateTime(current)));
     final time = t ?? const TimeOfDay(hour: 9, minute: 0);
     return DateTime(d.year, d.month, d.day, time.hour, time.minute);
   }
 
-  String _dateTimeLabel(DateTime? d) =>
-      d == null ? '' : '${sheetDateLabel(d)} · ${sheetTimeLabel(TimeOfDay.fromDateTime(d))}';
+  String _dateTimeLabel(DateTime? d) => d == null
+      ? ''
+      : '${sheetDateLabel(d)} · ${sheetTimeLabel(TimeOfDay.fromDateTime(d))}';
 
   @override
   Widget build(BuildContext context) {
     // Subscribed here; the getters above read the current values.
-    ref.watch(followupTypeOptionsProvider);
+    ref.watch(widget.isFollowup
+        ? followupTypeOptionsProvider
+        : taskTypeOptionsProvider);
     ref.watch(taskStatusOptionsProvider);
     ref.watch(taskPriorityOptionsProvider);
     ref.watch(taskFormDefaultsProvider);
-    ref.watch(assignableUsersForModuleProvider('followup'));
-    ref.watch(assignableTeamsForModuleProvider('followup'));
+    ref.watch(assignableUsersForModuleProvider(_module));
+    ref.watch(assignableTeamsForModuleProvider(_module));
     ref.watch(taskCustomFieldDefsProvider);
 
     final type = _type;
@@ -379,7 +511,9 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'New follow-up', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: widget.isFollowup ? 'New follow-up' : 'New task',
+            onClose: () => Navigator.of(context).pop()),
         Flexible(
           child: SingleChildScrollView(
             // Typing in a field must not trap the keyboard over the rest.
@@ -396,8 +530,12 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                   label: 'Title',
                   required: true,
                   controller: _title,
-                  hint: 'e.g. Follow up on quote',
-                  inputFormatters: [LengthLimitingTextInputFormatter(followupTitleMax)],
+                  hint: widget.isFollowup
+                      ? 'e.g. Follow up on quote'
+                      : 'e.g. Prepare BOQ & quotation',
+                  inputFormatters: [
+                    LengthLimitingTextInputFormatter(followupTitleMax)
+                  ],
                   onChanged: (_) => setState(() {}),
                 ),
                 if (!_linkFixed) ...[
@@ -412,18 +550,30 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                     value: type,
                     hint: 'Select type',
                     onTap: () async {
-                      final v = await _pickOne('Type', [for (final t in _types) CatalogOption(id: t, name: t)], type);
-                      if (v != null && v.isNotEmpty) setState(() => _typeChoice = v);
+                      final v = await _pickOne(
+                          'Type',
+                          [
+                            for (final t in _types)
+                              CatalogOption(id: t, name: t)
+                          ],
+                          type);
+                      if (v != null && v.isNotEmpty)
+                        setState(() => _typeChoice = v);
                     },
                   ),
                   _PickerField(
                     label: 'Status',
                     value: _nameOf(statusOptions, statusId),
                     hint: 'Org default',
-                    dot: statusOptions.where((s) => s.id == statusId).firstOrNull?.color,
+                    dot: statusOptions
+                        .where((s) => s.id == statusId)
+                        .firstOrNull
+                        ?.color,
                     onTap: () async {
-                      final v = await _pickOne('Status', statusOptions, statusId);
-                      if (v != null && v.isNotEmpty) setState(() => _statusChoice = v);
+                      final v =
+                          await _pickOne('Status', statusOptions, statusId);
+                      if (v != null && v.isNotEmpty)
+                        setState(() => _statusChoice = v);
                     },
                   ),
                 ),
@@ -458,12 +608,16 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                     onTap: () async {
                       FocusManager.instance.primaryFocus?.unfocus();
                       final t = await pickSheetTime(context, _dueTime);
-                      if (t != null && mounted) setState(() => _dueTime = sheetTimeLabel(t));
+                      if (t != null && mounted)
+                        setState(() => _dueTime = sheetTimeLabel(t));
                     },
-                    onClear: _dueTime.isEmpty || _dueDate == null ? null : () => setState(() => _dueTime = ''),
+                    onClear: _dueTime.isEmpty || _dueDate == null
+                        ? null
+                        : () => setState(() => _dueTime = ''),
                   ),
                 ),
                 SizedBox(height: 14.h),
+                // Tasks and follow-ups both offer a reminder (UI/UX #38).
                 KeyedSubtree(
                   key: _anchor('reminder'),
                   child: _PickerField(
@@ -476,7 +630,8 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                         'Reminder',
                         [
                           const CatalogOption(id: _none, name: 'No reminder'),
-                          for (final (v, l) in followupReminderOptions) CatalogOption(id: v, name: l),
+                          for (final (v, l) in followupReminderOptions)
+                            CatalogOption(id: v, name: l),
                         ],
                         _reminder,
                       );
@@ -490,11 +645,16 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                   Padding(
                     padding: EdgeInsets.only(top: 8.h),
                     child: Row(children: [
-                      Icon(PhosphorIconsRegular.warning, size: 14.sp, color: AppColors.warningDeep),
+                      Icon(PhosphorIconsRegular.warning,
+                          size: 14.sp, color: AppColors.warningDeep),
                       SizedBox(width: 6.w),
                       Expanded(
-                        child: Text('This follow-up will be overdue — ${followupDayLabel(_dueDate!)} has already passed.',
-                            style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.warningDeep)),
+                        child: Text(
+                            'This $_noun will be overdue — ${followupDayLabel(_dueDate!)} has already passed.',
+                            style: AppText.custom(
+                                size: 12.5,
+                                weight: FontWeight.w600,
+                                color: AppColors.warningDeep)),
                       ),
                     ]),
                   ),
@@ -505,8 +665,10 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                     value: _nameOf(_priorityOptions, priorityId),
                     hint: 'Select priority',
                     onTap: () async {
-                      final v = await _pickOne('Priority', _priorityOptions, priorityId);
-                      if (v != null && v.isNotEmpty) setState(() => _priorityChoice = v);
+                      final v = await _pickOne(
+                          'Priority', _priorityOptions, priorityId);
+                      if (v != null && v.isNotEmpty)
+                        setState(() => _priorityChoice = v);
                     },
                   ),
                   _PickerField(
@@ -514,7 +676,12 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                     value: _nameOf(_teams, _teamId, fallback: 'No team'),
                     onTap: () async {
                       final v = await _pickOne(
-                          'Team', [const CatalogOption(id: _none, name: 'No team'), ..._teams], _teamId);
+                          'Team',
+                          [
+                            const CatalogOption(id: _none, name: 'No team'),
+                            ..._teams
+                          ],
+                          _teamId);
                       if (v != null) setState(() => _teamId = v);
                     },
                   ),
@@ -522,11 +689,18 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                 SizedBox(height: 14.h),
                 _PickerField(
                   label: 'Assign to',
-                  value: _nameOf(_users, _assignee, fallback: _assignee.isEmpty ? 'Unassigned' : 'User'),
-                  helper: 'The primary owner — always part of the assignee set.',
+                  value: _nameOf(_users, _assignee,
+                      fallback: _assignee.isEmpty ? 'Unassigned' : 'User'),
+                  helper:
+                      'The primary owner — always part of the assignee set.',
                   onTap: () async {
                     final v = await _pickOne(
-                        'Assign to', [const CatalogOption(id: _none, name: 'Unassigned'), ..._users], _assignee);
+                        'Assign to',
+                        [
+                          const CatalogOption(id: _none, name: 'Unassigned'),
+                          ..._users
+                        ],
+                        _assignee);
                     if (v == null) return;
                     setState(() {
                       _assignee = v;
@@ -544,13 +718,14 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
                   label: 'Description',
                   controller: _description,
                   multiline: true,
-                  hint: 'What is this follow-up about?',
+                  hint: 'What is this $_noun about?',
                 ),
                 _customFieldsSection(),
                 if (_formError != null)
                   Padding(
                     padding: EdgeInsets.only(top: 12.h),
-                    child: Text(_formError!, style: AppText.caption(color: AppColors.error)),
+                    child: Text(_formError!,
+                        style: AppText.caption(color: AppColors.error)),
                   ),
               ],
             ),
@@ -562,7 +737,7 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
           child: Opacity(
             opacity: _canSave || _saving ? 1 : 0.5,
             child: SheetSubmitBar(
-              label: 'Add follow-up',
+              label: widget.isFollowup ? 'Add follow-up' : 'Add task',
               icon: PhosphorIconsBold.plus,
               busy: _saving,
               busyLabel: 'Saving…',
@@ -577,7 +752,11 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
   /// Two fields side by side (the webapp's two-column grid).
   Widget _row(Widget a, Widget b) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [Expanded(child: a), SizedBox(width: 10.w), Expanded(child: b)],
+        children: [
+          Expanded(child: a),
+          SizedBox(width: 10.w),
+          Expanded(child: b)
+        ],
       );
 
   // ── Related to (webapp RelatedRecordPicker) ──
@@ -589,7 +768,9 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
         for (final k in const ['lead', 'customer'])
           SelectChip(
             label: k == 'lead' ? 'Lead' : 'Customer',
-            icon: k == 'lead' ? PhosphorIconsRegular.user : PhosphorIconsRegular.buildings,
+            icon: k == 'lead'
+                ? PhosphorIconsRegular.user
+                : PhosphorIconsRegular.buildings,
             selected: _relatedKind == k,
             onTap: () => setState(() {
               // Switching the model clears the pick — a link is to one record.
@@ -602,13 +783,17 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       _PickerField(
         label: lead ? 'Lead' : 'Customer',
         value: _related?.label ?? '',
-        hint: lead ? 'Search leads by name, company, email or phone…' : 'Search customers by name, company, email…',
+        hint: lead
+            ? 'Search leads by name, company, email or phone…'
+            : 'Search customers by name, company, email…',
         icon: PhosphorIconsRegular.magnifyingGlass,
         helper: "Optional — shows on that record's activity.",
-        onClear: _related == null ? null : () => setState(() => _related = null),
+        onClear:
+            _related == null ? null : () => setState(() => _related = null),
         onTap: () async {
           FocusManager.instance.primaryFocus?.unfocus();
-          final picked = await showModalBottomSheet<({String id, String label})>(
+          final picked =
+              await showModalBottomSheet<({String id, String label})>(
             context: context,
             isScrollControlled: true,
             builder: (_) => RecordSearchSheet(kind: _relatedKind),
@@ -623,32 +808,46 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
   Widget _additionalAssignees() {
     final users = _users;
     String label(String id) => _nameOf(users, id, fallback: 'User');
-    final addable = [for (final u in users) if (u.id != _assignee && !_extraAssignees.contains(u.id)) u];
+    final addable = [
+      for (final u in users)
+        if (u.id != _assignee && !_extraAssignees.contains(u.id)) u
+    ];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       if (_extraAssignees.isNotEmpty) ...[
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
           for (final id in _extraAssignees)
             Container(
               padding: EdgeInsets.fromLTRB(6.w, 4.h, 8.w, 4.h),
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(999)),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(999)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Container(
                   width: 20.w,
                   height: 20.w,
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
+                  decoration: const BoxDecoration(
+                      color: AppColors.navy, shape: BoxShape.circle),
                   child: Text(initialsOf(label(id)),
-                      style: AppText.custom(size: 9, weight: FontWeight.w700, color: AppColors.white)),
+                      style: AppText.custom(
+                          size: 9,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
                 ),
                 SizedBox(width: 7.w),
-                Text(label(id), style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                Text(label(id),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPrimary)),
                 SizedBox(width: 4.w),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => setState(() => _extraAssignees.remove(id)),
                   child: Semantics(
                     label: 'Remove ${label(id)}',
-                    child: Icon(PhosphorIconsRegular.x, size: 13.sp, color: AppColors.textMuted),
+                    child: Icon(PhosphorIconsRegular.x,
+                        size: 13.sp, color: AppColors.textMuted),
                   ),
                 ),
               ]),
@@ -663,7 +862,8 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
         enabled: addable.isNotEmpty,
         onTap: () async {
           final v = await _pickOne('Additional assignees', addable, '');
-          if (v != null && v.isNotEmpty && !_extraAssignees.contains(v)) setState(() => _extraAssignees.add(v));
+          if (v != null && v.isNotEmpty && !_extraAssignees.contains(v))
+            setState(() => _extraAssignees.add(v));
         },
       ),
     ]);
@@ -676,10 +876,12 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _meetingOpen = true),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(PhosphorIconsRegular.calendarPlus, size: 15.sp, color: AppColors.navy),
+          Icon(PhosphorIconsRegular.calendarPlus,
+              size: 15.sp, color: AppColors.navy),
           SizedBox(width: 7.w),
           Text('Add meeting time & location',
-              style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.navy)),
+              style: AppText.custom(
+                  size: 13, weight: FontWeight.w600, color: AppColors.navy)),
         ]),
       );
     }
@@ -728,7 +930,9 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
         label: 'Location',
         controller: _location,
         hint: 'e.g. Client office, Zoom link',
-        inputFormatters: [LengthLimitingTextInputFormatter(followupLocationMax)],
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(followupLocationMax)
+        ],
         onChanged: (_) => setState(() {}),
       ),
     ]);
@@ -737,15 +941,20 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
   // ── Custom fields (webapp CF-01) ──
   Widget _customFieldsSection() {
     final async = _customAsync;
-    final hint = AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder);
+    final hint = AppText.custom(
+        size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder);
     if (async.isLoading) {
-      return Padding(padding: EdgeInsets.only(top: 14.h), child: Text('Loading custom fields…', style: hint));
+      return Padding(
+          padding: EdgeInsets.only(top: 14.h),
+          child: Text('Loading custom fields…', style: hint));
     }
     if (async.hasError) {
       // The server still checks required fields; say why its message may name one.
       return Padding(
         padding: EdgeInsets.only(top: 14.h),
-        child: Text('Custom fields could not be loaded — required ones are checked when you save.', style: hint),
+        child: Text(
+            'Custom fields could not be loaded — required ones are checked when you save.',
+            style: hint),
       );
     }
     final defs = _customDefs;
@@ -754,11 +963,15 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
       padding: EdgeInsets.only(top: 18.h),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('CUSTOM FIELDS',
-            style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder)
+            style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder)
                 .copyWith(letterSpacing: 0.55)),
         for (final def in defs) ...[
           SizedBox(height: 12.h),
-          KeyedSubtree(key: _anchor(customErrorKey(def.name)), child: _customField(def)),
+          KeyedSubtree(
+              key: _anchor(customErrorKey(def.name)), child: _customField(def)),
         ],
       ]),
     );
@@ -784,14 +997,27 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
               SizedBox(
                 width: 24.w,
                 height: 24.w,
-                child: Checkbox(value: on, onChanged: (v) => _setCustom(def.name, v == true)),
+                child: Checkbox(
+                    value: on,
+                    onChanged: (v) => _setCustom(def.name, v == true)),
               ),
               SizedBox(width: 8.w),
               Flexible(
-                child: Text.rich(TextSpan(children: [
-                  TextSpan(text: def.label),
-                  if (def.required) TextSpan(text: ' *', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.error)),
-                ]), style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: def.label),
+                      if (def.required)
+                        TextSpan(
+                            text: ' *',
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w700,
+                                color: AppColors.error)),
+                    ]),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPrimary)),
               ),
             ]),
           ),
@@ -805,16 +1031,21 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
           hint: 'Select…',
           error: error,
           onTap: () async {
-            final v = await _pickOne(def.label, [
-              // An optional field can be cleared again; a required one starts blank.
-              if (!def.required) const CatalogOption(id: _none, name: 'None'),
-              for (final c in def.choices) CatalogOption(id: c, name: c),
-            ], text);
+            final v = await _pickOne(
+                def.label,
+                [
+                  // An optional field can be cleared again; a required one starts blank.
+                  if (!def.required)
+                    const CatalogOption(id: _none, name: 'None'),
+                  for (final c in def.choices) CatalogOption(id: c, name: c),
+                ],
+                text);
             if (v != null) _setCustom(def.name, v);
           },
         );
       case 'multi_select':
-        final selected = draft is List ? [for (final v in draft) '$v'] : <String>[];
+        final selected =
+            draft is List ? [for (final v in draft) '$v'] : <String>[];
         return _PickerField(
           label: def.label,
           required: def.required,
@@ -826,13 +1057,18 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
             final picked = await showOptionPicker(
               context: context,
               title: def.label,
-              options: [for (final c in def.choices) CatalogOption(id: c, name: c)],
+              options: [
+                for (final c in def.choices) CatalogOption(id: c, name: c)
+              ],
               selected: selected.toSet(),
               multi: true,
             );
             if (picked == null || !mounted) return;
             // Kept in the admin's option order.
-            _setCustom(def.name, [for (final c in def.choices) if (picked.contains(c)) c]);
+            _setCustom(def.name, [
+              for (final c in def.choices)
+                if (picked.contains(c)) c
+            ]);
           },
         );
       case 'date':
@@ -864,12 +1100,14 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
             final d = await _pickDateTime(at);
             if (d == null || !mounted) return;
             // `datetime-local` wall time, as the webapp sends it.
-            _setCustom(def.name, '${isoDay(d)}T${sheetTimeLabel(TimeOfDay.fromDateTime(d))}');
+            _setCustom(def.name,
+                '${isoDay(d)}T${sheetTimeLabel(TimeOfDay.fromDateTime(d))}');
           },
           onClear: text.isEmpty ? null : () => _setCustom(def.name, ''),
         );
       default:
-        final ctrl = _customCtrls.putIfAbsent(def.name, () => TextEditingController(text: text));
+        final ctrl = _customCtrls.putIfAbsent(
+            def.name, () => TextEditingController(text: text));
         return AppTextField(
           label: def.label,
           required: def.required,
@@ -879,14 +1117,17 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
           errorText: error,
           keyboardType: switch (def.type) {
             'number' => TextInputType.number,
-            'decimal' => const TextInputType.numberWithOptions(decimal: true, signed: true),
+            'decimal' => const TextInputType.numberWithOptions(
+                decimal: true, signed: true),
             'email' => TextInputType.emailAddress,
             'phone' => TextInputType.phone,
             'url' => TextInputType.url,
             'textarea' => TextInputType.multiline,
             _ => TextInputType.text,
           },
-          inputFormatters: def.type == 'text' ? [LengthLimitingTextInputFormatter(customTextMax)] : null,
+          inputFormatters: def.type == 'text'
+              ? [LengthLimitingTextInputFormatter(customTextMax)]
+              : null,
           onChanged: (v) {
             _customDrafts[def.name] = v;
             _clearError(customErrorKey(def.name));
@@ -898,7 +1139,9 @@ class _AddFollowupSheetState extends ConsumerState<_AddFollowupSheet> {
 
 Widget _errorText(String text) => Padding(
       padding: EdgeInsets.only(top: 5.h),
-      child: Text(text, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+      child: Text(text,
+          style: AppText.custom(
+              size: 11, weight: FontWeight.w500, color: AppColors.error)),
     );
 
 /// A labelled picker trigger in the [AppTextField] style, with what the
@@ -939,9 +1182,15 @@ class _PickerField extends StatelessWidget {
         Flexible(
           child: Text(label,
               overflow: TextOverflow.ellipsis,
-              style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  color: AppColors.textLabelAlt)),
         ),
-        if (required) Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+        if (required)
+          Text(' *',
+              style: AppText.custom(
+                  size: 12, weight: FontWeight.w700, color: AppColors.error)),
       ]),
       SizedBox(height: 7.h),
       Opacity(
@@ -955,11 +1204,18 @@ class _PickerField extends StatelessWidget {
             decoration: BoxDecoration(
               color: enabled ? AppColors.white : AppColors.bgChipGrey,
               borderRadius: BorderRadius.circular(11.r),
-              border: Border.all(color: error != null ? AppColors.error : AppColors.borderInput, width: 1.5),
+              border: Border.all(
+                  color:
+                      error != null ? AppColors.error : AppColors.borderInput,
+                  width: 1.5),
             ),
             child: Row(children: [
               if (dot != null && filled) ...[
-                Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+                Container(
+                    width: 9.w,
+                    height: 9.w,
+                    decoration:
+                        BoxDecoration(color: dot, shape: BoxShape.circle)),
                 SizedBox(width: 7.w),
               ],
               Expanded(
@@ -967,7 +1223,9 @@ class _PickerField extends StatelessWidget {
                   filled ? value : (hint ?? ''),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: filled ? AppText.body() : AppText.body(color: AppColors.textPlaceholder),
+                  style: filled
+                      ? AppText.body()
+                      : AppText.body(color: AppColors.textPlaceholder),
                 ),
               ),
               if (onClear != null && enabled)
@@ -976,13 +1234,15 @@ class _PickerField extends StatelessWidget {
                   onTap: onClear,
                   child: Padding(
                     padding: EdgeInsets.only(left: 6.w),
-                    child: Icon(PhosphorIconsRegular.x, size: 15.sp, color: AppColors.textMuted),
+                    child: Icon(PhosphorIconsRegular.x,
+                        size: 15.sp, color: AppColors.textMuted),
                   ),
                 )
               else if (icon != null)
                 Icon(icon, size: 17.sp, color: AppColors.textMuted)
               else
-                Icon(PhosphorIconsBold.caretDown, size: 14.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsBold.caretDown,
+                    size: 14.sp, color: AppColors.textPlaceholder),
             ]),
           ),
         ),
@@ -992,8 +1252,39 @@ class _PickerField extends StatelessWidget {
       else if (helper != null)
         Padding(
           padding: EdgeInsets.only(top: 6.h, left: 2.w),
-          child: Text(helper!, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          child: Text(helper!,
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ),
     ]);
   }
+}
+
+/// The `/crm/tasks/add` route: opens the Add task sheet over the previous
+/// screen and steps back when it closes, so every "Add task" entry point
+/// (home quick action, the bottom `+`) lands on the same webapp form.
+class AddTaskLauncher extends ConsumerStatefulWidget {
+  const AddTaskLauncher({super.key});
+
+  @override
+  ConsumerState<AddTaskLauncher> createState() => _AddTaskLauncherState();
+}
+
+class _AddTaskLauncherState extends ConsumerState<AddTaskLauncher> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showAddTaskFormSheet(context, ref);
+      if (mounted && Navigator.of(context).canPop())
+        Navigator.of(context).pop();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      const Scaffold(backgroundColor: Colors.transparent);
 }

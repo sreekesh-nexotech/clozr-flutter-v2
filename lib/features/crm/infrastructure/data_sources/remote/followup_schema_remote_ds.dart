@@ -50,7 +50,8 @@ class FollowupSchemaRemoteDataSource {
   /// actually store.
   Future<ViewSchema> fetchDetailSchema() => _fetch('detail');
 
-  Future<ViewSchema> _fetch(String viewType, {bool rethrowOutage = false}) async {
+  Future<ViewSchema> _fetch(String viewType,
+      {bool rethrowOutage = false}) async {
     try {
       final body = await _api.get(ApiEndpoints.crmTaskSchema, query: {
         'view_type': viewType,
@@ -58,7 +59,9 @@ class FollowupSchemaRemoteDataSource {
       });
       return ViewSchema.fromResponse(body);
     } on AppError catch (e) {
-      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      if (rethrowOutage &&
+          (e.type == AppErrorType.network || e.type == AppErrorType.timeout))
+        rethrow;
       return ViewSchema.empty;
     } on Object {
       return ViewSchema.empty;

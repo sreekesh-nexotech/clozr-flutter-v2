@@ -1,7 +1,12 @@
 import 'package:equatable/equatable.dart';
 
 class BookPeriod extends Equatable {
-  const BookPeriod({required this.id, this.periodNo, this.startDate, this.endDate, this.status = 'OPEN'});
+  const BookPeriod(
+      {required this.id,
+      this.periodNo,
+      this.startDate,
+      this.endDate,
+      this.status = 'OPEN'});
 
   final String id;
   final int? periodNo;
@@ -37,7 +42,12 @@ class GstPeriod extends Equatable {
 }
 
 class TdsPeriod extends Equatable {
-  const TdsPeriod({required this.id, this.quarter, this.startDate, this.endDate, this.status = 'OPEN'});
+  const TdsPeriod(
+      {required this.id,
+      this.quarter,
+      this.startDate,
+      this.endDate,
+      this.status = 'OPEN'});
 
   final String id;
   final int? quarter;
@@ -72,17 +82,25 @@ class PeriodRegister extends Equatable {
     for (final p in gstPeriods) {
       final s = DateTime.tryParse(p.startDate ?? '');
       final e = DateTime.tryParse(p.endDate ?? '');
-      if (s != null && e != null && !day.isBefore(s) && !day.isAfter(e)) return p;
+      if (s != null && e != null && !day.isBefore(s) && !day.isAfter(e))
+        return p;
     }
     return null;
   }
 
   @override
-  List<Object?> get props => [fiscalYearId, bookPeriods, gstPeriods, tdsPeriods];
+  List<Object?> get props =>
+      [fiscalYearId, bookPeriods, gstPeriods, tdsPeriods];
 }
 
 class FiscalYear extends Equatable {
-  const FiscalYear({required this.id, this.label, this.startDate, this.endDate, this.status, this.isCurrent = false});
+  const FiscalYear(
+      {required this.id,
+      this.label,
+      this.startDate,
+      this.endDate,
+      this.status,
+      this.isCurrent = false});
 
   final String id;
   final String? label;
@@ -96,7 +114,12 @@ class FiscalYear extends Equatable {
 }
 
 class ChecklistItem extends Equatable {
-  const ChecklistItem({required this.code, this.label, this.severity = 'INFO', this.status = 'PASS', this.detail});
+  const ChecklistItem(
+      {required this.code,
+      this.label,
+      this.severity = 'INFO',
+      this.status = 'PASS',
+      this.detail});
 
   final String code;
   final String? label;
@@ -112,7 +135,10 @@ class ChecklistItem extends Equatable {
 
 /// A GST (or book / FY) period checklist — read-only on mobile.
 class PeriodChecklist extends Equatable {
-  const PeriodChecklist({this.items = const [], this.blocking = const [], this.canSettle = false});
+  const PeriodChecklist(
+      {this.items = const [],
+      this.blocking = const [],
+      this.canSettle = false});
 
   final List<ChecklistItem> items;
   final List<String> blocking;

@@ -93,12 +93,13 @@ class BillingScreen extends ConsumerWidget {
   /// period end, and the per-period total. Trial and lapsed states are said
   /// plainly — a trial whose end date has passed is the case that matters
   /// most to the person looking at this screen.
-  Widget _liveSubscriptionCard(
-      BuildContext context, WidgetRef ref, BillingSubscription sub, void Function(String) toast) {
+  Widget _liveSubscriptionCard(BuildContext context, WidgetRef ref,
+      BillingSubscription sub, void Function(String) toast) {
     final cycle = sub.billingFrequency == 'annual' ? 'annual' : 'monthly';
     final per = cycle == 'annual' ? '/yr' : '/mo';
     final total = sub.pricePerUser * sub.licensedUsers;
-    final endLabel = sub.periodEnd == null ? null : absoluteDate(sub.periodEnd!);
+    final endLabel =
+        sub.periodEnd == null ? null : absoluteDate(sub.periodEnd!);
     final String stateLine;
     if (sub.isTrial) {
       stateLine = sub.periodLapsed
@@ -107,9 +108,11 @@ class BillingScreen extends ConsumerWidget {
     } else if (sub.periodLapsed) {
       stateLine = 'Period ended${endLabel != null ? ' $endLabel' : ''}';
     } else {
-      stateLine = '${sub.autoRenew ? 'renews' : 'ends'}${endLabel != null ? ' $endLabel' : ''}';
+      stateLine =
+          '${sub.autoRenew ? 'renews' : 'ends'}${endLabel != null ? ' $endLabel' : ''}';
     }
-    final seats = '${sub.licensedUsers} ${sub.licensedUsers == 1 ? 'seat' : 'seats'}'
+    final seats =
+        '${sub.licensedUsers} ${sub.licensedUsers == 1 ? 'seat' : 'seats'}'
         '${sub.freeSeats > 0 ? ' (${sub.freeSeats} free)' : ''}';
     final lapsed = sub.periodLapsed;
 
@@ -118,7 +121,12 @@ class BillingScreen extends ConsumerWidget {
       decoration: BoxDecoration(
         color: AppColors.navy,
         borderRadius: BorderRadius.circular(18.r),
-        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.28), blurRadius: 26, offset: const Offset(0, 12))],
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.navy.withOpacity(0.28),
+              blurRadius: 26,
+              offset: const Offset(0, 12))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,17 +134,28 @@ class BillingScreen extends ConsumerWidget {
           Row(
             children: [
               Text('CURRENT PLAN',
-                  style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: const Color(0xFFB9C2D8), letterSpacing: 1)),
+                  style: AppText.custom(
+                      size: 10.5,
+                      weight: FontWeight.w700,
+                      color: const Color(0xFFB9C2D8),
+                      letterSpacing: 1)),
               const Spacer(),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
                 decoration: BoxDecoration(
-                  color: (lapsed ? AppColors.error : AppColors.success).withOpacity(0.22),
+                  color: (lapsed ? AppColors.error : AppColors.success)
+                      .withOpacity(0.22),
                   borderRadius: BorderRadius.circular(6.r),
                 ),
                 child: Text(
-                  lapsed ? (sub.isTrial ? 'TRIAL ENDED' : 'LAPSED') : sub.status.toUpperCase(),
-                  style: AppText.custom(size: 9.5, weight: FontWeight.w700, color: AppColors.white, letterSpacing: 0.6),
+                  lapsed
+                      ? (sub.isTrial ? 'TRIAL ENDED' : 'LAPSED')
+                      : sub.status.toUpperCase(),
+                  style: AppText.custom(
+                      size: 9.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.white,
+                      letterSpacing: 0.6),
                 ),
               ),
             ],
@@ -150,10 +169,17 @@ class BillingScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(sub.planName,
-                        style: AppText.custom(size: 23, weight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.4)),
+                        style: AppText.custom(
+                            size: 23,
+                            weight: FontWeight.w800,
+                            color: AppColors.white,
+                            letterSpacing: -0.4)),
                     SizedBox(height: 3.h),
                     Text('$seats · billed $cycle · $stateLine',
-                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.white.withOpacity(0.66))),
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.white.withOpacity(0.66))),
                   ],
                 ),
               ),
@@ -161,9 +187,18 @@ class BillingScreen extends ConsumerWidget {
                 Text.rich(
                   TextSpan(
                     text: formatInr(total),
-                    style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.4),
+                    style: AppText.custom(
+                        size: 21,
+                        weight: FontWeight.w800,
+                        color: AppColors.white,
+                        letterSpacing: -0.4),
                     children: [
-                      TextSpan(text: per, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.white.withOpacity(0.6))),
+                      TextSpan(
+                          text: per,
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w600,
+                              color: AppColors.white.withOpacity(0.6))),
                     ],
                   ),
                 ),
@@ -174,26 +209,39 @@ class BillingScreen extends ConsumerWidget {
             '${sub.activeUsers} of ${sub.licensedUsers} seats in use · '
             '${sub.mandateVerified ? 'payment mandate verified' : 'no payment mandate'}'
             '${lapsed && sub.gracePeriodDays > 0 ? ' · ${sub.gracePeriodDays}-day grace period' : ''}',
-            style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.white.withOpacity(0.6)),
+            style: AppText.custom(
+                size: 11.5,
+                weight: FontWeight.w500,
+                color: AppColors.white.withOpacity(0.6)),
           ),
         ],
       ),
     );
   }
 
-  Widget _planCard(BuildContext context, WidgetRef ref, void Function(String) toast) {
+  Widget _planCard(
+      BuildContext context, WidgetRef ref, void Function(String) toast) {
     return Container(
       padding: EdgeInsets.all(18.r),
       decoration: BoxDecoration(
         color: AppColors.navy,
         borderRadius: BorderRadius.circular(18.r),
-        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.28), blurRadius: 26, offset: const Offset(0, 12))],
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.navy.withOpacity(0.28),
+              blurRadius: 26,
+              offset: const Offset(0, 12))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('CURRENT PLAN',
-              style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: const Color(0xFFB9C2D8), letterSpacing: 1)),
+              style: AppText.custom(
+                  size: 10.5,
+                  weight: FontWeight.w700,
+                  color: const Color(0xFFB9C2D8),
+                  letterSpacing: 1)),
           SizedBox(height: 6.h),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -202,19 +250,36 @@ class BillingScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Business', style: AppText.custom(size: 23, weight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.4)),
+                    Text('Business',
+                        style: AppText.custom(
+                            size: 23,
+                            weight: FontWeight.w800,
+                            color: AppColors.white,
+                            letterSpacing: -0.4)),
                     SizedBox(height: 3.h),
                     Text('8 seats · billed monthly · renews 1 Jul 2026',
-                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.white.withOpacity(0.66))),
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.white.withOpacity(0.66))),
                   ],
                 ),
               ),
               Text.rich(
                 TextSpan(
                   text: '₹48,000',
-                  style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.4),
+                  style: AppText.custom(
+                      size: 21,
+                      weight: FontWeight.w800,
+                      color: AppColors.white,
+                      letterSpacing: -0.4),
                   children: [
-                    TextSpan(text: '/mo', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.white.withOpacity(0.6))),
+                    TextSpan(
+                        text: '/mo',
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w600,
+                            color: AppColors.white.withOpacity(0.6))),
                   ],
                 ),
               ),
@@ -229,8 +294,14 @@ class BillingScreen extends ConsumerWidget {
                   child: Container(
                     height: 40.h,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(10.r)),
-                    child: Text('Change plan', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+                    decoration: BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(10.r)),
+                    child: Text('Change plan',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.navy)),
                   ),
                 ),
               ),
@@ -243,9 +314,14 @@ class BillingScreen extends ConsumerWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10.r),
-                    border: Border.all(color: AppColors.white.withOpacity(0.32), width: 1.5),
+                    border: Border.all(
+                        color: AppColors.white.withOpacity(0.32), width: 1.5),
                   ),
-                  child: Text('Cancel', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
+                  child: Text('Cancel',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: AppColors.white)),
                 ),
               ),
             ],
@@ -263,12 +339,26 @@ class BillingScreen extends ConsumerWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Expanded(child: Text('Licenses (seats)', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
-              Text('0 free to assign', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              Expanded(
+                  child: Text('Licenses (seats)',
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary))),
+              Text('0 free to assign',
+                  style: AppText.custom(
+                      size: 11.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
             ],
           ),
           SizedBox(height: 8.h),
-          Text('8 / 8 used', style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+          Text('8 / 8 used',
+              style: AppText.custom(
+                  size: 21,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.4)),
           SizedBox(height: 10.h),
           _bar(1.0, AppColors.navy),
           SizedBox(height: 13.h),
@@ -280,13 +370,20 @@ class BillingScreen extends ConsumerWidget {
                   child: Container(
                     height: 42.h,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(11.r)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(PhosphorIconsBold.plus, size: 14.sp, color: AppColors.white),
+                        Icon(PhosphorIconsBold.plus,
+                            size: 14.sp, color: AppColors.white),
                         SizedBox(width: 7.w),
-                        Text('Add licenses', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
+                        Text('Add licenses',
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.white)),
                       ],
                     ),
                   ),
@@ -304,7 +401,11 @@ class BillingScreen extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(11.r),
                       border: Border.all(color: const Color(0xFFE6E7EA)),
                     ),
-                    child: Text('Remove', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                    child: Text('Remove',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: AppColors.textLabelAlt)),
                   ),
                 ),
               ),
@@ -327,9 +428,18 @@ class BillingScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Storage', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Storage',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 8.h),
-          Text(headline, style: AppText.custom(size: 21, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+          Text(headline,
+              style: AppText.custom(
+                  size: 21,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.4)),
           SizedBox(height: 10.h),
           // No cap, no fraction: a full bar under "unlimited" would read as a
           // quota about to run out.
@@ -343,7 +453,11 @@ class BillingScreen extends ConsumerWidget {
                   : usage.unlimited
                       ? 'Files uploaded across the workspace. This plan has no storage cap.'
                       : 'Files uploaded across the workspace, against your plan’s cap.',
-              style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder, height: 1.5)),
+              style: AppText.custom(
+                  size: 11.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder,
+                  height: 1.5)),
         ],
       ),
     );
@@ -353,23 +467,38 @@ class BillingScreen extends ConsumerWidget {
     return ClozrCard(
       child: Row(
         children: [
-          const IconChip(icon: PhosphorIconsRegular.bank, size: 42, radius: 12, iconSize: 20),
+          const IconChip(
+              icon: PhosphorIconsRegular.bank,
+              size: 42,
+              radius: 12,
+              iconSize: 20),
           SizedBox(width: 12.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Payment mandate · eNACH', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text('Payment mandate · eNACH',
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 2.h),
                 Text('HDFC Bank ···· 4821 · Auto-pay authorized up to 10 seats',
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
           SizedBox(width: 8.w),
           GestureDetector(
             onTap: () => toast('Manage mandate — coming soon'),
-            child: Text('Manage', style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.blueBright)),
+            child: Text('Manage',
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.blueBright)),
           ),
         ],
       ),
@@ -387,18 +516,32 @@ class BillingScreen extends ConsumerWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(PhosphorIconsRegular.userCheck, size: 13.sp, color: AppColors.textMuted),
+              Icon(PhosphorIconsRegular.userCheck,
+                  size: 13.sp, color: AppColors.textMuted),
               SizedBox(width: 5.w),
-              Text('Account state', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textMuted)),
+              Text('Account state',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textMuted)),
             ],
           ),
           Container(
             padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-            decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(8.r)),
-            child: Text('Active', style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.success)),
+            decoration: BoxDecoration(
+                color: AppColors.tintGreen,
+                borderRadius: BorderRadius.circular(8.r)),
+            child: Text('Active',
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.success)),
           ),
           Text('Place of supply: Karnataka (29) · Intra-state · CGST + SGST',
-              style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ],
       ),
     );
@@ -416,13 +559,19 @@ class BillingScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Invoices & billing history',
-                style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             SizedBox(height: 10.h),
             Text(
                 async.isLoading
                     ? 'Loading invoices…'
                     : 'No invoices yet. They appear here once a billing cycle closes.',
-                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
           ],
         ),
       );
@@ -433,14 +582,24 @@ class BillingScreen extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Invoices & billing history', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
-              Text('${invoices.length} invoice${invoices.length == 1 ? '' : 's'}',
-                  style: AppText.custom(size: 10.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              Expanded(
+                  child: Text('Invoices & billing history',
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary))),
+              Text(
+                  '${invoices.length} invoice${invoices.length == 1 ? '' : 's'}',
+                  style: AppText.custom(
+                      size: 10.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
             ],
           ),
           SizedBox(height: 4.h),
           for (int i = 0; i < invoices.length; i++)
-            _invoiceRow(invoices[i], last: i == invoices.length - 1, toast: toast),
+            _invoiceRow(invoices[i],
+                last: i == invoices.length - 1, toast: toast),
         ],
       ),
     );
@@ -448,7 +607,8 @@ class BillingScreen extends ConsumerWidget {
 
   /// One invoice row. The status pill shows the server's own word, and an
   /// invoice with money still due is coloured by that rather than by the word.
-  Widget _invoiceRow(BillingInvoice inv, {required bool last, required void Function(String) toast}) {
+  Widget _invoiceRow(BillingInvoice inv,
+      {required bool last, required void Function(String) toast}) {
     final paid = inv.isPaid && !inv.isOutstanding;
     final label = inv.status.isEmpty
         ? '—'
@@ -462,7 +622,8 @@ class BillingScreen extends ConsumerWidget {
         padding: EdgeInsets.symmetric(vertical: 12.h),
         decoration: last
             ? null
-            : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+            : const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           children: [
             Expanded(
@@ -472,12 +633,18 @@ class BillingScreen extends ConsumerWidget {
                   Text(inv.number,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
                   Text(_invoiceSubtitle(inv),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textPlaceholder)),
                 ],
               ),
             ),
@@ -495,7 +662,10 @@ class BillingScreen extends ConsumerWidget {
             ),
             SizedBox(width: 10.w),
             Text(formatInr(inv.total),
-                style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
           ],
         ),
       ),
@@ -529,7 +699,10 @@ class BillingScreen extends ConsumerWidget {
       child: Row(
         children: [
           const IconChip(
-              icon: PhosphorIconsRegular.creditCard, size: 42, radius: 12, iconSize: 20),
+              icon: PhosphorIconsRegular.creditCard,
+              size: 42,
+              radius: 12,
+              iconSize: 20),
           SizedBox(width: 12.w),
           Expanded(
             child: Column(
@@ -537,18 +710,23 @@ class BillingScreen extends ConsumerWidget {
               children: [
                 Text('Plans',
                     style: AppText.custom(
-                        size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 2.h),
                 Text(
                     plans.isEmpty
                         ? 'See what each plan includes'
                         : '${plans.length} plans · from ${formatInr(plans.first.monthlyPerUser)}/user/mo',
                     style: AppText.custom(
-                        size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ],
             ),
           ),
-          Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsBold.caretRight,
+              size: 13.sp, color: AppColors.textPlaceholder),
         ],
       ),
     );
@@ -561,14 +739,18 @@ class BillingScreen extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsRegular.info, size: 16.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsRegular.info,
+              size: 16.sp, color: AppColors.textPlaceholder),
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
                 'Your current plan, seats and payment mandate are managed by support — '
                 'the app cannot read or change them yet.',
                 style: AppText.custom(
-                    size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.5)),
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted,
+                    height: 1.5)),
           ),
         ],
       ),
@@ -609,7 +791,10 @@ class BillingScreen extends ConsumerWidget {
             Text(
                 'Changing your plan is handled by support — the app cannot switch it yet.',
                 style: AppText.custom(
-                    size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.5)),
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted,
+                    height: 1.5)),
           ],
         ),
       ),
@@ -637,29 +822,40 @@ class BillingScreen extends ConsumerWidget {
               Expanded(
                 child: Text(plan.name,
                     style: AppText.custom(
-                        size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                        size: 15,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
               ),
               Text('${formatInr(plan.monthlyPerUser)}/user/mo',
                   style: AppText.custom(
-                      size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
             ],
           ),
           if (plan.description.isNotEmpty) ...[
             SizedBox(height: 3.h),
             Text(plan.description,
                 style: AppText.custom(
-                    size: 12, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.4)),
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted,
+                    height: 1.4)),
           ],
           if (sub.isNotEmpty) ...[
             SizedBox(height: 5.h),
             Text(sub,
                 style: AppText.custom(
-                    size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                    size: 11.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPlaceholder)),
           ],
           SizedBox(height: 3.h),
           Text('${formatInr(plan.annualPerUser)}/user billed annually',
               style: AppText.custom(
-                  size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  size: 11.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ],
       ),
     );

@@ -26,14 +26,18 @@ abstract class AccountingRepository {
   Future<List<GstState>> states();
 
   // Documents
-  Future<AccDocumentPage> documents(Map<String, Object?> filters, {int page = 1});
+  Future<AccDocumentPage> documents(Map<String, Object?> filters,
+      {int page = 1});
   Future<AccDocument?> document(String id);
   Future<AccDocument?> patchDraft(String id, Map<String, Object?> fields);
   Future<AccDocument?> createInvoice(Map<String, Object?> body);
-  Future<AccDocument?> invoiceFromPaymentRecord(String recordId, {required String documentDate, String? supplyDate});
-  Future<AccDocument?> invoiceFromTicket(String issueId, {String? documentDate});
+  Future<AccDocument?> invoiceFromPaymentRecord(String recordId,
+      {required String documentDate, String? supplyDate});
+  Future<AccDocument?> invoiceFromTicket(String issueId,
+      {String? documentDate});
   Future<TaxPreview> previewTax(String id);
-  Future<AccDocument?> issue(String id, {List<Map<String, String>> advanceAdjustments});
+  Future<AccDocument?> issue(String id,
+      {List<Map<String, String>> advanceAdjustments});
   Future<AccDocument?> voidDraft(String id);
   Future<AccDocument?> cancel(String id, String reason);
   Future<InvoicePrint> renderContext(String id);
@@ -47,24 +51,31 @@ abstract class AccountingRepository {
   Future<Vendor?> updateVendor(String id, Map<String, Object?> fields);
   Future<void> deleteVendor(String id);
   Future<PartyTaxProfile> partyTaxProfile(String kind, String id);
-  Future<PartyTaxProfile> savePartyTaxProfile(String kind, String id, Map<String, Object?> body);
+  Future<PartyTaxProfile> savePartyTaxProfile(
+      String kind, String id, Map<String, Object?> body);
   Future<Map<String, bool>> customerB2bFlags(List<String> ids);
   Future<ProductTaxProfile> productTaxProfile(String productId);
-  Future<ProductTaxProfile> saveProductTaxProfile(String productId, Map<String, Object?> body);
+  Future<ProductTaxProfile> saveProductTaxProfile(
+      String productId, Map<String, Object?> body);
   Future<List<BankAccount>> bankAccounts();
 
   // Settlement & purchases
   Future<List<AccReceipt>> receipts({String? customer, String? status});
   Future<AccReceipt?> receipt(String id);
   Future<PostOutcome<AccReceipt>> recordReceipt(Map<String, Object?> body);
-  Future<PostOutcome<String>> reverseReceipt(String id, {String? reason, required String eventId});
+  Future<PostOutcome<String>> reverseReceipt(String id,
+      {String? reason, required String eventId});
   Future<List<AccAdvance>> advances({String? customer, String? status});
   Future<PostOutcome<AccReceipt>> recordAdvance(Map<String, Object?> body);
-  Future<List<AccCustomerCredit>> customerCredits({String? customer, String? status});
-  Future<List<AccVendorPayment>> vendorPayments({String? vendor, String? status});
+  Future<List<AccCustomerCredit>> customerCredits(
+      {String? customer, String? status});
+  Future<List<AccVendorPayment>> vendorPayments(
+      {String? vendor, String? status});
   Future<AccVendorPayment?> vendorPayment(String id);
-  Future<PostOutcome<AccVendorPayment>> recordVendorPayment(Map<String, Object?> body);
-  Future<PostOutcome<String>> reverseVendorPayment(String id, {required String eventId});
+  Future<PostOutcome<AccVendorPayment>> recordVendorPayment(
+      Map<String, Object?> body);
+  Future<PostOutcome<String>> reverseVendorPayment(String id,
+      {required String eventId});
   Future<List<AccVendorAdvance>> vendorAdvances({String? vendor});
   Future<PostOutcome<AccDocument>> recordVendorBill(Map<String, Object?> body);
   Future<PostOutcome<AccDocument>> recordExpense(Map<String, Object?> body);
@@ -76,7 +87,11 @@ abstract class AccountingRepository {
   Future<PeriodRegister> periodRegister();
   Future<PeriodChecklist> gstChecklist(String gstPeriodId);
   Future<AgingReport> aging({required bool payable});
-  Future<PartyStatement> statement({required bool vendor, required String partyId, String? from, String? to});
+  Future<PartyStatement> statement(
+      {required bool vendor,
+      required String partyId,
+      String? from,
+      String? to});
   Future<PnlReport> pnl({String? asOf});
   Future<BalanceSheetReport> balanceSheet({String? asOf});
   Future<TrialBalanceReport> trialBalance({String? asOf});

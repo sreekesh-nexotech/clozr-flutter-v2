@@ -62,7 +62,8 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
     // Blank content is rejected by the API, which would also strand the
     // attachment upload — see [noteBodyForApi].
     body = noteBodyForApi(body, attachments);
-    final localId = 'tnote-$ticketId-${_seq++}-${DateTime.now().microsecondsSinceEpoch}';
+    final localId =
+        'tnote-$ticketId-${_seq++}-${DateTime.now().microsecondsSinceEpoch}';
     state = [
       NoteEntry(
         id: localId,
@@ -85,6 +86,15 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
         if (created == null || !mounted) return;
         // Attachments upload against the created note, so only now.
         final uploaded = await _uploadAttachments(created.id, attachments);
+        // Swap the temporary `[[att:local-…]]` markers for the real ids.
+        final resolved = bodyAfterUploads(body.trim(), uploaded, attachments);
+        if (resolved != null) {
+          try {
+            await _repo.updateNote(noteId: created.id, body: resolved);
+          } on Object {
+            // Saved with its files; only their placement is lost.
+          }
+        }
         if (!mounted) return;
         // Swap in the server id so replies to this note hit the real thread.
         state = [
@@ -94,7 +104,7 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
                     id: created.id,
                     author: n.author,
                     time: n.time,
-                    body: n.body,
+                    body: resolved ?? n.body,
                     via: n.via,
                     avatarColor: n.avatarColor,
                     replies: n.replies,
@@ -147,7 +157,11 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
             attachments: n.attachments,
             replies: [
               ...n.replies,
-              NoteReply(author: _me.name, time: 'Just now', body: body.trim(), avatarColor: _me.color),
+              NoteReply(
+                  author: _me.name,
+                  time: 'Just now',
+                  body: body.trim(),
+                  avatarColor: _me.color),
             ],
           )
         else
@@ -168,12 +182,12 @@ class TicketNotesController extends StateNotifier<List<NoteEntry>> {
 
 /// Mutable Notes thread for a single ticket, keyed by ticket id. API-backed when
 /// a base URL is configured, mock-seeded otherwise.
-final ticketNotesProvider =
-    StateNotifierProvider.family<TicketNotesController, List<NoteEntry>, String>(
+final ticketNotesProvider = StateNotifierProvider.family<TicketNotesController,
+    List<NoteEntry>, String>(
   (ref, ticketId) {
     if (ApiConfig.apiEnabled) {
-      return TicketNotesController.remote(
-          ref.read(notesRepositoryProvider), ticketId, ref.watch(noteAuthorProvider));
+      return TicketNotesController.remote(ref.read(notesRepositoryProvider),
+          ticketId, ref.watch(noteAuthorProvider));
     }
     return TicketNotesController(ticketId, ref.watch(noteAuthorProvider));
   },
@@ -186,7 +200,8 @@ List<NoteEntry> _seed(String ticketId) => [
         id: 'tnote-$ticketId-seed-0',
         author: 'Divya Raj',
         time: 'Yesterday, 4:20 PM',
-        body: 'Logged the customer call — they want confirmation before the crew is scheduled. '
+        body:
+            'Logged the customer call — they want confirmation before the crew is scheduled. '
             'Flagged to the fit-out lead.',
         via: 'Call',
         avatarColor: AppColors.pending,
@@ -194,7 +209,8 @@ List<NoteEntry> _seed(String ticketId) => [
           NoteReply(
             author: 'Manoj Varma',
             time: 'Yesterday, 4:45 PM',
-            body: 'Thanks — I’ll follow up on email and keep this open until we hear back.',
+            body:
+                'Thanks — I’ll follow up on email and keep this open until we hear back.',
             avatarColor: AppColors.navy,
           ),
         ],
@@ -203,7 +219,8 @@ List<NoteEntry> _seed(String ticketId) => [
         id: 'tnote-$ticketId-seed-1',
         author: 'Manoj Varma',
         time: '2 days ago',
-        body: 'Internal: confirmed SLA target with the team. No blockers on our side.',
+        body:
+            'Internal: confirmed SLA target with the team. No blockers on our side.',
         avatarColor: AppColors.navy,
       ),
     ];

@@ -29,11 +29,14 @@ import 'acc_sheet_scaffold.dart';
 /// Detail of one receipt — the full read with its allocations — and the
 /// Reverse action.
 Future<void> showReceiptDetailSheet(BuildContext context, AccReceipt row) =>
-    showClozrSheet<void>(context: context, builder: (_) => _ReceiptDetail(row: row));
+    showClozrSheet<void>(
+        context: context, builder: (_) => _ReceiptDetail(row: row));
 
 /// Detail of one vendor payment, with Reverse.
-Future<void> showVendorPaymentDetailSheet(BuildContext context, AccVendorPayment row) =>
-    showClozrSheet<void>(context: context, builder: (_) => _VendorPaymentDetail(row: row));
+Future<void> showVendorPaymentDetailSheet(
+        BuildContext context, AccVendorPayment row) =>
+    showClozrSheet<void>(
+        context: context, builder: (_) => _VendorPaymentDetail(row: row));
 
 class _ReceiptDetail extends ConsumerWidget {
   const _ReceiptDetail({required this.row});
@@ -43,7 +46,8 @@ class _ReceiptDetail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final r = ref.watch(receiptDetailProvider(row.id)).valueOrNull ?? row;
     final party = ref.watch(crmPartyLookupProvider)(custId: r.customerId);
-    final canReverse = r.isPosted && ref.watch(accPermProvider('acc_settlement')).update;
+    final canReverse =
+        r.isPosted && ref.watch(accPermProvider('acc_settlement')).update;
     return _DetailFrame(
       title: 'Receipt',
       status: r.status,
@@ -51,13 +55,17 @@ class _ReceiptDetail extends ConsumerWidget {
         ('Customer', party?.name ?? 'Customer'),
         ('Date', formatApiDay(r.date)),
         ('Amount', formatMoneyStr(r.amount)),
-        if (!moneyIsZero(r.tdsDeducted)) ('TDS deducted', formatMoneyStr(r.tdsDeducted)),
-        if (!moneyIsZero(r.unallocated)) ('Kept as credit', formatMoneyStr(r.unallocated)),
+        if (!moneyIsZero(r.tdsDeducted))
+          ('TDS deducted', formatMoneyStr(r.tdsDeducted)),
+        if (!moneyIsZero(r.unallocated))
+          ('Kept as credit', formatMoneyStr(r.unallocated)),
         ('Into', label(sourceAccountLabels, r.sourceAccountKind)),
         if (r.method != null) ('Method', label(paymentMethods, r.method)),
         if ((r.reference ?? '').isNotEmpty) ('Reference', r.reference!),
       ],
-      allocations: [for (final a in r.allocations) (a.documentId, a.amountApplied)],
+      allocations: [
+        for (final a in r.allocations) (a.documentId, a.amountApplied)
+      ],
       journalEntryId: r.journalEntryId,
       action: canReverse
           ? PrimaryButton(
@@ -66,8 +74,11 @@ class _ReceiptDetail extends ConsumerWidget {
               ghost: true,
               height: 48,
               onTap: () async {
-                final done = await showClozrSheet<bool>(context: context, builder: (_) => _ReverseReceiptSheet(receipt: r));
-                if (done == true && context.mounted) Navigator.of(context).pop();
+                final done = await showClozrSheet<bool>(
+                    context: context,
+                    builder: (_) => _ReverseReceiptSheet(receipt: r));
+                if (done == true && context.mounted)
+                  Navigator.of(context).pop();
               },
             )
           : null,
@@ -80,7 +91,8 @@ class _VendorPaymentDetail extends ConsumerStatefulWidget {
   final AccVendorPayment row;
 
   @override
-  ConsumerState<_VendorPaymentDetail> createState() => _VendorPaymentDetailState();
+  ConsumerState<_VendorPaymentDetail> createState() =>
+      _VendorPaymentDetailState();
 }
 
 class _VendorPaymentDetailState extends ConsumerState<_VendorPaymentDetail> {
@@ -98,10 +110,14 @@ class _VendorPaymentDetailState extends ConsumerState<_VendorPaymentDetail> {
     if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
-      final out = await ref.read(accountingRepositoryProvider).reverseVendorPayment(p.id, eventId: _eventId);
+      final out = await ref
+          .read(accountingRepositoryProvider)
+          .reverseVendorPayment(p.id, eventId: _eventId);
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(out.skipped ? 'Already reversed' : 'Payment reversed');
+      ref
+          .read(toastProvider.notifier)
+          .show(out.skipped ? 'Already reversed' : 'Payment reversed');
       Navigator.of(context).pop();
     } on AppError catch (e) {
       _eventId = nextEventId(_eventId, e);
@@ -113,9 +129,12 @@ class _VendorPaymentDetailState extends ConsumerState<_VendorPaymentDetail> {
 
   @override
   Widget build(BuildContext context) {
-    final p = ref.watch(vendorPaymentDetailProvider(widget.row.id)).valueOrNull ?? widget.row;
+    final p =
+        ref.watch(vendorPaymentDetailProvider(widget.row.id)).valueOrNull ??
+            widget.row;
     final vendor = ref.watch(vendorNameProvider)(p.vendorId);
-    final canReverse = p.isPosted && ref.watch(accPermProvider('acc_settlement')).update;
+    final canReverse =
+        p.isPosted && ref.watch(accPermProvider('acc_settlement')).update;
     return _DetailFrame(
       title: 'Vendor payment',
       status: p.status,
@@ -127,7 +146,9 @@ class _VendorPaymentDetailState extends ConsumerState<_VendorPaymentDetail> {
         ('From', label(sourceAccountLabels, p.sourceAccountKind)),
         if ((p.reference ?? '').isNotEmpty) ('Reference', p.reference!),
       ],
-      allocations: [for (final a in p.allocations) (a.documentId, a.amountApplied)],
+      allocations: [
+        for (final a in p.allocations) (a.documentId, a.amountApplied)
+      ],
       journalEntryId: p.journalEntryId,
       action: canReverse
           ? PrimaryButton(
@@ -175,12 +196,21 @@ class _DetailFrame extends ConsumerWidget {
               children: [
                 AccPill(StatusMeta$.accPosting, status),
                 SizedBox(height: 6.h),
-                for (int i = 0; i < rows.length; i++) MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+                for (int i = 0; i < rows.length; i++)
+                  MetaRow(
+                      label: rows[i].$1,
+                      value: rows[i].$2,
+                      last: i == rows.length - 1),
                 if (allocations.isNotEmpty) ...[
                   SizedBox(height: 16.h),
-                  Text('Applied to', style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text('Applied to',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 4.h),
-                  for (final a in allocations) _AllocationRow(documentId: a.$1, amount: a.$2),
+                  for (final a in allocations)
+                    _AllocationRow(documentId: a.$1, amount: a.$2),
                 ],
                 if (journalEntryId != null && canJournal) ...[
                   SizedBox(height: 14.h),
@@ -192,10 +222,14 @@ class _DetailFrame extends ConsumerWidget {
                     ),
                     child: Row(
                       children: [
-                        Icon(PhosphorIconsRegular.bookOpenText, size: 16.sp, color: AppColors.blueBright),
+                        Icon(PhosphorIconsRegular.bookOpenText,
+                            size: 16.sp, color: AppColors.blueBright),
                         SizedBox(width: 7.w),
                         Text('View journal entry',
-                            style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w700,
+                                color: AppColors.blueBright)),
                       ],
                     ),
                   ),
@@ -232,9 +266,16 @@ class _AllocationRow extends ConsumerWidget {
           children: [
             Expanded(
               child: Text(doc?.displayNumber ?? 'Document',
-                  style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.blueBright)),
             ),
-            Text(formatMoneyStr(amount), style: AppText.custom(size: 13, weight: FontWeight.w800, color: AppColors.textPrimary)),
+            Text(formatMoneyStr(amount),
+                style: AppText.custom(
+                    size: 13,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary)),
           ],
         ),
       ),
@@ -259,13 +300,19 @@ class _JournalSheet extends ConsumerWidget {
             child: async.when(
               loading: () => SizedBox(
                 height: 120.h,
-                child: const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)),
+                child: const Center(
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, color: AppColors.navy)),
               ),
               error: (e, _) => ConflictBanner(
-                error: e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load.'),
+                error: e is AppError
+                    ? e
+                    : const AppError(
+                        type: AppErrorType.unknown, message: 'Could not load.'),
               ),
               data: (entry) => entry == null
-                  ? Text('No entry found.', style: AppText.body(color: AppColors.textMuted))
+                  ? Text('No entry found.',
+                      style: AppText.body(color: AppColors.textMuted))
                   : JournalEntryCard(entry: entry),
             ),
           ),
@@ -280,7 +327,8 @@ class _ReverseReceiptSheet extends ConsumerStatefulWidget {
   final AccReceipt receipt;
 
   @override
-  ConsumerState<_ReverseReceiptSheet> createState() => _ReverseReceiptSheetState();
+  ConsumerState<_ReverseReceiptSheet> createState() =>
+      _ReverseReceiptSheetState();
 }
 
 class _ReverseReceiptSheetState extends ConsumerState<_ReverseReceiptSheet> {
@@ -297,7 +345,9 @@ class _ReverseReceiptSheetState extends ConsumerState<_ReverseReceiptSheet> {
 
   Future<void> _submit() async {
     if (_reason.text.trim().isEmpty) {
-      ref.read(toastProvider.notifier).showError('Say why it is being reversed');
+      ref
+          .read(toastProvider.notifier)
+          .showError('Say why it is being reversed');
       return;
     }
     setState(() {
@@ -305,12 +355,15 @@ class _ReverseReceiptSheetState extends ConsumerState<_ReverseReceiptSheet> {
       _error = null;
     });
     try {
-      final out = await ref
-          .read(accountingRepositoryProvider)
-          .reverseReceipt(widget.receipt.id, reason: _reason.text.trim(), eventId: _eventId);
+      final out = await ref.read(accountingRepositoryProvider).reverseReceipt(
+          widget.receipt.id,
+          reason: _reason.text.trim(),
+          eventId: _eventId);
       invalidateAccountingReads(ref.invalidate);
       if (!mounted) return;
-      ref.read(toastProvider.notifier).show(out.skipped ? 'Already reversed' : 'Receipt reversed');
+      ref
+          .read(toastProvider.notifier)
+          .show(out.skipped ? 'Already reversed' : 'Receipt reversed');
       Navigator.of(context).pop(true);
     } on AppError catch (e) {
       _eventId = nextEventId(_eventId, e);
@@ -340,7 +393,8 @@ class _ReverseReceiptSheetState extends ConsumerState<_ReverseReceiptSheet> {
             maxLines: 3,
             textCapitalization: TextCapitalization.sentences,
           ),
-          const AccInfoBanner('The invoices it paid become open again. This cannot be undone.'),
+          const AccInfoBanner(
+              'The invoices it paid become open again. This cannot be undone.'),
         ],
       );
 }

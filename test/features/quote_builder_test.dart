@@ -9,15 +9,27 @@ import 'package:flutter_test/flutter_test.dart';
 /// validation, the create body (title + validity are sent) and the edit diff
 /// (only changed keys).
 
-QuoteFormItem _catalog({String qty = '1', String rate = '', bool touched = false, String id = 'p1'}) =>
-    QuoteFormItem.blank().withProduct(id, productName: 'Solar Panel', package: false).copyWith(
+QuoteFormItem _catalog(
+        {String qty = '1',
+        String rate = '',
+        bool touched = false,
+        String id = 'p1'}) =>
+    QuoteFormItem.blank()
+        .withProduct(id, productName: 'Solar Panel', package: false)
+        .copyWith(
           qty: qty,
           rate: rate,
           priceTouched: touched,
         );
 
-QuoteFormItem _free({String name = 'Install', String qty = '1', String rate = '100', String hsn = '', String gst = ''}) =>
-    QuoteFormItem.blank(LineKind.free).copyWith(name: name, qty: qty, rate: rate, hsnSac: hsn, gstRate: gst);
+QuoteFormItem _free(
+        {String name = 'Install',
+        String qty = '1',
+        String rate = '100',
+        String hsn = '',
+        String gst = ''}) =>
+    QuoteFormItem.blank(LineKind.free)
+        .copyWith(name: name, qty: qty, rate: rate, hsnSac: hsn, gstRate: gst);
 
 String _block(List<QuoteFormItem> items, {bool past = false}) => blockReason(
       items: items,
@@ -30,18 +42,25 @@ String _block(List<QuoteFormItem> items, {bool past = false}) => blockReason(
 
 void main() {
   group('line validation (QT-015)', () {
-    test('quantity: zero and over one crore are refused, 4 decimals round to 3', () {
+    test('quantity: zero and over one crore are refused, 4 decimals round to 3',
+        () {
       expect(lineProblem(_catalog(qty: '0')), LineProblem.qty);
       expect(lineProblem(_catalog(qty: '10000001')), LineProblem.qty);
       expect(lineProblem(_catalog(qty: '1.2345')), isNull);
       expect(toQty('1.2345'), 1.235);
-      expect(_block([_catalog(qty: '0')]), 'Enter a quantity (at most 1,00,00,000) for every line.');
+      expect(_block([_catalog(qty: '0')]),
+          'Enter a quantity (at most 1,00,00,000) for every line.');
     });
 
-    test('unit price: commas / ₹ are stripped, 7 decimals and > ₹100 crore refused', () {
-      expect(lineProblem(_catalog(rate: '1,00,000.1234567', touched: true)), LineProblem.price);
-      expect(lineProblem(_catalog(rate: '₹ 1,00,000.123456', touched: true)), isNull);
-      expect(lineProblem(_catalog(rate: '1000000001', touched: true)), LineProblem.price);
+    test(
+        'unit price: commas / ₹ are stripped, 7 decimals and > ₹100 crore refused',
+        () {
+      expect(lineProblem(_catalog(rate: '1,00,000.1234567', touched: true)),
+          LineProblem.price);
+      expect(lineProblem(_catalog(rate: '₹ 1,00,000.123456', touched: true)),
+          isNull);
+      expect(lineProblem(_catalog(rate: '1000000001', touched: true)),
+          LineProblem.price);
       expect(_block([_catalog(rate: 'abc', touched: true)]),
           'Enter a unit price (up to 6 decimals, at most ₹100 crore) for every typed line.');
     });
@@ -50,35 +69,55 @@ void main() {
       expect(lineProblem(_catalog()), isNull);
     });
 
-    test('a typed line with a price but no description is flagged, not dropped', () {
+    test('a typed line with a price but no description is flagged, not dropped',
+        () {
       final line = _free(name: '');
       expect(lineProblem(line), LineProblem.description);
-      expect(_block([line]), 'Describe every typed line — a line without a product needs a description.');
+      expect(_block([line]),
+          'Describe every typed line — a line without a product needs a description.');
     });
 
     test('typed line tax: HSN 4–8 digits, GST rate 0–100', () {
       expect(freeLineTaxProblem(_free(hsn: '12')), FreeTaxProblem.hsn);
-      expect(freeLineTaxProblem(_free(hsn: '998313', gst: '101')), FreeTaxProblem.rate);
+      expect(freeLineTaxProblem(_free(hsn: '998313', gst: '101')),
+          FreeTaxProblem.rate);
       expect(lineProblem(_free(hsn: '998313', gst: '18')), isNull);
-      expect(_block([_free(hsn: '12')]), 'Check the typed lines’ tax: HSN/SAC is 4 to 8 digits, GST rate 0–100%.');
+      expect(_block([_free(hsn: '12')]),
+          'Check the typed lines’ tax: HSN/SAC is 4 to 8 digits, GST rate 0–100%.');
     });
 
     test('quantity outranks price outranks validity in the footer hint', () {
-      expect(_block([_catalog(qty: '0'), _catalog(rate: 'x', touched: true)], past: true),
+      expect(
+          _block([_catalog(qty: '0'), _catalog(rate: 'x', touched: true)],
+              past: true),
           'Enter a quantity (at most 1,00,00,000) for every line.');
-      expect(_block([_catalog()], past: true), 'The validity date can’t be in the past.');
+      expect(_block([_catalog()], past: true),
+          'The validity date can’t be in the past.');
     });
   });
 
   group('recurring charges (QT-021)', () {
     test('charge problems in the web wording', () {
-      expect(chargeProblem(const LineCharge(chargeType: ChargeType.recurring)), 'Choose how often it is billed.');
+      expect(chargeProblem(const LineCharge(chargeType: ChargeType.recurring)),
+          'Choose how often it is billed.');
       expect(
-          chargeProblem(const LineCharge(chargeType: ChargeType.recurring, billingPeriod: 'custom_days', billingPeriodDays: 400)),
+          chargeProblem(const LineCharge(
+              chargeType: ChargeType.recurring,
+              billingPeriod: 'custom_days',
+              billingPeriodDays: 400)),
           'A custom period is 1 to 366 days.');
-      expect(chargeProblem(const LineCharge(chargeType: ChargeType.recurring, billingPeriod: 'month', termPeriods: 121)),
+      expect(
+          chargeProblem(const LineCharge(
+              chargeType: ChargeType.recurring,
+              billingPeriod: 'month',
+              termPeriods: 121)),
           'The term is 1 to 120 periods (blank = until cancelled).');
-      expect(chargeProblem(const LineCharge(chargeType: ChargeType.recurring, billingPeriod: 'month', termPeriods: 12)), isNull);
+      expect(
+          chargeProblem(const LineCharge(
+              chargeType: ChargeType.recurring,
+              billingPeriod: 'month',
+              termPeriods: 12)),
+          isNull);
     });
 
     test('subscription with a recurring line is refused', () {
@@ -97,9 +136,15 @@ void main() {
   });
 
   group('line write rows', () {
-    test('an untouched catalog line omits unit_price; a pinned one sends it cleaned', () {
-      final rows = toLineRows([_catalog(qty: '2'), _catalog(id: 'p2', rate: '9,000', touched: true)]);
-      expect(rows[0], {'description': 'Solar Panel', 'quantity': '2', 'product_id': 'p1'});
+    test(
+        'an untouched catalog line omits unit_price; a pinned one sends it cleaned',
+        () {
+      final rows = toLineRows([
+        _catalog(qty: '2'),
+        _catalog(id: 'p2', rate: '9,000', touched: true)
+      ]);
+      expect(rows[0],
+          {'description': 'Solar Panel', 'quantity': '2', 'product_id': 'p1'});
       expect(rows[1]['unit_price'], '9000');
     });
 
@@ -110,7 +155,8 @@ void main() {
     });
 
     test('a typed line sends its own HSN and GST rate', () {
-      final row = toLineRows([_free(hsn: '998313', gst: '18', qty: '2.5')]).single;
+      final row =
+          toLineRows([_free(hsn: '998313', gst: '18', qty: '2.5')]).single;
       expect(row['hsn_sac'], '998313');
       expect(row['rate_pct'], '18');
       expect(row['quantity'], '2.5');
@@ -119,8 +165,12 @@ void main() {
 
     test('a recurring line sends its charge keys', () {
       final line = _catalog().copyWith(
-          charge: const LineCharge(chargeType: ChargeType.recurring, billingPeriod: 'month', termPeriods: 12));
-      expect(toLineRows([line]).single, containsPair('billing_period', 'month'));
+          charge: const LineCharge(
+              chargeType: ChargeType.recurring,
+              billingPeriod: 'month',
+              termPeriods: 12));
+      expect(
+          toLineRows([line]).single, containsPair('billing_period', 'month'));
     });
   });
 
@@ -143,7 +193,8 @@ void main() {
   });
 
   group('create body (QT-013 / QT-020)', () {
-    const ctx = BuilderWriteContext(templateId: 't1', amountsAre: 'EXCLUSIVE', statusId: 's1');
+    const ctx = BuilderWriteContext(
+        templateId: 't1', amountsAre: 'EXCLUSIVE', statusId: 's1');
 
     test('title and valid_until are sent — the old form dropped both', () {
       final draft = BuilderDraft.empty(leadId: 'lead-1').copyWith(
@@ -159,34 +210,43 @@ void main() {
       expect(json['template'], 't1');
       expect(json['status_id'], 's1');
       expect(json['amounts_are'], 'EXCLUSIVE');
-      expect(json['payment_type'], 'lumpsum');
+      // New quotes default to Milestone-based (UI/UX audit #56).
+      expect(json['payment_type'], 'installment_custom');
       // Untouched clause list / sections are left to the server's defaults.
       expect(json.containsKey('clauses'), isFalse);
       expect(json.containsKey('sections'), isFalse);
     });
 
     test('customer mode sends only the customer', () {
-      final draft = BuilderDraft.empty(customerId: 'c1').copyWith(items: [_catalog()]);
+      final draft =
+          BuilderDraft.empty(customerId: 'c1').copyWith(items: [_catalog()]);
       final json = toNewQuoteJson(draft, ctx);
       expect(json['customer'], 'c1');
       expect(json.containsKey('lead'), isFalse);
     });
 
-    test('an even split sends its instalment count; template fields and clauses ride along', () {
+    test(
+        'an even split sends its instalment count; template fields and clauses ride along',
+        () {
       final draft = BuilderDraft.empty(leadId: 'l').copyWith(
         payType: 'installment_even',
         installments: '3',
         items: [_catalog()],
         fieldEdits: {'po': 'PO-1'},
         spotValues: {'ship_to_name': ' Site A ', 'your_ref': ' '},
-        clauseRows: const [ClauseRow(key: 'k', title: 'Validity', clauseId: 'cl1')],
+        clauseRows: const [
+          ClauseRow(key: 'k', title: 'Validity', clauseId: 'cl1')
+        ],
       );
       final json = toNewQuoteJson(
           draft,
           const BuilderWriteContext(
               templateId: 't1',
               amountsAre: 'EXCLUSIVE',
-              fields: [TemplateField(key: 'po', label: 'PO', type: TemplateFieldType.text)]));
+              fields: [
+                TemplateField(
+                    key: 'po', label: 'PO', type: TemplateFieldType.text)
+              ]));
       expect(json['num_installments'], 3);
       expect(json['billing_period_days'], isNull);
       expect(json['field_values'], {'po': 'PO-1', 'ship_to_name': 'Site A'});
@@ -195,10 +255,13 @@ void main() {
       ]);
     });
 
-    test('a past validity date is refused; an unchanged saved one is left alone', () {
+    test(
+        'a past validity date is refused; an unchanged saved one is left alone',
+        () {
       expect(validUntilInPast('2026-10-23', '', '2026-10-24'), isTrue);
       expect(validUntilInPast('2026-10-24', '', '2026-10-24'), isFalse);
-      expect(validUntilInPast('2026-10-01', '2026-10-01', '2026-10-24'), isFalse);
+      expect(
+          validUntilInPast('2026-10-01', '2026-10-01', '2026-10-24'), isFalse);
       expect(validUntilInPast('', '', '2026-10-24'), isFalse);
     });
   });
@@ -223,24 +286,34 @@ void main() {
       'contract_ref': 'PO-UAT-',
       'field_values': {},
       'line_items': [
-        {'line_no': 1, 'product': 'p1', 'description': 'Panel', 'quantity': '9.000', 'unit_price': '18698.410000'},
+        {
+          'line_no': 1,
+          'product': 'p1',
+          'description': 'Panel',
+          'quantity': '9.000',
+          'unit_price': '18698.410000'
+        },
       ],
       'discount_pct': '10.00',
     });
     const ctx = BuilderWriteContext(templateId: 't1', amountsAre: 'EXCLUSIVE');
 
     test('an untouched quote has nothing to save', () {
-      expect(toQuoteUpdateJson(BuilderDraft.fromQuote(saved), saved, ctx), isEmpty);
+      expect(toQuoteUpdateJson(BuilderDraft.fromQuote(saved), saved, ctx),
+          isEmpty);
     });
 
     test('a changed title sends only the title', () {
       final draft = BuilderDraft.fromQuote(saved).copyWith(title: 'Phase 2');
-      expect(toQuoteUpdateJson(draft, saved, ctx), {'quotation_title': 'Phase 2'});
+      expect(
+          toQuoteUpdateJson(draft, saved, ctx), {'quotation_title': 'Phase 2'});
     });
 
     test('valid until can be changed but not cleared', () {
-      final changed = BuilderDraft.fromQuote(saved).copyWith(validUntil: '2026-12-01');
-      expect(toQuoteUpdateJson(changed, saved, ctx), {'valid_until': '2026-12-01'});
+      final changed =
+          BuilderDraft.fromQuote(saved).copyWith(validUntil: '2026-12-01');
+      expect(toQuoteUpdateJson(changed, saved, ctx),
+          {'valid_until': '2026-12-01'});
       final cleared = BuilderDraft.fromQuote(saved).copyWith(validUntil: '');
       expect(toQuoteUpdateJson(cleared, saved, ctx), isEmpty);
     });
@@ -249,17 +322,21 @@ void main() {
       final draft = BuilderDraft.fromQuote(saved);
       expect(draft.items.single.priceTouched, isTrue);
       expect(draft.items.single.rate, '18698.41');
-      final edited = draft.copyWith(items: [draft.items.single.copyWith(qty: '10')], linesDirty: true);
+      final edited = draft.copyWith(
+          items: [draft.items.single.copyWith(qty: '10')], linesDirty: true);
       final patch = toQuoteUpdateJson(edited, saved, ctx);
       expect(patch.keys, ['line_items']);
       expect((patch['line_items'] as List).single['unit_price'], '18698.41');
     });
 
-    test('an Amounts-are flip with untouched lines asks the server to convert', () {
-      final draft = BuilderDraft.fromQuote(saved).copyWith(amountsAreChoice: 'INCLUSIVE', serverFlip: 'convert');
-      final patch = toQuoteUpdateJson(
-          draft, saved, const BuilderWriteContext(templateId: 't1', amountsAre: 'INCLUSIVE'));
-      expect(patch, {'amounts_are': 'INCLUSIVE', 'price_conversion': 'convert'});
+    test('an Amounts-are flip with untouched lines asks the server to convert',
+        () {
+      final draft = BuilderDraft.fromQuote(saved)
+          .copyWith(amountsAreChoice: 'INCLUSIVE', serverFlip: 'convert');
+      final patch = toQuoteUpdateJson(draft, saved,
+          const BuilderWriteContext(templateId: 't1', amountsAre: 'INCLUSIVE'));
+      expect(
+          patch, {'amounts_are': 'INCLUSIVE', 'price_conversion': 'convert'});
     });
 
     test('org-hidden fields are listed and never written', () {
@@ -281,19 +358,26 @@ void main() {
       expect(hidden, {'quotation_title', 'contract_ref'});
       expect(hiddenFieldsNotice(hidden),
           'Not included in your workspace’s quote fields, so not editable here: Quote title, Contract reference.');
-      final draft = BuilderDraft.fromQuote(hiddenQuote).copyWith(title: 'x', contractRef: 'y');
+      final draft = BuilderDraft.fromQuote(hiddenQuote)
+          .copyWith(title: 'x', contractRef: 'y');
       expect(toQuoteUpdateJson(draft, hiddenQuote, ctx), isEmpty);
     });
 
     test('approval state and discount are read from the response', () {
-      final pending = SavedQuote.fromJson({'quotation_id': 'q', 'approval_status': 'PENDING', 'discount_pct': '20'});
+      final pending = SavedQuote.fromJson({
+        'quotation_id': 'q',
+        'approval_status': 'PENDING',
+        'discount_pct': '20'
+      });
       expect(pending.approvalIsPending, isTrue);
       expect(pct2(pending.discountPct), '20.00%');
     });
   });
 
   group('totals (QT-017)', () {
-    test('intra-state shows CGST + SGST, inter-state IGST, round off when non-zero', () {
+    test(
+        'intra-state shows CGST + SGST, inter-state IGST, round off when non-zero',
+        () {
       final intra = TaxSummary.fromJson({
         'supply': 'INTRA',
         'taxable_total': '100.00',
@@ -304,7 +388,8 @@ void main() {
         'round_off': '0.00',
         'grand_total': '118.00',
       });
-      expect(taxTotalsRows(intra).map((r) => r.label), ['Sub-total', 'CGST', 'SGST']);
+      expect(taxTotalsRows(intra).map((r) => r.label),
+          ['Sub-total', 'CGST', 'SGST']);
       final inter = TaxSummary.fromJson({
         'supply': 'INTER',
         'taxable_total': '100.00',
@@ -312,15 +397,29 @@ void main() {
         'round_off': '0.31',
         'grand_total': '118.31',
       });
-      expect(taxTotalsRows(inter).map((r) => r.label), ['Sub-total', 'IGST', 'Round off']);
+      expect(taxTotalsRows(inter).map((r) => r.label),
+          ['Sub-total', 'IGST', 'Round off']);
     });
 
-    test('priced lines map back onto their rows, a package owning its parts', () {
-      final rows = [const PreviewRowRef('a', ''), const PreviewRowRef('b', 'pkg'), const PreviewRowRef('c', '')];
+    test('priced lines map back onto their rows, a package owning its parts',
+        () {
+      final rows = [
+        const PreviewRowRef('a', ''),
+        const PreviewRowRef('b', 'pkg'),
+        const PreviewRowRef('c', '')
+      ];
       final lines = [
         PricedLine.fromJson({'unit_price': '1', 'total_price': '1'}),
-        PricedLine.fromJson({'unit_price': '2', 'total_price': '2', 'source_package_id': 'pkg'}),
-        PricedLine.fromJson({'unit_price': '3', 'total_price': '3', 'source_package_id': 'pkg'}),
+        PricedLine.fromJson({
+          'unit_price': '2',
+          'total_price': '2',
+          'source_package_id': 'pkg'
+        }),
+        PricedLine.fromJson({
+          'unit_price': '3',
+          'total_price': '3',
+          'source_package_id': 'pkg'
+        }),
         PricedLine.fromJson({'unit_price': '4', 'total_price': '4'}),
       ];
       final m = mapPreviewLines(rows, lines);
@@ -329,8 +428,10 @@ void main() {
     });
 
     test('a half-typed line keeps the last preview instead of pricing it', () {
-      const ctx = PreviewContext(isEdit: false, linesDirty: false, savedMode: '');
-      expect(livePreviewRequest(ctx, [_catalog(qty: '0')], 'EXCLUSIVE', null), isNull);
+      const ctx =
+          PreviewContext(isEdit: false, linesDirty: false, savedMode: '');
+      expect(livePreviewRequest(ctx, [_catalog(qty: '0')], 'EXCLUSIVE', null),
+          isNull);
       final req = livePreviewRequest(ctx, [_catalog()], 'EXCLUSIVE', null)!;
       expect(req.body['amounts_are'], 'EXCLUSIVE');
       expect(req.body['line_items'], hasLength(1));
@@ -342,33 +443,54 @@ void main() {
     const library = [
       LibraryClause(id: 'v', title: 'Validity', isMandatory: true, position: 0),
       LibraryClause(id: 'p', title: 'Payment Terms', position: 1),
-      LibraryClause(id: 'f', title: 'Future', effectiveDate: '2027-01-01', position: 2),
-      LibraryClause(id: 'q', title: 'Quote family', defaultFamilies: ['quote'], position: 3),
+      LibraryClause(
+          id: 'f', title: 'Future', effectiveDate: '2027-01-01', position: 2),
+      LibraryClause(
+          id: 'q',
+          title: 'Quote family',
+          defaultFamilies: ['quote'],
+          position: 3),
     ];
 
-    test('defaults: unscoped mandatory + quote family; not-yet-effective ones excluded', () {
-      expect(defaultClauseRows(library, const {}, today).map((r) => r.clauseId), ['v', 'q']);
-      expect(addableClauses(library, defaultClauseRows(library, const {}, today), today).map((c) => c.id), ['p']);
+    test(
+        'defaults: unscoped mandatory + quote family; not-yet-effective ones excluded',
+        () {
+      expect(defaultClauseRows(library, const {}, today).map((r) => r.clauseId),
+          ['v', 'q']);
+      expect(
+          addableClauses(
+                  library, defaultClauseRows(library, const {}, today), today)
+              .map((c) => c.id),
+          ['p']);
     });
 
-    test('a preloaded mandatory clause cannot be removed; an added one can', () {
+    test('a preloaded mandatory clause cannot be removed; an added one can',
+        () {
       var rows = defaultClauseRows(library, const {}, today);
       expect(removeClause(rows, 'default:v').length, rows.length);
       rows = addLibraryClause(rows, library[1]);
       expect(removeClause(rows, 'added:p').map((r) => r.clauseId), ['v', 'q']);
-      expect(moveClause(rows, 'added:p', -1).map((r) => r.clauseId), ['v', 'p', 'q']);
+      expect(moveClause(rows, 'added:p', -1).map((r) => r.clauseId),
+          ['v', 'p', 'q']);
       expect(toClauseWrites(rows).first, {'clause_id': 'v'});
     });
 
     test('clause bodies render as plain text', () {
-      expect(clauseText('<p>Valid&nbsp;until &amp; including</p><p>the date</p>'), 'Valid until & including\nthe date');
+      expect(
+          clauseText('<p>Valid&nbsp;until &amp; including</p><p>the date</p>'),
+          'Valid until & including\nthe date');
     });
   });
 
   group('template fields + sections (QT-022)', () {
     test('a required blank field is missing; checkboxes never are', () {
-      const req = TemplateField(key: 'po', label: 'PO', type: TemplateFieldType.text, required: true);
-      const box = TemplateField(key: 'ok', label: 'OK', type: TemplateFieldType.boolean, required: true);
+      const req = TemplateField(
+          key: 'po', label: 'PO', type: TemplateFieldType.text, required: true);
+      const box = TemplateField(
+          key: 'ok',
+          label: 'OK',
+          type: TemplateFieldType.boolean,
+          required: true);
       expect(isFieldMissing(req, ''), isTrue);
       expect(isFieldMissing(box, false), isFalse);
     });
@@ -377,7 +499,12 @@ void main() {
       final fields = templateFieldsFromDetail({
         'field_definitions': [
           {'field_key': 'notes', 'field_type': 'text'},
-          {'field_key': 'po', 'field_label': 'PO', 'field_type': 'Dropdown', 'options': ['A']},
+          {
+            'field_key': 'po',
+            'field_label': 'PO',
+            'field_type': 'Dropdown',
+            'options': ['A']
+          },
         ],
       });
       final editable = editableTemplateFields(fields);
@@ -386,24 +513,38 @@ void main() {
     });
 
     test('a mandatory heading left empty is reported in the web wording', () {
-      const h = SectionHeading(id: 'h', label: 'Warranty', isMandatory: true, options: [SectionOption(id: 'o', title: 'Std')]);
+      const h = SectionHeading(
+          id: 'h',
+          label: 'Warranty',
+          isMandatory: true,
+          options: [SectionOption(id: 'o', title: 'Std')]);
       final missing = missingMandatoryHeadings(const [h], const []);
       expect(mandatoryHeadingsNotice(missing),
           '“Warranty” is a mandatory heading — choose an option before the quote is sent.');
-      expect(missingMandatoryHeadings(const [h], const [SectionPick('h', 'o')]), isEmpty);
+      expect(missingMandatoryHeadings(const [h], const [SectionPick('h', 'o')]),
+          isEmpty);
     });
 
     test('spot inputs: required blanks are reported', () {
-      const f = SpotInputField(key: 'ref', label: 'Your reference', required: true, needsInput: true);
-      expect(missingRequiredSpot(const [f], const {}).single.label, 'Your reference');
+      const f = SpotInputField(
+          key: 'ref',
+          label: 'Your reference',
+          required: true,
+          needsInput: true);
+      expect(missingRequiredSpot(const [f], const {}).single.label,
+          'Your reference');
       expect(missingRequiredSpot(const [f], const {'ref': 'RFQ-1'}), isEmpty);
     });
   });
 
   group('party rows (QT-014)', () {
     test('upsell leads are labelled; the LD reference is the sub-line', () {
-      final o = QuoteBuilderRemoteDataSource.leadOption(
-          {'lead_id': 'uuid-1', 'lead_name': 'Malabar Spices Co – Upsell', 'is_upsell': true, 'reference': 'LD-0025'});
+      final o = QuoteBuilderRemoteDataSource.leadOption({
+        'lead_id': 'uuid-1',
+        'lead_name': 'Malabar Spices Co – Upsell',
+        'is_upsell': true,
+        'reference': 'LD-0025'
+      });
       expect(o.label, 'Malabar Spices Co – Upsell · upsell');
       expect(o.sub, 'LD-0025');
     });

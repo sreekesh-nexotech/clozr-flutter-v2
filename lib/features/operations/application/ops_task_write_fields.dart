@@ -86,6 +86,34 @@ num? _number(String raw) {
 /// 11:00 PM — the time you typed is not the time you see. Converting to UTC
 /// first pins the actual instant, and the read path's `toLocal()` turns it back
 /// into the same 5:30 PM.
+/// The task's `exp_end_date` for a picked [date], keeping the time of day of
+/// [keepTimeFrom] (the current end) — the header / row due-date pickers
+/// change the day only (UI/UX audit #04 / #03).
+String opsTaskEndStamp(DateTime date, {DateTime? keepTimeFrom}) {
+  final k = keepTimeFrom?.toLocal();
+  return _stamp(
+      date, k == null ? null : TimeOfDay(hour: k.hour, minute: k.minute))!;
+}
+
+/// `exp_end_date` for a picked day and optional time (midnight without one).
+String opsTaskEndStampAt(DateTime date, TimeOfDay? time) => _stamp(date, time)!;
+
+/// Webapp `validateSubtaskWindow` (parity C15): a subtask's due moment must
+/// sit inside its parent's start … end. Blank parent bounds are open. Returns
+/// the sentence to show, or null when it fits.
+String? subtaskWindowError(DateTime end,
+    {String? parentStartIso, String? parentEndIso}) {
+  final ps = DateTime.tryParse(parentStartIso ?? '');
+  final pe = DateTime.tryParse(parentEndIso ?? '');
+  if (ps != null && end.isBefore(ps)) {
+    return "Due can't be before the parent task's start";
+  }
+  if (pe != null && end.isAfter(pe)) {
+    return "Due can't be after the parent task's end";
+  }
+  return null;
+}
+
 String? _stamp(DateTime? date, TimeOfDay? time) {
   if (date == null) return null;
   final t = time ?? const TimeOfDay(hour: 0, minute: 0);

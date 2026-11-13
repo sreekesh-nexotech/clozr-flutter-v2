@@ -36,7 +36,10 @@ class ErrorState extends StatelessWidget {
   factory ErrorState.forError(AppError error, {VoidCallback? onRetry}) {
     final (icon, title) = switch (error.type) {
       AppErrorType.network => (PhosphorIconsFill.wifiSlash, "You're offline"),
-      AppErrorType.timeout => (PhosphorIconsFill.clockCountdown, 'Taking too long'),
+      AppErrorType.timeout => (
+          PhosphorIconsFill.clockCountdown,
+          'Taking too long'
+        ),
       AppErrorType.forbidden => (PhosphorIconsFill.lock, 'No access'),
       AppErrorType.notFound => (PhosphorIconsFill.magnifyingGlass, 'Not found'),
       AppErrorType.server => (PhosphorIconsFill.cloudSlash, 'Server error'),
@@ -56,7 +59,8 @@ class ErrorState extends StatelessWidget {
   /// The webapp's `failureCopy(failure, subject)` — the notice a screen shows
   /// when [subject] ("your tickets", "this ticket", "the support overview")
   /// fails to load, worded by what went wrong rather than the raw message.
-  factory ErrorState.forSubject(AppError error, String subject, {VoidCallback? onRetry}) {
+  factory ErrorState.forSubject(AppError error, String subject,
+      {VoidCallback? onRetry}) {
     final (icon, title, body) = switch (error.type) {
       AppErrorType.forbidden => (
           PhosphorIconsFill.lock,
@@ -102,18 +106,21 @@ class ErrorState extends StatelessWidget {
           Container(
             width: 66.r,
             height: 66.r,
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(19.r)),
+            decoration: BoxDecoration(
+                color: iconBg, borderRadius: BorderRadius.circular(19.r)),
             child: Icon(icon, size: 30.sp, color: iconColor),
           ),
           SizedBox(height: 16.h),
-          Text(title, style: AppText.sectionTitle(), textAlign: TextAlign.center),
+          Text(title,
+              style: AppText.sectionTitle(), textAlign: TextAlign.center),
           SizedBox(height: 6.h),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 240.w),
             child: Text(
               body,
               textAlign: TextAlign.center,
-              style: AppText.body(color: AppColors.textMuted).copyWith(height: 1.5),
+              style: AppText.body(color: AppColors.textMuted)
+                  .copyWith(height: 1.5),
             ),
           ),
           if (ctaLabel != null && onRetry != null) ...[
@@ -122,7 +129,9 @@ class ErrorState extends StatelessWidget {
               onTap: onRetry,
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
-                decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                decoration: BoxDecoration(
+                    color: AppColors.navy,
+                    borderRadius: BorderRadius.circular(11.r)),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -130,7 +139,8 @@ class ErrorState extends StatelessWidget {
                       Icon(ctaIcon, size: 15.sp, color: AppColors.white),
                       SizedBox(width: 8.w),
                     ],
-                    Text(ctaLabel!, style: AppText.bodyStrong(color: AppColors.white)),
+                    Text(ctaLabel!,
+                        style: AppText.bodyStrong(color: AppColors.white)),
                   ],
                 ),
               ),

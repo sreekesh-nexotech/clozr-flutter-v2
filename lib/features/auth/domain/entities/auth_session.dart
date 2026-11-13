@@ -69,7 +69,8 @@ class SessionUser extends Equatable {
 
   OrgSummary? get primaryOrg => organizations.isEmpty
       ? null
-      : organizations.firstWhere((o) => o.isPrimary, orElse: () => organizations.first);
+      : organizations.firstWhere((o) => o.isPrimary,
+          orElse: () => organizations.first);
 
   /// What the identity rows show under the name: the role, or the designation
   /// when the account carries no role.

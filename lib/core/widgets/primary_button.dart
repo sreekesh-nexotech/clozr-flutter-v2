@@ -36,7 +36,8 @@ class PrimaryButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: onTap == null ? bg.withOpacity(0.5) : bg,
         borderRadius: BorderRadius.circular(14.r),
-        border: ghost ? Border.all(color: AppColors.borderInput, width: 1.5) : null,
+        border:
+            ghost ? Border.all(color: AppColors.borderInput, width: 1.5) : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -46,12 +47,16 @@ class PrimaryButton extends StatelessWidget {
             Icon(icon, size: 18.sp, color: fg),
             SizedBox(width: 8.w),
           ],
-          Text(label, style: AppText.custom(size: 15, weight: FontWeight.w700, color: fg)),
+          Text(label,
+              style:
+                  AppText.custom(size: 15, weight: FontWeight.w700, color: fg)),
         ],
       ),
     );
     final tappable = GestureDetector(onTap: onTap, child: child);
-    return expand ? SizedBox(width: double.infinity, child: tappable) : tappable;
+    return expand
+        ? SizedBox(width: double.infinity, child: tappable)
+        : tappable;
   }
 }
 

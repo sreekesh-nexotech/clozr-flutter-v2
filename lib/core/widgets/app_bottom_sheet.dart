@@ -41,7 +41,8 @@ class ClozrSheetContainer extends StatelessWidget {
     // e.g. the filter drawer's "Name this view…" field.
     final maxHeight = math.max(
       0.0,
-      math.min(844.h * 0.84, media.size.height - media.padding.top - keyboard - 24.h),
+      math.min(844.h * 0.84,
+          media.size.height - media.padding.top - keyboard - 24.h),
     );
     return AnimatedPadding(
       duration: const Duration(milliseconds: 150),
@@ -109,8 +110,11 @@ class SheetHeader extends StatelessWidget {
             child: Container(
               width: 32.w,
               height: 32.w,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
-              child: Icon(Icons.close_rounded, size: 17.sp, color: AppColors.textLabelAlt),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(9.r)),
+              child: Icon(Icons.close_rounded,
+                  size: 17.sp, color: AppColors.textLabelAlt),
             ),
           ),
         ],

@@ -50,14 +50,16 @@ CrmTask _task({String type = 'Task', String priority = 'Medium'}) => CrmTask(
       dueNote: '',
     );
 
-List<String> _optionIds(String fieldId, {
+List<String> _optionIds(
+  String fieldId, {
   List<CatalogOption> types = const [],
   List<CatalogOption> priorities = const [],
 }) {
-  final field = buildTasksFilterSpec(typeCatalog: types, priorityCatalog: priorities)
-      .sections
-      .expand((s) => s.fields)
-      .firstWhere((f) => f.id == fieldId);
+  final field =
+      buildTasksFilterSpec(typeCatalog: types, priorityCatalog: priorities)
+          .sections
+          .expand((s) => s.fields)
+          .firstWhere((f) => f.id == fieldId);
   return [for (final o in field.options) o.id];
 }
 
@@ -76,7 +78,12 @@ void main() {
 
       expect(options, ['Task', 'Call', 'Meeting', 'Email', 'Deadline']);
       // The old hard-coded list — none of these are real task types.
-      for (final invented in ['WhatsApp', 'Site visit', 'Follow-up', 'Payment']) {
+      for (final invented in [
+        'WhatsApp',
+        'Site visit',
+        'Follow-up',
+        'Payment'
+      ]) {
         expect(options, isNot(contains(invented)));
       }
     });
@@ -92,7 +99,9 @@ void main() {
 
     test('an unusable schema response falls back to the built-in list', () {
       expect(CrmCatalogRemoteDataSource.mapTaskTypeChoices(null), isEmpty);
-      expect(CrmCatalogRemoteDataSource.mapTaskTypeChoices(const {'fields': {}}), isEmpty);
+      expect(
+          CrmCatalogRemoteDataSource.mapTaskTypeChoices(const {'fields': {}}),
+          isEmpty);
       expect(_optionIds('types'), kBuiltinTaskTypes);
     });
   });
@@ -125,7 +134,8 @@ void main() {
     });
 
     test('a folded option matches the folded value on a row', () {
-      final values = FilterValues()..['priorities'] = ChoiceValue(ids: {'Urgent'});
+      final values = FilterValues()
+        ..['priorities'] = ChoiceValue(ids: {'Urgent'});
 
       expect(crmTaskMatchesFilters(_task(priority: 'Urgent'), values), isTrue);
       expect(crmTaskMatchesFilters(_task(priority: 'High'), values), isFalse);

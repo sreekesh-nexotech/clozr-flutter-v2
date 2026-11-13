@@ -45,13 +45,17 @@ class LeadDuplicate {
               if (r is Map)
                 DuplicateMatch(
                   id: '${r['lead_id'] ?? r['customer_id'] ?? r['id'] ?? ''}',
-                  name: '${r['lead_name'] ?? r['customer_name'] ?? r['name'] ?? 'Untitled'}',
+                  name:
+                      '${r['lead_name'] ?? r['customer_name'] ?? r['name'] ?? 'Untitled'}',
                   email: _clean(r['email']),
                 ),
         ];
     final matched = raw['matched'] is Map ? raw['matched'] as Map : const {};
     return LeadDuplicate(
-      matchKeys: [if (raw['match_keys'] is List) for (final k in raw['match_keys'] as List) '$k'],
+      matchKeys: [
+        if (raw['match_keys'] is List)
+          for (final k in raw['match_keys'] as List) '$k'
+      ],
       leads: rows(matched['leads']),
       customers: rows(matched['customers']),
     );
@@ -75,7 +79,10 @@ class LeadDuplicate {
 
   /// "email or phone", "email, phone or mobile number".
   String get keysText {
-    final keys = [for (final k in matchKeys) k == 'mobile_no' ? 'mobile number' : k.replaceAll('_', ' ')];
+    final keys = [
+      for (final k in matchKeys)
+        k == 'mobile_no' ? 'mobile number' : k.replaceAll('_', ' ')
+    ];
     if (keys.isEmpty) return '';
     if (keys.length == 1) return keys.first;
     return '${keys.sublist(0, keys.length - 1).join(', ')} or ${keys.last}';
@@ -118,12 +125,14 @@ class DuplicateNotice extends StatelessWidget {
       final lead = keys.isEmpty
           ? 'Your workspace blocks duplicate ${subject}s.'
           : 'Your workspace blocks duplicate ${subject}s with a matching $keys.';
-      body = '$lead ${duplicate.hasMatches ? 'Open the existing record instead, or change the matched field to continue.' : 'Change the matched field, or search the list for the existing record.'}';
+      body =
+          '$lead ${duplicate.hasMatches ? 'Open the existing record instead, or change the matched field to continue.' : 'Change the matched field, or search the list for the existing record.'}';
     } else {
       final lead = keys.isEmpty
           ? 'The new $subject matches an existing record.'
           : 'The new $subject matches an existing record on $keys.';
-      body = '$lead It was saved anyway — review the overlap and merge or delete whichever you do not need.';
+      body =
+          '$lead It was saved anyway — review the overlap and merge or delete whichever you do not need.';
     }
     return Semantics(
       liveRegion: true,
@@ -153,11 +162,16 @@ class DuplicateNotice extends StatelessWidget {
             SizedBox(height: 6.h),
             Text(body, style: AppText.body()),
             if (!blocked && newLeadId != null && newLeadId!.isNotEmpty)
-              _link('Open the new $subject',
-                  () => (subject == 'lead' ? onOpenLead : onOpenCustomer)(newLeadId!)),
-            if (duplicate.leads.isNotEmpty) ..._group('EXISTING LEADS', duplicate.leads, onOpenLead),
+              _link(
+                  'Open the new $subject',
+                  () => (subject == 'lead'
+                      ? onOpenLead
+                      : onOpenCustomer)(newLeadId!)),
+            if (duplicate.leads.isNotEmpty)
+              ..._group('EXISTING LEADS', duplicate.leads, onOpenLead),
             if (duplicate.customers.isNotEmpty)
-              ..._group('EXISTING CUSTOMERS', duplicate.customers, onOpenCustomer),
+              ..._group(
+                  'EXISTING CUSTOMERS', duplicate.customers, onOpenCustomer),
           ],
         ),
       ),
@@ -172,12 +186,15 @@ class DuplicateNotice extends StatelessWidget {
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(label, style: AppText.bodyStrong(color: AppColors.navy)),
             SizedBox(width: 4.w),
-            Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.navy),
+            Icon(PhosphorIconsBold.caretRight,
+                size: 12.sp, color: AppColors.navy),
           ]),
         ),
       );
 
-  List<Widget> _group(String title, List<DuplicateMatch> rows, ValueChanged<String> onOpen) => [
+  List<Widget> _group(String title, List<DuplicateMatch> rows,
+          ValueChanged<String> onOpen) =>
+      [
         SizedBox(height: 10.h),
         Text(title, style: AppText.caption()),
         for (final r in rows)
@@ -188,7 +205,10 @@ class DuplicateNotice extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(children: [
                     TextSpan(text: r.name, style: AppText.bodyStrong()),
-                    if (r.email.isNotEmpty) TextSpan(text: ' · ${r.email}', style: AppText.body(color: AppColors.textMuted)),
+                    if (r.email.isNotEmpty)
+                      TextSpan(
+                          text: ' · ${r.email}',
+                          style: AppText.body(color: AppColors.textMuted)),
                   ]),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -201,9 +221,11 @@ class DuplicateNotice extends StatelessWidget {
                   child: Padding(
                     padding: EdgeInsets.only(left: 8.w),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text('Open', style: AppText.bodyStrong(color: AppColors.navy)),
+                      Text('Open',
+                          style: AppText.bodyStrong(color: AppColors.navy)),
                       SizedBox(width: 2.w),
-                      Icon(PhosphorIconsBold.caretRight, size: 12.sp, color: AppColors.navy),
+                      Icon(PhosphorIconsBold.caretRight,
+                          size: 12.sp, color: AppColors.navy),
                     ]),
                   ),
                 ),

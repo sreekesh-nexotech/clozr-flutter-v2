@@ -24,7 +24,8 @@ import 'plan_widgets.dart';
 /// ₹ incl. GST or a % of the quote's total — and a due date, posted as a
 /// pending record. The server converts it to the plan's basis and creates the
 /// dues follow-up.
-Future<void> showAddMilestoneSheet(BuildContext context, PlanDetail plan) => showClozrSheet<void>(
+Future<void> showAddMilestoneSheet(BuildContext context, PlanDetail plan) =>
+    showClozrSheet<void>(
       context: context,
       builder: (_) => _AddMilestoneSheet(plan: plan),
     );
@@ -62,8 +63,13 @@ class _AddMilestoneSheetState extends ConsumerState<_AddMilestoneSheet> {
 
   Future<void> _save() async {
     final errors = validateMilestone(
-        label: _label.text, percent: _percent, amount: _amount.text, dueDate: _due, base: _base);
-    final amount = milestoneAmount(percent: _percent, amount: _amount.text, base: _base);
+        label: _label.text,
+        percent: _percent,
+        amount: _amount.text,
+        dueDate: _due,
+        base: _base);
+    final amount =
+        milestoneAmount(percent: _percent, amount: _amount.text, base: _base);
     setState(() {
       _errors = errors;
       _failure = null;
@@ -72,7 +78,11 @@ class _AddMilestoneSheetState extends ConsumerState<_AddMilestoneSheet> {
     setState(() => _busy = true);
     try {
       await ref.read(paymentPlanRemoteProvider).addMilestone(
-            milestoneBody(planId: widget.plan.id, label: _label.text, amountInclGst: amount, dueDate: _due),
+            milestoneBody(
+                planId: widget.plan.id,
+                label: _label.text,
+                amountInclGst: amount,
+                dueDate: _due),
           );
       if (!mounted) return;
       ref.read(toastProvider.notifier).show(milestoneAddedToast(amount));
@@ -93,7 +103,10 @@ class _AddMilestoneSheetState extends ConsumerState<_AddMilestoneSheet> {
   @override
   Widget build(BuildContext context) {
     final note = milestoneAmountNote(
-        percent: _percent, amount: _amount.text, base: _base, unscheduled: widget.plan.unscheduledInclGst);
+        percent: _percent,
+        amount: _amount.text,
+        base: _base,
+        unscheduled: widget.plan.unscheduledInclGst);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -104,7 +117,8 @@ class _AddMilestoneSheetState extends ConsumerState<_AddMilestoneSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                PlanHint(milestoneIntro(widget.plan.quoteNumber, _base), color: AppColors.textSecondary),
+                PlanHint(milestoneIntro(widget.plan.quoteNumber, _base),
+                    color: AppColors.textSecondary),
                 SizedBox(height: 14.h),
                 if (_failure != null) ...[
                   PlanInlineError(_failure!),
@@ -114,12 +128,18 @@ class _AddMilestoneSheetState extends ConsumerState<_AddMilestoneSheet> {
                   label: 'Milestone',
                   hint: 'e.g. Design sign-off',
                   controller: _label,
-                  inputFormatters: [LengthLimitingTextInputFormatter(milestoneLabelMax + 1)],
+                  inputFormatters: [
+                    LengthLimitingTextInputFormatter(milestoneLabelMax + 1)
+                  ],
                   onChanged: (_) => _changed(),
                   errorText: _errors['label'],
                 ),
                 SizedBox(height: 14.h),
-                Text('Amount', style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                Text('Amount',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: AppColors.textLabelAlt)),
                 SizedBox(height: 7.h),
                 Wrap(
                   spacing: 8.w,
@@ -146,11 +166,16 @@ class _AddMilestoneSheetState extends ConsumerState<_AddMilestoneSheet> {
                 ),
                 SizedBox(height: 10.h),
                 AppTextField(
-                  label: _percent ? 'Share of the quote total (%)' : 'Amount incl. GST (₹)',
+                  label: _percent
+                      ? 'Share of the quote total (%)'
+                      : 'Amount incl. GST (₹)',
                   hint: _percent ? 'e.g. 40' : 'e.g. 25000',
                   controller: _amount,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
+                  ],
                   onChanged: (_) => _changed(),
                   errorText: _errors['amount'],
                 ),

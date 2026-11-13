@@ -18,10 +18,14 @@ class ProductCard extends StatelessWidget {
     super.key,
     required this.product,
     required this.onTap,
+    this.onLongPress,
     this.schema = ViewSchema.empty,
   });
   final Product product;
   final VoidCallback onTap;
+
+  /// Long press — the shared row-actions sheet.
+  final VoidCallback? onLongPress;
 
   /// The org's mobile card layout.
   final ViewSchema schema;
@@ -39,6 +43,8 @@ class ProductCard extends StatelessWidget {
       fallbackValue: product.price,
       mockCell: (c) => productColumnText(product, c),
       onTap: onTap,
+      onLongPress: onLongPress,
+      showCall: false,
     );
   }
 }

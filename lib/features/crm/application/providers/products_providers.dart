@@ -182,14 +182,15 @@ final visibleProductsProvider = Provider<List<Product>>((ref) {
   Iterable<Product> out =
       products.where((p) => (mode == 'packages') == p.isPackage);
   if (cat != 'all') out = out.where((p) => p.cat == cat);
-  if (!filters.isEmpty) out = out.where((p) => productMatchesFilters(p, filters));
+  if (!filters.isEmpty)
+    out = out.where((p) => productMatchesFilters(p, filters));
   if (q.isNotEmpty) {
     // The field the search box promises ("products, SKU, HSN") is the SKU —
     // `p.id` is the uuid, which nobody types. Category is included because the
     // chips only offer one at a time.
-    out = out.where((p) =>
-        ('${p.name} ${p.code} ${p.hsn} ${p.cat} ${p.id}').toLowerCase().contains(q));
+    out = out.where((p) => ('${p.name} ${p.code} ${p.hsn} ${p.cat} ${p.id}')
+        .toLowerCase()
+        .contains(q));
   }
   return out.toList();
 });
-

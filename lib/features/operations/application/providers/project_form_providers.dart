@@ -21,16 +21,17 @@ final projectAssignableUsersProvider =
 
 /// The same list for any Operations module — `project_task` is the Add task
 /// form's "Assign to" (webapp `useAssignableUsersQuery('project_task')`).
-final opsAssignableUsersProvider =
-    FutureProvider.autoDispose.family<List<CatalogOption>?, String>((ref, module) async {
+final opsAssignableUsersProvider = FutureProvider.autoDispose
+    .family<List<CatalogOption>?, String>((ref, module) async {
   if (!ApiConfig.apiEnabled) return null;
   try {
-    final body = await ref.watch(apiServiceProvider).get(
-      '/management/assignable-users/',
-      query: {'module': module, 'page_size': 200},
-      quiet: true,
-    );
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final body = await ref.watch(apiServiceProvider).getAllPages(
+          '/management/assignable-users/',
+          query: {'module': module, 'page_size': 200},
+          quiet: true,
+        );
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <CatalogOption>[];
     for (final r in rows) {
       final raw = (r['user_id'] ?? '').toString();
@@ -55,14 +56,16 @@ final opsAssignableUsersProvider =
 /// (`private` / `team` / `organization`), or null when it cannot be read — the
 /// endpoint refuses roles without Settings, and those users are offered
 /// "Default (set by your admin)" instead, exactly as on the webapp (UAT D32).
-final pmoDefaultVisibilityProvider = FutureProvider.autoDispose<String?>((ref) async {
+final pmoDefaultVisibilityProvider =
+    FutureProvider.autoDispose<String?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
   try {
     final body = await ref
         .watch(apiServiceProvider)
         .get('/settings/pmo/settings/', quiet: true);
     if (body is! Map) return null;
-    final v = '${body['default_project_visibility'] ?? ''}'.trim().toLowerCase();
+    final v =
+        '${body['default_project_visibility'] ?? ''}'.trim().toLowerCase();
     return const {'private', 'team', 'organization'}.contains(v) ? v : null;
   } on Object {
     return null;
@@ -73,14 +76,16 @@ final pmoDefaultVisibilityProvider = FutureProvider.autoDispose<String?>((ref) a
 /// carries (`High` / `Medium` / `Low`), or null when it cannot be read — the
 /// settings endpoint refuses roles without Settings, and the Add task form
 /// then starts on "Default (set by your admin)" (webapp `taskPriorityDefault`).
-final pmoDefaultTaskPriorityProvider = FutureProvider.autoDispose<String?>((ref) async {
+final pmoDefaultTaskPriorityProvider =
+    FutureProvider.autoDispose<String?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
   try {
     final body = await ref
         .watch(apiServiceProvider)
         .get('/settings/pmo/settings/', quiet: true);
     if (body is! Map) return null;
-    return switch ('${body['default_task_priority'] ?? ''}'.trim().toLowerCase()) {
+    return switch (
+        '${body['default_task_priority'] ?? ''}'.trim().toLowerCase()) {
       'low' => 'Low',
       'medium' => 'Medium',
       'high' => 'High',
@@ -99,25 +104,30 @@ final customerQuotesProvider = FutureProvider.autoDispose
   if (!ApiConfig.apiEnabled || customerId.isEmpty) return const [];
   try {
     final body = await ref.watch(apiServiceProvider).get(
-      '/quotations/quotations/',
-      query: {
-        'customer_id': customerId,
-        'page_size': 100,
-        'ordering': '-created_at',
-      },
-      quiet: true,
-    );
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+          '/quotations/quotations/',
+          query: {
+            'customer_id': customerId,
+            'page_size': 100,
+            'ordering': '-created_at',
+          },
+          quiet: true,
+        );
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     return [
       for (final q in rows)
         if ('${q['quotation_id'] ?? ''}'.isNotEmpty)
           CatalogOption(
             id: '${q['quotation_id']}',
             name: [
-              '${q['quotation_number'] ?? ''}'.trim().ifEmpty('${q['quotation_id']}'),
+              '${q['quotation_number'] ?? ''}'
+                  .trim()
+                  .ifEmpty('${q['quotation_id']}'),
               if ('${q['quotation_title'] ?? ''}'.trim().isNotEmpty)
                 '${q['quotation_title']}'.trim(),
-              _inr.format(num.tryParse('${q['grand_total'] ?? q['total_amount'] ?? 0}') ?? 0),
+              _inr.format(num.tryParse(
+                      '${q['grand_total'] ?? q['total_amount'] ?? 0}') ??
+                  0),
             ].join(' · '),
           ),
     ];
@@ -127,7 +137,8 @@ final customerQuotesProvider = FutureProvider.autoDispose
 });
 
 /// The webapp's `money()` — full en-IN grouping, "₹3,94,758".
-final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+final _inr =
+    NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;
@@ -140,10 +151,12 @@ extension on String {
 final projectTeamsProvider = FutureProvider<List<CatalogOption>>((ref) async {
   if (!ApiConfig.apiEnabled) return const [];
   try {
-    final body = await ref
-        .watch(apiServiceProvider)
-        .get('/management/teams/', query: {'page_size': 100}, quiet: true);
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final body = await ref.watch(apiServiceProvider).getAllPages(
+        '/management/teams/',
+        query: {'page_size': 100},
+        quiet: true);
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     return [
       for (final r in rows)
         if ('${r['team_id'] ?? ''}'.isNotEmpty)

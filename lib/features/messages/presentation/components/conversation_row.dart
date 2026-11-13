@@ -11,7 +11,8 @@ import 'chat_avatar.dart';
 /// company, last-message preview, unread badge and the 24-hour window chip.
 /// Mirrors design lines 5725–5742.
 class ConversationRow extends StatelessWidget {
-  const ConversationRow({super.key, required this.conversation, required this.onTap});
+  const ConversationRow(
+      {super.key, required this.conversation, required this.onTap});
 
   final Conversation conversation;
   final VoidCallback onTap;
@@ -39,15 +40,22 @@ class ConversationRow extends StatelessWidget {
                       child: Text(c.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                          style: AppText.custom(
+                              size: 14.5,
+                              weight: FontWeight.w700,
+                              color: AppColors.textPrimary)),
                     ),
                     SizedBox(width: 8.w),
                     Text(c.lastTime,
-                        style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                        style: AppText.custom(
+                            size: 11,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
                 SizedBox(height: 1.h),
-                Text(c.company, style: AppText.caption(color: AppColors.textMuted)),
+                Text(c.company,
+                    style: AppText.caption(color: AppColors.textMuted)),
                 SizedBox(height: 4.h),
                 Row(
                   children: [
@@ -55,7 +63,10 @@ class ConversationRow extends StatelessWidget {
                       child: Text(c.preview,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)),
+                          style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted2)),
                     ),
                     if (c.hasUnread) ...[
                       SizedBox(width: 8.w),
@@ -79,9 +90,11 @@ class ConversationRow extends StatelessWidget {
       height: 19.h,
       alignment: Alignment.center,
       padding: EdgeInsets.symmetric(horizontal: 5.w),
-      decoration: BoxDecoration(color: AppColors.success, borderRadius: BorderRadius.circular(10.r)),
+      decoration: BoxDecoration(
+          color: AppColors.success, borderRadius: BorderRadius.circular(10.r)),
       child: Text('$count',
-          style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.white)),
+          style: AppText.custom(
+              size: 10.5, weight: FontWeight.w700, color: AppColors.white)),
     );
   }
 
@@ -96,10 +109,16 @@ class ConversationRow extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(open ? PhosphorIconsRegular.clock : PhosphorIconsRegular.lockSimple, size: 11.sp, color: color),
+          Icon(
+              open
+                  ? PhosphorIconsRegular.clock
+                  : PhosphorIconsRegular.lockSimple,
+              size: 11.sp,
+              color: color),
           SizedBox(width: 5.w),
           Text(open ? (windowLeft ?? '') : 'Window closed',
-              style: AppText.custom(size: 11, weight: FontWeight.w700, color: color)),
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w700, color: color)),
         ],
       ),
     );

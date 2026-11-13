@@ -14,7 +14,8 @@ class AppDimens {
 
   // Screen padding
   static const double screenPadH = 18; // horizontal gutter on every screen
-  static const double statusBarTop = 56; // top padding that clears the status bar
+  static const double statusBarTop =
+      56; // top padding that clears the status bar
   static const double listBottomPad = 120; // clears the floating bottom nav
 
   // Radii

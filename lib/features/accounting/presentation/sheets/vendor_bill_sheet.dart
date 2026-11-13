@@ -23,7 +23,8 @@ import 'record_expense_sheet.dart';
 /// immediately (§12.9), so a confirm step shows the estimated amount first;
 /// on success the new bill opens.
 Future<bool?> showVendorBillSheet(BuildContext context, {String? vendorId}) =>
-    showClozrSheet<bool>(context: context, builder: (_) => _VendorBillSheet(vendorId: vendorId));
+    showClozrSheet<bool>(
+        context: context, builder: (_) => _VendorBillSheet(vendorId: vendorId));
 
 class _VendorBillSheet extends ConsumerStatefulWidget {
   const _VendorBillSheet({this.vendorId});
@@ -77,13 +78,17 @@ class _VendorBillSheetState extends ConsumerState<_VendorBillSheet> {
   Future<void> _submit() async {
     if (_busy) return;
     if (_vendor == null) return _fail('Pick the vendor');
-    if (!_trading && _category == null) return _fail('Pick what the bill is for');
-    if (!_lines.every((l) => l.complete)) return _fail('Every line needs a description and an amount');
-    if (!_lines.every((l) => l.hsnValid)) return _fail('HSN/SAC must be 4 to 8 digits');
+    if (!_trading && _category == null)
+      return _fail('Pick what the bill is for');
+    if (!_lines.every((l) => l.complete))
+      return _fail('Every line needs a description and an amount');
+    if (!_lines.every((l) => l.hsnValid))
+      return _fail('HSN/SAC must be 4 to 8 digits');
     final ok = await confirmAcc(
       context,
       title: 'Post this bill?',
-      body: 'About ${formatMoneyStr(purchaseLinesHint(_lines))} (estimated — tax and TDS are worked out by the server). '
+      body:
+          'About ${formatMoneyStr(purchaseLinesHint(_lines))} (estimated — tax and TDS are worked out by the server). '
           'The bill posts to the ledger now and cannot be edited afterwards.',
       confirmLabel: 'Post bill',
     );
@@ -93,18 +98,21 @@ class _VendorBillSheetState extends ConsumerState<_VendorBillSheet> {
       _error = null;
     });
     try {
-      final out = await ref.read(accountingRepositoryProvider).recordVendorBill({
+      final out =
+          await ref.read(accountingRepositoryProvider).recordVendorBill({
         'vendor': _vendor!.id,
         'target': _trading ? 'PURCHASES' : 'EXPENSE:${_category!.key}',
         'lines': [for (final l in _lines) l.toJson()],
         'document_date': isoDay(_date),
         'supply_date': _supplyDate == null ? null : isoDay(_supplyDate!),
         'vendor_invoice_no': _invoiceNo.text.trim(),
-        'vendor_invoice_date': _invoiceDate == null ? null : isoDay(_invoiceDate!),
+        'vendor_invoice_date':
+            _invoiceDate == null ? null : isoDay(_invoiceDate!),
         'place_of_supply_state_code': _pos,
         if (_personal) 'personal_use_flag': true,
         'tds_nature_override': _tdsOverride,
-        if (_rcm != null) 'rcm_override': {'applies': _rcm, 'reason': _rcmReason.text.trim()},
+        if (_rcm != null)
+          'rcm_override': {'applies': _rcm, 'reason': _rcmReason.text.trim()},
         'event_id': _eventId,
       });
       invalidateAccountingReads(ref.invalidate);
@@ -113,10 +121,13 @@ class _VendorBillSheetState extends ConsumerState<_VendorBillSheet> {
       final router = GoRouter.of(context);
       Navigator.of(context).pop(true);
       if (out.skipped) {
-        toast.show(out.skipReason ?? 'Already recorded — nothing new was posted');
+        toast.show(
+            out.skipReason ?? 'Already recorded — nothing new was posted');
       } else {
-        toast.show('Bill posted${out.value?.number == null ? '' : ' · ${out.value!.number}'}');
-        if (out.value != null) router.push('${Routes.accDocumentDetail}?id=${out.value!.id}');
+        toast.show(
+            'Bill posted${out.value?.number == null ? '' : ' · ${out.value!.number}'}');
+        if (out.value != null)
+          router.push('${Routes.accDocumentDetail}?id=${out.value!.id}');
       }
     } on AppError catch (e) {
       _eventId = nextEventId(_eventId, e);
@@ -139,10 +150,14 @@ class _VendorBillSheetState extends ConsumerState<_VendorBillSheet> {
       submitEnabled: ref.watch(accPermProvider('acc_purchase')).create,
       onSubmit: _submit,
       children: [
-        VendorPickerField(vendor: _vendor, onChanged: (v) => setState(() => _vendor = v)),
+        VendorPickerField(
+            vendor: _vendor, onChanged: (v) => setState(() => _vendor = v)),
         AccChoiceChips(
           label: 'Booked to',
-          options: const {'EXPENSE': 'An expense', 'PURCHASES': 'Goods for resale'},
+          options: const {
+            'EXPENSE': 'An expense',
+            'PURCHASES': 'Goods for resale'
+          },
           selected: _trading ? 'PURCHASES' : 'EXPENSE',
           onSelected: (v) => setState(() => _trading = v == 'PURCHASES'),
         ),
@@ -154,20 +169,34 @@ class _VendorBillSheetState extends ConsumerState<_VendorBillSheet> {
             hint: 'What is it for?',
             footnote: _category == null ? null : itcHintFor(_category!),
             onTap: () async {
-              final c = await pickExpenseCategory(context, selected: _category?.key);
+              final c =
+                  await pickExpenseCategory(context, selected: _category?.key);
               if (c != null) setState(() => _category = c);
             },
           ),
         PurchaseLinesEditor(lines: _lines, onChanged: () => setState(() {})),
-        AccDateBox(label: 'Bill date', required: true, value: _date, showIstHint: true,
+        AccDateBox(
+            label: 'Bill date',
+            required: true,
+            value: _date,
+            showIstHint: true,
             onChanged: (d) => setState(() => _date = d ?? _date)),
-        AccInput(label: 'Vendor invoice no', controller: _invoiceNo, hint: 'As printed on their bill'),
-        AccDateBox(label: 'Vendor invoice date', value: _invoiceDate, clearable: true,
+        AccInput(
+            label: 'Vendor invoice no',
+            controller: _invoiceNo,
+            hint: 'As printed on their bill'),
+        AccDateBox(
+            label: 'Vendor invoice date',
+            value: _invoiceDate,
+            clearable: true,
             onChanged: (d) => setState(() => _invoiceDate = d)),
         AccDisclosure(
           title: 'More options',
           children: [
-            AccDateBox(label: 'Supply date', value: _supplyDate, clearable: true,
+            AccDateBox(
+                label: 'Supply date',
+                value: _supplyDate,
+                clearable: true,
                 onChanged: (d) => setState(() => _supplyDate = d)),
             AccPickerBox(
               label: 'Place of supply',
@@ -196,11 +225,20 @@ class _VendorBillSheetState extends ConsumerState<_VendorBillSheet> {
             ),
             AccChoiceChips(
               label: 'Reverse charge',
-              options: const {'auto': 'Automatic', 'yes': 'Applies', 'no': 'Does not apply'},
+              options: const {
+                'auto': 'Automatic',
+                'yes': 'Applies',
+                'no': 'Does not apply'
+              },
               selected: _rcm == null ? 'auto' : (_rcm! ? 'yes' : 'no'),
-              onSelected: (v) => setState(() => _rcm = v == 'auto' ? null : v == 'yes'),
+              onSelected: (v) =>
+                  setState(() => _rcm = v == 'auto' ? null : v == 'yes'),
             ),
-            if (_rcm != null) AccInput(label: 'Reason', controller: _rcmReason, hint: 'Why the default is overridden'),
+            if (_rcm != null)
+              AccInput(
+                  label: 'Reason',
+                  controller: _rcmReason,
+                  hint: 'Why the default is overridden'),
           ],
         ),
       ],

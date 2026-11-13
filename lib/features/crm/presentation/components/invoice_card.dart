@@ -51,7 +51,9 @@ class InvoiceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lookup = ref.watch(crmPartyLookupProvider);
-    final statusLabel = (StatusMeta$.invoice[invoice.status] ?? StatusMeta$.invoice['unpaid']!).label;
+    final statusLabel =
+        (StatusMeta$.invoice[invoice.status] ?? StatusMeta$.invoice['unpaid']!)
+            .label;
     final statusColor = payToneColor(planStatusTone(invoice.status));
     final customer = invoiceWho(invoice, lookup);
     final who = planWho(customer == '—' ? null : customer, leadName);
@@ -62,11 +64,26 @@ class InvoiceCard extends ConsumerWidget {
     // `docs-backend/`, so each slot survives if any plausible name for it is
     // visible. Over-showing is the safe direction — a wrong single guess would
     // hide data the org asked to see.
-    final showWho = schema.showsAny(const ['customer', 'customer_name', 'lead', 'lead_name']);
+    final showWho = schema
+        .showsAny(const ['customer', 'customer_name', 'lead', 'lead_name']);
     final showStatus = schema.showsAny(const ['status', 'payment_status']);
-    final showTotal = schema.showsAny(const ['total_amount', 'amount', 'currency', 'total_incl_gst']);
-    final showDue = schema.showsAny(const ['amount_remaining', 'balance_amount', 'amount_due', 'amount_due_incl_gst', 'total_amount', 'amount']);
-    final showProgress = schema.showsAny(const ['paid_amount', 'amount_paid', 'balance_amount', 'total_amount', 'amount']);
+    final showTotal = schema.showsAny(
+        const ['total_amount', 'amount', 'currency', 'total_incl_gst']);
+    final showDue = schema.showsAny(const [
+      'amount_remaining',
+      'balance_amount',
+      'amount_due',
+      'amount_due_incl_gst',
+      'total_amount',
+      'amount'
+    ]);
+    final showProgress = schema.showsAny(const [
+      'paid_amount',
+      'amount_paid',
+      'balance_amount',
+      'total_amount',
+      'amount'
+    ]);
 
     return ClozrCard(
       radius: 14,
@@ -90,9 +107,15 @@ class InvoiceCard extends ConsumerWidget {
                             child: Text(who.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                                style: AppText.custom(
+                                    size: 14.5,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.textPrimary)),
                           ),
-                          if (who.isLead) ...[SizedBox(width: 6.w), const LeadBadge()],
+                          if (who.isLead) ...[
+                            SizedBox(width: 6.w),
+                            const LeadBadge()
+                          ],
                         ],
                       ),
                       SizedBox(height: 3.h),
@@ -100,7 +123,10 @@ class InvoiceCard extends ConsumerWidget {
                     Text(invoice.quoteId ?? invoice.uuid,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                   ],
                 ),
               ),
@@ -115,14 +141,24 @@ class InvoiceCard extends ConsumerWidget {
           Row(
             children: [
               Text(invoice.type,
-                  style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
               if (showProgress) ...[
-                Text('  ·  ', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text('  ·  ',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
                 Expanded(
                   child: Text(planProgressText(invoice, counts: recordCount),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                 ),
               ],
             ],
@@ -135,8 +171,9 @@ class InvoiceCard extends ConsumerWidget {
                 value: invoice.settledPct / 100,
                 minHeight: 6.h,
                 backgroundColor: AppColors.borderCardSoft,
-                valueColor: AlwaysStoppedAnimation(
-                    invoice.status == 'unpaid' ? AppColors.borderCardSoft : statusColor),
+                valueColor: AlwaysStoppedAnimation(invoice.status == 'unpaid'
+                    ? AppColors.borderCardSoft
+                    : statusColor),
               ),
             ),
           ],
@@ -173,7 +210,11 @@ class InvoiceCard extends ConsumerWidget {
 
 /// One money cell: small caps label, the full-format figure, its sub-line.
 class _Figure extends StatelessWidget {
-  const _Figure({required this.label, required this.value, required this.sub, this.alignEnd = false});
+  const _Figure(
+      {required this.label,
+      required this.value,
+      required this.sub,
+      this.alignEnd = false});
   final String label;
   final double value;
   final String sub;
@@ -182,16 +223,26 @@ class _Figure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment:
+          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.textMuted)
+            style: AppText.custom(
+                    size: 10,
+                    weight: FontWeight.w700,
+                    color: AppColors.textMuted)
                 .copyWith(letterSpacing: 0.4)),
         SizedBox(height: 3.h),
-        Text(payMoney(value), style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.navy)),
+        Text(payMoney(value),
+            style: AppText.custom(
+                size: 15, weight: FontWeight.w800, color: AppColors.navy)),
         if (sub.isNotEmpty) ...[
           SizedBox(height: 2.h),
-          Text(sub, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text(sub,
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: AppColors.textMuted)),
         ],
       ],
     );

@@ -12,7 +12,8 @@ void main() {
         'type': 'LeadAssigned',
         'category': 'crm',
         'notification_text': 'New lead assigned to you',
-        'message': '<p>Anjana routed <b>Malabar Gold</b> into your pipeline.</p>',
+        'message':
+            '<p>Anjana routed <b>Malabar Gold</b> into your pipeline.</p>',
         'read': false,
         'status': 'unread',
         'created_at': now.subtract(const Duration(hours: 2)).toIso8601String(),
@@ -188,7 +189,8 @@ void main() {
       expect(notificationFromJson(<String, dynamic>{}, now: now), isNull);
 
       final sparse = notificationFromJson(
-          <String, dynamic>{'crm_notification_id': 'y'}, now: now)!;
+          <String, dynamic>{'crm_notification_id': 'y'},
+          now: now)!;
       expect(sparse.category, 'system');
       expect(sparse.title, 'Notification');
       expect(sparse.body, '');

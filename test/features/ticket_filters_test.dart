@@ -71,23 +71,34 @@ void main() {
     });
 
     test('status chips are multi-select and OR together', () {
-      final ids = (params(chips: {'s-open', 's-hold'})['status__in'] as String).split(',');
+      final ids = (params(chips: {'s-open', 's-hold'})['status__in'] as String)
+          .split(',');
       expect(ids, containsAll(['s-open', 's-hold']));
     });
 
     test('My Tickets with no chip hides every resolved status (list only)', () {
       final p = params(mine: true);
       expect(p['assigned_to_me'], 'true');
-      expect((p['status__not'] as String).split(','), containsAll(['s-res', 's-closed']));
+      expect((p['status__not'] as String).split(','),
+          containsAll(['s-res', 's-closed']));
       // A picked chip shows that status even when resolved.
-      expect(params(mine: true, chips: {'s-res'}).containsKey('status__not'), isFalse);
+      expect(params(mine: true, chips: {'s-res'}).containsKey('status__not'),
+          isFalse);
       // The chip counts are the pre-chip scope (webapp baseFilters).
-      expect(params(mine: true, forCounts: true).containsKey('status__not'), isFalse);
-      expect(params(chips: {'s-open'}, forCounts: true).containsKey('status__in'), isFalse);
+      expect(params(mine: true, forCounts: true).containsKey('status__not'),
+          isFalse);
+      expect(
+          params(chips: {'s-open'}, forCounts: true).containsKey('status__in'),
+          isFalse);
     });
 
     test('an applied saved view is resolved by the server', () {
-      expect(params(mine: true, search: ' x ', chips: {'s-open'}, savedFilterId: 'v1'),
+      expect(
+          params(
+              mine: true,
+              search: ' x ',
+              chips: {'s-open'},
+              savedFilterId: 'v1'),
           {'saved_filter_id': 'v1', 'search': 'x'});
     });
 
@@ -163,41 +174,57 @@ void main() {
 
     test('the SLA facet maps only its stored flag', () {
       expect(
-        encode((v) => v['sla'] = const RadioValue(id: 'breached', defaultId: 'any'))['sla_breached'],
+        encode((v) => v['sla'] =
+            const RadioValue(id: 'breached', defaultId: 'any'))['sla_breached'],
         'true',
       );
       // "Due < 1h" is computed off the clock — no param exists for it, so it
       // stays with the client matcher rather than being silently dropped.
       expect(
-        encode((v) => v['sla'] = const RadioValue(id: 'risk', defaultId: 'any')),
+        encode(
+            (v) => v['sla'] = const RadioValue(id: 'risk', defaultId: 'any')),
         isEmpty,
       );
     });
 
     test('linked work maps tasks only', () {
       expect(
-        encode((v) => v['linked'] = const RadioValue(id: 'task', defaultId: 'any'))['has_linked_tasks'],
+        encode((v) => v['linked'] =
+            const RadioValue(id: 'task', defaultId: 'any'))['has_linked_tasks'],
         'true',
       );
       // The API has no "has linked project" filter.
       expect(
-        encode((v) => v['linked'] = const RadioValue(id: 'proj', defaultId: 'any')),
+        encode((v) =>
+            v['linked'] = const RadioValue(id: 'proj', defaultId: 'any')),
         isEmpty,
       );
     });
 
     test('category, product, project and customer send their uuids', () {
-      expect(encode((v) => v['cats'] = ChoiceValue(ids: {'t1'})), {'issue_type__in': 't1'});
-      expect(encode((v) => v['products'] = ChoiceValue(ids: {'p1'})), {'product__in': 'p1'});
-      expect(encode((v) => v['projects'] = ChoiceValue(ids: {'j1'})), {'project__in': 'j1'});
-      expect(encode((v) => v['companies'] = ChoiceValue(ids: {'c1', 'c2'}))['customer__in'], 'c1,c2');
+      expect(encode((v) => v['cats'] = ChoiceValue(ids: {'t1'})),
+          {'issue_type__in': 't1'});
+      expect(encode((v) => v['products'] = ChoiceValue(ids: {'p1'})),
+          {'product__in': 'p1'});
+      expect(encode((v) => v['projects'] = ChoiceValue(ids: {'j1'})),
+          {'project__in': 'j1'});
+      expect(
+          encode((v) => v['companies'] = ChoiceValue(ids: {'c1', 'c2'}))[
+              'customer__in'],
+          'c1,c2');
     });
 
     test('an is-not selection uses the __not param the server honours', () {
       // The webapp sends __not_in, which the backend ignores (DEF-HD-012).
-      expect(encode((v) => v['pri'] = ChoiceValue(ids: {'High'}, isNot: true)), {'priority__not': 'High'});
-      expect(encode((v) => v['statuses'] = ChoiceValue(ids: {'s-open'}, isNot: true)), {'status__not': 's-open'});
-      expect(encode((v) => v['companies'] = ChoiceValue(ids: {'c1'}, isNot: true)), {'customer__not': 'c1'});
+      expect(encode((v) => v['pri'] = ChoiceValue(ids: {'High'}, isNot: true)),
+          {'priority__not': 'High'});
+      expect(
+          encode(
+              (v) => v['statuses'] = ChoiceValue(ids: {'s-open'}, isNot: true)),
+          {'status__not': 's-open'});
+      expect(
+          encode((v) => v['companies'] = ChoiceValue(ids: {'c1'}, isNot: true)),
+          {'customer__not': 'c1'});
     });
   });
 
@@ -228,10 +255,10 @@ void main() {
       // Clock-based buckets have no documented param, so they must not invent
       // one — the client matcher resolves them over whatever the server sends.
       for (final id in ['risk', 'today', 'ontrack']) {
-        final v = FilterValues()..['sla'] = RadioValue(id: id, defaultId: 'any');
+        final v = FilterValues()
+          ..['sla'] = RadioValue(id: id, defaultId: 'any');
         expect(ticketDrawerParams(v, const []), isEmpty, reason: id);
       }
     });
   });
-
 }

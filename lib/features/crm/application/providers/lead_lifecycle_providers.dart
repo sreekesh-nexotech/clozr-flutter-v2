@@ -12,22 +12,29 @@ import '../../domain/entities/crm_catalog.dart';
 
 /// The org's active lost reasons — `GET /crm/lead-lost-reasons/` (leads and
 /// customers share the list, as on the webapp).
-final leadLostReasonsProvider = FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
+final leadLostReasonsProvider =
+    FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
   final body = await ref.read(apiServiceProvider).get(
-    ApiEndpoints.leadLostReasons,
-    query: {'page_size': 100, 'is_active': true},
-    quiet: true,
-  );
+        ApiEndpoints.leadLostReasons,
+        query: {'page_size': 100, 'is_active': true},
+        quiet: true,
+      );
   return [
-    for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+    for (final r
+        in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
       if (r['is_active'] != false && r['lead_lost_reason_id'] != null)
-        CatalogOption(id: '${r['lead_lost_reason_id']}', name: '${r['name'] ?? ''}'),
+        CatalogOption(
+            id: '${r['lead_lost_reason_id']}', name: '${r['name'] ?? ''}'),
   ];
 });
 
 /// One unpaid issued invoice that a Lost move would credit.
 class LostInvoice {
-  const LostInvoice({required this.number, required this.date, required this.amountDue, this.leadName});
+  const LostInvoice(
+      {required this.number,
+      required this.date,
+      required this.amountDue,
+      this.leadName});
 
   final String number;
   final String date;
@@ -52,11 +59,20 @@ class LostImpact {
   });
 
   factory LostImpact.fromJson(Map<String, dynamic> j) {
-    double num0(Object? v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
-    List<Map<String, dynamic>> rows(Object? v) =>
-        v is List ? [for (final e in v) if (e is Map) Map<String, dynamic>.from(e)] : const [];
-    final instalments = rows(j['open_instalments']).where((r) => r['invoiced'] != true).toList();
-    final money = j['money_received'] is Map ? Map<String, dynamic>.from(j['money_received'] as Map) : const <String, dynamic>{};
+    double num0(Object? v) =>
+        v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
+    List<Map<String, dynamic>> rows(Object? v) => v is List
+        ? [
+            for (final e in v)
+              if (e is Map) Map<String, dynamic>.from(e)
+          ]
+        : const [];
+    final instalments = rows(j['open_instalments'])
+        .where((r) => r['invoiced'] != true)
+        .toList();
+    final money = j['money_received'] is Map
+        ? Map<String, dynamic>.from(j['money_received'] as Map)
+        : const <String, dynamic>{};
     return LostImpact(
       openInvoices: [
         for (final r in rows(j['open_invoices']))
@@ -70,12 +86,18 @@ class LostImpact {
       openAmountDue: j['open_amount_due'],
       canCredit: j['can_credit'] == true,
       openInstalments: instalments.length,
-      openInstalmentsAmount: instalments.fold<double>(0, (s, r) => s + num0(r['amount_expected'])),
+      openInstalmentsAmount:
+          instalments.fold<double>(0, (s, r) => s + num0(r['amount_expected'])),
       draftInvoices: rows(j['draft_invoices']).length,
       moneyReceived: num0(money['amount']),
       customerCredit: money['customer_credit'],
-      upsellLeads: [for (final r in rows(j['upsell_leads'])) '${r['lead_name'] ?? ''}'],
-      otherQuotes: [for (final r in rows(j['legacy_quotes'])) '${r['quotation_number'] ?? ''}'],
+      upsellLeads: [
+        for (final r in rows(j['upsell_leads'])) '${r['lead_name'] ?? ''}'
+      ],
+      otherQuotes: [
+        for (final r in rows(j['legacy_quotes']))
+          '${r['quotation_number'] ?? ''}'
+      ],
     );
   }
 
@@ -102,15 +124,20 @@ typedef LostTarget = (String kind, String id);
 /// The impact check, run when the Lost sheet opens. Null when the check
 /// itself failed — the sheet then lets the move go ahead and the server's own
 /// 409 guard still applies.
-final lostImpactProvider = FutureProvider.autoDispose.family<LostImpact?, LostTarget>((ref, t) async {
+final lostImpactProvider =
+    FutureProvider.autoDispose.family<LostImpact?, LostTarget>((ref, t) async {
   // A lead still being created has nothing to close yet.
   if (t.$2.isEmpty) return null;
   try {
     final body = await ref.read(apiServiceProvider).get(
-          t.$1 == 'customer' ? ApiEndpoints.customerLostImpact(t.$2) : ApiEndpoints.leadLostImpact(t.$2),
+          t.$1 == 'customer'
+              ? ApiEndpoints.customerLostImpact(t.$2)
+              : ApiEndpoints.leadLostImpact(t.$2),
           quiet: true,
         );
-    return body is Map ? LostImpact.fromJson(Map<String, dynamic>.from(body)) : const LostImpact();
+    return body is Map
+        ? LostImpact.fromJson(Map<String, dynamic>.from(body))
+        : const LostImpact();
   } on AppError {
     return null;
   }
@@ -118,7 +145,10 @@ final lostImpactProvider = FutureProvider.autoDispose.family<LostImpact?, LostTa
 
 /// What the user chose in the Lost sheet — the fields the PATCH carries.
 class LostChoice {
-  const LostChoice({required this.reasonId, this.note = '', this.creditOpenInvoices = false});
+  const LostChoice(
+      {required this.reasonId,
+      this.note = '',
+      this.creditOpenInvoices = false});
 
   final String reasonId;
   final String note;
@@ -146,7 +176,8 @@ class LeadConversion {
     this.lostReasonNote,
   });
 
-  factory LeadConversion.fromRow(Map<String, dynamic>? row, {required bool isWon}) {
+  factory LeadConversion.fromRow(Map<String, dynamic>? row,
+      {required bool isWon}) {
     if (row == null) return const LeadConversion();
     final customer = row['converted_customer'];
     final requiresApproval = row['conversion_requires_approval'] == true;
@@ -161,7 +192,10 @@ class LeadConversion {
       customerId: customer is Map ? str(customer['customer_id']) : null,
       customerName: customer is Map ? str(customer['name']) : null,
       pendingApproval: requiresApproval && row['pending_conversion'] is Map,
-      waitingForQuote: isWon && !converted && row['conversion_mode'] == 'quote' && row['has_accepted_quote'] == false,
+      waitingForQuote: isWon &&
+          !converted &&
+          row['conversion_mode'] == 'quote' &&
+          row['has_accepted_quote'] == false,
       lostReasonName: str(row['lost_reason_name']),
       lostReasonNote: str(row['lost_reason_note']),
     );
@@ -177,7 +211,8 @@ class LeadConversion {
 
   /// Webapp `lostReasonText`: "name — note", either alone, or the fallback.
   String get lostReasonText {
-    if (lostReasonName != null && lostReasonNote != null) return '$lostReasonName — $lostReasonNote';
+    if (lostReasonName != null && lostReasonNote != null)
+      return '$lostReasonName — $lostReasonNote';
     return lostReasonName ?? lostReasonNote ?? 'No reason recorded';
   }
 }
@@ -198,7 +233,8 @@ class CustomerMatch {
     return CustomerMatch(
       message: e.message,
       candidates: [
-        for (final r in (c['candidates'] is List ? c['candidates'] as List : const []))
+        for (final r
+            in (c['candidates'] is List ? c['candidates'] as List : const []))
           if (r is Map && r['customer_id'] != null)
             MatchCandidate(
               id: '${r['customer_id']}',
@@ -206,7 +242,12 @@ class CustomerMatch {
               reference: '${r['reference'] ?? ''}',
               email: r['email']?.toString() ?? '',
               phone: r['phone']?.toString() ?? '',
-              matchOn: [for (final k in (r['match_on'] is List ? r['match_on'] as List : const [])) '$k'],
+              matchOn: [
+                for (final k in (r['match_on'] is List
+                    ? r['match_on'] as List
+                    : const []))
+                  '$k'
+              ],
             ),
       ],
       hiddenCount: (c['hidden_count'] as num?)?.toInt() ?? 0,
@@ -269,7 +310,10 @@ sealed class ConvertResult {
 
 /// 201: a customer was created, or the lead was attached to an existing one.
 class Converted extends ConvertResult {
-  const Converted({required this.customerId, required this.customerName, required this.attached});
+  const Converted(
+      {required this.customerId,
+      required this.customerName,
+      required this.attached});
 
   final String customerId;
   final String customerName;
@@ -277,8 +321,14 @@ class Converted extends ConvertResult {
 }
 
 /// 202: the org requires approval; a request was raised.
+///
+/// [unified] is a Unified Approvals request (`code: APPROVAL_REQUIRED`, when
+/// the org gates Won): the shell already says who it went to, so the screen
+/// adds nothing. Otherwise it is the older "Conversions need approval" flow.
 class ConversionRequested extends ConvertResult {
-  const ConversionRequested();
+  const ConversionRequested({this.unified = false});
+
+  final bool unified;
 }
 
 /// 409 CUSTOMER_MATCH: the user must attach to a candidate or name a new one.
@@ -291,11 +341,20 @@ class NeedsCustomerChoice extends ConvertResult {
 /// Converts [leadId]. [body] is `{}` for a plain convert, or the match
 /// dialog's `{attach_to_customer_id}` / `{create_new_customer, customer_name}`.
 /// Other refusals (not Won, already converted, 403) throw their [AppError].
-Future<ConvertResult> convertLead(WidgetRef ref, String leadId, [Map<String, dynamic> body = const {}]) async {
+Future<ConvertResult> convertLead(WidgetRef ref, String leadId,
+    [Map<String, dynamic> body = const {}]) async {
   try {
-    final res = await ref.read(apiServiceProvider).post(ApiEndpoints.leadConvert(leadId), body: body);
-    final map = res is Map ? Map<String, dynamic>.from(res) : const <String, dynamic>{};
-    if (map['approval_id'] != null && map['customer_id'] == null) return const ConversionRequested();
+    final res = await ref
+        .read(apiServiceProvider)
+        .post(ApiEndpoints.leadConvert(leadId), body: body);
+    final map =
+        res is Map ? Map<String, dynamic>.from(res) : const <String, dynamic>{};
+    if (map['customer_id'] == null) {
+      if (map['code'] == 'APPROVAL_REQUIRED') {
+        return const ConversionRequested(unified: true);
+      }
+      if (map['approval_id'] != null) return const ConversionRequested();
+    }
     return Converted(
       customerId: '${map['customer_id'] ?? ''}',
       customerName: '${map['name'] ?? ''}',

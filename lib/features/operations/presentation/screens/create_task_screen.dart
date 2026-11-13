@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/filters/filter_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -48,17 +49,20 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   String _ticketId = '';
   String _ticketRef = '';
   bool get _fromTicket => _ticketId.isNotEmpty;
+
   /// The picked lane's `task_group_id` — empty string is the "No group" lane,
   /// which the API stores as a null FK.
   String _groupId = '';
   final Set<String> _assignees = {};
   bool _saving = false;
+
   /// The org's own status **name** once the catalog loads (a built-in key
   /// before that, and in mock mode).
   ///
   /// Empty until the user picks one: the webapp's Add task sends no status, so
   /// the server applies the org's default.
   String _status = '';
+
   /// The user's own priority pick; null = untouched, which shows (and sends)
   /// the PMO default — or "Default (set by your admin)" when that cannot be
   /// read, which omits the field (webapp `taskPriorityDefault.ts`).
@@ -79,10 +83,12 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   }
 
   bool get _endErr => _start != null && _end != null && _end!.isBefore(_start!);
+
   /// Webapp: Subject is the only required field — no project is a standalone task.
   bool get _valid => _subject.text.trim().isNotEmpty;
 
-  String get _pri => _priPick ?? ref.read(pmoDefaultTaskPriorityProvider).valueOrNull ?? '';
+  String get _pri =>
+      _priPick ?? ref.read(pmoDefaultTaskPriorityProvider).valueOrNull ?? '';
 
   /// Progress % — the webapp clamps to 0–100 and rounds.
   int? get _progressValue {
@@ -97,7 +103,9 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
   List<(String, String)> get _statusChips {
     final catalog = ref.watch(opsTaskStatusOptionsProvider);
     if (catalog.isEmpty) {
-      return [for (final e in StatusMeta$.opsTask.entries) (e.key, e.value.label)];
+      return [
+        for (final e in StatusMeta$.opsTask.entries) (e.key, e.value.label)
+      ];
     }
     return [for (final s in catalog) (s.name, s.name)];
   }
@@ -168,8 +176,9 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     }
   }
 
-  String get _createdToast =>
-      _fromTicket && _ticketRef.isNotEmpty ? 'Task created and linked to $_ticketRef' : 'Task created';
+  String get _createdToast => _fromTicket && _ticketRef.isNotEmpty
+      ? 'Task created and linked to $_ticketRef'
+      : 'Task created';
 
   @override
   Widget build(BuildContext context) {
@@ -189,9 +198,15 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     final projects = ref.watch(allProjectsProvider);
     final projName = _projId == null
         ? 'No project (standalone)'
-        : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? '';
+        : projects
+                .where((p) => p.id == _projId)
+                .map((p) => p.name)
+                .firstOrNull ??
+            '';
     final types = ref.watch(opsTaskTypeOptionsProvider);
-    final typeName = types.where((t) => t.id == _typeId).map((t) => t.name).firstOrNull ?? '';
+    final typeName =
+        types.where((t) => t.id == _typeId).map((t) => t.name).firstOrNull ??
+            '';
     final pmoPri = ref.watch(pmoDefaultTaskPriorityProvider).valueOrNull;
     final pri = _priPick ?? pmoPri ?? '';
 
@@ -199,11 +214,16 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     // whenever the project changes. It used to collect group *names* off the
     // loaded tasks and, when that came up empty, offer an invented
     // Design / Site works / Snagging — none of which resolved to a lane.
-    final groupCatalog =
-        _projId == null ? const <CatalogOption>[] : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
+    final groupCatalog = _projId == null
+        ? const <CatalogOption>[]
+        : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
     final groupName = _groupId.isEmpty
         ? 'No group'
-        : groupCatalog.where((g) => g.id == _groupId).map((g) => g.name).firstOrNull ?? 'No group';
+        : groupCatalog
+                .where((g) => g.id == _groupId)
+                .map((g) => g.name)
+                .firstOrNull ??
+            'No group';
 
     final statusChips = _statusChips;
     final statusKey = _statusKey;
@@ -219,21 +239,33 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
       children: [
         if (_fromTicket && _ticketRef.isNotEmpty) ...[
           Row(children: [
-            Icon(PhosphorIconsRegular.link, size: 14.sp, color: AppColors.textMuted),
+            Icon(PhosphorIconsRegular.link,
+                size: 14.sp, color: AppColors.textMuted),
             SizedBox(width: 7.w),
             Text.rich(TextSpan(
               text: 'Linked to ticket ',
-              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textLabelAlt),
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textLabelAlt),
               children: [
                 TextSpan(
                     text: _ticketRef,
-                    style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
               ],
             )),
           ]),
           SizedBox(height: 14.h),
         ],
-        AppTextField(label: 'Subject', required: true, controller: _subject, hint: 'What needs doing?', onChanged: (_) => setState(() {})),
+        AppTextField(
+            label: 'Subject',
+            required: true,
+            controller: _subject,
+            hint: 'What needs doing?',
+            onChanged: (_) => setState(() {})),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Project',
@@ -252,7 +284,11 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
             );
             // Lanes belong to a project, so a previously-picked group is no
             // longer valid once the project changes.
-            if (v != null) setState(() { _projId = v.isEmpty ? null : v; _groupId = ''; });
+            if (v != null)
+              setState(() {
+                _projId = v.isEmpty ? null : v;
+                _groupId = '';
+              });
           },
         ),
         SizedBox(height: 14.h),
@@ -306,7 +342,8 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
               OpsFormChip(
                   label: label,
                   selected: statusKey == key,
-                  onTap: () => setState(() => _status = statusKey == key ? '' : key)),
+                  onTap: () =>
+                      setState(() => _status = statusKey == key ? '' : key)),
           ],
         ),
         SizedBox(height: 14.h),
@@ -321,68 +358,110 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
                   selected: pri.isEmpty,
                   onTap: () => setState(() => _priPick = '')),
             for (final p in const ['Urgent', 'High', 'Medium', 'Low'])
-              OpsFormChip(label: p, selected: pri == p, onTap: () => setState(() => _priPick = p)),
+              OpsFormChip(
+                  label: p,
+                  selected: pri == p,
+                  onTap: () => setState(() => _priPick = p)),
           ],
         ),
         SizedBox(height: 14.h),
         Row(
           children: [
-            Expanded(child: _dateField('Expected start', _start, (d) => setState(() => _start = d))),
+            Expanded(
+                child: _dateField('Expected start', _start,
+                    (d) => setState(() => _start = d))),
             SizedBox(width: 9.w),
-            Expanded(child: _timeField('Start time', _startTime, (t) => setState(() => _startTime = t))),
+            Expanded(
+                child: _timeField('Start time', _startTime,
+                    (t) => setState(() => _startTime = t))),
           ],
         ),
         SizedBox(height: 14.h),
         Row(
           children: [
-            Expanded(child: _dateField('Expected end', _end, (d) => setState(() => _end = d), error: _endErr)),
+            Expanded(
+                child: _dateField(
+                    'Due date', _end, (d) => setState(() => _end = d),
+                    error: _endErr)),
             SizedBox(width: 9.w),
-            Expanded(child: _timeField('End time', _endTime, (t) => setState(() => _endTime = t))),
+            Expanded(
+                child: _timeField(
+                    'End time', _endTime, (t) => setState(() => _endTime = t))),
           ],
         ),
         if (_endErr) ...[
           SizedBox(height: 8.h),
-          Text('End must be on or after start.', style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
+          Text('Ends before it starts',
+              style: AppText.custom(
+                  size: 11.5, weight: FontWeight.w600, color: AppColors.error)),
         ],
         SizedBox(height: 14.h),
-        AppTextField(label: 'Progress %', controller: _progress, hint: '0', keyboardType: TextInputType.number),
+        AppTextField(
+            label: 'Progress %',
+            controller: _progress,
+            hint: '0',
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+            ],
+            keyboardType: TextInputType.number),
         SizedBox(height: 14.h),
-        AppTextField(label: 'Expected time (hrs)', controller: _hours, hint: '0', keyboardType: TextInputType.number),
+        AppTextField(
+            label: 'Expected time (hrs)',
+            controller: _hours,
+            hint: '0',
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+            ],
+            keyboardType: TextInputType.number),
         SizedBox(height: 14.h),
-        AppTextField(label: 'Description', controller: _desc, hint: 'Add any detail…', multiline: true),
+        AppTextField(
+            label: 'Description',
+            controller: _desc,
+            hint: 'Add any detail…',
+            multiline: true),
       ],
     );
   }
 
-  Widget _label(String t) => Text(t, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
+  Widget _label(String t) => Text(t,
+      style: AppText.custom(
+          size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
 
   /// Webapp "Assign to": only users who can read project tasks
   /// (`/management/assignable-users/?module=project_task`) — anyone else is
   /// refused by the server. The roster stands in while that loads or fails.
   Widget _assigneeWrap() {
-    final allowed = ref.watch(opsAssignableUsersProvider('project_task')).valueOrNull;
+    final allowed =
+        ref.watch(opsAssignableUsersProvider('project_task')).valueOrNull;
     // A task raised from a ticket also accepts Helpdesk users (webapp merges
     // both lists).
-    final fromIssue = _fromTicket ? ref.watch(opsAssignableUsersProvider('issue')).valueOrNull : null;
-    final ids = allowed?.map((u) => u.id).toSet()?..addAll(fromIssue?.map((u) => u.id) ?? const []);
+    final fromIssue = _fromTicket
+        ? ref.watch(opsAssignableUsersProvider('issue')).valueOrNull
+        : null;
+    final ids = allowed?.map((u) => u.id).toSet()
+      ?..addAll(fromIssue?.map((u) => u.id) ?? const []);
     return Wrap(
       spacing: 8.w,
       runSpacing: 8.h,
       children: [
         for (final r in ref.watch(rosterProvider))
           if (ids == null || ids.contains(r.id))
-          OpsAssigneeChip(
-            initials: r.initials,
-            name: r.firstName,
-            color: MockUsers.memberColors[r.id] ?? AppColors.navy,
-            selected: _assignees.contains(r.id),
-            onTap: () => setState(() => _assignees.contains(r.id) ? _assignees.remove(r.id) : _assignees.add(r.id)),
-          ),
+            OpsAssigneeChip(
+              initials: r.initials,
+              name: r.firstName,
+              color: MockUsers.memberColors[r.id] ?? AppColors.navy,
+              selected: _assignees.contains(r.id),
+              onTap: () => setState(() => _assignees.contains(r.id)
+                  ? _assignees.remove(r.id)
+                  : _assignees.add(r.id)),
+            ),
       ],
     );
   }
 
-  Widget _dateField(String label, DateTime? value, ValueChanged<DateTime> onPick, {bool error = false}) {
+  Widget _dateField(
+      String label, DateTime? value, ValueChanged<DateTime> onPick,
+      {bool error = false}) {
     return OpsPickerField(
       label: label,
       value: value == null ? '' : opsFmtDate(value),
@@ -400,14 +479,17 @@ class _CreateTaskScreenState extends ConsumerState<CreateTaskScreen> {
     );
   }
 
-  Widget _timeField(String label, TimeOfDay? value, ValueChanged<TimeOfDay> onPick) {
+  Widget _timeField(
+      String label, TimeOfDay? value, ValueChanged<TimeOfDay> onPick) {
     return OpsPickerField(
       label: label,
       value: value == null ? '' : opsFmtTime(value),
       placeholder: 'Pick time',
       caret: PhosphorIconsRegular.clock,
       onTap: () async {
-        final t = await showTimePicker(context: context, initialTime: value ?? const TimeOfDay(hour: 9, minute: 0));
+        final t = await showTimePicker(
+            context: context,
+            initialTime: value ?? const TimeOfDay(hour: 9, minute: 0));
         if (t != null) onPick(t);
       },
     );

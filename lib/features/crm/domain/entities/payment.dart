@@ -1,3 +1,4 @@
+import '../../../../core/utils/relative_time.dart';
 import 'package:equatable/equatable.dart';
 
 /// `record_summary` on a payment record — what the accounting ledger made of
@@ -37,8 +38,13 @@ class RecordSummary extends Equatable {
 
   @override
   List<Object?> get props => [
-        documentId, documentNumber, documentStatus, documentPaymentState,
-        receiptId, receiptStatus, adjustmentState,
+        documentId,
+        documentNumber,
+        documentStatus,
+        documentPaymentState,
+        receiptId,
+        receiptStatus,
+        adjustmentState,
       ];
 }
 
@@ -268,17 +274,30 @@ class Payment extends Equatable {
   List<Object?> get props => [id];
 }
 
-const _mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _mon = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
-/// The webapp's canonical calendar day, `DD-MON-YYYY` (`05-Oct-2026`). A
+/// The webapp's canonical calendar day, `DD/MM/YYYY` (`05/10/2026`). A
 /// date-only value is a calendar day, so no time-zone shift is applied.
-String dayMonYear(DateTime? d) =>
-    d == null ? '' : '${d.day.toString().padLeft(2, '0')}-${_mon[d.month - 1]}-${d.year}';
+String dayMonYear(DateTime? d) => d == null ? '' : fmtDay(d);
 
 /// Webapp `rowDate`: a paid record shows its paid date, an overdue one
 /// "Overdue <due>", a pending one "Due <due>", a cancelled one its due date;
 /// an em dash when the date it needs is missing.
-String paymentRowDate({required String status, DateTime? dueOn, DateTime? paidOn}) {
+String paymentRowDate(
+    {required String status, DateTime? dueOn, DateTime? paidOn}) {
   if (status == 'paid') return paidOn == null ? '—' : dayMonYear(paidOn);
   if (dueOn == null) return '—';
   final d = dayMonYear(dueOn);

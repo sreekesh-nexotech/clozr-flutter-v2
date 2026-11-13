@@ -26,12 +26,14 @@ class RewardProfile extends Equatable {
   final String currentLevel; // "Level 2 · ₹25L Booked"
 
   @override
-  List<Object?> get props => [name, initials, role, milestones, reportsTo, currentLevel];
+  List<Object?> get props =>
+      [name, initials, role, milestones, reportsTo, currentLevel];
 }
 
 /// One past-period result row inside a goal card.
 class RewardPastRow extends Equatable {
-  const RewardPastRow({required this.period, required this.result, required this.paid});
+  const RewardPastRow(
+      {required this.period, required this.result, required this.paid});
 
   final String period;
   final String result;

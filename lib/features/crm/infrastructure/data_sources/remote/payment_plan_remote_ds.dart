@@ -23,7 +23,9 @@ class PaymentPlanRemoteDataSource {
       final m = Map<String, dynamic>.from(body);
       // Some views wrap the record in `{data: …}`.
       final inner = m['data'];
-      if (inner is Map && !m.containsKey('payment_id') && !m.containsKey('record_id')) {
+      if (inner is Map &&
+          !m.containsKey('payment_id') &&
+          !m.containsKey('record_id')) {
         return Map<String, dynamic>.from(inner);
       }
       return m;
@@ -34,26 +36,32 @@ class PaymentPlanRemoteDataSource {
   Future<PlanDetail> getPlan(String planId) async =>
       PlanDetail.fromJson(_obj(await _api.get(ApiEndpoints.payment(planId))));
 
-  Future<PlanRecord> getRecord(String recordId) async =>
-      PlanRecord.fromJson(_obj(await _api.get(ApiEndpoints.paymentRecord(recordId))));
+  Future<PlanRecord> getRecord(String recordId) async => PlanRecord.fromJson(
+      _obj(await _api.get(ApiEndpoints.paymentRecord(recordId))));
 
   /// The quote's `lead` UUID ('' when none or unreadable). Best-effort.
   Future<String> getQuoteLeadId(String quotationId) async {
-    final body = _obj(await _api.get(ApiEndpoints.quotation(quotationId), quiet: true));
+    final body =
+        _obj(await _api.get(ApiEndpoints.quotation(quotationId), quiet: true));
     final lead = body['lead'];
     if (lead is Map) return '${lead['lead_id'] ?? lead['id'] ?? ''}';
     return lead is String ? lead : '';
   }
 
   /// Re-split the plan. Answers the updated plan.
-  Future<PlanDetail> schedulePlan(String planId, Map<String, dynamic> body) async =>
-      PlanDetail.fromJson(_obj(await _api.post('${ApiEndpoints.payment(planId)}schedule/', body: body)));
+  Future<PlanDetail> schedulePlan(
+          String planId, Map<String, dynamic> body) async =>
+      PlanDetail.fromJson(_obj(await _api
+          .post('${ApiEndpoints.payment(planId)}schedule/', body: body)));
 
   /// Stop recurring billing from [stopFrom] (`YYYY-MM-DD`).
   Future<void> stopRecurring(String planId, String stopFrom) =>
-      _api.post('${ApiEndpoints.payment(planId)}stop-recurring/', body: {'stop_from': stopFrom});
+      _api.post('${ApiEndpoints.payment(planId)}stop-recurring/',
+          body: {'stop_from': stopFrom});
 
-  Future<void> addMilestone(Map<String, dynamic> body) => _api.post(ApiEndpoints.paymentRecords, body: body);
+  Future<void> addMilestone(Map<String, dynamic> body) =>
+      _api.post(ApiEndpoints.paymentRecords, body: body);
 
-  Future<void> deleteRecord(String recordId) => _api.delete(ApiEndpoints.paymentRecord(recordId));
+  Future<void> deleteRecord(String recordId) =>
+      _api.delete(ApiEndpoints.paymentRecord(recordId));
 }

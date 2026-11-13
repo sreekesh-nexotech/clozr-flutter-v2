@@ -39,7 +39,8 @@ class LmsThumb extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Icon(course.icon, size: iconSize.sp, color: course.accent.withOpacity(iconOpacity)),
+          Icon(course.icon,
+              size: iconSize.sp, color: course.accent.withOpacity(iconOpacity)),
           if (child != null) child!,
         ],
       ),

@@ -85,7 +85,8 @@ void main() {
     });
   });
 
-  test('logging out forgets the roster — it is another tenant next session', () {
+  test('logging out forgets the roster — it is another tenant next session',
+      () {
     UserDirectory.register(userId: otherUuid, fullName: 'Karan Desai');
     expect(UserDirectory.isApiUser(otherUuid), isTrue);
 

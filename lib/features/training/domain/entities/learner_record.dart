@@ -38,9 +38,8 @@ class LearnerRecord extends Equatable {
     this.serverStatus,
   });
 
-  LearnerRecord copyWith({List<CourseProgress>? courses}) =>
-      LearnerRecord(
-          rid: rid, courses: courses ?? this.courses, serverStatus: serverStatus);
+  LearnerRecord copyWith({List<CourseProgress>? courses}) => LearnerRecord(
+      rid: rid, courses: courses ?? this.courses, serverStatus: serverStatus);
 
   CourseProgress? entryFor(String courseId) {
     for (final c in courses) {

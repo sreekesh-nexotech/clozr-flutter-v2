@@ -51,7 +51,8 @@ class QuotesApiRepository implements QuotesRepository {
   Future<ViewSchema> getQuoteSchema() => _remote.fetchQuoteSchema();
 
   @override
-  Future<List<CatalogOption>> getQuoteStatuses() => _remote.fetchQuoteStatuses();
+  Future<List<CatalogOption>> getQuoteStatuses() =>
+      _remote.fetchQuoteStatuses();
 
   @override
   Future<List<QuoteTemplate>> getQuoteTemplates() => _remote.fetchTemplates();

@@ -36,7 +36,8 @@ class MessagesRepositoryImpl implements MessagesRepository {
   @override
   Future<ChatMessage?> sendTemplate(
           String conversationId, String templateId, String body) async =>
-      ChatMessage(mine: true, text: body, time: 'Now', status: 'sent', tpl: true);
+      ChatMessage(
+          mine: true, text: body, time: 'Now', status: 'sent', tpl: true);
 
   @override
   Future<ChatMessage?> sendImage(

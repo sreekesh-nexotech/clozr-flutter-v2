@@ -7,7 +7,9 @@ import 'package:clozrapp/features/helpdesk/application/providers/tickets_provide
 import 'package:clozrapp/features/helpdesk/domain/entities/ticket.dart';
 import 'package:clozrapp/features/operations/domain/entities/project.dart';
 
-Customer _customer({required String id, required String name, String? company}) => Customer(
+Customer _customer(
+        {required String id, required String name, String? company}) =>
+    Customer(
       id: id,
       leadId: null,
       name: name,
@@ -34,7 +36,9 @@ Customer _customer({required String id, required String name, String? company}) 
       notif: 0,
     );
 
-Project _project({required String id, required String name, required String cost}) => Project(
+Project _project(
+        {required String id, required String name, required String cost}) =>
+    Project(
       id: id,
       name: name,
       type: 'Fit-out',
@@ -112,7 +116,8 @@ void main() {
     });
 
     test('ticketCustomerDisplay uses the lookups, blank when unmatched', () {
-      expect(ticketCustomerDisplay(_ticket(custId: 'cust-1'), dir), 'Kalyan Silks');
+      expect(ticketCustomerDisplay(_ticket(custId: 'cust-1'), dir),
+          'Kalyan Silks');
       expect(ticketCustomerDisplay(_ticket(custId: 'missing'), dir), '');
     });
   });

@@ -75,14 +75,17 @@ class Member extends Equatable {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty || parts.first.isEmpty) return '?';
     if (parts.length == 1) {
-      return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1).toUpperCase();
+      return parts.first
+          .substring(0, parts.first.length >= 2 ? 2 : 1)
+          .toUpperCase();
     }
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
   bool get isAdmin => role.toLowerCase().contains('admin');
   bool get hasTeam => team.isNotEmpty && team != '—';
-  bool get hasManager => reportsTo.isNotEmpty && reportsTo != '—' && !reportsTo.startsWith('—');
+  bool get hasManager =>
+      reportsTo.isNotEmpty && reportsTo != '—' && !reportsTo.startsWith('—');
 
   @override
   List<Object?> get props => [id];

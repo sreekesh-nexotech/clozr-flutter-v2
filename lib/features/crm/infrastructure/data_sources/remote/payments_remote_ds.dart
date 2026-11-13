@@ -77,7 +77,8 @@ class PaymentsRemoteDataSource {
       if (nonZero(bankCharge)) 'bank_charge': bankCharge,
       if (bankAccountId != null) 'bank_account_id': bankAccountId,
       if (treatAs != null) 'treat_as': treatAs,
-      if (gatewayRef != null && gatewayRef.isNotEmpty) 'gateway_ref': gatewayRef,
+      if (gatewayRef != null && gatewayRef.isNotEmpty)
+        'gateway_ref': gatewayRef,
     });
     return res is Map && res['posted_receipt_id'] != null;
   }
@@ -128,7 +129,9 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
     final bankCharge = parseAmount(row['bank_charge']);
     final statusKey = recordStatusKey(rawStatus);
     final installmentNumber = row['installment_number'];
-    final settledValue = paidAmt + tds + bankCharge -
+    final settledValue = paidAmt +
+        tds +
+        bankCharge -
         parseAmount(row['amount_refunded']) +
         parseAmount(row['amount_refund_not_due']);
     // Gross due falls back to the expected amount (no GST estimate outside
@@ -158,7 +161,8 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
       gstTdsNum: gstTds.round(),
       gstTcsNum: gstTcs.round(),
       bankChargeNum: bankCharge.round(),
-      amountExact: _money(row['amount_expected']) ?? _money(row['amount_paid']) ?? '',
+      amountExact:
+          _money(row['amount_expected']) ?? _money(row['amount_paid']) ?? '',
       linkedDocumentId: _str(row['linked_document_id']),
       postedReceiptId: _str(row['posted_receipt_id']),
       recordSummary: recordSummaryFromApi(row['record_summary']),
@@ -170,11 +174,13 @@ Payment? paymentRecordFromApi(Map<String, dynamic> row) {
       // Webapp `rowDate`: "05-Oct-2026" / "Overdue 05-Oct-2026" / "Due …".
       date: paymentRowDate(status: statusKey, dueOn: due, paidOn: paid),
       owner: '',
-      installmentNumber: installmentNumber is num ? installmentNumber.toInt() : 0,
+      installmentNumber:
+          installmentNumber is num ? installmentNumber.toInt() : 0,
       leadName: _str(row['lead_name']),
-      settlementState: const {'pending', 'partly_paid', 'paid'}.contains(settlement)
-          ? settlement!
-          : (statusKey == 'paid' ? 'paid' : 'pending'),
+      settlementState:
+          const {'pending', 'partly_paid', 'paid'}.contains(settlement)
+              ? settlement!
+              : (statusKey == 'paid' ? 'paid' : 'pending'),
       amountExpected: expected,
       amountPaid: paidAmt,
       amountDueInclGst: dueInclGst,

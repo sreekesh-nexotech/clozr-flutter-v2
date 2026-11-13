@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../storage/token_storage.dart';
 import 'api_service.dart';
 import 'app_error.dart';
+import 'approval_hold.dart';
+import 'mandatory_course_block.dart';
 
 /// App-wide token store. Overridable in tests with an in-memory fake.
 final tokenStorageProvider = Provider<TokenStorage>((ref) => TokenStorage());
@@ -94,4 +96,71 @@ class _FailureWatcher extends StateNotifier<AppError?> {
 /// the ones no screen would otherwise surface.
 final apiFailureProvider = StateNotifierProvider<_FailureWatcher, AppError?>(
   (ref) => _FailureWatcher(ref.watch(apiServiceProvider).failures),
+);
+
+/// Mirrors [ApiService.courseBlocks] — the latest mandatory-course 403 and
+/// its incomplete courses. Listened to once, in the shell, which raises the
+/// app-wide blocking screen from it.
+class _CourseBlockWatcher extends StateNotifier<List<IncompleteCourse>?> {
+  _CourseBlockWatcher(this._source) : super(null) {
+    _source.addListener(_onBlock);
+  }
+
+  final ValueListenable<List<IncompleteCourse>?> _source;
+
+  void _onBlock() {
+    if (mounted) state = _source.value;
+  }
+
+  @override
+  void dispose() {
+    // Belongs to [ApiService] and outlives this — detach, never dispose it.
+    _source.removeListener(_onBlock);
+    super.dispose();
+  }
+}
+
+final apiCourseBlockProvider =
+    StateNotifierProvider<_CourseBlockWatcher, List<IncompleteCourse>?>(
+  (ref) => _CourseBlockWatcher(ref.watch(apiServiceProvider).courseBlocks),
+);
+
+/// Mirrors [ApiService.holds] — writes the server held for approval.
+///
+/// Delivered a beat late on purpose: the screen that made the save usually
+/// toasts its own "Saved" straight after the await, and the held-for-approval
+/// sentence has to be the one left on screen, since the record did not change.
+class _HoldWatcher extends StateNotifier<ApprovalHold?> {
+  _HoldWatcher(this._source) : super(null) {
+    _source.addListener(_onHold);
+  }
+
+  final ValueListenable<ApprovalHold?> _source;
+  Timer? _debounce;
+
+  static const _settle = Duration(milliseconds: 350);
+
+  void _onHold() {
+    final hold = _source.value;
+    if (hold == null) return;
+    _debounce?.cancel();
+    _debounce = Timer(_settle, () {
+      if (mounted) state = hold;
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    // Belongs to [ApiService] and outlives this — detach, never dispose it.
+    _source.removeListener(_onHold);
+    super.dispose();
+  }
+}
+
+/// The latest write held for approval, anywhere in the app. Listened to once,
+/// in the shell.
+final apiApprovalHoldProvider =
+    StateNotifierProvider<_HoldWatcher, ApprovalHold?>(
+  (ref) => _HoldWatcher(ref.watch(apiServiceProvider).holds),
 );

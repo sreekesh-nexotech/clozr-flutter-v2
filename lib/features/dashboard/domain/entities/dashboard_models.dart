@@ -48,7 +48,12 @@ class DashKpi {
 class DashBar {
   final String label;
   final int count;
-  const DashBar(this.label, this.count);
+
+  /// The record id behind the bar (a lead status key, an issue type id) when
+  /// the source carries one — a tap opens the list filtered to it. Empty when
+  /// the bar is a roll-up ("Other", "No category").
+  final String id;
+  const DashBar(this.label, this.count, {this.id = ''});
 }
 
 /// One arc of a donut chart (project status, SLA, priority mix).
@@ -56,7 +61,11 @@ class DashDonutPart {
   final String label;
   final Color color;
   final int count;
-  const DashDonutPart(this.label, this.color, this.count);
+
+  /// The id the slice stands for (a project status id), when the source
+  /// carries one; empty otherwise.
+  final String id;
+  const DashDonutPart(this.label, this.color, this.count, {this.id = ''});
 }
 
 /// A two-series area trend (Lead Inflow, Ticket Flow).
@@ -66,12 +75,18 @@ class DashTrend {
   final double min;
   final double max;
   final List<String> axisLabels;
+
+  /// The year the buckets cover ("2026") when the server sent month labels
+  /// like "Jan 2026"; empty otherwise. These feeds are a fixed calendar year,
+  /// so the card says so instead of implying the Period chip drives them.
+  final String year;
   const DashTrend({
     required this.seriesA,
     required this.seriesB,
     required this.min,
     required this.max,
     required this.axisLabels,
+    this.year = '',
   });
 }
 
@@ -98,7 +113,11 @@ class DashOutstanding {
   final String amt;
   final Color barColor;
   final double pct; // 0..100
-  const DashOutstanding(this.name, this.days, this.amt, this.barColor, this.pct);
+
+  /// The customer id, so the row can open the customer; empty when unknown.
+  final String id;
+  const DashOutstanding(this.name, this.days, this.amt, this.barColor, this.pct,
+      {this.id = ''});
 }
 
 /// A top-customer row (admin panel).
@@ -106,7 +125,10 @@ class DashTopCustomer {
   final String name;
   final String sub;
   final String amt;
-  const DashTopCustomer(this.name, this.sub, this.amt);
+
+  /// The customer id, so the row can open the customer; empty when unknown.
+  final String id;
+  const DashTopCustomer(this.name, this.sub, this.amt, {this.id = ''});
 }
 
 /// A CRM "Attention Needed" 2×2 card.
@@ -143,7 +165,11 @@ class DashSource {
   final String closed; // "₹12.4L"
   final bool? up; // null → no trend badge
 
+  /// The lead-source id, so a row can open Leads filtered to it.
+  final String id;
+
   const DashSource({
+    this.id = '',
     required this.name,
     required this.leads,
     required this.won,
@@ -162,7 +188,11 @@ class DashStuckRow {
   final String sub;
   final String amt;
   final String age;
-  const DashStuckRow(this.name, this.sub, this.amt, this.age);
+
+  /// The record this row stands for (`/leads/detail?id=…`, a quote or a
+  /// payment instalment), or null when the API sent no id.
+  final String? route;
+  const DashStuckRow(this.name, this.sub, this.amt, this.age, [this.route]);
 }
 
 /// A CRM employee-performance row.
@@ -173,7 +203,12 @@ class DashCrmEmployee {
   final String closed; // "₹12.4L"
   final String ftr; // "22 min"
   final String last; // "2 m ago"
-  const DashCrmEmployee(this.rid, this.active, this.won, this.closed, this.ftr, this.last);
+  /// The member's own user id (the raw uuid, where [rid] may read `'me'`).
+  final String userId;
+
+  const DashCrmEmployee(
+      this.rid, this.active, this.won, this.closed, this.ftr, this.last,
+      {this.userId = ''});
 
   String get metaLine => '$active active · $won won · $ftr first response';
 }
@@ -185,7 +220,8 @@ class DashOverdueTask {
   final String value; // project cost e.g. "₹36.5L"
   final String overdue; // "9d overdue"
   final String route;
-  const DashOverdueTask(this.title, this.sub, this.value, this.overdue, this.route);
+  const DashOverdueTask(
+      this.title, this.sub, this.value, this.overdue, this.route);
 }
 
 /// An Operations active-project row.
@@ -198,8 +234,12 @@ class DashProjectRow {
   final int progress; // 0..100
   final int days; // negative = overdue
   final String tab; // 'all' | 'risk' | 'overdue' — which segment shows it
+  /// The project id, so the row can open the project; empty when unknown.
+  final String id;
+
   const DashProjectRow(this.name, this.owner, this.value, this.statusLabel,
-      this.statusColor, this.progress, this.days, this.tab);
+      this.statusColor, this.progress, this.days, this.tab,
+      {this.id = ''});
 }
 
 /// A roster row (Operations / Helpdesk employee performance).
@@ -208,7 +248,11 @@ class DashRosterRow {
   final String sub;
   final String chipLabel;
   final bool chipBad; // red vs green chip
-  const DashRosterRow(this.rid, this.sub, this.chipLabel, this.chipBad);
+  /// The member's own user id (the raw uuid, where [rid] may read `'me'`).
+  final String userId;
+
+  const DashRosterRow(this.rid, this.sub, this.chipLabel, this.chipBad,
+      {this.userId = ''});
 }
 
 /// A Helpdesk "Tickets Needing Attention" row.
@@ -221,7 +265,13 @@ class DashTicketAttn {
   final bool paused;
   final String priority;
   final Color priorityColor;
+
+  /// The ticket's `issue_id`, so the row can open the ticket; empty when the
+  /// row did not carry one.
+  final String issueId;
+
   const DashTicketAttn({
+    this.issueId = '',
     required this.tid,
     required this.subject,
     required this.sub,
@@ -239,6 +289,25 @@ class DashTeamOption {
   final String name;
   final String sub;
   const DashTeamOption(this.id, this.name, this.sub);
+}
+
+/// The Team and Member dropdown options of one dashboard module, as the server
+/// scopes them to the caller. [teamMembers] maps a team id to its member ids.
+class DashFilterOptions {
+  final List<DashTeamOption> teams;
+  final List<DashTeamOption> users;
+  final Map<String, List<String>> teamMembers;
+  const DashFilterOptions(this.teams, this.users, this.teamMembers);
+
+  /// The users of [teamId], or everyone for `all` / an unknown team.
+  List<DashTeamOption> membersOf(String teamId) {
+    final ids = teamMembers[teamId];
+    if (ids == null) return users;
+    return [
+      for (final u in users)
+        if (ids.contains(u.id)) u,
+    ];
+  }
 }
 
 /// The four-panel dashboard bundle returned by the repository.
@@ -361,15 +430,42 @@ class DashboardData {
           route: route,
         );
 
-    const emptyTrend = DashTrend(seriesA: [], seriesB: [], min: 0, max: 1, axisLabels: []);
+    const emptyTrend =
+        DashTrend(seriesA: [], seriesB: [], min: 0, max: 1, axisLabels: []);
 
     return DashboardData(
       // ── Business / admin ──
       adminKpis: [
-        kpi(icon: PhosphorIconsFill.trendUp, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Sales pipeline', sub: 'Pipeline value, all stages', route: Routes.leads),
-        kpi(icon: PhosphorIconsFill.wallet, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Payments collected', route: Routes.payments),
-        kpi(icon: PhosphorIconsFill.warningCircle, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Overdue receivables', route: Routes.payments),
-        kpi(icon: PhosphorIconsFill.ticket, accent: DashColors.amber, iconBg: DashColors.tintAmber, label: 'Open tickets', sub: 'Across all priorities', route: Routes.tickets),
+        kpi(
+            icon: PhosphorIconsFill.trendUp,
+            accent: DashColors.green,
+            iconBg: DashColors.tintGreen,
+            label: 'Sales pipeline',
+            sub: 'Pipeline value, all stages',
+            // The open pipeline: every lead not yet won or lost.
+            route: '${Routes.leads}?pipeline=open'),
+        kpi(
+            icon: PhosphorIconsFill.wallet,
+            accent: DashColors.blue,
+            iconBg: DashColors.tintBlue,
+            label: 'Payments collected',
+            // Payment plans that are paid — what the card counts.
+            // …paid in the Dashboard's period (`period=1` → from / to).
+            route: '${Routes.payments}?mode=payments&tab=paid&period=1'),
+        kpi(
+            icon: PhosphorIconsFill.warningCircle,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            label: 'Overdue receivables',
+            route: '${Routes.payments}?mode=payments&tab=overdue'),
+        kpi(
+            icon: PhosphorIconsFill.ticket,
+            accent: DashColors.amber,
+            iconBg: DashColors.tintAmber,
+            label: 'Open tickets',
+            sub: 'Across all priorities',
+            // Every ticket that is not resolved — what the count is.
+            route: '${Routes.tickets}?all=1&open=1'),
       ],
       receivablesTotal: '₹0',
       receivablesSub: '',
@@ -382,33 +478,100 @@ class DashboardData {
       topCustomers: const [],
       // ── CRM ──
       crmKpis: [
-        kpi(icon: PhosphorIconsFill.userPlus, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'New leads', sub: 'This week, all sources', route: Routes.leads),
-        kpi(icon: PhosphorIconsFill.target, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Win rate', unit: '%', sub: 'Won / qualified ratio', route: Routes.leads),
-        kpi(icon: PhosphorIconsFill.clockCountdown, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'First to response', unit: 'minutes', sub: 'Initial engagement time', route: Routes.followups),
-        kpi(icon: PhosphorIconsFill.fileText, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Quote acceptance', unit: '%', sub: 'Conversion rate', route: Routes.quotes),
+        kpi(
+            icon: PhosphorIconsFill.userPlus,
+            accent: DashColors.green,
+            iconBg: DashColors.tintGreen,
+            label: 'New leads',
+            sub: 'This period, all sources',
+            route: Routes.leads),
+        kpi(
+            icon: PhosphorIconsFill.target,
+            accent: DashColors.green,
+            iconBg: DashColors.tintGreen,
+            label: 'Win rate',
+            unit: '%',
+            sub: 'Won / qualified ratio',
+            // The won leads the ratio is made of.
+            route: '${Routes.leads}?group=won'),
+        kpi(
+            icon: PhosphorIconsFill.clockCountdown,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            label: 'First to response',
+            unit: 'minutes',
+            sub: 'Initial engagement time',
+            route: Routes.followups),
+        kpi(
+            icon: PhosphorIconsFill.fileText,
+            accent: DashColors.blue,
+            iconBg: DashColors.tintBlue,
+            label: 'Quote acceptance',
+            unit: '%',
+            sub: 'Conversion rate',
+            // Accepted among the quotes created in the period.
+            route: '${Routes.quotes}?status=accepted&period=1'),
       ],
       crmFunnel: const [],
       crmInflow: emptyTrend,
       crmAttention: [
-        attn('Payments missed', Routes.payments),
-        attn('Followups missed', Routes.followups),
-        attn('Tasks missed', Routes.tasks),
-        attn('Lost after quote', Routes.leads),
+        // Each card counts a slice, so its tap lands on that slice (the
+        // list screens read these — see `dashGo`).
+        // …due in the Dashboard's period (`period=1` → from / to).
+        attn('Payments missed',
+            '${Routes.payments}?mode=payments&tab=overdue&period=1'),
+        attn('Followups missed', '${Routes.followups}?tab=overdue&period=1'),
+        attn('Tasks missed', '${Routes.tasks}?tab=overdue&period=1'),
+        attn('Lost after quote', '${Routes.leads}?group=lost'),
       ],
       crmSources: const [],
       crmStuck: const {'stale': [], 'quotes': [], 'payments': [], 'wonnc': []},
       crmEmployees: const [],
       // ── Operations ──
       opsKpis: [
-        kpi(icon: PhosphorIconsFill.briefcase, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Active Projects', sub: 'In delivery right now', route: Routes.opsProjects),
+        kpi(
+            icon: PhosphorIconsFill.briefcase,
+            accent: DashColors.green,
+            iconBg: DashColors.tintGreen,
+            label: 'Active Projects',
+            sub: 'In delivery right now',
+            // Open (not closed) projects — what the count is.
+            route: '${Routes.opsProjects}?group=open'),
         // A KPI that counts a *slice* of a list links to that slice, not the
         // whole list: the tap on "3 tasks overdue" must land on those three.
         // The target screens read these query params on entry.
-        kpi(icon: PhosphorIconsFill.flag, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Projects Overdue', sub: 'Past their end date', route: '${Routes.opsProjects}?end=overdue'),
-        kpi(icon: PhosphorIconsFill.listChecks, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Tasks Overdue', sub: 'Across all projects', route: '${Routes.opsTasks}?due=overdue'),
-        kpi(icon: PhosphorIconsFill.clock, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Avg Project Cycle', unit: 'days', sub: 'Start to handover', route: Routes.opsProjects),
+        kpi(
+            icon: PhosphorIconsFill.flag,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            label: 'Projects Overdue',
+            sub: 'Past their end date',
+            // …among the open ones (a closed project is never overdue here).
+            route: '${Routes.opsProjects}?end=overdue&group=open'),
+        kpi(
+            icon: PhosphorIconsFill.listChecks,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            label: 'Tasks Overdue',
+            sub: 'Across all projects',
+            route: '${Routes.opsTasks}?due=overdue'),
+        kpi(
+            icon: PhosphorIconsFill.clock,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            label: 'Avg Project Cycle',
+            unit: 'days',
+            sub: 'Start to handover',
+            route: Routes.opsProjects),
         // The webapp's fifth card (`avg_task_cycle`): start → done for tasks.
-        kpi(icon: PhosphorIconsFill.gauge, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'Avg Task Cycle', unit: 'days', sub: 'Start to done', route: Routes.opsTasks),
+        kpi(
+            icon: PhosphorIconsFill.gauge,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            label: 'Avg Task Cycle',
+            unit: 'days',
+            sub: 'Start to done',
+            route: Routes.opsTasks),
       ],
       opsStatus: const [],
       opsOverdue: const [],
@@ -416,10 +579,37 @@ class DashboardData {
       opsRoster: const [],
       // ── Helpdesk ──
       helpKpis: [
-        kpi(icon: PhosphorIconsFill.ticket, accent: DashColors.blue, iconBg: DashColors.tintBlue, label: 'Open Tickets', sub: 'New, open & pending', route: Routes.tickets),
-        kpi(icon: PhosphorIconsFill.warningCircle, accent: DashColors.red, iconBg: DashColors.tintRed, label: 'SLA Breaches', sub: 'Response or resolution', route: '${Routes.tickets}?breaching=1'),
-        kpi(icon: PhosphorIconsFill.timer, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'Avg Resolution', unit: 'hours', sub: 'Median, this period', route: Routes.tickets),
-        kpi(icon: PhosphorIconsFill.lightning, accent: DashColors.green, iconBg: DashColors.tintGreen, label: 'First Response', unit: 'min', sub: 'Median, this period', route: Routes.tickets),
+        kpi(
+            icon: PhosphorIconsFill.ticket,
+            accent: DashColors.blue,
+            iconBg: DashColors.tintBlue,
+            label: 'Open Tickets',
+            sub: 'New, open & pending',
+            route: '${Routes.tickets}?all=1&open=1'),
+        kpi(
+            icon: PhosphorIconsFill.warningCircle,
+            accent: DashColors.red,
+            iconBg: DashColors.tintRed,
+            // Breached among the tickets created in the period.
+            label: 'SLA Breaches',
+            sub: 'Response or resolution',
+            route: '${Routes.tickets}?all=1&breaching=1&period=1'),
+        kpi(
+            icon: PhosphorIconsFill.timer,
+            accent: DashColors.green,
+            iconBg: DashColors.tintGreen,
+            label: 'Avg Resolution',
+            unit: 'hours',
+            sub: 'Median, this period',
+            route: '${Routes.tickets}?all=1'),
+        kpi(
+            icon: PhosphorIconsFill.lightning,
+            accent: DashColors.green,
+            iconBg: DashColors.tintGreen,
+            label: 'First Response',
+            unit: 'min',
+            sub: 'Median, this period',
+            route: '${Routes.tickets}?all=1'),
       ],
       helpCategories: const [],
       helpSla: const [],

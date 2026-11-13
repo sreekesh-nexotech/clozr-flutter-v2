@@ -16,7 +16,8 @@ Future<void> settle() async {
 void main() {
   group('LmsListNotifier load phases', () {
     test('success clears loading and stores the items', () async {
-      final n = LmsListNotifier<int>(const [], () async => [1, 2, 3], refresh: true);
+      final n =
+          LmsListNotifier<int>(const [], () async => [1, 2, 3], refresh: true);
       expect(n.state.loading, isTrue); // seeded loading in "API" mode
       await settle();
       expect(n.state.items, [1, 2, 3]);
@@ -28,7 +29,8 @@ void main() {
     test('a non-403 failure surfaces as an error phase', () async {
       final n = LmsListNotifier<int>(
         const [],
-        () async => throw const AppError(type: AppErrorType.server, message: 'boom'),
+        () async =>
+            throw const AppError(type: AppErrorType.server, message: 'boom'),
         refresh: true,
       );
       await settle();
@@ -42,7 +44,8 @@ void main() {
     test('a 403 degrades to a graceful empty (no error surface)', () async {
       final n = LmsListNotifier<int>(
         const [],
-        () async => throw const AppError(type: AppErrorType.forbidden, message: 'nope'),
+        () async =>
+            throw const AppError(type: AppErrorType.forbidden, message: 'nope'),
         refresh: true,
       );
       await settle();
@@ -69,13 +72,16 @@ void main() {
       n.dispose();
     });
 
-    test('reload re-runs the loader and recovers from an earlier failure', () async {
+    test('reload re-runs the loader and recovers from an earlier failure',
+        () async {
       var attempt = 0;
       final n = LmsListNotifier<int>(
         const [],
         () async {
           attempt++;
-          if (attempt == 1) throw const AppError(type: AppErrorType.network, message: 'offline');
+          if (attempt == 1)
+            throw const AppError(
+                type: AppErrorType.network, message: 'offline');
           return [9];
         },
         refresh: true,
@@ -94,7 +100,9 @@ void main() {
     test('error wins over a still-loading source', () {
       final s = lmsCombine([
         const LmsData<int>(items: [], loading: true),
-        const LmsData<int>(items: [], error: AppError(type: AppErrorType.server, message: 'x')),
+        const LmsData<int>(
+            items: [],
+            error: AppError(type: AppErrorType.server, message: 'x')),
       ]);
       expect(s.error, isNotNull);
       expect(s.loading, isFalse); // error suppresses the shimmer

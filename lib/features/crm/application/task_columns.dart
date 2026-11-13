@@ -42,8 +42,8 @@ List<({String label, String value})> taskExtraColumns(
   CrmTask task,
   ViewSchema schema,
 ) =>
-    schemaExtraColumns(schema, kTaskCardFrameColumns,
-        (c) => taskColumnText(task, c));
+    schemaExtraColumns(
+        schema, kTaskCardFrameColumns, (c) => taskColumnText(task, c));
 
 String? taskColumnText(CrmTask task, ViewColumn column) {
   final typed = switch (column.name) {

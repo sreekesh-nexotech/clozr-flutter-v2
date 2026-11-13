@@ -27,12 +27,17 @@ Future<PartyOption?> showPartyPickerSheet({
 }) {
   return showClozrSheet<PartyOption>(
     context: context,
-    builder: (_) => _PartyPicker(title: title, hint: hint, search: search, noun: noun),
+    builder: (_) =>
+        _PartyPicker(title: title, hint: hint, search: search, noun: noun),
   );
 }
 
 class _PartyPicker extends StatefulWidget {
-  const _PartyPicker({required this.title, required this.hint, required this.search, required this.noun});
+  const _PartyPicker(
+      {required this.title,
+      required this.hint,
+      required this.search,
+      required this.noun});
   final String title;
   final String hint;
   final Future<List<PartyOption>> Function(String) search;
@@ -102,7 +107,11 @@ class _PartyPickerState extends State<_PartyPicker> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.title, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+          Text(widget.title,
+              style: AppText.custom(
+                  size: 17,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 12.h),
           SearchField(
             controller: _ctrl,
@@ -119,19 +128,26 @@ class _PartyPickerState extends State<_PartyPicker> {
             child: _loading && _rows.isEmpty
                 ? Padding(
                     padding: EdgeInsets.symmetric(vertical: 28.h),
-                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy)),
+                    child: const Center(
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2.4, color: AppColors.navy)),
                   )
                 : _error != null || _rows.isEmpty
                     ? Padding(
                         padding: EdgeInsets.symmetric(vertical: 28.h),
                         child: Center(
                           child: Text(
-                              _error ?? (_query.isEmpty ? 'No ${widget.noun} yet' : 'No ${widget.noun} match “$_query”'),
+                              _error ??
+                                  (_query.isEmpty
+                                      ? 'No ${widget.noun} yet'
+                                      : 'No ${widget.noun} match “$_query”'),
                               textAlign: TextAlign.center,
                               style: AppText.custom(
                                   size: 13.5,
                                   weight: FontWeight.w600,
-                                  color: _error != null ? AppColors.error : AppColors.textPlaceholder)),
+                                  color: _error != null
+                                      ? AppColors.error
+                                      : AppColors.textPlaceholder)),
                         ),
                       )
                     : Opacity(
@@ -152,7 +168,12 @@ class _PartyPickerState extends State<_PartyPicker> {
   Widget _row(PartyOption o) {
     final initials = o.label.trim().isEmpty
         ? '?'
-        : o.label.trim().split(RegExp(r'\s+')).take(2).map((w) => w.isEmpty ? '' : w[0].toUpperCase()).join();
+        : o.label
+            .trim()
+            .split(RegExp(r'\s+'))
+            .take(2)
+            .map((w) => w.isEmpty ? '' : w[0].toUpperCase())
+            .join();
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => Navigator.of(context).pop(o),
@@ -163,23 +184,36 @@ class _PartyPickerState extends State<_PartyPicker> {
             width: 38.w,
             height: 38.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: const Color(0xFFEEF1F4), borderRadius: BorderRadius.circular(11.r)),
-            child: Text(initials, style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+            decoration: BoxDecoration(
+                color: const Color(0xFFEEF1F4),
+                borderRadius: BorderRadius.circular(11.r)),
+            child: Text(initials,
+                style: AppText.custom(
+                    size: 13, weight: FontWeight.w700, color: AppColors.navy)),
           ),
           SizedBox(width: 12.w),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(o.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
               if (o.sub.isNotEmpty) ...[
                 SizedBox(height: 2.h),
-                Text(o.sub, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text(o.sub,
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ]),
           ),
-          Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsBold.caretRight,
+              size: 13.sp, color: AppColors.textPlaceholder),
         ]),
       ),
     );

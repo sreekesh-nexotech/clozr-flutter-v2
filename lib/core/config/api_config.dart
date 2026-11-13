@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
+
 /// Compile-time API configuration.
 ///
 /// The base URL is injected with `--dart-define` so no environment secrets
@@ -15,17 +17,17 @@ class ApiConfig {
 
   /// Backend origin, e.g. `https://crm.example.com`. No trailing slash.
   ///
-  /// Defaults to the staging (UAT) backend; `--dart-define=API_BASE_URL=…`
-  /// still overrides it per build (pass the production URL below for store
-  /// builds, or an empty value / `--dart-define=USE_MOCK_DATA=true` to get
+  /// Defaults to the production backend; `--dart-define=API_BASE_URL=…`
+  /// still overrides it per build (pass the dev URL below for dev builds,
+  /// or an empty value / `--dart-define=USE_MOCK_DATA=true` to get
   /// mock mode back).
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://dev.clozr.tech',
+    defaultValue: 'https://app.clozr.co.in',
   );
 
-  // Production backend:
-  // 'https://app.clozr.co.in'
+  // Dev backend:
+  // 'https://dev.clozr.tech'
 
   /// All REST routes mount under this prefix on the backend.
   static const String apiPrefix = '/api/v1';
@@ -34,7 +36,13 @@ class ApiConfig {
   static const bool forceMocks = bool.fromEnvironment('USE_MOCK_DATA');
 
   /// Whether the remote data sources should be wired in.
-  static bool get apiEnabled => baseUrl.isNotEmpty && !forceMocks;
+  ///
+  /// A **release** build always talks to the API: the bundled seed data is a
+  /// development / demo aid and must never reach a production user, whatever
+  /// `--dart-define` flags the build was made with. (An empty base URL in a
+  /// release build then fails loudly as a network error, not as demo data.)
+  static bool get apiEnabled =>
+      kReleaseMode || (baseUrl.isNotEmpty && !forceMocks);
 
   /// True when the configured base URL uses TLS, or points at a local dev host
   /// (loopback / Android emulator) where cleartext is acceptable in debug.

@@ -15,13 +15,15 @@ class FollowupsApiRepository implements FollowupsRepository {
   static const _cacheKey = 'followups_rows';
 
   @override
-  Future<List<Followup>> getFollowups({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Followup>> getFollowups(
+      {Map<String, dynamic> filters = const {}}) async {
     // Overlaps the row fetch; never throws.
     final types = _remote.statusTypes();
     try {
       final rows = await _remote.fetchFollowupRows(filters: filters);
       // Only the unfiltered list is the offline copy.
-      if (filters.isEmpty) await AppCache.put(AppCache.crmCache, _cacheKey, rows);
+      if (filters.isEmpty)
+        await AppCache.put(AppCache.crmCache, _cacheKey, rows);
       return FollowupsRemoteDataSource.mapRows(rows, statusTypes: await types);
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {

@@ -29,7 +29,10 @@ class SavedViewsState {
     return null;
   }
 
-  SavedViewsState copyWith({List<SavedView>? views, String? activeId, bool clearActive = false}) =>
+  SavedViewsState copyWith(
+          {List<SavedView>? views,
+          String? activeId,
+          bool clearActive = false}) =>
       SavedViewsState(
         views: views ?? this.views,
         activeId: clearActive ? null : (activeId ?? this.activeId),
@@ -47,7 +50,8 @@ class SavedViewsState {
 ///   without deleting it (mirrors the prototype `deactivateViews`).
 /// * [remove] / [clearActive].
 class SavedViewsController extends StateNotifier<SavedViewsState> {
-  SavedViewsController([SavedViewsState? initial]) : super(initial ?? const SavedViewsState());
+  SavedViewsController([SavedViewsState? initial])
+      : super(initial ?? const SavedViewsState());
 
   var _seq = 0;
   String _newId() => 'view_${DateTime.now().microsecondsSinceEpoch}_${_seq++}';
@@ -57,7 +61,8 @@ class SavedViewsController extends StateNotifier<SavedViewsState> {
   SavedView upsert(String name, FilterValues values) {
     final trimmed = name.trim();
     final snapshot = values.copy();
-    final existing = state.views.indexWhere((v) => v.name.toLowerCase() == trimmed.toLowerCase());
+    final existing = state.views
+        .indexWhere((v) => v.name.toLowerCase() == trimmed.toLowerCase());
     if (existing >= 0) {
       final updated = state.views[existing].copyWith(values: snapshot);
       final list = [...state.views]..[existing] = updated;

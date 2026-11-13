@@ -40,7 +40,8 @@ class AttachmentsRemoteDataSource {
   }
 
   /// Mapped file list for one record (malformed rows are skipped, never fatal).
-  Future<List<LeadFile>> fetchFiles(String relatedTo, String relatedToId) async =>
+  Future<List<LeadFile>> fetchFiles(
+          String relatedTo, String relatedToId) async =>
       mapRows(await fetchFileRows(relatedTo, relatedToId));
 
   /// Lead-scoped wrappers, kept so the lead screens read as before.
@@ -70,6 +71,14 @@ class AttachmentsRemoteDataSource {
     final res = await _api.postForm(ApiEndpoints.attachments, form);
     return res is Map<String, dynamic> ? fileFromJson(res) : null;
   }
+
+  /// `PATCH /crm/attachments/{id}/` — the file's display name.
+  Future<void> renameFile(String attachmentId, String name) =>
+      _api.patch(ApiEndpoints.attachment(attachmentId), body: {'name': name});
+
+  /// `DELETE /crm/attachments/{id}/` — removes the stored file.
+  Future<void> deleteFile(String attachmentId, {bool quiet = false}) =>
+      _api.delete(ApiEndpoints.attachment(attachmentId), quiet: quiet);
 
   /// Lead-scoped wrapper.
   Future<LeadFile?> uploadFileForLead({
@@ -127,6 +136,21 @@ class AttachmentsRemoteDataSource {
       uploadedBy: UserDirectory.mapUserId(
           uploader is Map ? _str(uploader['user_id']) : _str(uploader)),
       uploadedAt: relativeTime(_uploadedAt(json), now: now),
+      uploaderName: uploader is Map
+          ? (_str(uploader['full_name']) ??
+              [_str(uploader['first_name']), _str(uploader['last_name'])]
+                  .whereType<String>()
+                  .join(' '))
+          : '',
+      sourceKind: json['source'] is Map
+          ? (_str((json['source'] as Map)['kind']) ?? '')
+          : '',
+      sizeBytes: switch (json['size_bytes']) {
+        final int n => n,
+        final num n => n.toInt(),
+        final String s => int.tryParse(s),
+        _ => null,
+      },
     );
   }
 

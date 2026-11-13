@@ -55,6 +55,30 @@ class AttachmentsApiRepository implements AttachmentsRepository {
     return file;
   }
 
+  @override
+  Future<String?> renameFile(String attachmentId, String name) async {
+    try {
+      await _remote.renameFile(attachmentId, name);
+      return null;
+    } on AppError catch (e) {
+      return e.bareMessage.isEmpty
+          ? 'Could not rename the file.'
+          : e.bareMessage;
+    }
+  }
+
+  @override
+  Future<String?> deleteFile(String attachmentId, {bool quiet = false}) async {
+    try {
+      await _remote.deleteFile(attachmentId, quiet: quiet);
+      return null;
+    } on AppError catch (e) {
+      return e.bareMessage.isEmpty
+          ? 'Could not delete the file.'
+          : e.bareMessage;
+    }
+  }
+
   // ── lead-scoped wrappers, so the lead screens read as before ──
 
   @override

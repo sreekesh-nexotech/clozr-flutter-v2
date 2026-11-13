@@ -85,7 +85,7 @@ void main() {
       expect(t.respByLabel, isNotNull);
       expect(t.resolveByISO, '2026-07-14T18:00:00Z');
       expect(t.resolveByLabel, isNotNull);
-      expect(t.created, contains('Jul 2026'));
+      expect(t.created, contains('/07/2026'));
       expect(t.responded, isNotNull);
       expect(t.resolved, isNull);
     });
@@ -118,8 +118,9 @@ void main() {
   });
 
   group('mapTicket — status / priority / category variants', () {
-    String statusOf(Object? status) => TicketsRemoteDataSource.mapTicket(
-        {'issue_id': 'x', 'status': status})!.status;
+    String statusOf(Object? status) =>
+        TicketsRemoteDataSource.mapTicket({'issue_id': 'x', 'status': status})!
+            .status;
 
     test('status names map onto the fixed ticket keys', () {
       expect(statusOf({'name': 'New'}), 'new');
@@ -131,8 +132,9 @@ void main() {
     });
 
     test('priorities map onto the UI vocabulary', () {
-      String priOf(String? v) => TicketsRemoteDataSource.mapTicket(
-          {'issue_id': 'x', 'priority': v})!.pri;
+      String priOf(String? v) =>
+          TicketsRemoteDataSource.mapTicket({'issue_id': 'x', 'priority': v})!
+              .pri;
       expect(priOf('Low'), 'Low');
       expect(priOf('Medium'), 'Medium');
       expect(priOf('High'), 'High');
@@ -142,7 +144,8 @@ void main() {
 
     test('issue-type names are kept verbatim; only a missing type folds', () {
       String catOf(String? name) => TicketsRemoteDataSource.mapTicket(
-          {'issue_id': 'x', 'type_name': name})!.cat;
+              {'issue_id': 'x', 'type_name': name})!
+          .cat;
       expect(catOf('Customer Complaint'), 'Customer Complaint');
       expect(catOf('Service Request'), 'Service Request');
       expect(catOf('Integration'), 'Integration');

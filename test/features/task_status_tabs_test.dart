@@ -55,7 +55,8 @@ void main() {
       const row = {'task_id': 'T1', 'status': 'Cancelled'};
 
       final guessed = CrmTasksRemoteDataSource.taskFromJson(row)!;
-      expect(guessed.status, 'todo', reason: 'the bug, with no catalog to help');
+      expect(guessed.status, 'todo',
+          reason: 'the bug, with no catalog to help');
 
       final resolved = CrmTasksRemoteDataSource.taskFromJson(
         row,
@@ -108,8 +109,11 @@ void main() {
     test('still matches a built-in key, so the pre-catalog tabs work', () {
       // The catalog is fetched at mount; until it lands the tabs are the
       // built-in four and must keep filtering.
-      expect(crmTaskInTab(task(status: 'todo', statusName: 'Open'), 'todo'), isTrue);
-      expect(crmTaskInTab(task(status: 'done', statusName: 'Completed'), 'done'), isTrue);
+      expect(crmTaskInTab(task(status: 'todo', statusName: 'Open'), 'todo'),
+          isTrue);
+      expect(
+          crmTaskInTab(task(status: 'done', statusName: 'Completed'), 'done'),
+          isTrue);
     });
 
     test('a mock row with no lane name falls back to its folded key', () {
@@ -149,7 +153,8 @@ void main() {
       const lanes = [
         CatalogOption(id: 's-open', name: 'Open', statusType: 'open'),
       ];
-      final meta = crmTaskStatusMeta(task(status: 'todo', statusName: 'Open'), lanes);
+      final meta =
+          crmTaskStatusMeta(task(status: 'todo', statusName: 'Open'), lanes);
 
       expect(meta.label, 'Open', reason: 'not the built-in "To do"');
     });
@@ -179,11 +184,22 @@ void main() {
     final mobile = ViewSchema.fromResponse({
       'all_fields': {
         'columns': [
-          for (final n in ['title', 'status', 'priority', 'due_date', 'assigned_to'])
+          for (final n in [
+            'title',
+            'status',
+            'priority',
+            'due_date',
+            'assigned_to'
+          ])
             {'name': n, 'label': n, 'order': 1, 'visible': true},
           // Configured off for mobile — the card used to show both regardless.
           {'name': 'task_type', 'label': 'Type', 'order': 9, 'visible': false},
-          {'name': 'related_to', 'label': 'Related To', 'order': 9, 'visible': false},
+          {
+            'name': 'related_to',
+            'label': 'Related To',
+            'order': 9,
+            'visible': false
+          },
         ],
       },
     });
@@ -194,7 +210,13 @@ void main() {
     });
 
     test('keeps the ones it left on', () {
-      for (final n in ['title', 'status', 'priority', 'due_date', 'assigned_to']) {
+      for (final n in [
+        'title',
+        'status',
+        'priority',
+        'due_date',
+        'assigned_to'
+      ]) {
         expect(mobile.shows(n), isTrue, reason: n);
       }
     });

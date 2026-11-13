@@ -29,7 +29,8 @@ import '../../application/record_payment/record_payment_providers.dart';
 /// The prototype's `#35507C` info-banner text — no design token exists for it.
 const Color _bannerText = Color(0xFF35507C);
 
-final RegExp _uuidRe = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+final RegExp _uuidRe = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
 /// Opens "Record payment" (webapp `RecordPaymentModal`), as a bottom sheet.
 ///
@@ -56,21 +57,24 @@ Future<bool> showRecordPaymentSheet(
       planId: planId,
       invoiceId: invoiceId,
       recordId: recordId,
-      locked: lockPlan ?? ((planId ?? '').isNotEmpty || (invoiceId ?? '').isNotEmpty),
+      locked: lockPlan ??
+          ((planId ?? '').isNotEmpty || (invoiceId ?? '').isNotEmpty),
     ),
   );
   return ok ?? false;
 }
 
 class _RecordPaymentSheet extends ConsumerStatefulWidget {
-  const _RecordPaymentSheet({this.planId, this.invoiceId, this.recordId, required this.locked});
+  const _RecordPaymentSheet(
+      {this.planId, this.invoiceId, this.recordId, required this.locked});
   final String? planId;
   final String? invoiceId;
   final String? recordId;
   final bool locked;
 
   @override
-  ConsumerState<_RecordPaymentSheet> createState() => _RecordPaymentSheetState();
+  ConsumerState<_RecordPaymentSheet> createState() =>
+      _RecordPaymentSheetState();
 }
 
 class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
@@ -122,7 +126,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   void _revealTop() => WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scroll.hasClients) {
-          _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+          _scroll.animateTo(0,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut);
         }
       });
 
@@ -153,8 +159,10 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     }
     _resolving = true;
     try {
-      final hits = await ref.read(recordPaymentRemoteProvider).searchPlans(display);
-      final hit = hits.where((p) => p.quoteNo == display).firstOrNull ?? (hits.length == 1 ? hits.first : null);
+      final hits =
+          await ref.read(recordPaymentRemoteProvider).searchPlans(display);
+      final hit = hits.where((p) => p.quoteNo == display).firstOrNull ??
+          (hits.length == 1 ? hits.first : null);
       if (mounted) setState(() => _planId = hit?.id ?? '');
     } on AppError {
       // Leaves the picker empty; "Select a payment plan" explains it.
@@ -165,19 +173,29 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   @override
   void dispose() {
-    for (final c in [_amount, _adhocAmount, _label, _note, _tds, _bankCharge, _gatewayRef]) {
+    for (final c in [
+      _amount,
+      _adhocAmount,
+      _label,
+      _note,
+      _tds,
+      _bankCharge,
+      _gatewayRef
+    ]) {
       c.dispose();
     }
     _scroll.dispose();
     super.dispose();
   }
 
-  RecordPaymentPlan? get _plan =>
-      _planId.isEmpty ? null : ref.read(recordPaymentPlanProvider(_planId)).valueOrNull;
+  RecordPaymentPlan? get _plan => _planId.isEmpty
+      ? null
+      : ref.read(recordPaymentPlanProvider(_planId)).valueOrNull;
 
   SettlementDetails _details(RecordMode mode, PlanRecord? record) {
     final accounting = ref.read(accountingActiveProvider);
-    final canTreatAs = mode == RecordMode.adhoc || (accounting && record != null && record.linkedDocumentId == null);
+    final canTreatAs = mode == RecordMode.adhoc ||
+        (accounting && record != null && record.linkedDocumentId == null);
     return SettlementDetails(
       tds: deductionInput(_tds.text),
       bankCharge: deductionInput(_bankCharge.text),
@@ -216,7 +234,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   bool _bankRequired() {
     if (!ref.read(accountingActiveProvider) || _method == 'cash') return false;
     final banks = ref.read(bankAccountsProvider);
-    if (banks.hasError) return false; // cannot read banks: the server resolves the alias / default
+    if (banks.hasError)
+      return false; // cannot read banks: the server resolves the alias / default
     final rows = banks.valueOrNull ?? const <BankAccount>[];
     return !rows.any((b) => b.isDefault && b.isActive && b.kind == 'BANK');
   }
@@ -224,7 +243,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Future<void> _save() async {
     if (_busy || _converting) return;
     if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier).show('Recording payments needs a server connection');
+      ref
+          .read(toastProvider.notifier)
+          .show('Recording payments needs a server connection');
       return;
     }
     final plan = _plan;
@@ -232,15 +253,24 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     var bad = false;
     setState(() {
       _errPlan = plan == null ? 'Select a payment plan' : null;
-      _errInstall = plan != null && mode == RecordMode.settle && _recordId.isEmpty ? 'Select an installment' : null;
+      _errInstall =
+          plan != null && mode == RecordMode.settle && _recordId.isEmpty
+              ? 'Select an installment'
+              : null;
       _errAmount = null;
       _errDate = paymentDateError(_date, DateTime.now());
-      _errBank = _bankRequired() && _bank == null ? 'Choose the bank account this payment landed in' : null;
+      _errBank = _bankRequired() && _bank == null
+          ? 'Choose the bank account this payment landed in'
+          : null;
     });
-    bad = _errPlan != null || _errInstall != null || _errDate != null || _errBank != null;
+    bad = _errPlan != null ||
+        _errInstall != null ||
+        _errDate != null ||
+        _errBank != null;
     if (plan != null && mode == RecordMode.adhoc) {
       final err = validateAdhocAmount(_adhocAmount.text,
-          tds: deductionInput(_tds.text), bankCharge: deductionInput(_bankCharge.text));
+          tds: deductionInput(_tds.text),
+          bankCharge: deductionInput(_bankCharge.text));
       if (err != null) {
         setState(() => _errAmount = err);
         bad = true;
@@ -250,20 +280,29 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
     final Future<Map<String, dynamic>> Function() write;
     if (mode == RecordMode.settle) {
-      final record = plan.openRecords.where((r) => r.id == _recordId).firstOrNull;
+      final record =
+          plan.openRecords.where((r) => r.id == _recordId).firstOrNull;
       if (record == null) {
         setState(() => _errInstall = 'Select an installment');
         return;
       }
       final details = _details(mode, record);
       final check = validateSettleAmount(
-          raw: _amount.text, balance: record.open, tds: details.tds, bankCharge: details.bankCharge);
+          raw: _amount.text,
+          balance: record.open,
+          tds: details.tds,
+          bankCharge: details.bankCharge);
       if (!check.ok) {
         setState(() => _errAmount = check.error);
         return;
       }
-      final body = buildSettleBody(amountPaid: check.amountPaid, paidDate: _date, method: _method, details: details);
-      write = () => ref.read(recordPaymentRemoteProvider).settleRecord(record.id, body);
+      final body = buildSettleBody(
+          amountPaid: check.amountPaid,
+          paidDate: _date,
+          method: _method,
+          details: details);
+      write = () =>
+          ref.read(recordPaymentRemoteProvider).settleRecord(record.id, body);
     } else {
       final details = _details(mode, null);
       final body = buildAdhocBody(
@@ -278,7 +317,35 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       write = () => ref.read(recordPaymentRemoteProvider).addRecord(body);
     }
 
-    _pending = () => _runRecord(write);
+    // Rebuilt when it runs: the sheet stays editable while the convert prompt
+    // is up, so an amount changed there must be the one that is recorded.
+    _pending = () async {
+      final plan = _plan;
+      final record =
+          plan?.openRecords.where((r) => r.id == _recordId).firstOrNull;
+      if (mode == RecordMode.settle && plan != null && record != null) {
+        final details = _details(mode, record);
+        final check = validateSettleAmount(
+            raw: _amount.text,
+            balance: record.open,
+            tds: details.tds,
+            bankCharge: details.bankCharge);
+        if (!check.ok) {
+          setState(() => _errAmount = check.error);
+          return;
+        }
+        final body = buildSettleBody(
+            amountPaid: check.amountPaid,
+            paidDate: _date,
+            method: _method,
+            details: details);
+        await _runRecord(() => ref
+            .read(recordPaymentRemoteProvider)
+            .settleRecord(record.id, body));
+        return;
+      }
+      await _runRecord(write);
+    };
     // A lead-only plan: the lead becomes a customer first (the same Convert
     // as the lead screen), then this exact write runs.
     if (plan.needsCustomer) {
@@ -316,7 +383,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        if (isCustomerRequiredFailure(code: e.code, message: e.message) && (_plan?.quotationUuid ?? '').isNotEmpty) {
+        if (isCustomerRequiredFailure(code: e.code, message: e.message) &&
+            (_plan?.quotationUuid ?? '').isNotEmpty) {
           _offerConvert = true;
           _convertNote = null;
         } else {
@@ -333,7 +401,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     if (_leadId != null) return _leadId;
     final q = _plan?.quotationUuid ?? '';
     if (q.isEmpty) return null;
-    return _leadId = await ref.read(recordPaymentRemoteProvider).quotationLeadId(q);
+    return _leadId =
+        await ref.read(recordPaymentRemoteProvider).quotationLeadId(q);
   }
 
   Future<void> _convertAndContinue() async {
@@ -349,7 +418,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
         _stopConverting('This quote has no lead to convert.');
         return;
       }
-      final state = await ref.read(recordPaymentRemoteProvider).quoteLeadState(leadId);
+      final state =
+          await ref.read(recordPaymentRemoteProvider).quoteLeadState(leadId);
       if (!mounted) return;
       switch (convertStepFor(state)) {
         case ConvertStep.recordNow:
@@ -361,7 +431,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
         case ConvertStep.confirmMarkWon:
           setState(() {
             _converting = false;
-            _markWon = (id: state.wonStatusId!, name: state.wonStatusName ?? 'Won');
+            _markWon =
+                (id: state.wonStatusId!, name: state.wonStatusName ?? 'Won');
           });
         case ConvertStep.convert:
           await _runConvert(leadId);
@@ -383,7 +454,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       if (markWonStatusId != null) {
         final remote = ref.read(recordPaymentRemoteProvider);
         await remote.moveLeadToStatus(leadId, markWonStatusId);
-        final after = LeadConversion.fromRow(await remote.leadRow(leadId), isWon: true);
+        final after =
+            LeadConversion.fromRow(await remote.leadRow(leadId), isWon: true);
         if (!mounted) return;
         if (after.isConverted) {
           _afterConverted(leadId, after.customerName);
@@ -427,9 +499,11 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     ref.invalidate(customersScopedProvider);
   }
 
-  void _afterConverted(String leadId, String? customerName, {bool toast = true}) {
+  void _afterConverted(String leadId, String? customerName,
+      {bool toast = true}) {
     _invalidateLead(leadId);
-    if (toast) ref.read(toastProvider.notifier).show(leadConvertedToast(customerName));
+    if (toast)
+      ref.read(toastProvider.notifier).show(leadConvertedToast(customerName));
     setState(() {
       _converting = false;
       _offerConvert = false;
@@ -442,26 +516,33 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final planAsync = _planId.isEmpty ? null : ref.watch(recordPaymentPlanProvider(_planId));
+    final planAsync =
+        _planId.isEmpty ? null : ref.watch(recordPaymentPlanProvider(_planId));
     final plan = planAsync?.valueOrNull;
     final accounting = ref.watch(accountingActiveProvider);
     if (accounting) ref.watch(bankAccountsProvider);
     final mode = effectiveMode(_modeChoice, plan?.paymentType);
     final open = plan?.openRecords ?? const <PlanRecord>[];
-    final selected = mode == RecordMode.settle ? open.where((r) => r.id == _recordId).firstOrNull : null;
+    final selected = mode == RecordMode.settle
+        ? open.where((r) => r.id == _recordId).firstOrNull
+        : null;
 
     // "Settle" on a row: preselect that instalment once the plan has loaded.
     final want = widget.recordId;
     if (want != null && _preselected != want && plan != null) {
       final hit = open.where((r) => r.id == want).firstOrNull;
       _preselected = want;
-      if (hit != null) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _pickInstallment(hit) : null);
+      if (hit != null)
+        WidgetsBinding.instance.addPostFrameCallback(
+            (_) => mounted ? _pickInstallment(hit) : null);
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Record payment', onClose: () => Navigator.of(context).maybePop()),
+        SheetHeader(
+            title: 'Record payment',
+            onClose: () => Navigator.of(context).maybePop()),
         Flexible(
           child: SingleChildScrollView(
             controller: _scroll,
@@ -483,7 +564,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                     onTap: _openPlanPicker,
                     text: _pickedLabel.isNotEmpty
                         ? _pickedLabel
-                        : (plan != null ? '${plan.quoteNo} · ${plan.who}' : 'Search by quote number or customer…'),
+                        : (plan != null
+                            ? '${plan.quoteNo} · ${plan.who}'
+                            : 'Search by quote number or customer…'),
                     placeholder: _pickedLabel.isEmpty && plan == null,
                     icon: PhosphorIconsRegular.magnifyingGlass,
                   ),
@@ -491,17 +574,21 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                   SizedBox(height: 13.h),
                 ] else
                   _errorText(_errPlan),
-                if (_resolving || (planAsync?.isLoading ?? false) && plan == null)
+                if (_resolving ||
+                    (planAsync?.isLoading ?? false) && plan == null)
                   Padding(
                     padding: EdgeInsets.only(bottom: 13.h),
-                    child: Text('Loading payment plan…', style: AppText.caption()),
+                    child:
+                        Text('Loading payment plan…', style: AppText.caption()),
                   ),
                 if (planAsync != null && planAsync.hasError && plan == null)
                   Padding(
                     padding: EdgeInsets.only(bottom: 13.h),
-                    child: Text("Couldn't load this payment plan", style: AppText.caption(color: AppColors.error)),
+                    child: Text("Couldn't load this payment plan",
+                        style: AppText.caption(color: AppColors.error)),
                   ),
-                if (plan != null) ..._planBody(plan, mode, open, selected, accounting),
+                if (plan != null)
+                  ..._planBody(plan, mode, open, selected, accounting),
                 SizedBox(height: 6.h),
               ],
             ),
@@ -512,13 +599,14 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     );
   }
 
-  List<Widget> _planBody(
-      RecordPaymentPlan plan, RecordMode mode, List<PlanRecord> open, PlanRecord? selected, bool accounting) {
+  List<Widget> _planBody(RecordPaymentPlan plan, RecordMode mode,
+      List<PlanRecord> open, PlanRecord? selected, bool accounting) {
     final adhocAllowed = adhocAllowedFor(plan.paymentType);
     final tds = deductionInput(_tds.text);
     final charge = deductionInput(_bankCharge.text);
     final note = deductionsNote(tds, charge);
-    final canTreatAs = mode == RecordMode.adhoc || (accounting && selected != null && selected.linkedDocumentId == null);
+    final canTreatAs = mode == RecordMode.adhoc ||
+        (accounting && selected != null && selected.linkedDocumentId == null);
     return [
       _infoStrip(PhosphorIconsRegular.receipt, plan.summary),
       SizedBox(height: 13.h),
@@ -541,8 +629,14 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
           ),
           _errorText(_errInstall),
           SizedBox(height: 13.h),
-          _field('Amount received (₹)', _amount,
-              selected != null ? (amountSeed(selected.open).isEmpty ? '0' : amountSeed(selected.open)) : 'Pick an installment',
+          _field(
+              'Amount received (₹)',
+              _amount,
+              selected != null
+                  ? (amountSeed(selected.open).isEmpty
+                      ? '0'
+                      : amountSeed(selected.open))
+                  : 'Pick an installment',
               number: true,
               onChanged: (_) => setState(() => _errAmount = null)),
           if (_errAmount != null && !_adjOpen)
@@ -575,25 +669,34 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             children: [
               Expanded(
                 child: _field('TDS deducted (₹)', _tds, '0',
-                    number: true, onChanged: (_) => setState(() => _errAmount = null)),
+                    number: true,
+                    onChanged: (_) => setState(() => _errAmount = null)),
               ),
               SizedBox(width: 9.w),
               Expanded(
                 child: _field('Bank charge (₹)', _bankCharge, '0',
-                    number: true, onChanged: (_) => setState(() => _errAmount = null)),
+                    number: true,
+                    onChanged: (_) => setState(() => _errAmount = null)),
               ),
             ],
           ),
-          _hint('TDS the customer withheld and the fee the bank / gateway deducted both count toward settlement.'),
+          _hint(
+              'TDS the customer withheld and the fee the bank / gateway deducted both count toward settlement.'),
           SizedBox(height: 13.h),
-          _field('Bank / gateway reference', _gatewayRef, 'UTR or transaction id'),
+          _field(
+              'Bank / gateway reference', _gatewayRef, 'UTR or transaction id'),
           if (accounting && canTreatAs) ...[
             SizedBox(height: 13.h),
             AccChoiceChips(
               label: 'Treat as',
-              options: const {'': 'Not specified', 'ADVANCE': 'Advance', 'CUSTOMER_CREDIT': 'Customer credit'},
+              options: const {
+                '': 'Not specified',
+                'ADVANCE': 'Advance',
+                'CUSTOMER_CREDIT': 'Customer credit'
+              },
               selected: _treatAs ?? '',
-              onSelected: (v) => setState(() => _treatAs = v.isEmpty ? null : v),
+              onSelected: (v) =>
+                  setState(() => _treatAs = v.isEmpty ? null : v),
             ),
           ],
           if (note != null) _hint(note),
@@ -624,7 +727,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       builder: (ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SheetHeader(title: 'Installment', onClose: () => Navigator.of(ctx).pop()),
+          SheetHeader(
+              title: 'Installment', onClose: () => Navigator.of(ctx).pop()),
           Flexible(
             child: ListView(
               shrinkWrap: true,
@@ -667,7 +771,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   Widget _convertBox() {
     final markWon = _markWon;
-    final text = markWon != null ? markWonPromptCopy(markWon.name) : (_convertNote ?? convertLeadPromptCopy);
+    final text = markWon != null
+        ? markWonPromptCopy(markWon.name)
+        : (_convertNote ?? convertLeadPromptCopy);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 12.h),
       decoration: BoxDecoration(
@@ -678,22 +784,35 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(text, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textLabel, height: 1.45)),
+          Text(text,
+              style: AppText.custom(
+                  size: 12.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textLabel,
+                  height: 1.45)),
           SizedBox(height: 10.h),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (markWon != null) ...[
-                _smallButton('Cancel', primary: false, onTap: _converting ? null : () => setState(() => _markWon = null)),
+                _smallButton('Cancel',
+                    primary: false,
+                    onTap: _converting
+                        ? null
+                        : () => setState(() => _markWon = null)),
                 SizedBox(width: 8.w),
                 Flexible(
                   child: _smallButton(
-                    _converting ? 'Converting…' : 'Mark Won, convert and continue',
+                    _converting
+                        ? 'Converting…'
+                        : 'Mark Won, convert and continue',
                     onTap: _converting || _busy
                         ? null
                         : () async {
                             final leadId = await _quoteLead();
-                            if (leadId != null) await _runConvert(leadId, markWonStatusId: markWon.id);
+                            if (leadId != null)
+                              await _runConvert(leadId,
+                                  markWonStatusId: markWon.id);
                           },
                   ),
                 ),
@@ -711,7 +830,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     );
   }
 
-  Widget _smallButton(String label, {bool primary = true, VoidCallback? onTap}) {
+  Widget _smallButton(String label,
+      {bool primary = true, VoidCallback? onTap}) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -720,7 +840,11 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
         padding: EdgeInsets.symmetric(horizontal: 13.w),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: primary ? (onTap == null ? AppColors.navy.withOpacity(0.6) : AppColors.navy) : AppColors.white,
+          color: primary
+              ? (onTap == null
+                  ? AppColors.navy.withOpacity(0.6)
+                  : AppColors.navy)
+              : AppColors.white,
           borderRadius: BorderRadius.circular(9.r),
           border: primary ? null : Border.all(color: AppColors.borderInput),
         ),
@@ -728,7 +852,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppText.custom(
-                size: 12.5, weight: FontWeight.w700, color: primary ? AppColors.white : AppColors.textLabel)),
+                size: 12.5,
+                weight: FontWeight.w700,
+                color: primary ? AppColors.white : AppColors.textLabel)),
       ),
     );
   }
@@ -741,12 +867,14 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       return [
         if (!cash) ...[
           SizedBox(height: 13.h),
-          _hint('Non-cash payments post to the bank account that lists this method as an alias, or to the default '
+          _hint(
+              'Non-cash payments post to the bank account that lists this method as an alias, or to the default '
               'bank. If neither exists the payment is refused — ask an accountant to set one up.'),
         ],
       ];
     }
-    final hasDefault = (banks.valueOrNull ?? const <BankAccount>[]).any((b) => b.isDefault && b.isActive && b.kind == 'BANK');
+    final hasDefault = (banks.valueOrNull ?? const <BankAccount>[])
+        .any((b) => b.isDefault && b.isActive && b.kind == 'BANK');
     return [
       SizedBox(height: 13.h),
       Opacity(
@@ -758,7 +886,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
           hint: hasDefault ? 'Default bank account' : 'Select an account',
           onTap: () async {
             if (cash) return;
-            final b = await pickBankAccount(context, ref, selectedId: _bank?.id);
+            final b =
+                await pickBankAccount(context, ref, selectedId: _bank?.id);
             if (b != null && mounted) {
               setState(() {
                 _bank = b;
@@ -771,7 +900,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       if (_errBank != null)
         _errorText(_errBank)
       else
-        _hint(cash ? 'Cash payments post to cash in hand.' : 'Where the money landed. Posted to the books as a receipt.'),
+        _hint(cash
+            ? 'Cash payments post to cash in hand.'
+            : 'Where the money landed. Posted to the books as a receipt.'),
     ];
   }
 
@@ -780,7 +911,10 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label$('Date received'),
-        _box(onTap: _pickDate, text: sheetDateLabel(_date), icon: PhosphorIconsRegular.calendarBlank),
+        _box(
+            onTap: _pickDate,
+            text: sheetDateLabel(_date),
+            icon: PhosphorIconsRegular.calendarBlank),
         _errorText(_errDate),
       ],
     );
@@ -807,10 +941,16 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_adjOpen ? PhosphorIconsBold.caretDown : PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.navy),
+          Icon(
+              _adjOpen
+                  ? PhosphorIconsBold.caretDown
+                  : PhosphorIconsBold.caretRight,
+              size: 13.sp,
+              color: AppColors.navy),
           SizedBox(width: 6.w),
           Text('Adjustments (TDS, bank charge, reference)',
-              style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.navy)),
+              style: AppText.custom(
+                  size: 13, weight: FontWeight.w600, color: AppColors.navy)),
         ],
       ),
     );
@@ -820,7 +960,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     final busy = _busy || _converting;
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 24.h),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: busy ? null : _save,
@@ -834,10 +975,14 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(PhosphorIconsBold.check, size: 15.sp, color: AppColors.white),
+              Icon(PhosphorIconsBold.check,
+                  size: 15.sp, color: AppColors.white),
               SizedBox(width: 8.w),
               Text(_busy ? 'Recording…' : 'Record payment',
-                  style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w700,
+                      color: AppColors.white)),
             ],
           ),
         ),
@@ -848,14 +993,20 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Widget _segToggle(RecordMode mode, bool adhocAllowed) {
     return Container(
       padding: EdgeInsets.all(4.w),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         children: [
-          Expanded(child: _seg(mode, RecordMode.settle, PhosphorIconsRegular.checkCircle, 'Settle an installment')),
+          Expanded(
+              child: _seg(mode, RecordMode.settle,
+                  PhosphorIconsRegular.checkCircle, 'Settle an installment')),
           // The Ad-hoc tab exists only for milestone-based plans.
           if (adhocAllowed) ...[
             SizedBox(width: 6.w),
-            Expanded(child: _seg(mode, RecordMode.adhoc, PhosphorIconsRegular.currencyInr, 'Ad-hoc amount')),
+            Expanded(
+                child: _seg(mode, RecordMode.adhoc,
+                    PhosphorIconsRegular.currencyInr, 'Ad-hoc amount')),
           ],
         ],
       ),
@@ -881,14 +1032,17 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 15.sp, color: on ? AppColors.navy : AppColors.textMuted),
+            Icon(icon,
+                size: 15.sp, color: on ? AppColors.navy : AppColors.textMuted),
             SizedBox(width: 6.w),
             Flexible(
               child: Text(label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.custom(
-                      size: 12.5, weight: FontWeight.w700, color: on ? AppColors.navy : AppColors.textMuted)),
+                      size: 12.5,
+                      weight: FontWeight.w700,
+                      color: on ? AppColors.navy : AppColors.textMuted)),
             ),
           ],
         ),
@@ -922,7 +1076,11 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     );
   }
 
-  Widget _box({required VoidCallback onTap, required String text, bool placeholder = false, required IconData icon}) {
+  Widget _box(
+      {required VoidCallback onTap,
+      required String text,
+      bool placeholder = false,
+      required IconData icon}) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -940,7 +1098,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
               child: Text(text,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: placeholder ? AppText.body(color: AppColors.textPlaceholder) : AppText.body()),
+                  style: placeholder
+                      ? AppText.body(color: AppColors.textPlaceholder)
+                      : AppText.body()),
             ),
             Icon(icon, size: 15.sp, color: AppColors.textPlaceholder),
           ],
@@ -952,13 +1112,17 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Widget _infoStrip(IconData icon, String text) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(10.r)),
+      decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(10.r)),
       child: Row(
         children: [
           Icon(icon, size: 15.sp, color: AppColors.navy),
           SizedBox(width: 8.w),
           Expanded(
-            child: Text(text, style: AppText.custom(size: 12, weight: FontWeight.w600, color: _bannerText)),
+            child: Text(text,
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w600, color: _bannerText)),
           ),
         ],
       ),
@@ -968,15 +1132,22 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Widget _successBanner(String text) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
-      decoration: BoxDecoration(color: AppColors.success.withOpacity(0.1), borderRadius: BorderRadius.circular(10.r)),
+      decoration: BoxDecoration(
+          color: AppColors.success.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIconsRegular.checkCircle, size: 15.sp, color: AppColors.success),
+          Icon(PhosphorIconsRegular.checkCircle,
+              size: 15.sp, color: AppColors.success),
           SizedBox(width: 8.w),
           Expanded(
             child: Text(text,
-                style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textLabel, height: 1.5)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textLabel,
+                    height: 1.5)),
           ),
         ],
       ),
@@ -1002,11 +1173,17 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
               controller: c,
               onChanged: onChanged,
               keyboardType: number
-                  ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+                  ? const TextInputType.numberWithOptions(
+                      decimal: true, signed: true)
                   : TextInputType.text,
               // Paise allowed. A leading minus is let through so the amount
               // rule can say "Enter a valid amount" rather than eat the key.
-              inputFormatters: number ? [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*\.?\d{0,2}'))] : null,
+              inputFormatters: number
+                  ? [
+                      FilteringTextInputFormatter.allow(
+                          RegExp(r'^-?\d*\.?\d{0,2}'))
+                    ]
+                  : null,
               style: AppText.body(),
               cursorColor: AppColors.blueBright,
               decoration: InputDecoration(
@@ -1024,28 +1201,47 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   Widget _hint(String text) => Padding(
         padding: EdgeInsets.only(top: 6.h),
-        child: Text(text, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+        child: Text(text,
+            style: AppText.custom(
+                size: 11.5,
+                weight: FontWeight.w500,
+                color: AppColors.textPlaceholder)),
       );
 
   Widget _errorText(String? text) => text == null
       ? const SizedBox.shrink()
       : Padding(
           padding: EdgeInsets.only(top: 6.h),
-          child: Text(text, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.error)),
+          child: Text(text,
+              style: AppText.custom(
+                  size: 12, weight: FontWeight.w500, color: AppColors.error)),
         );
 
   Widget _label$(String text, {bool required = false}) => Padding(
         padding: EdgeInsets.only(bottom: 7.h),
         child: Row(
           children: [
-            Text(text, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
-            if (required) Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+            Text(text,
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
+            if (required)
+              Text(' *',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: AppColors.error)),
           ],
         ),
       );
 }
 
-Widget _optionRow({required String title, String? sub, required bool selected, required VoidCallback onTap}) {
+Widget _optionRow(
+    {required String title,
+    String? sub,
+    required bool selected,
+    required VoidCallback onTap}) {
   return GestureDetector(
     behavior: HitTestBehavior.opaque,
     onTap: onTap,
@@ -1065,7 +1261,9 @@ Widget _optionRow({required String title, String? sub, required bool selected, r
               ],
             ),
           ),
-          if (selected) Icon(PhosphorIconsBold.check, size: 19.sp, color: AppColors.success),
+          if (selected)
+            Icon(PhosphorIconsBold.check,
+                size: 19.sp, color: AppColors.success),
         ],
       ),
     ),
@@ -1107,7 +1305,8 @@ class _PlanPickerSheetState extends ConsumerState<_PlanPickerSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Payment plan', onClose: () => Navigator.of(context).pop()),
+        SheetHeader(
+            title: 'Payment plan', onClose: () => Navigator.of(context).pop()),
         Padding(
           padding: EdgeInsets.fromLTRB(18.w, 0, 18.w, 8.h),
           child: Container(
@@ -1120,7 +1319,8 @@ class _PlanPickerSheetState extends ConsumerState<_PlanPickerSheet> {
             ),
             child: Row(
               children: [
-                Icon(PhosphorIconsRegular.magnifyingGlass, size: 15.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsRegular.magnifyingGlass,
+                    size: 15.sp, color: AppColors.textPlaceholder),
                 SizedBox(width: 8.w),
                 Expanded(
                   child: TextField(
@@ -1145,16 +1345,21 @@ class _PlanPickerSheetState extends ConsumerState<_PlanPickerSheet> {
           child: results.when(
             loading: () => Padding(
               padding: EdgeInsets.all(24.h),
-              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              child: const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2)),
             ),
             error: (e, _) => Padding(
               padding: EdgeInsets.all(24.h),
-              child: Text("Couldn't load payment plans", style: AppText.caption(color: AppColors.error)),
+              child: Text("Couldn't load payment plans",
+                  style: AppText.caption(color: AppColors.error)),
             ),
             data: (plans) => plans.isEmpty
                 ? Padding(
                     padding: EdgeInsets.fromLTRB(18.w, 16.h, 18.w, 32.h),
-                    child: Text(_term.isNotEmpty ? 'No payment plans match “$_term”' : 'No payment plans yet',
+                    child: Text(
+                        _term.isNotEmpty
+                            ? 'No payment plans match “$_term”'
+                            : 'No payment plans yet',
                         style: AppText.caption()),
                   )
                 : ListView(

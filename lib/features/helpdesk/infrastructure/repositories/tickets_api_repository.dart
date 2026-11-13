@@ -22,7 +22,8 @@ class TicketsApiRepository implements TicketsRepository {
   static const String _listKey = 'tickets';
 
   @override
-  Future<List<Ticket>> getTickets({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Ticket>> getTickets(
+      {Map<String, dynamic> filters = const {}}) async {
     try {
       final rows = await _remote.fetchTicketRows(filters: filters);
       // Only the unfiltered list is cached: a filtered page is not the list,
@@ -44,7 +45,8 @@ class TicketsApiRepository implements TicketsRepository {
   Future<Ticket?> getTicket(String id) => _remote.fetchTicket(id);
 
   @override
-  Future<List<CatalogOption>> getIssueStatuses() => _remote.fetchIssueStatuses();
+  Future<List<CatalogOption>> getIssueStatuses() =>
+      _remote.fetchIssueStatuses();
 
   @override
   Future<List<CatalogOption>> getIssueTypes() => _remote.fetchIssueTypes();
@@ -70,8 +72,9 @@ class TicketsApiRepository implements TicketsRepository {
   }
 
   @override
-  Future<void> updateTicket(String id, Map<String, dynamic> fields) async {
-    await _remote.updateTicket(id, fields);
+  Future<void> updateTicket(String id, Map<String, dynamic> fields,
+      {String? version}) async {
+    await _remote.updateTicket(id, fields, version: version);
     await AppCache.remove(_box, _listKey);
   }
 
@@ -102,10 +105,12 @@ class TicketsApiRepository implements TicketsRepository {
   }
 
   @override
-  Future<List<Ticket>> getChildren(String issueId) => _remote.fetchChildren(issueId);
+  Future<List<Ticket>> getChildren(String issueId) =>
+      _remote.fetchChildren(issueId);
 
   @override
-  Future<List<Ticket>> searchRootTickets(String search) => _remote.searchRootTickets(search);
+  Future<List<Ticket>> searchRootTickets(String search) =>
+      _remote.searchRootTickets(search);
 
   @override
   Future<void> setParent(String issueId, String? parentId) async {
@@ -128,6 +133,24 @@ class TicketsApiRepository implements TicketsRepository {
   }
 
   @override
-  Future<void> uploadAttachment(String issueId, {required String path, required String name}) =>
+  Future<void> uploadAttachment(String issueId,
+          {required String path, required String name}) =>
       _remote.uploadAttachment(issueId, path: path, name: name);
+
+  @override
+  Future<void> deleteTicket(String id) async {
+    await _remote.deleteTicket(id);
+    await AppCache.remove(_box, _listKey);
+  }
+
+  @override
+  Future<({List<Ticket> rows, bool more})> getDeletedTickets(
+          {String search = '', int page = 1}) =>
+      _remote.fetchDeleted(search: search, page: page);
+
+  @override
+  Future<void> restoreTicket(String id) async {
+    await _remote.restoreTicket(id);
+    await AppCache.remove(_box, _listKey);
+  }
 }

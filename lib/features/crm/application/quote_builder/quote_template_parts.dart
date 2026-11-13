@@ -33,16 +33,27 @@ class TemplateField {
 /// Template `field_type` (free text on the server) → the input to render.
 TemplateFieldType templateFieldType(String? raw, bool hasOptions) {
   final t = (raw ?? '').trim().toLowerCase();
-  if (hasOptions && const ['select', 'dropdown', 'choice', 'choices', 'radio'].contains(t)) {
+  if (hasOptions &&
+      const ['select', 'dropdown', 'choice', 'choices', 'radio'].contains(t)) {
     return TemplateFieldType.select;
   }
-  if (const ['number', 'decimal', 'currency', 'integer', 'int', 'float', 'amount'].contains(t)) {
+  if (const [
+    'number',
+    'decimal',
+    'currency',
+    'integer',
+    'int',
+    'float',
+    'amount'
+  ].contains(t)) {
     return TemplateFieldType.number;
   }
-  if (const ['boolean', 'checkbox', 'bool', 'toggle'].contains(t)) return TemplateFieldType.boolean;
+  if (const ['boolean', 'checkbox', 'bool', 'toggle'].contains(t))
+    return TemplateFieldType.boolean;
   if (t == 'date') return TemplateFieldType.date;
   if (t == 'email') return TemplateFieldType.email;
-  if (const ['textarea', 'longtext', 'long_text', 'multiline', 'rich_text'].contains(t)) {
+  if (const ['textarea', 'longtext', 'long_text', 'multiline', 'rich_text']
+      .contains(t)) {
     return TemplateFieldType.textarea;
   }
   return TemplateFieldType.text;
@@ -63,7 +74,9 @@ List<TemplateField> templateFieldsFromDetail(Map<String, dynamic>? detail) {
     final options = opts is List ? [for (final o in opts) _s(o)] : <String>[];
     out.add(TemplateField(
       key: key,
-      label: _s(d['field_label']).trim().isEmpty ? key : _s(d['field_label']).trim(),
+      label: _s(d['field_label']).trim().isEmpty
+          ? key
+          : _s(d['field_label']).trim(),
       type: templateFieldType(_s(d['field_type']), options.isNotEmpty),
       required: d['is_required'] == true,
       defaultValue: _s(d['default_value']),
@@ -90,29 +103,38 @@ const _serverFilledKeys = <String>{
   'customer_company_name',
 };
 
-List<TemplateField> editableTemplateFields(List<TemplateField> fields) =>
-    [for (final f in fields) if (!_serverFilledKeys.contains(f.key)) f];
+List<TemplateField> editableTemplateFields(List<TemplateField> fields) => [
+      for (final f in fields)
+        if (!_serverFilledKeys.contains(f.key)) f
+    ];
 
 const _trueWords = {'true', '1', 'yes', 'on'};
-bool _toBool(Object? v) => v is bool ? v : _trueWords.contains(_s(v).trim().toLowerCase());
+bool _toBool(Object? v) =>
+    v is bool ? v : _trueWords.contains(_s(v).trim().toLowerCase());
 
 /// The value a field opens with: the stored one; on a new quote, the
 /// template's default (an existing quote is never back-filled). A `bool` for a
 /// checkbox, a `String` otherwise.
 Object initialFieldValue(TemplateField f, Object? stored, bool isNew) {
   final has = stored != null && stored != '';
-  if (f.type == TemplateFieldType.boolean) return has ? _toBool(stored) : (isNew ? _toBool(f.defaultValue) : false);
+  if (f.type == TemplateFieldType.boolean)
+    return has ? _toBool(stored) : (isNew ? _toBool(f.defaultValue) : false);
   if (has) return _s(stored);
   return isNew ? f.defaultValue : '';
 }
 
 /// The value shown now: an edit wins over the initial value.
-Object fieldValueOf(TemplateField f, Map<String, Object> edits, Map<String, dynamic> stored, bool isNew) =>
-    edits.containsKey(f.key) ? edits[f.key]! : initialFieldValue(f, stored[f.key], isNew);
+Object fieldValueOf(TemplateField f, Map<String, Object> edits,
+        Map<String, dynamic> stored, bool isNew) =>
+    edits.containsKey(f.key)
+        ? edits[f.key]!
+        : initialFieldValue(f, stored[f.key], isNew);
 
 /// A required field left blank (a checkbox is never "missing").
 bool isFieldMissing(TemplateField f, Object value) =>
-    f.required && f.type != TemplateFieldType.boolean && _s(value).trim().isEmpty;
+    f.required &&
+    f.type != TemplateFieldType.boolean &&
+    _s(value).trim().isEmpty;
 
 /// The `field_values` to write. Keys the quote stores that this template does
 /// not define are kept verbatim (`field_values` is replaced whole). A blank
@@ -140,7 +162,8 @@ Map<String, dynamic> toFieldValuesPayload(
   return out;
 }
 
-bool fieldValuesChanged(Map<String, dynamic> payload, Map<String, dynamic> stored) {
+bool fieldValuesChanged(
+    Map<String, dynamic> payload, Map<String, dynamic> stored) {
   for (final k in {...payload.keys, ...stored.keys}) {
     if (payload[k] != stored[k]) return true;
   }
@@ -150,7 +173,11 @@ bool fieldValuesChanged(Map<String, dynamic> payload, Map<String, dynamic> store
 // ── Item Quote layout: section headings + spot inputs ─────────────────────
 
 class SectionOption {
-  const SectionOption({required this.id, required this.title, this.isDefault = false, this.productTypeIds = const []});
+  const SectionOption(
+      {required this.id,
+      required this.title,
+      this.isDefault = false,
+      this.productTypeIds = const []});
   final String id;
   final String title;
   final bool isDefault;
@@ -158,7 +185,11 @@ class SectionOption {
 }
 
 class SectionHeading {
-  const SectionHeading({required this.id, required this.label, this.isMandatory = false, this.options = const []});
+  const SectionHeading(
+      {required this.id,
+      required this.label,
+      this.isMandatory = false,
+      this.options = const []});
   final String id;
   final String label;
   final bool isMandatory;
@@ -171,12 +202,16 @@ class SectionPick {
   final String headingId;
   final String contentId;
 
-  Map<String, dynamic> toJson() => {'heading_id': headingId, 'content_id': contentId};
+  Map<String, dynamic> toJson() =>
+      {'heading_id': headingId, 'content_id': contentId};
 }
 
 /// `GET quotations/templates/{id}/config/` — what the builder reads of it.
 class TemplateLayoutConfig {
-  const TemplateLayoutConfig({this.needsConfiguration = false, this.headings = const [], this.sectionDefaults = const {}});
+  const TemplateLayoutConfig(
+      {this.needsConfiguration = false,
+      this.headings = const [],
+      this.sectionDefaults = const {}});
 
   factory TemplateLayoutConfig.fromJson(Map<String, dynamic> j) {
     final defaults = <String, String>{};
@@ -190,20 +225,27 @@ class TemplateLayoutConfig {
       needsConfiguration: j['needs_configuration'] == true,
       sectionDefaults: defaults,
       headings: [
-        for (final h in (j['headings'] is List ? j['headings'] as List : const []))
+        for (final h
+            in (j['headings'] is List ? j['headings'] as List : const []))
           if (h is Map)
             SectionHeading(
               id: _s(h['section_heading_id']),
               label: _s(h['label']),
               isMandatory: h['is_mandatory'] == true,
               options: [
-                for (final o in (h['options'] is List ? h['options'] as List : const []))
+                for (final o
+                    in (h['options'] is List ? h['options'] as List : const []))
                   if (o is Map)
                     SectionOption(
                       id: _s(o['section_content_id']),
                       title: _s(o['title']),
                       isDefault: o['is_default'] == true,
-                      productTypeIds: [for (final t in (o['product_type_ids'] is List ? o['product_type_ids'] as List : const [])) _s(t)],
+                      productTypeIds: [
+                        for (final t in (o['product_type_ids'] is List
+                            ? o['product_type_ids'] as List
+                            : const []))
+                          _s(t)
+                      ],
                     ),
               ],
             ),
@@ -224,7 +266,9 @@ String pickFor(List<SectionPick> picks, String headingId) {
   return '';
 }
 
-List<SectionPick> withPick(List<SectionPick> picks, String headingId, String contentId) => [
+List<SectionPick> withPick(
+        List<SectionPick> picks, String headingId, String contentId) =>
+    [
       for (final p in picks)
         if (p.headingId != headingId) p,
       if (contentId.isNotEmpty) SectionPick(headingId, contentId),
@@ -233,7 +277,8 @@ List<SectionPick> withPick(List<SectionPick> picks, String headingId, String con
 /// The picks a new quote starts with — the server's own preload rules: a
 /// product-category match, else the admin's default, else a mandatory
 /// heading's default option.
-List<SectionPick> defaultSectionPicks(List<SectionHeading> headings, Map<String, String> defaults, Set<String> productTypeIds) {
+List<SectionPick> defaultSectionPicks(List<SectionHeading> headings,
+    Map<String, String> defaults, Set<String> productTypeIds) {
   final out = <SectionPick>[];
   for (final h in headings) {
     SectionOption? chosen;
@@ -261,11 +306,16 @@ List<SectionPick> defaultSectionPicks(List<SectionHeading> headings, Map<String,
   return out;
 }
 
-List<SectionHeading> missingMandatoryHeadings(List<SectionHeading> headings, List<SectionPick> picks) =>
-    [for (final h in headings) if (h.isMandatory && pickFor(picks, h.id).isEmpty) h];
+List<SectionHeading> missingMandatoryHeadings(
+        List<SectionHeading> headings, List<SectionPick> picks) =>
+    [
+      for (final h in headings)
+        if (h.isMandatory && pickFor(picks, h.id).isEmpty) h
+    ];
 
 bool sectionPicksChanged(List<SectionPick> a, List<SectionPick> b) {
-  String key(List<SectionPick> p) => ([for (final x in p) '${x.headingId}:${x.contentId}']..sort()).join('|');
+  String key(List<SectionPick> p) =>
+      ([for (final x in p) '${x.headingId}:${x.contentId}']..sort()).join('|');
   return key(a) != key(b);
 }
 
@@ -289,6 +339,7 @@ class SpotInputField {
     this.modelValue = '',
     this.spotValue = '',
     this.needsInput = false,
+    this.input = 'text',
   });
 
   factory SpotInputField.fromJson(Map<String, dynamic> j) => SpotInputField(
@@ -296,12 +347,17 @@ class SpotInputField {
         label: _s(j['label']),
         hint: _s(j['hint']),
         multiline: j['multiline'] == true,
-        source: _s(j['source']).toLowerCase() == 'model' ? 'model' : _s(j['source']).toLowerCase() == 'api' ? 'api' : 'spot',
+        source: _s(j['source']).toLowerCase() == 'model'
+            ? 'model'
+            : _s(j['source']).toLowerCase() == 'api'
+                ? 'api'
+                : 'spot',
         path: _s(j['path']),
         required: j['required'] == true,
         modelValue: _s(j['model_value']),
         spotValue: _s(j['spot_value']),
         needsInput: j['needs_input'] == true,
+        input: _s(j['input']).isEmpty ? 'text' : _s(j['input']).toLowerCase(),
       );
 
   final String key;
@@ -315,17 +371,49 @@ class SpotInputField {
   final String spotValue;
   final bool needsInput;
 
+  /// `text` | `multiline` | `money` | `number` | `date` …
+  final String input;
+
+  bool get isNumeric => input == 'money' || input == 'number';
+
   /// The hint the popup shows under the box.
   String get boxHint => source == 'model'
       ? 'The record\'s “${path.split('.').last.replaceAll('_', ' ')}” is empty — type a value for this quote.'
       : hint;
 }
 
-List<SpotInputField> fieldsNeedingInput(List<SpotInputField> fields) => [for (final f in fields) if (f.needsInput) f];
+/// A money / number field's text as the plain number the template formats
+/// ("78,000" → "78000"); null when it is not a number. Other inputs pass
+/// through trimmed. Mirrors the webapp's `normalizeSpotValue`.
+String? normalizeSpotValue(SpotInputField f, String text) {
+  final t = text.trim();
+  if (!f.isNumeric) return t;
+  if (t.isEmpty) return '';
+  final plain = t.replaceAll(RegExp(r'[,₹\s]'), '');
+  return RegExp(r'^-?\d+(\.\d+)?$').hasMatch(plain) ? plain : null;
+}
 
-List<SpotInputField> missingRequiredSpot(List<SpotInputField> fields, Map<String, String> values) => [
+/// Fields whose typed text is not a valid number (money / number inputs).
+List<SpotInputField> invalidSpotNumbers(
+        List<SpotInputField> fields, Map<String, String> values) =>
+    [
       for (final f in fields)
-        if (f.required && f.modelValue.isEmpty && (values[f.key] ?? f.spotValue).trim().isEmpty) f,
+        if (normalizeSpotValue(f, values[f.key] ?? '') == null) f
+    ];
+
+List<SpotInputField> fieldsNeedingInput(List<SpotInputField> fields) => [
+      for (final f in fields)
+        if (f.needsInput) f
+    ];
+
+List<SpotInputField> missingRequiredSpot(
+        List<SpotInputField> fields, Map<String, String> values) =>
+    [
+      for (final f in fields)
+        if (f.required &&
+            f.modelValue.isEmpty &&
+            (values[f.key] ?? f.spotValue).trim().isEmpty)
+          f,
     ];
 
 /// Typed spot values worth sending on a new quote (blanks left out).
@@ -349,7 +437,8 @@ class LibraryClause {
     this.defaultProductTypeIds = const [],
   });
 
-  factory LibraryClause.fromJson(Map<String, dynamic> j, int index) => LibraryClause(
+  factory LibraryClause.fromJson(Map<String, dynamic> j, int index) =>
+      LibraryClause(
         id: _s(j['clause_id']),
         title: _s(j['title']),
         bodyHtml: _s(j['body_html']),
@@ -357,9 +446,17 @@ class LibraryClause {
         isActive: j['is_active'] != false,
         effectiveDate: _s(j['effective_date']),
         position: j['position'] is num ? (j['position'] as num).toInt() : index,
-        defaultFamilies: [for (final f in (j['default_families'] is List ? j['default_families'] as List : const [])) _s(f)],
+        defaultFamilies: [
+          for (final f in (j['default_families'] is List
+              ? j['default_families'] as List
+              : const []))
+            _s(f)
+        ],
         defaultProductTypeIds: [
-          for (final f in (j['default_product_type_ids'] is List ? j['default_product_type_ids'] as List : const [])) _s(f)
+          for (final f in (j['default_product_type_ids'] is List
+              ? j['default_product_type_ids'] as List
+              : const []))
+            _s(f)
         ],
       );
 
@@ -373,7 +470,9 @@ class LibraryClause {
   final List<String> defaultFamilies;
   final List<String> defaultProductTypeIds;
 
-  bool isEffective(String today) => isActive && (effectiveDate.isEmpty || effectiveDate.compareTo(today) <= 0);
+  bool isEffective(String today) =>
+      isActive &&
+      (effectiveDate.isEmpty || effectiveDate.compareTo(today) <= 0);
 }
 
 enum ClauseOrigin { saved, defaulted, added }
@@ -405,15 +504,20 @@ class ClauseRow {
 /// The defaults the server preloads on a new quote: in-effect clauses marked
 /// for the quote family, those tied to a product category on the lines, and
 /// every unscoped mandatory clause.
-List<ClauseRow> defaultClauseRows(List<LibraryClause> library, Set<String> productTypeIds, String today) {
+List<ClauseRow> defaultClauseRows(
+    List<LibraryClause> library, Set<String> productTypeIds, String today) {
   final picked = [
     for (final c in library)
       if (c.isEffective(today) &&
           (c.defaultFamilies.contains('quote') ||
               c.defaultProductTypeIds.any(productTypeIds.contains) ||
-              (c.isMandatory && c.defaultFamilies.isEmpty && c.defaultProductTypeIds.isEmpty)))
+              (c.isMandatory &&
+                  c.defaultFamilies.isEmpty &&
+                  c.defaultProductTypeIds.isEmpty)))
         c,
-  ]..sort((a, b) => a.position != b.position ? a.position.compareTo(b.position) : a.title.compareTo(b.title));
+  ]..sort((a, b) => a.position != b.position
+      ? a.position.compareTo(b.position)
+      : a.title.compareTo(b.title));
   return [
     for (final c in picked)
       ClauseRow(
@@ -429,8 +533,8 @@ List<ClauseRow> defaultClauseRows(List<LibraryClause> library, Set<String> produ
 
 /// A saved quote's `clauses[]`, in order.
 List<ClauseRow> savedClauseRows(List<Map<String, dynamic>> clauses) {
-  final sorted = [...clauses]
-    ..sort((a, b) => ((a['position'] as num?) ?? 0).compareTo((b['position'] as num?) ?? 0));
+  final sorted = [...clauses]..sort((a, b) =>
+      ((a['position'] as num?) ?? 0).compareTo((b['position'] as num?) ?? 0));
   return [
     for (final c in sorted)
       ClauseRow(
@@ -447,7 +551,8 @@ List<ClauseRow> savedClauseRows(List<Map<String, dynamic>> clauses) {
 
 /// A mandatory clause on the quote (saved) or preloaded cannot be removed; one
 /// added in this session can be taken back off.
-bool canRemoveClause(ClauseRow r) => !r.isMandatory || r.origin == ClauseOrigin.added;
+bool canRemoveClause(ClauseRow r) =>
+    !r.isMandatory || r.origin == ClauseOrigin.added;
 
 List<ClauseRow> removeClause(List<ClauseRow> rows, String key) {
   final i = rows.indexWhere((r) => r.key == key);
@@ -466,9 +571,16 @@ List<ClauseRow> moveClause(List<ClauseRow> rows, String key, int delta) {
   return next;
 }
 
-List<LibraryClause> addableClauses(List<LibraryClause> library, List<ClauseRow> rows, String today) {
-  final present = {for (final r in rows) if (r.clauseId.isNotEmpty) r.clauseId};
-  return [for (final c in library) if (c.isEffective(today) && !present.contains(c.id)) c];
+List<LibraryClause> addableClauses(
+    List<LibraryClause> library, List<ClauseRow> rows, String today) {
+  final present = {
+    for (final r in rows)
+      if (r.clauseId.isNotEmpty) r.clauseId
+  };
+  return [
+    for (final c in library)
+      if (c.isEffective(today) && !present.contains(c.id)) c
+  ];
 }
 
 List<ClauseRow> addLibraryClause(List<ClauseRow> rows, LibraryClause c) {
@@ -489,7 +601,9 @@ List<ClauseRow> addLibraryClause(List<ClauseRow> rows, LibraryClause c) {
 /// The ordered `clauses` write: saved rows by id, the rest by library clause.
 List<Map<String, dynamic>> toClauseWrites(List<ClauseRow> rows) => [
       for (final r in rows)
-        r.quotationClauseId.isNotEmpty ? {'quotation_clause_id': r.quotationClauseId} : {'clause_id': r.clauseId},
+        r.quotationClauseId.isNotEmpty
+            ? {'quotation_clause_id': r.quotationClauseId}
+            : {'clause_id': r.clauseId},
     ];
 
 const _entities = {
@@ -505,9 +619,11 @@ const _entities = {
 /// A clause body as plain text (the HTML is never rendered raw).
 String clauseText(String html) => html
     .replaceAll(RegExp(r'<\s*br\s*/?>', caseSensitive: false), '\n')
-    .replaceAll(RegExp(r'</\s*(p|div|li|h[1-6])\s*>', caseSensitive: false), '\n')
+    .replaceAll(
+        RegExp(r'</\s*(p|div|li|h[1-6])\s*>', caseSensitive: false), '\n')
     .replaceAll(RegExp(r'<[^>]*>'), '')
-    .replaceAllMapped(RegExp(r'&(amp|lt|gt|quot|nbsp|#39|#x27);'), (m) => _entities[m[0]] ?? m[0]!)
+    .replaceAllMapped(RegExp(r'&(amp|lt|gt|quot|nbsp|#39|#x27);'),
+        (m) => _entities[m[0]] ?? m[0]!)
     .replaceAll(RegExp(r'[ \t]+\n'), '\n')
     .replaceAll(RegExp(r'\n{3,}'), '\n\n')
     .trim();

@@ -14,12 +14,16 @@ class CustomerCard extends StatelessWidget {
     super.key,
     required this.customer,
     required this.onTap,
+    this.onLongPress,
     required this.onCall,
     this.schema = ViewSchema.empty,
   });
 
   final Customer customer;
   final VoidCallback onTap;
+
+  /// Long press — the shared row-actions sheet.
+  final VoidCallback? onLongPress;
   final VoidCallback onCall;
 
   /// The org's configured column set for the mobile card.
@@ -27,7 +31,8 @@ class CustomerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meta = StatusMeta$.customer[customer.status] ?? StatusMeta$.customer['active']!;
+    final meta = StatusMeta$.customer[customer.status] ??
+        StatusMeta$.customer['active']!;
     final custom = customer.raw['custom_fields'];
     return SchemaMobileCard(
       name: customer.name,
@@ -43,6 +48,7 @@ class CustomerCard extends StatelessWidget {
       fallbackPeople: [for (final id in customer.team) MockUsers.of(id).name],
       mockCell: (c) => customerColumnText(customer, c),
       onTap: onTap,
+      onLongPress: onLongPress,
       onCall: onCall,
     );
   }

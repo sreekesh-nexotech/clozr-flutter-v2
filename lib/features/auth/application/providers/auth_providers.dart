@@ -10,6 +10,7 @@ import '../../../shell/application/providers/shell_providers.dart';
 import '../../../../core/monitoring/app_monitoring.dart';
 import '../../../../core/network/api_service.dart';
 import '../../../../core/network/network_providers.dart';
+import '../../../../core/services/push_device.dart';
 import '../../../../core/storage/app_cache.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../domain/entities/auth_session.dart';
@@ -188,6 +189,9 @@ class SessionController extends StateNotifier<SessionState> {
   }
 
   Future<void> logout() async {
+    // While the access token is still valid: stop pushes for this account
+    // reaching a phone it has signed out of.
+    await unregisterPushDevice(_ref);
     final tokens = _ref.read(tokenStorageProvider);
     final refresh = tokens.refreshToken;
     if (refresh != null && refresh.isNotEmpty) {
@@ -200,11 +204,13 @@ class SessionController extends StateNotifier<SessionState> {
   /// server gave is kept for the login screen.
   Future<void> forceLogout() {
     final reason = _ref.read(apiServiceProvider).signOutReason;
-    if (reason != null) _ref.read(signOutReasonProvider.notifier).state = reason;
+    if (reason != null)
+      _ref.read(signOutReasonProvider.notifier).state = reason;
     return _clearLocalSession();
   }
 
-  Future<void> _adoptSession(AuthSession session, {bool promoteGate = true}) async {
+  Future<void> _adoptSession(AuthSession session,
+      {bool promoteGate = true}) async {
     // A new session must never inherit a prior tenant's cached data or the
     // previous user's in-memory provider graph.
     await AppCache.clearAll();
@@ -301,7 +307,8 @@ const signOutReasonMessages = {
   'session_expired': 'You were signed out due to inactivity.',
   'session_revoked': 'Your session was ended. Please sign in again.',
   'user_inactive': 'Your account is inactive. Contact your administrator.',
-  'session_outside_work_hours': 'Your work hours have ended. Sign in again with a reason to continue.',
+  'session_outside_work_hours':
+      'Your work hours have ended. Sign in again with a reason to continue.',
 };
 
 final sessionControllerProvider =

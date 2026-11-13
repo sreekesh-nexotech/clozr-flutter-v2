@@ -131,12 +131,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     final limit = isImage ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
     if (file!.size > limit) {
-      ref.read(toastProvider.notifier).show(
-          isImage ? 'Image too large — max 5 MB' : 'File too large — max 10 MB');
+      ref.read(toastProvider.notifier).show(isImage
+          ? 'Image too large — max 5 MB'
+          : 'File too large — max 10 MB');
       return;
     }
 
-    ref.read(conversationsProvider.notifier).sendAttachment(_id, path, file.name, isImage: isImage);
+    ref
+        .read(conversationsProvider.notifier)
+        .sendAttachment(_id, path, file.name, isImage: isImage);
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
   }
 
@@ -210,7 +213,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// [_openAttachment] and [_downloadMedia] once each has settled on a
   /// `mediaId` to fetch.
   Future<void> _fetchAndOpenMedia(String mediaId, ToastController toast) async {
-    final fetched = await ref.read(conversationsProvider.notifier).fetchMedia(mediaId);
+    final fetched =
+        await ref.read(conversationsProvider.notifier).fetchMedia(mediaId);
     if (!mounted) return;
     if (fetched == null) {
       toast.show('Could not open this file — it may have expired.');
@@ -218,7 +222,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     final (bytes, contentType) = fetched;
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/wa_$mediaId${_extensionForMime(contentType)}');
+    final file =
+        File('${dir.path}/wa_$mediaId${_extensionForMime(contentType)}');
     await file.writeAsBytes(bytes);
     if (!mounted) return;
     await _launchLocalFile(file.path, toast);
@@ -227,7 +232,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _launchLocalFile(String path, ToastController toast) async {
     final result = await OpenFile.open(path);
     if (result.type != ResultType.done && mounted) {
-      toast.show(result.message.isNotEmpty ? result.message : 'No app on this device can open this file.');
+      toast.show(result.message.isNotEmpty
+          ? result.message
+          : 'No app on this device can open this file.');
     }
   }
 
@@ -272,7 +279,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         firstName: firstName,
         onPick: (t) {
           Navigator.of(ctx).pop();
-          ref.read(conversationsProvider.notifier).sendTemplate(_id, t.resolve(firstName));
+          ref
+              .read(conversationsProvider.notifier)
+              .sendTemplate(_id, t.resolve(firstName));
           ref.read(toastProvider.notifier).show('Template message sent');
           WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
         },
@@ -291,7 +300,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         child: Column(
           children: [
             _header(context, null, tab),
-            const Expanded(child: Center(child: Text('Conversation not found'))),
+            const Expanded(
+                child: Center(child: Text('Conversation not found'))),
           ],
         ),
       );
@@ -314,7 +324,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       padding: EdgeInsets.fromLTRB(14.w, 54.h, 14.w, 0),
       decoration: const BoxDecoration(
         color: AppColors.white,
-        border: Border(bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
+        border: Border(
+            bottom: BorderSide(color: AppColors.borderCardSoft, width: 1)),
       ),
       child: Column(
         children: [
@@ -324,21 +335,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               children: [
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () => context.canPop() ? context.pop() : context.go(Routes.messages),
+                  onTap: () => context.canPop()
+                      ? context.pop()
+                      : context.go(Routes.messages),
                   child: Padding(
                     padding: EdgeInsets.only(right: 6.w),
-                    child: Icon(PhosphorIconsBold.caretLeft, size: 22.sp, color: AppColors.textPrimary),
+                    child: Icon(PhosphorIconsBold.caretLeft,
+                        size: 22.sp, color: AppColors.textPrimary),
                   ),
                 ),
                 if (chat != null) ...[
-                  ChatAvatar(initials: chat.initials, online: chat.online, size: 40, fontSize: 13),
+                  ChatAvatar(
+                      initials: chat.initials,
+                      online: chat.online,
+                      size: 40,
+                      fontSize: 13),
                   SizedBox(width: 10.w),
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
                         if (chat.leadId != null) {
-                          context.push('${Routes.leadDetail}?id=${chat.leadId}');
+                          context
+                              .push('${Routes.leadDetail}?id=${chat.leadId}');
                         }
                       },
                       child: Column(
@@ -347,13 +366,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           Text(chat.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.2)),
+                              style: AppText.custom(
+                                  size: 16,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.2)),
                           SizedBox(height: 1.h),
-                          Text(chat.online ? 'Online' : 'Last seen ${chat.lastTime}',
+                          Text(
+                              chat.online
+                                  ? 'Online'
+                                  : 'Last seen ${chat.lastTime}',
                               style: AppText.custom(
                                   size: 11.5,
                                   weight: FontWeight.w600,
-                                  color: chat.online ? AppColors.success : AppColors.textPlaceholder)),
+                                  color: chat.online
+                                      ? AppColors.success
+                                      : AppColors.textPlaceholder)),
                         ],
                       ),
                     ),
@@ -368,13 +396,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(11.r),
-                        border: Border.all(color: AppColors.borderChip, width: 1),
+                        border:
+                            Border.all(color: AppColors.borderChip, width: 1),
                       ),
-                      child: Icon(PhosphorIconsFill.phone, size: 18.sp, color: AppColors.navy),
+                      child: Icon(PhosphorIconsFill.phone,
+                          size: 18.sp, color: AppColors.navy),
                     ),
                   ),
                 ] else
-                  Text('Chat', style: AppText.custom(size: 16, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text('Chat',
+                      style: AppText.custom(
+                          size: 16,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
               ],
             ),
           ),
@@ -383,7 +417,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               padding: EdgeInsets.symmetric(horizontal: 4.w),
               child: Row(
                 children: [
-                  for (final t in const [('chats', 'Chats'), ('medias', 'Medias'), ('links', 'Links')]) ...[
+                  for (final t in const [
+                    ('chats', 'Chats'),
+                    ('medias', 'Medias'),
+                    ('links', 'Links')
+                  ]) ...[
                     _tab(t.$1, t.$2, tab == t.$1),
                     SizedBox(width: 22.w),
                   ],
@@ -442,7 +480,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       iconBg: AppColors.tintGreen,
                       iconColor: AppColors.success,
                       title: 'No messages yet',
-                      body: 'Say hello to start the conversation with ${chat.name}.',
+                      body:
+                          'Say hello to start the conversation with ${chat.name}.',
                     ),
                   ],
                 )
@@ -455,9 +494,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       MessageBubble(
                         message: m,
                         onRetry: m.failed
-                            ? () => ref.read(conversationsProvider.notifier).retryMessage(chat.id, m)
+                            ? () => ref
+                                .read(conversationsProvider.notifier)
+                                .retryMessage(chat.id, m)
                             : null,
-                        onOpenAttachment: m.isAttachment ? () => _openAttachment(m) : null,
+                        onOpenAttachment:
+                            m.isAttachment ? () => _openAttachment(m) : null,
                       ),
                   ],
                 ),
@@ -473,7 +515,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       padding: EdgeInsets.fromLTRB(14.w, 10.h, 14.w, 26.h),
       decoration: const BoxDecoration(
         color: AppColors.white,
-        border: Border(top: BorderSide(color: AppColors.borderCardSoft, width: 1)),
+        border:
+            Border(top: BorderSide(color: AppColors.borderCardSoft, width: 1)),
       ),
       child: chat.windowOpen ? _openComposer(chat) : _closedComposer(chat),
     );
@@ -499,7 +542,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _openEmojiPicker,
-              child: Icon(PhosphorIconsRegular.smiley, size: 24.sp, color: MessagesColors.muted),
+              child: Icon(PhosphorIconsRegular.smiley,
+                  size: 24.sp, color: MessagesColors.muted),
             ),
             SizedBox(width: 9.w),
             Expanded(
@@ -509,14 +553,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.bgScreen,
                   borderRadius: BorderRadius.circular(22.r),
-                  border: Border.all(color: MessagesColors.inputBorder, width: 1),
+                  border:
+                      Border.all(color: MessagesColors.inputBorder, width: 1),
                 ),
                 alignment: Alignment.center,
                 child: TextField(
                   controller: _draftCtrl,
                   onSubmitted: (_) => _send(),
                   textInputAction: TextInputAction.send,
-                  style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textBody),
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w500,
+                      color: AppColors.textBody),
                   cursorColor: AppColors.navy,
                   // The backend caps `body` at 4096 chars (whatsapp.md §4.1)
                   // and measures the decoded string, not UTF-16 code units —
@@ -529,7 +577,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     border: InputBorder.none,
                     counterText: '',
                     hintText: 'Type a message…',
-                    hintStyle: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                    hintStyle: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder),
                   ),
                 ),
               ),
@@ -538,7 +589,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _pickAttachment,
-              child: Icon(PhosphorIconsRegular.paperclip, size: 22.sp, color: MessagesColors.muted),
+              child: Icon(PhosphorIconsRegular.paperclip,
+                  size: 22.sp, color: MessagesColors.muted),
             ),
             SizedBox(width: 9.w),
             GestureDetector(
@@ -549,10 +601,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 height: 44.w,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: hasDraft ? AppColors.navy : MessagesColors.sendDisabled,
+                  color:
+                      hasDraft ? AppColors.navy : MessagesColors.sendDisabled,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 19.sp, color: AppColors.white),
+                child: Icon(PhosphorIconsFill.paperPlaneTilt,
+                    size: 19.sp, color: AppColors.white),
               ),
             ),
           ],
@@ -581,14 +635,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           child: Container(
             height: 46.h,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
+            decoration: BoxDecoration(
+                color: AppColors.navy,
+                borderRadius: BorderRadius.circular(12.r)),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(PhosphorIconsRegular.paperPlaneTilt, size: 16.sp, color: AppColors.white),
+                Icon(PhosphorIconsRegular.paperPlaneTilt,
+                    size: 16.sp, color: AppColors.white),
                 SizedBox(width: 8.w),
                 Text('Send a template message',
-                    style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.white)),
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: AppColors.white)),
               ],
             ),
           ),
@@ -608,7 +668,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12.r)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12.r)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -621,9 +682,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: titleColor)),
+                Text(title,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w700,
+                        color: titleColor)),
                 SizedBox(height: 1.h),
-                Text(sub, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: subColor)),
+                Text(sub,
+                    style: AppText.custom(
+                        size: 11.5, weight: FontWeight.w500, color: subColor)),
               ],
             ),
           ),
@@ -638,9 +705,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       child: Center(
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-          decoration: BoxDecoration(color: MessagesColors.todayChip, borderRadius: BorderRadius.circular(8.r)),
+          decoration: BoxDecoration(
+              color: MessagesColors.todayChip,
+              borderRadius: BorderRadius.circular(8.r)),
           child: Text('Today',
-              style: AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textMuted2)),
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w600,
+                  color: AppColors.textMuted2)),
         ),
       ),
     );
@@ -674,7 +746,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             subColor: AppColors.textPlaceholder,
             trailing: GestureDetector(
               onTap: () => _downloadMedia(f),
-              child: Icon(PhosphorIconsRegular.downloadSimple, size: 18.sp, color: MessagesColors.muted),
+              child: Icon(PhosphorIconsRegular.downloadSimple,
+                  size: 18.sp, color: MessagesColors.muted),
             ),
           ),
       ],
@@ -727,7 +800,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             subColor: AppColors.blueBright,
             subWeight: FontWeight.w600,
             trailing: Text(lk.meta,
-                style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder)),
           ),
       ],
     );
@@ -754,7 +830,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             width: 40.w,
             height: 40.w,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(11.r)),
+            decoration: BoxDecoration(
+                color: iconBg, borderRadius: BorderRadius.circular(11.r)),
             child: Icon(icon, size: 19.sp, color: iconColor),
           ),
           SizedBox(width: 12.w),
@@ -765,12 +842,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 Text(title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 2.h),
                 Text(sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 11.5, weight: subWeight, color: subColor)),
+                    style: AppText.custom(
+                        size: 11.5, weight: subWeight, color: subColor)),
               ],
             ),
           ),
@@ -797,17 +878,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             width: 56.r,
             height: 56.r,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(16.r)),
+            decoration: BoxDecoration(
+                color: iconBg, borderRadius: BorderRadius.circular(16.r)),
             child: Icon(icon, size: 26.sp, color: iconColor),
           ),
           SizedBox(height: 14.h),
-          Text(title, style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text(title,
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 5.h),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 230.w),
             child: Text(body,
                 textAlign: TextAlign.center,
-                style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.5)),
+                style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)
+                    .copyWith(height: 1.5)),
           ),
         ],
       ),
@@ -854,12 +944,17 @@ class _TemplatePickerSheet extends ConsumerWidget {
             children: [
               Padding(
                 padding: EdgeInsets.only(top: 1.h),
-                child: Icon(PhosphorIconsRegular.info, size: 15.sp, color: AppColors.blueBright),
+                child: Icon(PhosphorIconsRegular.info,
+                    size: 15.sp, color: AppColors.blueBright),
               ),
               SizedBox(width: 8.w),
               Expanded(
-                child: Text('Only approved templates can be sent outside the 24-hour window.',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textLabelAlt)
+                child: Text(
+                    'Only approved templates can be sent outside the 24-hour window.',
+                    style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textLabelAlt)
                         .copyWith(height: 1.5)),
               ),
             ],
@@ -895,29 +990,44 @@ class _TemplatePickerSheet extends ConsumerWidget {
                 SizedBox(
                   width: 24.r,
                   height: 24.r,
-                  child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.navy),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.4, color: AppColors.navy),
                 ),
                 SizedBox(height: 14.h),
                 Text('Loading templates…',
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textMuted)),
               ]
             : [
                 Container(
                   width: 56.r,
                   height: 56.r,
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(16.r)),
-                  child: Icon(PhosphorIconsRegular.chatText, size: 26.sp, color: AppColors.textPlaceholder),
+                  decoration: BoxDecoration(
+                      color: AppColors.bgChipGrey,
+                      borderRadius: BorderRadius.circular(16.r)),
+                  child: Icon(PhosphorIconsRegular.chatText,
+                      size: 26.sp, color: AppColors.textPlaceholder),
                 ),
                 SizedBox(height: 14.h),
                 Text('No approved templates',
-                    style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 15,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 5.h),
                 ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: 240.w),
-                  child: Text('Approved WhatsApp templates will appear here once they are set up.',
+                  child: Text(
+                      'Approved WhatsApp templates will appear here once they are set up.',
                       textAlign: TextAlign.center,
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted).copyWith(height: 1.5)),
+                      style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)
+                          .copyWith(height: 1.5)),
                 ),
               ],
       ),
@@ -932,7 +1042,9 @@ class _TemplatePickerSheet extends ConsumerWidget {
         padding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 2.w),
         decoration: BoxDecoration(
           border: Border(
-            bottom: BorderSide(color: last ? Colors.transparent : AppColors.bgChipGrey, width: 1),
+            bottom: BorderSide(
+                color: last ? Colors.transparent : AppColors.bgChipGrey,
+                width: 1),
           ),
         ),
         child: Row(
@@ -942,8 +1054,11 @@ class _TemplatePickerSheet extends ConsumerWidget {
               width: 38.w,
               height: 38.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(11.r)),
-              child: Icon(PhosphorIconsRegular.whatsappLogo, size: 19.sp, color: AppColors.success),
+              decoration: BoxDecoration(
+                  color: AppColors.tintGreen,
+                  borderRadius: BorderRadius.circular(11.r)),
+              child: Icon(PhosphorIconsRegular.whatsappLogo,
+                  size: 19.sp, color: AppColors.success),
             ),
             SizedBox(width: 12.w),
             Expanded(
@@ -956,7 +1071,10 @@ class _TemplatePickerSheet extends ConsumerWidget {
                         child: Text(t.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            style: AppText.custom(
+                                size: 14,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
                       ),
                       SizedBox(width: 8.w),
                       _approvedBadge(),
@@ -964,7 +1082,10 @@ class _TemplatePickerSheet extends ConsumerWidget {
                   ),
                   SizedBox(height: 4.h),
                   Text(t.resolve(firstName),
-                      style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted2)
+                      style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted2)
                           .copyWith(height: 1.5)),
                 ],
               ),
@@ -972,7 +1093,8 @@ class _TemplatePickerSheet extends ConsumerWidget {
             SizedBox(width: 10.w),
             Padding(
               padding: EdgeInsets.only(top: 10.h),
-              child: Icon(PhosphorIconsFill.paperPlaneTilt, size: 18.sp, color: AppColors.navy),
+              child: Icon(PhosphorIconsFill.paperPlaneTilt,
+                  size: 18.sp, color: AppColors.navy),
             ),
           ],
         ),
@@ -983,14 +1105,20 @@ class _TemplatePickerSheet extends ConsumerWidget {
   Widget _approvedBadge() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-      decoration: BoxDecoration(color: AppColors.tintGreen, borderRadius: BorderRadius.circular(6.r)),
+      decoration: BoxDecoration(
+          color: AppColors.tintGreen, borderRadius: BorderRadius.circular(6.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsFill.sealCheck, size: 10.sp, color: AppColors.success),
+          Icon(PhosphorIconsFill.sealCheck,
+              size: 10.sp, color: AppColors.success),
           SizedBox(width: 4.w),
           Text('APPROVED',
-              style: AppText.custom(size: 10, weight: FontWeight.w700, color: AppColors.success, letterSpacing: 0.4)),
+              style: AppText.custom(
+                  size: 10,
+                  weight: FontWeight.w700,
+                  color: AppColors.success,
+                  letterSpacing: 0.4)),
         ],
       ),
     );
@@ -1059,7 +1187,9 @@ class _AttachmentPickerSheet extends StatelessWidget {
               width: 38.w,
               height: 38.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.tintBlue, borderRadius: BorderRadius.circular(11.r)),
+              decoration: BoxDecoration(
+                  color: AppColors.tintBlue,
+                  borderRadius: BorderRadius.circular(11.r)),
               child: Icon(icon, size: 18.sp, color: AppColors.blueBright),
             ),
             SizedBox(width: 12.w),
@@ -1067,13 +1197,22 @@ class _AttachmentPickerSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(label,
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 2.h),
-                  Text(sub, style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  Text(sub,
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                 ],
               ),
             ),
-            Icon(PhosphorIconsRegular.caretRight, size: 16.sp, color: AppColors.textPlaceholder),
+            Icon(PhosphorIconsRegular.caretRight,
+                size: 16.sp, color: AppColors.textPlaceholder),
           ],
         ),
       ),

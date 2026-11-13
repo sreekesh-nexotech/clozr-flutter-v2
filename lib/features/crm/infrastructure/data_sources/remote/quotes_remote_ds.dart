@@ -61,9 +61,10 @@ class QuotesRemoteDataSource {
   /// "no org catalog" and falls back to the built-in vocabulary.
   Future<List<CatalogOption>> fetchQuoteStatuses() async {
     try {
-      final body = await _api.get(ApiEndpoints.quotationStatuses,
-          query: {'page_size': 100});
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final body = await _api
+          .get(ApiEndpoints.quotationStatuses, query: {'page_size': 100});
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
         if (row['is_active'] == false) continue;
@@ -96,7 +97,8 @@ class QuotesRemoteDataSource {
   /// entering a converted status is what raises the invoice — silently swallowing
   /// that would leave the screen claiming an invoice exists when none does.
   Future<void> updateQuoteStatus(String quotationId, String statusId) =>
-      _api.patch(ApiEndpoints.quotation(quotationId), body: {'status_id': statusId});
+      _api.patch(ApiEndpoints.quotation(quotationId),
+          body: {'status_id': statusId});
 
   /// `PATCH /quotations/quotations/{id}/` — the detail card's inline edits.
   /// Verified against the dev backend: a partial body is accepted and echoed.
@@ -133,7 +135,8 @@ class QuotesRemoteDataSource {
         ApiEndpoints.quotationTemplates,
         query: {'page_size': 100, 'is_active': true},
       );
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <QuoteTemplate>[];
       for (final row in rows) {
         final id = _str(row['template_id']);
@@ -238,7 +241,8 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
       id: id,
       uuid: _str(row['quotation_id']) ?? '',
       title: _str(row['quotation_title']) ?? _str(row['title']),
-      custId: _str(row['customer_id']) ?? _linkedId(row['customer'], 'customer_id'),
+      custId:
+          _str(row['customer_id']) ?? _linkedId(row['customer'], 'customer_id'),
       leadId: _linkedId(row['lead'], 'lead_id') ?? _str(row['lead_id']),
       status: quoteStatusKey(
         name: statusName,
@@ -258,7 +262,8 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
       template: _str(row['template']) ?? 'Standard',
       payType: _payTypeDisplay(row['payment_type'] ?? row['pay_type']),
       currency: _str(row['currency']) ?? 'INR',
-      dueDate: absoluteDate(parseApiDate(row['next_due_date'] ?? row['due_date'])),
+      dueDate:
+          absoluteDate(parseApiDate(row['next_due_date'] ?? row['due_date'])),
       owner: _ownerId(row),
       items: items,
       // Absent from the payload today; mapped so the total's tax label stops
@@ -271,6 +276,16 @@ Quote? quoteFromApi(Map<String, dynamic> row) {
       isConverted: row['is_converted'] == true ||
           (statusRaw is Map && statusRaw['is_converted'] == true),
       note: _str(row['notes']) ?? _str(row['note']),
+      subTotalExact: row['total_amount'] == null ? null : total,
+      grandTotalExact:
+          row['grand_total'] == null ? null : parseAmount(row['grand_total']),
+      updatedAt: parseApiDate(row['updated_at']),
+      createdAt: parseApiDate(row['created_at']),
+      optionGroupId: row['option_group'] is Map
+          ? _str((row['option_group'] as Map)['option_group_id']) ?? ''
+          : _str(row['option_group']) ?? '',
+      optionLabel: _str(row['option_label']) ?? '',
+      optionRole: _str(row['option_role']) ?? '',
     );
   } on Object {
     return null;
@@ -297,7 +312,10 @@ List<QuoteItem> _items(Object? raw) {
         m['subtotal'];
     final amt = amtRaw != null ? parseAmount(amtRaw) : rate * qty;
     out.add(QuoteItem(
-      name: _str(m['product_name']) ?? _str(m['name']) ?? _str(m['description']) ?? 'Item',
+      name: _str(m['product_name']) ??
+          _str(m['name']) ??
+          _str(m['description']) ??
+          'Item',
       qty: qty,
       rate: formatInr(rate),
       amt: formatInr(amt),

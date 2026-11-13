@@ -85,7 +85,8 @@ class OpsSubtasksNotifier extends StateNotifier<List<Subtask>> {
   }
 
   /// Adds a subtask under this task. Returns null on success, else the message.
-  Future<String?> add(String title) async {
+  Future<String?> add(String title,
+      {String? endIso, String? assigneeId}) async {
     final t = title.trim();
     if (t.isEmpty) return null;
 
@@ -99,7 +100,8 @@ class OpsSubtasksNotifier extends StateNotifier<List<Subtask>> {
       await _repo.createSubtask(
         parentId: _taskId,
         subject: t,
-        projectId: _ref.read(opsTaskDetailOrListProvider(_taskId))?.projId ?? '',
+        endIso: endIso,
+        assigneeId: assigneeId,
       );
       if (!mounted) return null;
       _refreshParent();
@@ -113,7 +115,8 @@ class OpsSubtasksNotifier extends StateNotifier<List<Subtask>> {
   void _applyLocally(int index, bool done) {
     final next = [...state];
     final s = next[index];
-    next[index] = Subtask(id: s.id, title: s.title, done: done, who: s.who, due: s.due);
+    next[index] =
+        Subtask(id: s.id, title: s.title, done: done, who: s.who, due: s.due);
     state = next;
   }
 
@@ -141,7 +144,8 @@ final opsSubtasksProvider = StateNotifierProvider.autoDispose
       : [
           for (final s in ref.watch(opsTaskByIdProvider(taskId))?.subtasks ??
               const <Subtask>[])
-            Subtask(id: s.id, title: s.title, done: s.done, who: s.who, due: s.due),
+            Subtask(
+                id: s.id, title: s.title, done: s.done, who: s.who, due: s.due),
         ];
   return OpsSubtasksNotifier(ref, taskId, seed);
 });

@@ -21,7 +21,8 @@ class RecordPaymentRemoteDataSource {
       if (query.trim().isNotEmpty) 'search': query.trim(),
     });
     return [
-      for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+      for (final r
+          in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
         if ('${r['payment_id'] ?? ''}'.isNotEmpty) PlanOption.fromJson(r),
     ];
   }
@@ -29,13 +30,17 @@ class RecordPaymentRemoteDataSource {
   /// One plan with its records: `GET /quotations/payments/{id}/`.
   Future<RecordPaymentPlan?> getPlan(String id) async {
     final body = await _api.get(ApiEndpoints.payment(id));
-    return body is Map ? RecordPaymentPlan.fromJson(Map<String, dynamic>.from(body)) : null;
+    return body is Map
+        ? RecordPaymentPlan.fromJson(Map<String, dynamic>.from(body))
+        : null;
   }
 
   /// Settle: `PATCH /quotations/payment-records/{id}/` with [buildSettleBody].
   /// Returns the saved record.
-  Future<Map<String, dynamic>> settleRecord(String recordId, Map<String, dynamic> body) async {
-    final res = await _api.patch(ApiEndpoints.paymentRecord(recordId), body: body);
+  Future<Map<String, dynamic>> settleRecord(
+      String recordId, Map<String, dynamic> body) async {
+    final res =
+        await _api.patch(ApiEndpoints.paymentRecord(recordId), body: body);
     return res is Map ? Map<String, dynamic>.from(res) : const {};
   }
 
@@ -62,8 +67,11 @@ class RecordPaymentRemoteDataSource {
       _api.get(ApiEndpoints.lead(leadId)),
       _api.get(ApiEndpoints.leadStatuses, query: {'page_size': 100}),
     ]);
-    final lead = results[0] is Map ? Map<String, dynamic>.from(results[0] as Map) : <String, dynamic>{};
-    final statuses = Paginated.fromAny<Map<String, dynamic>>(results[1], (m) => m).results;
+    final lead = results[0] is Map
+        ? Map<String, dynamic>.from(results[0] as Map)
+        : <String, dynamic>{};
+    final statuses =
+        Paginated.fromAny<Map<String, dynamic>>(results[1], (m) => m).results;
     return quoteLeadStateFrom(leadId, lead, statuses);
   }
 

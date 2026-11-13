@@ -9,7 +9,9 @@ import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/invoice
 import 'package:flutter_test/flutter_test.dart';
 
 /// Minimal [Customer] for lookup tests — only id / name / company matter here.
-Customer _customer({required String id, required String name, String? company}) => Customer(
+Customer _customer(
+        {required String id, required String name, String? company}) =>
+    Customer(
       id: id,
       leadId: null,
       name: name,
@@ -107,7 +109,8 @@ void main() {
     });
   });
 
-  group('customerPartyLookup — API-mode resolution (CrmPartyDirectory leak)', () {
+  group('customerPartyLookup — API-mode resolution (CrmPartyDirectory leak)',
+      () {
     final customers = [
       _customer(id: 'CUST-1', name: 'Asha Rao', company: 'Bluewave Interiors'),
       _customer(id: 'CUST-2', name: 'Vinod K', company: null),
@@ -139,10 +142,12 @@ void main() {
       expect(lookup(leadId: 'L1010'), isNull);
     });
 
-    test('invoiceWho falls back to the raw custId when the party is unknown', () {
+    test('invoiceWho falls back to the raw custId when the party is unknown',
+        () {
       expect(invoiceWho(_invoice(custId: 'CUST-9'), lookup), 'CUST-9');
       expect(invoiceWho(_invoice(custId: null), lookup), '—');
-      expect(invoiceWho(_invoice(custId: 'CUST-1'), lookup), 'Bluewave Interiors');
+      expect(
+          invoiceWho(_invoice(custId: 'CUST-1'), lookup), 'Bluewave Interiors');
     });
   });
 
@@ -164,7 +169,8 @@ void main() {
       expect(paymentCompany(_payment(custId: 'CUST-2'), lookup), 'Vinod K');
     });
 
-    test('a seed id is not resolved — no fabricated company reaches the drawer', () {
+    test('a seed id is not resolved — no fabricated company reaches the drawer',
+        () {
       // 'C2001' is Kalyan Silks in CrmPartyDirectory.
       expect(paymentCompany(_payment(custId: 'C2001'), lookup), isNull);
       expect(paymentCompany(_payment(custId: null), lookup), isNull);

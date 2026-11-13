@@ -25,7 +25,8 @@ abstract class TicketsRepository {
   Future<List<CatalogOption>> getIssueTypes();
 
   /// One ticket's own activity feed. Empty when unavailable.
-  Future<List<AuditEntry>> getActivity(String issueId, {Map<String, String> names});
+  Future<List<AuditEntry>> getActivity(String issueId,
+      {Map<String, String> names});
 
   /// The Support Overview figures under the same [filters]. Null when
   /// unavailable, which callers read as "count the loaded tickets instead".
@@ -41,7 +42,20 @@ abstract class TicketsRepository {
   Future<Ticket?> createTicket(Map<String, dynamic> fields);
 
   /// Partially updates a ticket (subject/description/priority …).
-  Future<void> updateTicket(String id, Map<String, dynamic> fields);
+  /// [version] (`updated_at`) is sent as `If-Match` — a 412 means the
+  /// ticket changed elsewhere since it was read.
+  Future<void> updateTicket(String id, Map<String, dynamic> fields,
+      {String? version});
+
+  /// `DELETE /crm/issues/{id}/`.
+  Future<void> deleteTicket(String id);
+
+  /// The Trash: soft-deleted tickets, newest first (`GET /crm/issues/deleted/`).
+  Future<({List<Ticket> rows, bool more})> getDeletedTickets(
+      {String search, int page});
+
+  /// `POST /crm/issues/{id}/restore/`.
+  Future<void> restoreTicket(String id);
 
   /// Moves a ticket to the org status matching a UI status key
   /// (`new | open | pending | resolved | closed`).
@@ -75,5 +89,6 @@ abstract class TicketsRepository {
   Future<void> sendReply(String issueId, String body);
 
   /// Uploads one file to the ticket.
-  Future<void> uploadAttachment(String issueId, {required String path, required String name});
+  Future<void> uploadAttachment(String issueId,
+      {required String path, required String name});
 }

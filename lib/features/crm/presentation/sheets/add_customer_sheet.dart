@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -92,6 +94,36 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
 
   bool get _nameOk => _name.text.trim().isNotEmpty;
 
+  /// Everything typed so far, as one comparable string — taken at the first
+  /// touch, so system back / a scrim tap can tell an edited form from an
+  /// untouched one (webapp: "Discard changes?").
+  String? _baseline;
+  String _snapshot() {
+    try {
+      return jsonEncode({
+        'texts': [
+          for (final c in [_name, _company, _email, _source, _value]) c.text
+        ],
+        'form': _schemaFormKey.currentState?.payload ?? const {},
+        'address': _address.createPayload,
+      });
+    } on Object {
+      return '';
+    }
+  }
+
+  bool get _dirty =>
+      _baseline != null &&
+      !_saving &&
+      _settled == null &&
+      _snapshot() != _baseline;
+
+  Future<void> _onDismiss() async {
+    if (!_dirty || await confirmDiscardChanges(context)) {
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
   /// The org's own Customer layout — `GET /crm/customers/schema/?view_type=detail`.
   ///
   /// `detail`, not `form`, matching the follow-up and quote sheets: `form`
@@ -105,7 +137,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
   void _scrollToTop() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
-        _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        _scroll.animateTo(0,
+            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       }
     });
   }
@@ -123,7 +156,9 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
     });
     final toast = widget.ref.read(toastProvider.notifier);
     try {
-      final created = await widget.ref.read(customersRepositoryProvider).createCustomer(payload);
+      final created = await widget.ref
+          .read(customersRepositoryProvider)
+          .createCustomer(payload);
       if (!mounted) return;
       // `customersProvider` is a thin wrapper around one `customersScopedProvider`
       // family member; the list screen watches a different member, so the family
@@ -166,7 +201,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
           if (!inAddress.contains(x.key)) x.key: x.value,
       };
       final unplaced = onFieldErrors(rest);
-      if (rest.length == unplaced.length && _address.hasErrors) _address.scrollToFirstError();
+      if (rest.length == unplaced.length && _address.hasErrors)
+        _address.scrollToFirstError();
       if (errors.isEmpty) {
         toast.showError(e.message);
       } else if (unplaced.isNotEmpty) {
@@ -184,7 +220,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
     final state = _schemaFormKey.currentState;
     if (state == null) return;
     // Only the name is required (webapp); its message sits under the field.
-    if (_schema.column('name') != null && state.valueOf('name').trim().isEmpty) {
+    if (_schema.column('name') != null &&
+        state.valueOf('name').trim().isEmpty) {
       state.showErrors({'name': customerNameRequiredMessage});
       _address.clearErrors();
       setState(() => _dup = null);
@@ -196,12 +233,21 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
       {...state.payload, ..._address.createPayload},
       (errors) {
         state.showErrors(errors);
-        return {for (final k in errors.keys) if (!state.hasInlineError(k)) k};
+        return {
+          for (final k in errors.keys)
+            if (!state.hasInlineError(k)) k
+        };
       },
     );
   }
 
-  static const _builtInKeys = {'name', 'organization_name', 'email', 'phone', 'revenue'};
+  static const _builtInKeys = {
+    'name',
+    'organization_name',
+    'email',
+    'phone',
+    'revenue'
+  };
 
   Future<void> _submit() async {
     if (_saving || _settled != null) return;
@@ -228,13 +274,17 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
                 for (final e in errors.entries)
                   if (_builtInKeys.contains(e.key)) e.key: e.value,
               });
-          return {for (final k in errors.keys) if (!_builtInKeys.contains(k)) k};
+          return {
+            for (final k in errors.keys)
+              if (!_builtInKeys.contains(k)) k
+          };
         },
       );
       return;
     }
     final rawValue = _value.text.trim();
-    final valueNum = int.tryParse(rawValue.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final valueNum =
+        int.tryParse(rawValue.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     final cust = Customer(
       id: genId('C'),
       leadId: null,
@@ -281,6 +331,20 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
     // element's subscriptions to, so watching through it never triggers a
     // rebuild. A `Consumer`'s own ref rebuilds this subtree the moment the
     // schema (or the status catalog) resolves.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onDismiss();
+      },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _baseline ??= _snapshot(),
+        child: _sheetBody(context),
+      ),
+    );
+  }
+
+  Widget _sheetBody(BuildContext context) {
     return Consumer(builder: (context, ref, _) {
       final schema = ref.watch(customerDetailSchemaProvider);
       ref.watch(customerStatusCatalogProvider);
@@ -290,7 +354,9 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SheetHeader(title: 'Add customer', onClose: () => Navigator.of(context).pop()),
+          SheetHeader(
+              title: 'Add customer',
+              onClose: () => Navigator.of(context).pop()),
           Flexible(
             child: SingleChildScrollView(
               controller: _scroll,
@@ -307,7 +373,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
                       blocked: true,
                       subject: 'customer',
                       onOpenLead: (id) => _open('${Routes.leadDetail}?id=$id'),
-                      onOpenCustomer: (id) => _open('${Routes.customerDetail}?id=$id'),
+                      onOpenCustomer: (id) =>
+                          _open('${Routes.customerDetail}?id=$id'),
                     ),
                   if (_settled != null)
                     DuplicateNotice(
@@ -316,7 +383,8 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
                       subject: 'customer',
                       newLeadId: _settled!.customerId,
                       onOpenLead: (id) => _open('${Routes.leadDetail}?id=$id'),
-                      onOpenCustomer: (id) => _open('${Routes.customerDetail}?id=$id'),
+                      onOpenCustomer: (id) =>
+                          _open('${Routes.customerDetail}?id=$id'),
                     ),
                   body,
                   if (ApiConfig.apiEnabled) ...[
@@ -353,8 +421,11 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
           required: true,
           controller: _name,
           hint: 'e.g. Acme Retail Pvt Ltd',
-          errorText: _showErrors && !_nameOk ? customerNameRequiredMessage : _serverErrors['name'],
-          onChanged: (_) => setState(() => _serverErrors = {..._serverErrors}..remove('name')),
+          errorText: _showErrors && !_nameOk
+              ? customerNameRequiredMessage
+              : _serverErrors['name'],
+          onChanged: (_) => setState(
+              () => _serverErrors = {..._serverErrors}..remove('name')),
         ),
         SizedBox(height: 14.h),
         AppTextField(
@@ -393,7 +464,9 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
             // originating lead), so in API mode Deal value takes the row alone.
             // Mock mode keeps it: there it feeds the local draft.
             if (!ApiConfig.apiEnabled) ...[
-              Expanded(child: AppTextField(label: 'Source', controller: _source, hint: 'Referral')),
+              Expanded(
+                  child: AppTextField(
+                      label: 'Source', controller: _source, hint: 'Referral')),
               SizedBox(width: 10.w),
             ],
             Expanded(
@@ -432,14 +505,19 @@ class _AddCustomerSheetState extends State<_AddCustomerSheet> {
       schema: schema,
       row: null,
       mobileRequired: false,
-                        requiredOnly: const {'name'},
+      requiredOnly: const {'name'},
+      // Webapp Add customer: the org's custom fields sit in the form and are
+      // written as `custom_fields: {<slug>: value}`.
+      includeCustomFields: true,
       hints: const {'name': 'e.g. Acme Retail Pvt Ltd'},
       hiddenColumns: addressOwnedColumns,
       writeKey: (c) => c.name,
       // `products` is a list of **objects**, not ids: the serializer wants
       // `{product_id, quantity}`.
       writeMulti: (c, ids) => c.name == 'products'
-          ? [for (final id in ids) {'product_id': id, 'quantity': 1}]
+          ? [
+              for (final id in ids) {'product_id': id, 'quantity': 1}
+            ]
           : ids,
       initialChoices: {if (startStatus != null) 'status': startStatus},
       optionsByColumn: {

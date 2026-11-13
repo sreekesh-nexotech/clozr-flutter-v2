@@ -154,14 +154,14 @@ class QuoteDraft {
       // appear on the form while accounting is active, so they are sent
       // whenever the user set them.
       if (amountsAre != null) 'amounts_are': amountsAre,
-      if (placeOfSupplyStateCode != null) 'place_of_supply_state_code': placeOfSupplyStateCode,
+      if (placeOfSupplyStateCode != null)
+        'place_of_supply_state_code': placeOfSupplyStateCode,
       if (contractRef.trim().isNotEmpty) 'contract_ref': contractRef.trim(),
     };
   }
 
   /// `YYYY-MM-DD`, the date form the API takes.
-  static String _isoDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
+  static String _isoDate(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 }

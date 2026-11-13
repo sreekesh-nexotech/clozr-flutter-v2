@@ -74,34 +74,42 @@ void main() {
 
     test('a country code on one side only still matches', () {
       final rows = [_conv(id: '9', phone: '919847000000')];
-      expect(findConversationForLead(rows, leadId: 'L7', phone: '9847000000')?.id, '9');
+      expect(
+          findConversationForLead(rows, leadId: 'L7', phone: '9847000000')?.id,
+          '9');
     });
 
     test('a different number does not match', () {
       final rows = [_conv(id: '9', phone: '919847000000')];
-      expect(findConversationForLead(rows, leadId: 'L7', phone: '919847000001'), isNull);
+      expect(findConversationForLead(rows, leadId: 'L7', phone: '919847000001'),
+          isNull);
     });
 
     test('a too-short number never matches — a short suffix collides', () {
       final rows = [_conv(id: '9', phone: '919847000000')];
-      expect(findConversationForLead(rows, leadId: 'L7', phone: '0000'), isNull);
+      expect(
+          findConversationForLead(rows, leadId: 'L7', phone: '0000'), isNull);
     });
   });
 
   group('LeadWhatsappService', () {
     test('an existing thread opens in the CRM, nothing is launched', () async {
-      final t = _service([_conv(id: '42', leadId: 'L7', phone: '919847000000')]);
-      final outcome = await t.service.open(leadId: 'L7', phone: '+91 98470 00000');
+      final t =
+          _service([_conv(id: '42', leadId: 'L7', phone: '919847000000')]);
+      final outcome =
+          await t.service.open(leadId: 'L7', phone: '+91 98470 00000');
 
       expect(outcome.result, LeadWhatsappResult.openedThread);
       expect(outcome.conversationId, '42');
       expect(t.launched, isEmpty);
     });
 
-    test('a thread that only shares the number is not the lead\'s — webapp matches the link', () async {
+    test(
+        'a thread that only shares the number is not the lead\'s — webapp matches the link',
+        () async {
       final t = _service([_conv(id: '9', phone: '919847000000')]);
-      final outcome = await t.service.open(
-          leadId: 'L7', phone: '+91 98470 00000', openExternally: false);
+      final outcome = await t.service
+          .open(leadId: 'L7', phone: '+91 98470 00000', openExternally: false);
 
       expect(outcome.result, LeadWhatsappResult.noThread);
       expect(outcome.conversationId, isNull);
@@ -110,7 +118,8 @@ void main() {
 
     test('no thread hands the number to WhatsApp as bare E.164', () async {
       final t = _service([_conv(id: '1', leadId: 'L1', phone: '911111111111')]);
-      final outcome = await t.service.open(leadId: 'L7', phone: '+91 98470 00000');
+      final outcome =
+          await t.service.open(leadId: 'L7', phone: '+91 98470 00000');
 
       expect(outcome.result, LeadWhatsappResult.handedToWhatsapp);
       expect(t.launched.single, Uri.parse('https://wa.me/919847000000'));
@@ -174,7 +183,8 @@ void main() {
       });
       expect(nested?.leadId, 'abc-uuid');
 
-      final none = conversationFromJson({'id': 7, 'wa_contact_phone': '919847000002'});
+      final none =
+          conversationFromJson({'id': 7, 'wa_contact_phone': '919847000002'});
       expect(none?.leadId, isNull);
       expect(none?.phone, '919847000002');
     });

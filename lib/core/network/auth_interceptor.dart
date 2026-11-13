@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 import '../storage/token_storage.dart';
@@ -60,23 +62,77 @@ class AuthInterceptor extends Interceptor {
   static bool _isAnonymous(String path) =>
       _anonymousPaths.any((p) => path.endsWith(p));
 
+  /// Off for the rest of the session once a token that was just issued
+  /// already reads as expired by this device's clock (a skewed clock would
+  /// otherwise refresh before every request).
+  bool _preflightDisabled = false;
+
+  /// How close to its `exp` a token counts as expired: refreshing a little
+  /// early beats a request that expires in flight.
+  static const preflightMargin = Duration(seconds: 30);
+
+  /// The `exp` of a JWT, or null for anything that is not a readable JWT.
+  static DateTime? tokenExpiry(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) return null;
+    try {
+      final payload = jsonDecode(
+          utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      final exp = payload is Map ? payload['exp'] : null;
+      if (exp is! num) return null;
+      return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000,
+          isUtc: true);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Whether [token] is expired, or within [preflightMargin] of it.
+  static bool expiresSoon(String token, {DateTime? now}) {
+    final exp = tokenExpiry(token);
+    if (exp == null) return false; // unknown: let the 401 path decide
+    return !exp.isAfter((now ?? DateTime.now()).toUtc().add(preflightMargin));
+  }
+
+  /// Webapp parity (C22): after an idle longer than the access token's life,
+  /// the next screen used to send every request, take a 401 each, then wait
+  /// for the refresh and replay. The token's `exp` is read first instead and
+  /// one shared refresh happens before sending. Any doubt (not a JWT, failed
+  /// refresh, skewed clock) falls back to the existing 401 › refresh › replay.
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final access = _tokens.accessToken;
-    if (access != null && !_isAnonymous(options.path)) {
-      options.headers['Authorization'] = 'Bearer $access';
+  Future<void> onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
+    if (!_isAnonymous(options.path)) {
+      var access = _tokens.accessToken;
+      if (!_preflightDisabled &&
+          access != null &&
+          _tokens.hasSession &&
+          expiresSoon(access)) {
+        final refreshed = await (_refreshing ??= _refresh());
+        if (refreshed) {
+          access = _tokens.accessToken;
+          if (access != null && expiresSoon(access)) {
+            _preflightDisabled = true;
+          }
+        }
+      }
+      if (access != null) {
+        options.headers['Authorization'] = 'Bearer $access';
+      }
     }
     handler.next(options);
   }
 
   @override
-  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+  Future<void> onError(
+      DioException err, ErrorInterceptorHandler handler) async {
     final response = err.response;
     final options = err.requestOptions;
 
     // A revoked session must NOT refresh — its refresh token would still mint
     // access tokens. Log out immediately.
-    final terminal = response?.statusCode == 401 ? _terminalCode(response?.data) : null;
+    final terminal =
+        response?.statusCode == 401 ? _terminalCode(response?.data) : null;
     if (terminal != null && !_isAnonymous(options.path)) {
       await _tokens.clear();
       lastSignOutReason = terminal;
@@ -96,7 +152,13 @@ class AuthInterceptor extends Interceptor {
       return;
     }
 
-    final refreshed = await (_refreshing ??= _refresh());
+    // Sent with a token that has since been replaced (another request
+    // refreshed meanwhile): replay with the current one, no second refresh.
+    final sentWith = '${options.headers['Authorization'] ?? ''}';
+    final current = _tokens.accessToken;
+    final replaced =
+        current != null && sentWith.isNotEmpty && sentWith != 'Bearer $current';
+    final refreshed = replaced || await (_refreshing ??= _refresh());
     if (!refreshed) {
       onSessionExpired?.call();
       handler.next(err);
@@ -121,7 +183,8 @@ class AuthInterceptor extends Interceptor {
     if (body is! Map) return null;
     final code = body['code'];
     if (code is String && terminalSessionCodes.contains(code)) return code;
-    final message = (body['message'] ?? body['detail'])?.toString().trim().toLowerCase();
+    final message =
+        (body['message'] ?? body['detail'])?.toString().trim().toLowerCase();
     if (message == 'user is inactive') return 'user_inactive';
     return null;
   }
@@ -139,7 +202,13 @@ class AuthInterceptor extends Interceptor {
       final data = res.data;
       final access = (data?['access'] ?? data?['access_token']) as String?;
       if (access == null || access.isEmpty) return false;
-      await _tokens.updateAccess(access);
+      // A rotated refresh token is kept (the old one may be blacklisted).
+      final rotated = (data?['refresh'] ?? data?['refresh_token']) as String?;
+      if (rotated != null && rotated.isNotEmpty) {
+        await _tokens.saveTokens(access: access, refresh: rotated);
+      } else {
+        await _tokens.updateAccess(access);
+      }
       return true;
     } on DioException {
       await _tokens.clear();

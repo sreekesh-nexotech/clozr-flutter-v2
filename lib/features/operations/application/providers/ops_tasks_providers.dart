@@ -1,12 +1,13 @@
+import '../../../../core/utils/relative_time.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/network/paginated.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../crm/application/providers/attachments_providers.dart';
 import '../../../crm/domain/entities/audit_entry.dart';
 import '../../../crm/domain/entities/lead_file.dart';
@@ -54,26 +55,18 @@ DateTime get opsNow => ApiConfig.apiEnabled ? DateTime.now() : kOpsNow;
 String opsWhenLabel(String date, String time) {
   final d = date.trim();
   if (d.isEmpty || d == '—') return '—';
-  final parsed = _parseDisplayDate(d);
-  final day = parsed == null
-      ? d
-      : DateFormat(parsed.year == DateTime.now().year ? 'd MMM' : 'd MMM yyyy').format(parsed);
-  final m = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$', caseSensitive: false).firstMatch(time.trim());
+  final parsed = parseDisplayDate(d);
+  // DD/MM/YYYY, 24-hour — the web's list label (parity C17).
+  final day = parsed == null ? d : fmtDay(parsed);
+  final m = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)?$', caseSensitive: false)
+      .firstMatch(time.trim());
   if (m == null) return day;
-  var h = int.parse(m.group(1)!) % 12;
-  if (m.group(3)!.toUpperCase() == 'PM') h += 12;
+  var h = int.parse(m.group(1)!);
+  final ap = m.group(3)?.toUpperCase();
+  if (ap != null) h = h % 12 + (ap == 'PM' ? 12 : 0);
+  // Midnight is a date-only value: show the day alone.
+  if (h == 0 && m.group(2) == '00') return day;
   return '$day, ${h.toString().padLeft(2, '0')}:${m.group(2)}';
-}
-
-DateTime? _parseDisplayDate(String d) {
-  for (final f in ['dd MMM yyyy', 'd MMM yyyy']) {
-    try {
-      return DateFormat(f).parseStrict(d);
-    } on FormatException {
-      continue;
-    }
-  }
-  return null;
 }
 
 /// The pill a task's status renders as — the twin of `projectStatusMeta`.
@@ -87,13 +80,16 @@ StatusMeta opsTaskStatusMeta({
   required List<CatalogOption> statuses,
 }) {
   final fallback = StatusMeta$.opsTask[key] ?? StatusMeta$.opsTask['open']!;
-  final needle = (statusName.trim().isNotEmpty ? statusName : key).trim().toLowerCase();
+  final needle =
+      (statusName.trim().isNotEmpty ? statusName : key).trim().toLowerCase();
   for (final s in statuses) {
     if (s.name.trim().toLowerCase() == needle) {
       return StatusMeta(s.name, s.color ?? fallback.color);
     }
   }
-  return statusName.trim().isEmpty ? fallback : StatusMeta(statusName.trim(), fallback.color);
+  return statusName.trim().isEmpty
+      ? fallback
+      : StatusMeta(statusName.trim(), fallback.color);
 }
 
 /// Whole-day delta from now to the task's end-of-day (negative = overdue).
@@ -129,7 +125,8 @@ final opsTasksRepositoryProvider = Provider<OpsTasksRepository>((ref) {
 
 /// Async source of all ops tasks.
 /// The org's project-task statuses — the tab strip and the drawer's Status facet.
-final opsTaskStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final opsTaskStatusCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   if (!await opsModuleReadable(ref, 'project_task')) return const [];
   return ref.watch(opsTasksRepositoryProvider).getOpsTaskStatuses();
 });
@@ -149,8 +146,10 @@ final opsTaskDoneStatusProvider = Provider<CatalogOption?>((ref) => ref
     .firstOrNull);
 
 /// The status a subtask moves to when it is **un-ticked** — the first open one.
-final opsTaskOpenStatusProvider = Provider<CatalogOption?>((ref) =>
-    ref.watch(opsTaskStatusOptionsProvider).where((s) => !s.isClosed).firstOrNull);
+final opsTaskOpenStatusProvider = Provider<CatalogOption?>((ref) => ref
+    .watch(opsTaskStatusOptionsProvider)
+    .where((s) => !s.isClosed)
+    .firstOrNull);
 
 /// Every closed status id, which is what decides whether a fetched subtask row
 /// reads as done. Cancelled counts: a cancelled subtask no longer blocks its
@@ -172,7 +171,8 @@ final taskGroupsProvider =
 /// The org's task types — webapp `getTaskTypes()`, `GET /projects/task-types/`
 /// (`{task_type_id, name}`), for the drawer's Type facet and the task forms.
 /// Best-effort: empty on a failure or in mock mode.
-final opsTaskTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final opsTaskTypeCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   if (!ApiConfig.apiEnabled) return const [];
   if (!await opsModuleReadable(ref, 'project_task')) return const [];
   try {
@@ -180,9 +180,11 @@ final opsTaskTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) asy
         .watch(apiServiceProvider)
         .get('/projects/task-types/', query: {'page_size': 100}, quiet: true);
     return [
-      for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+      for (final r
+          in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
         if ('${r['task_type_id'] ?? ''}'.isNotEmpty && r['is_active'] != false)
-          CatalogOption(id: '${r['task_type_id']}', name: '${r['name'] ?? ''}'.trim()),
+          CatalogOption(
+              id: '${r['task_type_id']}', name: '${r['name'] ?? ''}'.trim()),
     ];
   } on Object {
     return const [];
@@ -192,22 +194,29 @@ final opsTaskTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) asy
 /// Every project's lanes (`GET /projects/task-groups/`), for the drawer's Task
 /// group facet — keyed by `task_group_id` so the server filters on it, and
 /// labelled "Lane · Project" since each project names its own lanes.
-final opsTaskGroupCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final opsTaskGroupCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   if (!ApiConfig.apiEnabled) return const [];
   if (!await opsModuleReadable(ref, 'project_task')) return const [];
-  final projects = {for (final p in ref.watch(allProjectsProvider)) p.id: p.name};
+  final projects = {
+    for (final p in ref.watch(allProjectsProvider)) p.id: p.name
+  };
   try {
     final body = await ref
         .watch(apiServiceProvider)
         .get(ApiEndpoints.taskGroups, query: {'page_size': 200}, quiet: true);
     final out = <CatalogOption>[];
-    for (final r in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
+    for (final r
+        in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results) {
       final id = '${r['task_group_id'] ?? ''}';
       final title = '${r['title'] ?? ''}'.trim();
       if (id.isEmpty || title.isEmpty) continue;
       final p = r['project'];
-      final project = '${r['project_name'] ?? (p is Map ? p['project_name'] : projects['$p']) ?? ''}'.trim();
-      out.add(CatalogOption(id: id, name: project.isEmpty ? title : '$title · $project'));
+      final project =
+          '${r['project_name'] ?? (p is Map ? p['project_name'] : projects['$p']) ?? ''}'
+              .trim();
+      out.add(CatalogOption(
+          id: id, name: project.isEmpty ? title : '$title · $project'));
     }
     out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return out;
@@ -223,9 +232,12 @@ final opsTaskTypeOptionsProvider = Provider<List<CatalogOption>>((ref) {
   if (catalog.isNotEmpty) return catalog;
   final byId = <String, String>{};
   for (final t in ref.watch(opsTasksListProvider)) {
-    if (t.typeId.isNotEmpty && t.typeName.isNotEmpty) byId[t.typeId] = t.typeName;
+    if (t.typeId.isNotEmpty && t.typeName.isNotEmpty)
+      byId[t.typeId] = t.typeName;
   }
-  final out = [for (final e in byId.entries) CatalogOption(id: e.key, name: e.value)];
+  final out = [
+    for (final e in byId.entries) CatalogOption(id: e.key, name: e.value)
+  ];
   out.sort((a, b) => a.name.compareTo(b.name));
   return out;
 });
@@ -329,7 +341,8 @@ Map<String, dynamic> opsTaskListParamsFor(
         .split(',')
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty);
-    out['status__not_in'] = {...drawer, for (final s in activeStatuses) s.id}.join(',');
+    out['status__not_in'] =
+        {...drawer, for (final s in activeStatuses) s.id}.join(',');
   } else {
     out['status__in'] = (tabs.toList()..sort()).join(',');
   }
@@ -339,7 +352,7 @@ Map<String, dynamic> opsTaskListParamsFor(
 final opsTaskListParamsProvider = Provider<Map<String, dynamic>>(
   (ref) => opsTaskListParamsFor(
     ref.watch(opsTaskFilterParamsProvider),
-    ref.watch(otTabsProvider),
+    ref.watch(otEffectiveTabsProvider),
     ref.watch(opsTaskStatusOptionsProvider),
   ),
 );
@@ -350,7 +363,8 @@ final opsTaskListParamsProvider = Provider<Map<String, dynamic>>(
 /// narrowing; this one lags it so the server sees one query per pause rather
 /// than one per character.
 final otSearchDebouncedProvider =
-    StateNotifierProvider<_DebouncedSearch, String>((ref) => _DebouncedSearch(ref));
+    StateNotifierProvider<_DebouncedSearch, String>(
+        (ref) => _DebouncedSearch(ref));
 
 class _DebouncedSearch extends StateNotifier<String> {
   _DebouncedSearch(Ref ref) : super('') {
@@ -380,12 +394,15 @@ class _DebouncedSearch extends StateNotifier<String> {
 /// Asked with the same search, My Tasks and drawer params as the webapp's
 /// `getTaskStatusCounts` — never the selected tabs, so picking one does not
 /// zero the others.
-final opsTaskStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
-  if (!await opsModuleReadable(ref, 'project_task')) return const <String, int>{};
+final opsTaskStatusCountsProvider =
+    FutureProvider<Map<String, int>>((ref) async {
+  if (!await opsModuleReadable(ref, 'project_task'))
+    return const <String, int>{};
   ref.watch(apiWriteTickProvider);
   // The aggregate ignores `is_overdue` (the drawer's Due date › Overdue), so
   // under it the tabs count the rows the list returned instead.
-  if (ref.watch(opsTaskFilterParamsProvider).containsKey('is_overdue')) return const {};
+  if (ref.watch(opsTaskFilterParamsProvider).containsKey('is_overdue'))
+    return const {};
   return ref
       .watch(opsTasksRepositoryProvider)
       .getStatusCounts(ref.watch(opsTaskFilterParamsProvider));
@@ -406,7 +423,6 @@ final opsTasksFilteredProvider = FutureProvider<List<OpsTask>>(
     ).future,
   ),
 );
-
 
 /// Synchronous view of the loaded ops tasks (empty until loaded).
 /// Synchronous view of the **org-wide** list — the cross-screen lookup source.
@@ -457,7 +473,9 @@ final projectTaskFilesProvider =
     FutureProvider.autoDispose.family<List<LeadFile>, String>((ref, taskId) {
   ref.watch(apiWriteTickProvider);
   if (taskId.isEmpty) return Future.value(const <LeadFile>[]);
-  return ref.watch(attachmentsRepositoryProvider).getFiles('project_task', taskId);
+  return ref
+      .watch(attachmentsRepositoryProvider)
+      .getFiles('project_task', taskId);
 });
 
 /// One task's audit trail — `GET /projects/tasks/{id}/activity/`
@@ -470,19 +488,19 @@ final projectTaskFilesProvider =
 /// or a subtask tick made on the screen shows up without each action saying so.
 /// Empty is the fallback — mock mode, a failure, or a task with no history —
 /// and the card then does not render at all.
-final opsTaskActivityProvider =
-    FutureProvider.autoDispose.family<List<AuditEntry>, String>((ref, taskId) async {
+final opsTaskActivityProvider = FutureProvider.autoDispose
+    .family<List<AuditEntry>, String>((ref, taskId) async {
   ref.watch(apiWriteTickProvider);
   // The catalog first: the server's own summary quotes the status **uuid**
   // ("Status changed to 7803f448-…"), so without these names the timeline shows
   // the user a raw id.
   await ref.watch(opsTaskStatusCatalogProvider.future);
   return ref.watch(opsTasksRepositoryProvider).getTaskActivity(
-        taskId,
-        statusNames: {
-          for (final s in ref.read(opsTaskStatusOptionsProvider)) s.id: s.name,
-        },
-      );
+    taskId,
+    statusNames: {
+      for (final s in ref.read(opsTaskStatusOptionsProvider)) s.id: s.name,
+    },
+  );
 });
 
 /// The full record when it has arrived, the list row until then.
@@ -490,7 +508,8 @@ final opsTaskActivityProvider =
 /// The edit form used to prefill from the list row alone, so the description,
 /// expected start, department and blockers came up blank whatever was stored —
 /// `?view=list` simply does not carry them.
-final opsTaskDetailOrListProvider = Provider.autoDispose.family<OpsTask?, String>(
+final opsTaskDetailOrListProvider =
+    Provider.autoDispose.family<OpsTask?, String>(
   (ref, id) =>
       ref.watch(opsTaskDetailProvider(id)).valueOrNull ??
       ref.watch(opsTaskByIdProvider(id)),
@@ -519,18 +538,40 @@ T opsPerSession<T>(Ref ref, T initial) {
 final otTabsProvider =
     StateProvider<Set<String>>((ref) => opsPerSession(ref, const <String>{}));
 
+/// The status group picked on the Tasks header (`open` / `completed` /
+/// `cancelled`, from the status's `is_closed` / `is_cancelled`), or null for
+/// "All". With no status tab picked inside it, the list shows every status of
+/// that group.
+final otGroupProvider =
+    StateProvider<String?>((ref) => opsPerSession<String?>(ref, null));
+
+/// [otTabsProvider] as the list applies it: the picked tabs, else every status
+/// id of the picked group.
+final otEffectiveTabsProvider = Provider<Set<String>>(
+  (ref) => StatusGroups.effectiveKeys(
+    picked: ref.watch(otTabsProvider),
+    group: ref.watch(otGroupProvider),
+    statuses: ref.watch(opsTaskStatusOptionsProvider),
+    groupOf: StatusGroups.ofProjectTask,
+    keyOf: (s) => s.id,
+  ),
+);
+
 /// Webapp `toggleTaskTab`: "All" clears; Overdue and Other are exclusive;
 /// status tabs multi-select among themselves.
 Set<String> toggleOpsTaskTab(Set<String> selected, String value) {
   if (value == 'all') return const {};
   bool special(String v) =>
-      v == OpsTasksRemoteDataSource.overdueTab || v == OpsTasksRemoteDataSource.otherTab;
+      v == OpsTasksRemoteDataSource.overdueTab ||
+      v == OpsTasksRemoteDataSource.otherTab;
   if (special(value)) return selected.contains(value) ? const {} : {value};
   final plain = selected.where((v) => !special(v)).toSet();
   return plain.contains(value) ? (plain..remove(value)) : (plain..add(value));
 }
+
 final otSearchProvider = StateProvider<String>((ref) => opsPerSession(ref, ''));
-final otSearchOpenProvider = StateProvider<bool>((ref) => opsPerSession(ref, false));
+final otSearchOpenProvider =
+    StateProvider<bool>((ref) => opsPerSession(ref, false));
 
 /// "My Tasks" saved-view default (on, mirroring `myTasksF: true`).
 final myTasksFProvider = StateProvider<bool>((ref) => opsPerSession(ref, true));
@@ -552,7 +593,8 @@ final otBaseProvider = Provider<List<OpsTask>>((ref) {
 /// server's counts are unavailable (mock mode, a failed call).
 int otTabCount(List<OpsTask> base, String key) {
   if (key == 'all') return base.length;
-  if (key == OpsTasksRemoteDataSource.overdueTab) return base.where(isTaskOverdue).length;
+  if (key == OpsTasksRemoteDataSource.overdueTab)
+    return base.where(isTaskOverdue).length;
   return base.where((t) => opsTaskInTab(t, key)).length;
 }
 
@@ -572,15 +614,16 @@ bool opsTaskInTab(OpsTask t, String tabKey) =>
 /// server returned, finished ones included, as on the webapp.
 final visibleOpsTasksProvider = Provider<List<OpsTask>>((ref) {
   final base = ref.watch(otBaseProvider);
-  final tabs = ref.watch(otTabsProvider);
+  final tabs = ref.watch(otEffectiveTabsProvider);
   final q = ref.watch(otSearchProvider).trim().toLowerCase();
   final projects = ref.watch(allProjectsProvider);
 
   Iterable<OpsTask> out = base;
   if (!ApiConfig.apiEnabled && tabs.isNotEmpty) {
-    out = out.where((t) => tabs.any((k) => k == OpsTasksRemoteDataSource.overdueTab
-        ? isTaskOverdue(t)
-        : opsTaskInTab(t, k)));
+    out = out.where((t) => tabs.any((k) =>
+        k == OpsTasksRemoteDataSource.overdueTab
+            ? isTaskOverdue(t)
+            : opsTaskInTab(t, k)));
   }
   if (q.isNotEmpty) {
     out = out.where((t) =>
@@ -599,7 +642,11 @@ final visibleOpsTasksProvider = Provider<List<OpsTask>>((ref) {
 /// enough on its own: a task can sit on a project that list never loaded.
 String opsTaskProjectName(OpsTask t, List<Project> projects) {
   if (t.projectName.isNotEmpty) return t.projectName;
-  return projects.where((p) => p.id == t.projId).map((p) => p.name).firstOrNull ?? '';
+  return projects
+          .where((p) => p.id == t.projId)
+          .map((p) => p.name)
+          .firstOrNull ??
+      '';
 }
 
 /// How many blockers a task is still waiting on.

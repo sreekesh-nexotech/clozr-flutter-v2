@@ -1,3 +1,4 @@
+import '../../../../../core/utils/audit_wording.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../../app/theme/app_colors.dart';
@@ -9,6 +10,7 @@ import '../../../../crm/infrastructure/data_sources/remote/crm_catalog_remote_ds
     show hexColor;
 import '../../../../../core/network/api_service.dart';
 import '../../../../../core/network/paginated.dart';
+import '../../../../../core/status_groups/status_groups.dart';
 import '../../../../../core/utils/inr_format.dart';
 import '../../../../../core/utils/relative_time.dart';
 import '../../../../../data/api/status_keys.dart';
@@ -29,7 +31,8 @@ class OpsTasksRemoteDataSource {
   final ApiService _api;
 
   static const int _pageSize = 100;
-  static const int _maxPages = 50; // safety cap; loop still breaks when next == null
+  static const int _maxPages =
+      50; // safety cap; loop still breaks when next == null
 
   /// Neutral colour tag for API rows — same `OpsColorTag(name, hex)` shape the
   /// mock seed uses, with an empty name and the grey token.
@@ -39,7 +42,8 @@ class OpsTasksRemoteDataSource {
   /// generic 403, swaps in the webapp's role guidance for [action]
   /// (`projectTaskError.ts`) — and withdraws the raw refusal from the shell's
   /// toast so the user hears the explained version only.
-  Future<T> _guard<T>(ProjectTaskAction action, Future<T> Function() call) async {
+  Future<T> _guard<T>(
+      ProjectTaskAction action, Future<T> Function() call) async {
     try {
       return await call();
     } on AppError catch (e) {
@@ -61,9 +65,10 @@ class OpsTasksRemoteDataSource {
   /// catalog, use the built-in vocabulary".
   Future<List<CatalogOption>> fetchOpsTaskStatuses() async {
     try {
-      final body = await _api
-          .get(ApiEndpoints.projectTaskStatuses, query: {'page_size': 100}, quiet: true);
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final body = await _api.get(ApiEndpoints.projectTaskStatuses,
+          query: {'page_size': 100}, quiet: true);
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
         if (row['is_active'] == false) continue;
@@ -105,7 +110,8 @@ class OpsTasksRemoteDataSource {
       // kept off the shell's toast (`quiet`) — the screen explains itself.
       final body = await _api.get(ApiEndpoints.taskGroups,
           query: {'project': projectId, 'page_size': 100}, quiet: true);
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
         final id = (row['task_group_id'] ?? '').toString();
@@ -133,18 +139,21 @@ class OpsTasksRemoteDataSource {
   static const overdueTab = '__overdue__';
   static const otherTab = '__other__';
 
-  Future<Map<String, int>> fetchStatusCounts(Map<String, dynamic> filters) async {
+  Future<Map<String, int>> fetchStatusCounts(
+      Map<String, dynamic> filters) async {
     try {
-      final body = await _api.get(ApiEndpoints.projectTaskStatusCounts, query: {
-        // Paging and the status facet are meaningless here; the server ignores
-        // the latter anyway, but sending it invites confusion.
-        ...{...filters}..removeWhere((k, _) =>
-            k == 'page' ||
-            k == 'page_size' ||
-            k == 'status' ||
-            k.startsWith('status__') ||
-            k.startsWith('status_name')),
-      }, quiet: true);
+      final body = await _api.get(ApiEndpoints.projectTaskStatusCounts,
+          query: {
+            // Paging and the status facet are meaningless here; the server ignores
+            // the latter anyway, but sending it invites confusion.
+            ...{...filters}..removeWhere((k, _) =>
+                k == 'page' ||
+                k == 'page_size' ||
+                k == 'status' ||
+                k.startsWith('status__') ||
+                k.startsWith('status_name')),
+          },
+          quiet: true);
       if (body is! Map) return const {};
       final total = _int(body['total']);
       final out = <String, int>{'all': total};
@@ -157,8 +166,11 @@ class OpsTasksRemoteDataSource {
         inTabs += _int(row['count']);
       }
       if (body['overdue'] != null) out[overdueTab] = _int(body['overdue']);
-      final other = body['other'] != null ? _int(body['other']) : total - inTabs;
+      final other =
+          body['other'] != null ? _int(body['other']) : total - inTabs;
       out[otherTab] = other < 0 ? 0 : other;
+      // The header's open / completed / cancelled group totals (Oct 2026).
+      StatusGroups.readGroupCounts(body, out);
       return out;
     } on Object {
       return const {};
@@ -167,7 +179,8 @@ class OpsTasksRemoteDataSource {
 
   /// [filters] are `/projects/tasks/` query params from the drawer, the status
   /// tabs and the My-tasks toggle — applied **server-side**.
-  Future<List<OpsTask>> fetchOpsTasks({Map<String, dynamic> filters = const {}}) =>
+  Future<List<OpsTask>> fetchOpsTasks(
+          {Map<String, dynamic> filters = const {}}) =>
       _guard(ProjectTaskAction.view, () => _fetchOpsTasks(filters));
 
   Future<List<OpsTask>> _fetchOpsTasks(Map<String, dynamic> filters) async {
@@ -210,22 +223,23 @@ class OpsTasksRemoteDataSource {
   }
 
   /// `PATCH /projects/tasks/{id}/` with the non-empty subset of [fields].
-  Future<void> updateOpsTask(String id, Map<String, dynamic> fields) =>
-      _guard(ProjectTaskAction.update,
-          () => _api.patch(ApiEndpoints.projectTask(id), body: _clean(fields)));
+  Future<void> updateOpsTask(String id, Map<String, dynamic> fields) => _guard(
+      ProjectTaskAction.update,
+      () => _api.patch(ApiEndpoints.projectTask(id), body: _clean(fields)));
 
   /// `DELETE /projects/tasks/{id}/` → `204`, or `409` when another task depends
   /// on this one. Errors are not swallowed: only the blocker side is protected,
   /// so the refusal is actionable.
-  Future<void> deleteOpsTask(String id) =>
-      _guard(ProjectTaskAction.delete, () => _api.delete(ApiEndpoints.projectTask(id)));
+  Future<void> deleteOpsTask(String id) => _guard(ProjectTaskAction.delete,
+      () => _api.delete(ApiEndpoints.projectTask(id)));
 
   /// Adds a "waiting on" edge (§3D).
   ///
   /// Errors are deliberately not swallowed: self-dependency, a duplicate edge,
   /// a cross-project blocker and cycle detection all come back as field-keyed
   /// `400`s, and each one is the only explanation the user would get.
-  Future<void> addDependency({required String taskId, required String dependsOn}) =>
+  Future<void> addDependency(
+          {required String taskId, required String dependsOn}) =>
       _guard(
           ProjectTaskAction.update,
           () => _api.post(ApiEndpoints.taskDependencies,
@@ -233,7 +247,8 @@ class OpsTasksRemoteDataSource {
 
   /// Removes an edge by its own id — not the blocker's task id.
   Future<void> removeDependency(String edgeId) => _guard(
-      ProjectTaskAction.update, () => _api.delete(ApiEndpoints.taskDependency(edgeId)));
+      ProjectTaskAction.update,
+      () => _api.delete(ApiEndpoints.taskDependency(edgeId)));
 
   // ── subtasks (§3C) ──
 
@@ -258,7 +273,8 @@ class OpsTasksRemoteDataSource {
       'view': 'list',
       'page_size': _pageSize,
     });
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     final out = <Subtask>[];
     for (final row in rows) {
       final t = mapOpsTask(row);
@@ -281,17 +297,25 @@ class OpsTasksRemoteDataSource {
   ///
   /// `bulk-create` rejects rows carrying `parent_task`, so subtasks are created
   /// one at a time whatever the caller does.
+  /// The server now copies project, task group, type and assignee from the
+  /// parent and starts the subtask now (webapp parity C15), so the project is
+  /// no longer sent; [endIso] / [assigneeId] go only when picked (C13).
   Future<void> createSubtask({
     required String parentId,
     required String subject,
     String projectId = '',
+    String? endIso,
+    String? assigneeId,
   }) =>
       _guard(
           ProjectTaskAction.create,
-          () => _api.post(ApiEndpoints.projectTasks, body: _clean({
+          () => _api.post(ApiEndpoints.projectTasks,
+              body: _clean({
                 'parent_task': parentId,
                 'subject': subject,
-                if (projectId.isNotEmpty) 'project': projectId,
+                if (endIso != null && endIso.isNotEmpty) 'exp_end_date': endIso,
+                if (assigneeId != null && assigneeId.isNotEmpty)
+                  'assigned_to': assigneeId,
               })));
 
   // ── activity (§3B) ──
@@ -318,7 +342,8 @@ class OpsTasksRemoteDataSource {
     try {
       final body = await _api.get(ApiEndpoints.projectTaskActivity(taskId),
           query: {'page_size': 30});
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <AuditEntry>[];
       for (var i = 0; i < rows.length; i++) {
         final entry = mapActivity(rows[i], i, statusNames: statusNames);
@@ -341,7 +366,7 @@ class OpsTasksRemoteDataSource {
     Map<String, String> statusNames = const {},
   }) {
     final summary = _resolveIds(
-      (row['summary'] ?? '').toString().trim(),
+      plainAuditSummary((row['summary'] ?? '').toString().trim()),
       statusNames,
     );
     if (summary.isEmpty) return null;
@@ -367,7 +392,9 @@ class OpsTasksRemoteDataSource {
   /// turn that into "Status changed to Completed". A uuid with no match is left
   /// as it is — wrong-but-honest beats dropping the entry.
   static String _resolveIds(String summary, Map<String, String> names) {
-    if (summary.isEmpty || names.isEmpty) return summary;
+    if (summary.isEmpty) return summary;
+    summary = _friendlyDates(summary);
+    if (names.isEmpty) return summary;
     return summary.replaceAllMapped(
       RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
           r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'),
@@ -375,11 +402,44 @@ class OpsTasksRemoteDataSource {
     );
   }
 
+  /// The server writes dates into summaries as raw ISO text ("Expected end
+  /// changed to 2026-11-19T03:30:00+00:00"); show them in the device's zone as
+  /// "19 Nov 2026, 9:00 AM".
+  static String _friendlyDates(String summary) {
+    const mon = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return summary.replaceAllMapped(
+      RegExp(
+          r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})'),
+      (m) {
+        final d = DateTime.tryParse(m[0]!)?.toLocal();
+        if (d == null) return m[0]!;
+        final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+        final mm = d.minute.toString().padLeft(2, '0');
+        return '${d.day} ${mon[d.month - 1]} ${d.year}, $h12:$mm '
+            '${d.hour < 12 ? 'AM' : 'PM'}';
+      },
+    );
+  }
+
   /// `event_type` → the icon the timeline row uses. The enum is
   /// `created | updated | field_changed | deleted | child_created |
   /// child_updated | child_deleted`; a status move is only distinguishable by
   /// its summary, which the server writes as "Status changed to …".
-  static AuditEventKind _activityKind(String eventType, String action, String summary) {
+  static AuditEventKind _activityKind(
+      String eventType, String action, String summary) {
     if (summary.toLowerCase().startsWith('status changed')) {
       return AuditEventKind.statusChanged;
     }
@@ -387,7 +447,10 @@ class OpsTasksRemoteDataSource {
       'created' || 'create' => AuditEventKind.created,
       'deleted' || 'delete' || 'child_deleted' => AuditEventKind.deleted,
       'child_created' => AuditEventKind.childAdded,
-      'updated' || 'field_changed' || 'child_updated' => AuditEventKind.fieldChanged,
+      'updated' ||
+      'field_changed' ||
+      'child_updated' =>
+        AuditEventKind.fieldChanged,
       _ => AuditEventKind.other,
     };
   }
@@ -474,6 +537,7 @@ class OpsTasksRemoteDataSource {
       milestone: row['is_milestone'] == true,
       start: absoluteDate(startDate),
       startTime: _timeOf(startRaw, startDate),
+      startISO: startRaw,
       end: absoluteDate(endDate),
       endTime: _timeOf(endRaw, endDate),
       endISO: endRaw,
@@ -495,8 +559,11 @@ class OpsTasksRemoteDataSource {
       notes: const [],
       desc: row['description'] as String? ?? '',
       // The helpdesk ticket a "Create task from ticket" linked (`Issue.issue_id`).
-      fromTicket: (row['ticket'] as String? ?? '').trim().isEmpty ? null : (row['ticket'] as String).trim(),
-      actualStart: actualStartDate == null ? null : absoluteDate(actualStartDate),
+      fromTicket: (row['ticket'] as String? ?? '').trim().isEmpty
+          ? null
+          : (row['ticket'] as String).trim(),
+      actualStart:
+          actualStartDate == null ? null : absoluteDate(actualStartDate),
       actualEnd: actualEndDate == null ? null : absoluteDate(actualEndDate),
       actualEndFull: actualEndDate == null
           ? null
@@ -514,8 +581,9 @@ class OpsTasksRemoteDataSource {
       canChangeCommitted: row['can_change_committed_date'] is bool
           ? row['can_change_committed_date'] as bool
           : null,
-      projectAccessible:
-          row['project_accessible'] is bool ? row['project_accessible'] as bool : null,
+      projectAccessible: row['project_accessible'] is bool
+          ? row['project_accessible'] as bool
+          : null,
     );
   }
 
@@ -576,13 +644,15 @@ class OpsTasksRemoteDataSource {
   /// ("2026-06-28T17:00:00Z"), absent on bare dates ("2026-06-28").
   static String _timeOf(String raw, DateTime? parsed) {
     if (parsed == null || !raw.contains('T')) return '';
-    return DateFormat('h:mm a').format(parsed.toLocal());
+    return DateFormat('HH:mm').format(parsed.toLocal());
   }
 
   /// Drops null / empty-string values so POST/PATCH bodies only carry real
   /// user input.
   static Map<String, dynamic> _clean(Map<String, dynamic> fields) => {
         for (final e in fields.entries)
-          if (e.value != null && (e.value is! String || (e.value as String).isNotEmpty)) e.key: e.value,
+          if (e.value != null &&
+              (e.value is! String || (e.value as String).isNotEmpty))
+            e.key: e.value,
       };
 }

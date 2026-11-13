@@ -14,7 +14,8 @@ import 'ops_tasks_providers.dart';
 /// append. Seeded once from the record's mock notes and kept in memory for the
 /// session (a real API-backed store slots in behind the same interface).
 class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
-  OpsNotesNotifier(super.seed, this._me, {this.remote, this.recordId = '', this.isProject = false}) {
+  OpsNotesNotifier(super.seed, this._me,
+      {this.remote, this.recordId = '', this.isProject = false}) {
     if (_remoteWired) _load();
   }
 
@@ -33,7 +34,8 @@ class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
 
   Future<void> _load() async {
     try {
-      final rows = await remote!.fetch(recordId: recordId, isProject: isProject);
+      final rows =
+          await remote!.fetch(recordId: recordId, isProject: isProject);
       if (mounted) state = rows;
     } on Object {
       // Offline or refused: the thread stays as it is rather than blanking.
@@ -61,8 +63,8 @@ class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
     // local one on success.
     unawaited(() async {
       try {
-        final saved = await remote!.add(
-            recordId: recordId, body: body, isProject: isProject);
+        final saved = await remote!
+            .add(recordId: recordId, body: body, isProject: isProject);
         if (saved == null || !mounted) return;
         state = [for (final n in state) n.id == entry.id ? saved : n];
       } on Object {
@@ -75,7 +77,8 @@ class OpsNotesNotifier extends StateNotifier<List<NoteEntry>> {
     final next = <NoteEntry>[];
     for (final n in state) {
       if (n.id == noteId) {
-        n.replies.add(NoteReply(author: _me.name, time: 'now', body: body, avatarColor: _me.color));
+        n.replies.add(NoteReply(
+            author: _me.name, time: 'now', body: body, avatarColor: _me.color));
       }
       next.add(n);
     }
@@ -102,7 +105,8 @@ final opsCommentsRemoteDataSourceProvider =
 /// Notes for a project / ops-task detail, keyed by record id. Task records seed
 /// from their mock notes; projects (no seeded notes) start empty.
 final opsNotesProvider =
-    StateNotifierProvider.family<OpsNotesNotifier, List<NoteEntry>, String>((ref, id) {
+    StateNotifierProvider.family<OpsNotesNotifier, List<NoteEntry>, String>(
+        (ref, id) {
   final remote = ref.watch(opsCommentsRemoteDataSourceProvider);
   final task = ref.read(opsTaskByIdProvider(id));
   final seed = <NoteEntry>[];

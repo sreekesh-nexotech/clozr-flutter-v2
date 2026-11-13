@@ -26,7 +26,10 @@ class NotesApiRepository implements NotesRepository {
           noteTypeId: noteTypeId, mentionedUserIds: mentionedUserIds);
 
   @override
-  Future<void> updateNote({required String noteId, required String body, List<String> mentionedUserIds = const []}) =>
+  Future<void> updateNote(
+          {required String noteId,
+          required String body,
+          List<String> mentionedUserIds = const []}) =>
       _remote.updateNote(noteId, body, mentionedUserIds: mentionedUserIds);
 
   @override

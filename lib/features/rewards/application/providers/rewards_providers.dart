@@ -71,7 +71,10 @@ class RewardsNotifier extends StateNotifier<RewardsState> {
       if (mounted) {
         state = state.copyWith(
           loading: false,
-          error: AppError(type: AppErrorType.unknown, message: 'Something went wrong. Please try again.', cause: e),
+          error: AppError(
+              type: AppErrorType.unknown,
+              message: 'Something went wrong. Please try again.',
+              cause: e),
         );
       }
     }

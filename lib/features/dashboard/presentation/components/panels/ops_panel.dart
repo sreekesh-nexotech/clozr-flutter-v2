@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../../app/router/routes.dart';
 import '../../../../../app/theme/app_colors.dart';
 import '../../../../../app/theme/app_text_styles.dart';
 import '../../../../../core/widgets/status_pill.dart';
+import '../../../application/dash_navigation.dart';
 import '../../../application/providers/dashboard_providers.dart';
 import '../../../domain/entities/dash_colors.dart';
 import '../../../domain/entities/dashboard_models.dart';
@@ -16,7 +16,11 @@ import '../dash_kpi_card.dart';
 import '../dash_section_card.dart';
 import '../dash_segmented.dart';
 
-const _projTabs = [('all', 'All active'), ('risk', 'At risk'), ('overdue', 'Overdue')];
+const _projTabs = [
+  ('all', 'All active'),
+  ('risk', 'At risk'),
+  ('overdue', 'Overdue')
+];
 
 /// The Operations manager dashboard panel: KPIs, project-status donut, overdue
 /// tasks (₹ Value / Days toggle), active projects (segment filter + progress)
@@ -36,7 +40,8 @@ class OpsPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DashKpiGrid(kpis: data.opsKpis, onTapKpi: (k) => context.go(k.route)),
+        DashKpiGrid(
+            kpis: data.opsKpis, onTapKpi: (k) => dashGo(context, ref, k.route)),
         SizedBox(height: 16.h),
         DashSectionCard(
           title: 'Project Status',
@@ -45,7 +50,13 @@ class OpsPanel extends ConsumerWidget {
             parts: data.opsStatus,
             totalLabel: 'Total',
             totalValue: '${data.opsStatus.fold<int>(0, (a, p) => a + p.count)}',
-            onTapPart: (_) => context.go(Routes.opsProjects),
+            // A slice opens Projects on that status.
+            onTapPart: (p) => dashGo(
+                context,
+                ref,
+                p.id.isEmpty
+                    ? Routes.opsProjects
+                    : '${Routes.opsProjects}?status=${p.id}'),
           ),
         ),
         SizedBox(height: 16.h),
@@ -53,12 +64,13 @@ class OpsPanel extends ConsumerWidget {
         SizedBox(height: 16.h),
         const _ActiveProjectsSection(),
         SizedBox(height: 16.h),
-        _employees(context, data.opsRoster),
+        _employees(context, ref, data.opsRoster),
       ],
     );
   }
 
-  Widget _employees(BuildContext context, List<DashRosterRow> roster) {
+  Widget _employees(
+      BuildContext context, WidgetRef ref, List<DashRosterRow> roster) {
     return DashSectionCard(
       title: 'Employee Performance',
       subtitle: 'Delivery workload across the team',
@@ -71,10 +83,22 @@ class OpsPanel extends ConsumerWidget {
             DashEmployeeRow(
               rid: e.rid,
               sub: e.sub,
-              onTap: () => context.go(Routes.opsTasks),
+              // That member's tasks (the row counts their open tasks).
+              onTap: () => dashGo(
+                  context,
+                  ref,
+                  e.userId.isEmpty
+                      ? Routes.opsTasks
+                      // "n open tasks": the member's open tasks.
+                      : '${Routes.opsTasks}?assignee=${e.userId}&group=open'),
               trailing: DashStatChip(label: e.chipLabel, bad: e.chipBad),
             ),
-          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.members)),
+          // Webapp `goReports`: the per-member figures live in Reports, which
+          // every dashboard role can open (Members is admin-only).
+          DashViewMore(
+              label: 'View more',
+              icon: PhosphorIconsBold.arrowDown,
+              onTap: () => dashGo(context, ref, Routes.reports)),
         ],
       ),
     );
@@ -104,9 +128,36 @@ class _OverdueTasksSection extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(height: 4.h),
+          if (tasks.isEmpty)
+            // Webapp OverdueTasksCard: a green check and "No overdue tasks".
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 28.h),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsFill.checkCircle,
+                        size: 28.sp, color: DashColors.green),
+                    SizedBox(height: 8.h),
+                    Text('No overdue tasks',
+                        style: AppText.custom(
+                            size: 13.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
+                    SizedBox(height: 2.h),
+                    Text('Everything in this view is on schedule.',
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
+                  ],
+                ),
+              ),
+            ),
           for (final t in tasks)
             DashHairlineRow(
-              onTap: () => context.go(Routes.opsTasks),
+              // The task itself (webapp `openTask`).
+              onTap: () => dashGo(context, ref, t.route),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -117,12 +168,18 @@ class _OverdueTasksSection extends ConsumerWidget {
                         Text(t.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            style: AppText.custom(
+                                size: 14,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
                         SizedBox(height: 2.h),
                         Text(t.sub,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                            style: AppText.custom(
+                                size: 12,
+                                weight: FontWeight.w500,
+                                color: AppColors.textPlaceholder)),
                       ],
                     ),
                   ),
@@ -132,18 +189,31 @@ class _OverdueTasksSection extends ConsumerWidget {
                     children: [
                       Text(mode == 0 ? t.value : t.overdue,
                           style: AppText.custom(
-                              size: 12.5, weight: FontWeight.w800, color: mode == 0 ? AppColors.textPrimary : DashColors.red)),
+                              size: 12.5,
+                              weight: FontWeight.w800,
+                              color: mode == 0
+                                  ? AppColors.textPrimary
+                                  : DashColors.red)),
                       SizedBox(height: 3.h),
                       Text(mode == 0 ? t.overdue : t.value,
                           style: AppText.custom(
-                              size: 11, weight: mode == 0 ? FontWeight.w700 : FontWeight.w600,
-                              color: mode == 0 ? DashColors.red : AppColors.textPlaceholder)),
+                              size: 11,
+                              weight:
+                                  mode == 0 ? FontWeight.w700 : FontWeight.w600,
+                              color: mode == 0
+                                  ? DashColors.red
+                                  : AppColors.textPlaceholder)),
                     ],
                   ),
                 ],
               ),
             ),
-          DashViewMore(label: 'View all tasks', icon: PhosphorIconsBold.arrowRight, onTap: () => context.go(Routes.opsTasks)),
+          DashViewMore(
+              label: 'View all tasks',
+              icon: PhosphorIconsBold.arrowRight,
+              // The card lists overdue tasks, so "all" of them is that slice.
+              onTap: () =>
+                  dashGo(context, ref, '${Routes.opsTasks}?due=overdue')),
         ],
       ),
     );
@@ -182,28 +252,53 @@ class _ActiveProjectsSection extends ConsumerWidget {
           DashSegmented(
             options: [for (final t in _projTabs) t.$2],
             selectedIndex: tabIdx < 0 ? 0 : tabIdx,
-            onChanged: (i) => ref.read(dashActiveProjTabProvider.notifier).state = _projTabs[i].$1,
+            onChanged: (i) => ref
+                .read(dashActiveProjTabProvider.notifier)
+                .state = _projTabs[i].$1,
           ),
           SizedBox(height: 2.h),
           if (rows.isEmpty)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 24.h),
               child: Center(
-                child: Text('No projects in this view.',
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                child: Text(
+                    switch (tab) {
+                      'overdue' => 'No overdue projects',
+                      'risk' => 'No projects at risk',
+                      _ => 'No active projects',
+                    },
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ),
             )
           else
-            for (final p in rows) _projectRow(context, p),
-          DashViewMore(label: 'View more', icon: PhosphorIconsBold.arrowDown, onTap: () => context.go(Routes.opsProjects)),
+            for (final p in rows) _projectRow(context, ref, p),
+          DashViewMore(
+              label: 'View more',
+              icon: PhosphorIconsBold.arrowDown,
+              // The open projects (the Overdue chip: those past their end).
+              onTap: () => dashGo(
+                  context,
+                  ref,
+                  tab == 'overdue'
+                      ? '${Routes.opsProjects}?end=overdue&group=open'
+                      : '${Routes.opsProjects}?group=open')),
         ],
       ),
     );
   }
 
-  Widget _projectRow(BuildContext context, DashProjectRow p) {
+  Widget _projectRow(BuildContext context, WidgetRef ref, DashProjectRow p) {
     return DashHairlineRow(
-      onTap: () => context.go(Routes.opsProjects),
+      // The project itself (webapp `openProject`); the list without an id.
+      onTap: () => dashGo(
+          context,
+          ref,
+          p.id.isEmpty
+              ? Routes.opsProjects
+              : '${Routes.projectDetail}?id=${p.id}'),
       padding: EdgeInsets.symmetric(vertical: 13.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,17 +313,27 @@ class _ActiveProjectsSection extends ConsumerWidget {
                     Text(p.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 2.h),
                     Text(p.owner,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
               SizedBox(width: 10.w),
-              Text(p.value, style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(p.value,
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 9.h),
@@ -248,7 +353,11 @@ class _ActiveProjectsSection extends ConsumerWidget {
                 ),
               ),
               SizedBox(width: 9.w),
-              Text('${p.progress}%', style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: DashColors.textMid)),
+              Text('${p.progress}%',
+                  style: AppText.custom(
+                      size: 11.5,
+                      weight: FontWeight.w700,
+                      color: DashColors.textMid)),
               SizedBox(width: 9.w),
               _daysChip(p.days),
             ],
@@ -267,7 +376,10 @@ class _ActiveProjectsSection extends ConsumerWidget {
         borderRadius: BorderRadius.circular(7.r),
       ),
       child: Text('${days}d',
-          style: AppText.custom(size: 11, weight: FontWeight.w800, color: bad ? DashColors.red : DashColors.green)),
+          style: AppText.custom(
+              size: 11,
+              weight: FontWeight.w800,
+              color: bad ? DashColors.red : DashColors.green)),
     );
   }
 }

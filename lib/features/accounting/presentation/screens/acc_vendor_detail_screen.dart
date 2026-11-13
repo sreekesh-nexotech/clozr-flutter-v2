@@ -45,7 +45,8 @@ class AccVendorDetailScreen extends ConsumerStatefulWidget {
   const AccVendorDetailScreen({super.key});
 
   @override
-  ConsumerState<AccVendorDetailScreen> createState() => _AccVendorDetailScreenState();
+  ConsumerState<AccVendorDetailScreen> createState() =>
+      _AccVendorDetailScreenState();
 }
 
 class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
@@ -78,7 +79,11 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
             section: 'Vendor',
             name: v?.name,
             onBack: () => context.pop(),
-            trailing: v == null ? null : DetailIconAction(icon: PhosphorIconsBold.dotsThreeVertical, onTap: () => _menu(v)),
+            trailing: v == null
+                ? null
+                : DetailIconAction(
+                    icon: PhosphorIconsBold.dotsThreeVertical,
+                    onTap: () => _menu(v)),
           ),
           Expanded(
             child: AccountingGate(
@@ -86,20 +91,28 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                 skipLoadingOnRefresh: true,
                 loading: () => const DetailSkeleton(),
                 error: (e, _) => ErrorState.forError(
-                  e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Something went wrong.'),
+                  e is AppError
+                      ? e
+                      : const AppError(
+                          type: AppErrorType.unknown,
+                          message: 'Something went wrong.'),
                   onRetry: _refresh,
                 ),
                 data: (vendor) => vendor == null
                     ? const EmptyState(
                         icon: PhosphorIconsRegular.storefront,
                         title: 'Vendor not found',
-                        body: 'This vendor may have been removed or you no longer have access to it.',
+                        body:
+                            'This vendor may have been removed or you no longer have access to it.',
                       )
                     : _body(vendor),
               ),
             ),
           ),
-          if (v != null && v.isActive && ref.watch(accountingActiveProvider) && (settle.create || perms.create))
+          if (v != null &&
+              v.isActive &&
+              ref.watch(accountingActiveProvider) &&
+              (settle.create || perms.create))
             StickyActionBar(children: [
               if (perms.create)
                 Expanded(
@@ -108,7 +121,8 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                     icon: PhosphorIconsRegular.shoppingCart,
                     ghost: true,
                     height: 48,
-                    onTap: () => showRecordExpenseSheet(context, vendorId: v.id),
+                    onTap: () =>
+                        showRecordExpenseSheet(context, vendorId: v.id),
                   ),
                 ),
               if (perms.create && settle.create) SizedBox(width: 10.w),
@@ -118,7 +132,8 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                     label: 'Pay vendor',
                     icon: PhosphorIconsBold.arrowUp,
                     height: 48,
-                    onTap: () => showVendorPaymentSheet(context, vendorId: v.id),
+                    onTap: () =>
+                        showVendorPaymentSheet(context, vendorId: v.id),
                   ),
                 ),
             ]),
@@ -142,7 +157,11 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const IconChip(icon: PhosphorIconsRegular.storefront, size: 46, radius: 13, iconSize: 22),
+                    const IconChip(
+                        icon: PhosphorIconsRegular.storefront,
+                        size: 46,
+                        radius: 13,
+                        iconSize: 22),
                     SizedBox(width: 12.w),
                     Expanded(
                       child: Column(
@@ -153,21 +172,34 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(v.name,
-                                  style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                                  style: AppText.custom(
+                                      size: 18,
+                                      weight: FontWeight.w800,
+                                      color: AppColors.textPrimary,
+                                      letterSpacing: -0.3)),
                               StatusPill(
                                 label: v.isActive ? 'Active' : 'Inactive',
-                                color: v.isActive ? AppColors.success : AppColors.textMuted,
+                                color: v.isActive
+                                    ? AppColors.success
+                                    : AppColors.textMuted,
                               ),
                             ],
                           ),
                           if ((v.legalName ?? '').isNotEmpty) ...[
                             SizedBox(height: 3.h),
-                            Text(v.legalName!, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                            Text(v.legalName!,
+                                style: AppText.custom(
+                                    size: 12.5,
+                                    weight: FontWeight.w500,
+                                    color: AppColors.textMuted)),
                           ],
                           if (v.stateCode != null) ...[
                             SizedBox(height: 3.h),
                             Text(stateName(v.stateCode),
-                                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                                style: AppText.custom(
+                                    size: 12,
+                                    weight: FontWeight.w600,
+                                    color: AppColors.textPlaceholder)),
                           ],
                         ],
                       ),
@@ -181,7 +213,8 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                     icon: PhosphorIconsRegular.listBullets,
                     ghost: true,
                     height: 44,
-                    onTap: () => context.push('${Routes.accReport}?kind=vendor_statement&party=${v.id}'),
+                    onTap: () => context.push(
+                        '${Routes.accReport}?kind=vendor_statement&party=${v.id}'),
                   ),
                 ],
               ],
@@ -191,7 +224,10 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
           ClozrCard(
             radius: 18,
             padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 6.h),
-            child: DetailUnderlineTabs(labels: _tabs, index: _tab, onChanged: (i) => setState(() => _tab = i)),
+            child: DetailUnderlineTabs(
+                labels: _tabs,
+                index: _tab,
+                onChanged: (i) => setState(() => _tab = i)),
           ),
           SizedBox(height: 14.h),
           ...switch (_tab) {
@@ -205,31 +241,48 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
     );
   }
 
-  List<Widget> _asyncList<T>(AsyncValue<List<T>> async, Widget empty, Widget Function(T) row, VoidCallback retry) {
+  List<Widget> _asyncList<T>(AsyncValue<List<T>> async, Widget empty,
+      Widget Function(T) row, VoidCallback retry) {
     return async.when(
       loading: () => [const ListSkeleton(itemCount: 3)],
       error: (e, _) => [
-        ErrorState.forError(e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load.'),
+        ErrorState.forError(
+            e is AppError
+                ? e
+                : const AppError(
+                    type: AppErrorType.unknown, message: 'Could not load.'),
             onRetry: retry),
       ],
       data: (items) => items.isEmpty
           ? [empty]
           : [
-              for (int i = 0; i < items.length; i++) ...[if (i > 0) SizedBox(height: 10.h), row(items[i])],
+              for (int i = 0; i < items.length; i++) ...[
+                if (i > 0) SizedBox(height: 10.h),
+                row(items[i])
+              ],
             ],
     );
   }
 
   List<Widget> _bills(Vendor v) => _asyncList<AccDocument>(
         ref.watch(billsForVendorProvider(v.id)),
-        const DetailTabEmpty(icon: PhosphorIconsRegular.fileText, title: 'No bills', body: 'Bills from this vendor show up here.'),
-        (d) => DocumentCard(document: d, onTap: () => context.push('${Routes.accDocumentDetail}?id=${d.id}')),
+        const DetailTabEmpty(
+            icon: PhosphorIconsRegular.fileText,
+            title: 'No bills',
+            body: 'Bills from this vendor show up here.'),
+        (d) => DocumentCard(
+            document: d,
+            onTap: () =>
+                context.push('${Routes.accDocumentDetail}?id=${d.id}')),
         () => ref.invalidate(billsForVendorProvider(v.id)),
       );
 
   List<Widget> _payments(Vendor v) => _asyncList<AccVendorPayment>(
         ref.watch(vendorPaymentsProvider(v.id)),
-        const DetailTabEmpty(icon: PhosphorIconsRegular.arrowUp, title: 'No payments', body: 'Payments to this vendor show up here.'),
+        const DetailTabEmpty(
+            icon: PhosphorIconsRegular.arrowUp,
+            title: 'No payments',
+            body: 'Payments to this vendor show up here.'),
         (p) => ClozrCard(
           radius: 14,
           padding: EdgeInsets.all(13.r),
@@ -242,12 +295,22 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(formatApiDay(p.date), style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(formatApiDay(p.date),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 3.h),
                     Text(
-                      [label(sourceAccountLabels, p.sourceAccountKind), if (!moneyIsZero(p.tdsNow)) 'TDS ${formatMoneyStr(p.tdsNow)}']
-                          .join(' · '),
-                      style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted),
+                      [
+                        label(sourceAccountLabels, p.sourceAccountKind),
+                        if (!moneyIsZero(p.tdsNow))
+                          'TDS ${formatMoneyStr(p.tdsNow)}'
+                      ].join(' · '),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted),
                     ),
                   ],
                 ),
@@ -257,7 +320,11 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                 children: [
                   AccPill(StatusMeta$.accPosting, p.status),
                   SizedBox(height: 5.h),
-                  Text(formatMoneyStr(p.amount), style: AppText.custom(size: 14.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text(formatMoneyStr(p.amount),
+                      style: AppText.custom(
+                          size: 14.5,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ],
@@ -271,7 +338,8 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
         const DetailTabEmpty(
           icon: PhosphorIconsRegular.hourglassMedium,
           title: 'No advances',
-          body: 'Prepayments to this vendor are recorded on the web app and show up here.',
+          body:
+              'Prepayments to this vendor are recorded on the web app and show up here.',
         ),
         (a) => FinanceCard(
           child: Column(
@@ -280,13 +348,20 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
                 children: [
                   Expanded(
                     child: Text(formatMoneyStr(a.amount),
-                        style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
                   ),
                   AccPill(StatusMeta$.accBalance, a.status),
                 ],
               ),
-              if (!moneyIsZero(a.tdsDeducted)) MetaRow(label: 'TDS', value: formatMoneyStr(a.tdsDeducted)),
-              MetaRow(label: 'Remaining', value: formatMoneyStr(a.remaining), last: true),
+              if (!moneyIsZero(a.tdsDeducted))
+                MetaRow(label: 'TDS', value: formatMoneyStr(a.tdsDeducted)),
+              MetaRow(
+                  label: 'Remaining',
+                  value: formatMoneyStr(a.remaining),
+                  last: true),
             ],
           ),
         ),
@@ -309,7 +384,11 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
       title: 'Details',
       child: Column(
         children: [
-          for (int i = 0; i < rows.length; i++) MetaRow(label: rows[i].$1, value: rows[i].$2, last: i == rows.length - 1),
+          for (int i = 0; i < rows.length; i++)
+            MetaRow(
+                label: rows[i].$1,
+                value: rows[i].$2,
+                last: i == rows.length - 1),
         ],
       ),
     );
@@ -324,22 +403,35 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
       context,
       title: v.name,
       actions: [
-        if (perms.update) MenuAction(icon: PhosphorIconsRegular.pencilSimple, label: 'Edit', onTap: () => _edit(v)),
+        if (perms.update)
+          MenuAction(
+              icon: PhosphorIconsRegular.pencilSimple,
+              label: 'Edit',
+              onTap: () => _edit(v)),
         if (setup.read)
           MenuAction(
             icon: PhosphorIconsRegular.identificationCard,
             label: 'Tax profile',
             sublabel: 'GSTIN, PAN, TDS',
-            onTap: () => showPartyTaxProfileSheet(context, kind: 'vendor', partyId: v.id, title: 'Tax profile · ${v.name}'),
+            onTap: () => showPartyTaxProfileSheet(context,
+                kind: 'vendor',
+                partyId: v.id,
+                title: 'Tax profile · ${v.name}'),
           ),
         if (perms.update)
           MenuAction(
-            icon: v.isActive ? PhosphorIconsRegular.pause : PhosphorIconsRegular.play,
+            icon: v.isActive
+                ? PhosphorIconsRegular.pause
+                : PhosphorIconsRegular.play,
             label: v.isActive ? 'Deactivate' : 'Activate',
             onTap: () => _setActive(v, !v.isActive),
           ),
         if (perms.delete)
-          MenuAction(icon: PhosphorIconsRegular.trash, label: 'Delete', destructive: true, onTap: () => _delete(v)),
+          MenuAction(
+              icon: PhosphorIconsRegular.trash,
+              label: 'Delete',
+              destructive: true,
+              onTap: () => _delete(v)),
       ],
     );
   }
@@ -358,13 +450,17 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
         toast.showError(vendorDuplicateMessage);
         return;
       }
-      await ref.read(accountingRepositoryProvider).updateVendor(v.id, {'is_active': active});
+      await ref
+          .read(accountingRepositoryProvider)
+          .updateVendor(v.id, {'is_active': active});
       invalidateAccountingReads(ref.invalidate);
       ref.invalidate(vendorsProvider);
       ref.invalidate(vendorDetailProvider(v.id));
       toast.show(active ? 'Vendor activated' : 'Vendor deactivated');
     } on AppError catch (e) {
-      toast.showError(e.type == AppErrorType.server && active ? vendorDuplicateMessage : e.message);
+      toast.showError(e.type == AppErrorType.server && active
+          ? vendorDuplicateMessage
+          : e.message);
     }
   }
 
@@ -372,7 +468,8 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
     final ok = await confirmAcc(
       context,
       title: 'Delete ${v.name}?',
-      body: 'A vendor with any bills or payments cannot be deleted — deactivate it instead.',
+      body:
+          'A vendor with any bills or payments cannot be deleted — deactivate it instead.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -389,12 +486,15 @@ class _AccVendorDetailScreenState extends ConsumerState<AccVendorDetailScreen> {
         final deactivate = await confirmAcc(
           context,
           title: 'Has accounting history',
-          body: '${v.name} has bills or payments, so it cannot be deleted. Deactivate it instead?',
+          body:
+              '${v.name} has bills or payments, so it cannot be deleted. Deactivate it instead?',
           confirmLabel: 'Deactivate',
         );
         if (deactivate && mounted) await _setActive(v, false);
       } else {
-        ref.read(toastProvider.notifier).showError(e.code == null ? e.message : conflictCopy(e).body);
+        ref
+            .read(toastProvider.notifier)
+            .showError(e.code == null ? e.message : conflictCopy(e).body);
       }
     }
   }

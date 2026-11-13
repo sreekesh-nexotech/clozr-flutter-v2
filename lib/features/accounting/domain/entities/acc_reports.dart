@@ -5,7 +5,11 @@ const agingBuckets = ['0-30', '31-60', '61-90', '90+'];
 
 /// One party row of an AR / AP aging report.
 class AgingRow extends Equatable {
-  const AgingRow({required this.partyId, this.partyName, this.buckets = const {}, this.total = '0'});
+  const AgingRow(
+      {required this.partyId,
+      this.partyName,
+      this.buckets = const {},
+      this.total = '0'});
 
   final String partyId;
 
@@ -35,7 +39,15 @@ class AgingReport extends Equatable {
 }
 
 class StatementLine extends Equatable {
-  const StatementLine({this.date, this.kind, this.docType, this.reference, this.refId, this.debit = '0', this.credit = '0', this.balance = '0'});
+  const StatementLine(
+      {this.date,
+      this.kind,
+      this.docType,
+      this.reference,
+      this.refId,
+      this.debit = '0',
+      this.credit = '0',
+      this.balance = '0'});
 
   final String? date;
   final String? kind; // DOCUMENT | RECEIPT | PAYMENT
@@ -71,7 +83,8 @@ class PartyStatement extends Equatable {
   final List<StatementLine> lines;
 
   @override
-  List<Object?> get props => [dateFrom, dateTo, openingBalance, closingBalance, lines];
+  List<Object?> get props =>
+      [dateFrom, dateTo, openingBalance, closingBalance, lines];
 }
 
 /// One account and its amount in a P&L or balance sheet section.
@@ -133,11 +146,16 @@ class BalanceSheetReport extends Equatable {
   final bool balanced;
 
   @override
-  List<Object?> get props => [asOf, totalAssets, liabilitiesAndEquity, balanced];
+  List<Object?> get props =>
+      [asOf, totalAssets, liabilitiesAndEquity, balanced];
 }
 
 class TrialBalanceAccount extends Equatable {
-  const TrialBalanceAccount({this.code, required this.name, this.closingDebit = '0', this.closingCredit = '0'});
+  const TrialBalanceAccount(
+      {this.code,
+      required this.name,
+      this.closingDebit = '0',
+      this.closingCredit = '0'});
 
   final String? code;
   final String name;
@@ -149,7 +167,11 @@ class TrialBalanceAccount extends Equatable {
 }
 
 class TrialBalanceGroup extends Equatable {
-  const TrialBalanceGroup({required this.bucket, this.accounts = const [], this.debit = '0', this.credit = '0'});
+  const TrialBalanceGroup(
+      {required this.bucket,
+      this.accounts = const [],
+      this.debit = '0',
+      this.credit = '0'});
 
   final String bucket;
   final List<TrialBalanceAccount> accounts;
@@ -161,7 +183,12 @@ class TrialBalanceGroup extends Equatable {
 }
 
 class TrialBalanceReport extends Equatable {
-  const TrialBalanceReport({this.asOf, this.groups = const [], this.totalDebit = '0', this.totalCredit = '0', this.balanced = false});
+  const TrialBalanceReport(
+      {this.asOf,
+      this.groups = const [],
+      this.totalDebit = '0',
+      this.totalCredit = '0',
+      this.balanced = false});
 
   final String? asOf;
   final List<TrialBalanceGroup> groups;
@@ -175,7 +202,14 @@ class TrialBalanceReport extends Equatable {
 
 /// One nature row of the TDS summary.
 class TdsSummaryRow extends Equatable {
-  const TdsSummaryRow({required this.natureKey, this.quarter, this.base = '0', this.deducted = '0', this.deposited = '0', this.pending = '0', this.count = 0});
+  const TdsSummaryRow(
+      {required this.natureKey,
+      this.quarter,
+      this.base = '0',
+      this.deducted = '0',
+      this.deposited = '0',
+      this.pending = '0',
+      this.count = 0});
 
   final String natureKey;
   final int? quarter;
@@ -243,5 +277,6 @@ class ProjectFinancials extends Equatable {
   final String? updatedAt;
 
   @override
-  List<Object?> get props => [billedGross, collected, openAr, grossMargin, asOfEntryNo, updatedAt];
+  List<Object?> get props =>
+      [billedGross, collected, openAr, grossMargin, asOfEntryNo, updatedAt];
 }

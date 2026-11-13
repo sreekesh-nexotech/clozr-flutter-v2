@@ -39,7 +39,8 @@ abstract class OpsTasksRepository {
   ///
   /// Throws on refusal — a duplicate, a cycle, a cross-project blocker and a
   /// self-dependency are all `400`s the user has to see.
-  Future<void> addDependency({required String taskId, required String dependsOn});
+  Future<void> addDependency(
+      {required String taskId, required String dependsOn});
 
   /// Removes a dependency edge by its own id (`task_depends_on_id`).
   Future<void> removeDependency(String edgeId);
@@ -59,6 +60,8 @@ abstract class OpsTasksRepository {
     required String parentId,
     required String subject,
     String projectId = '',
+    String? endIso,
+    String? assigneeId,
   });
 
   /// One task's activity feed. Empty means "nothing to show" — mock mode, a

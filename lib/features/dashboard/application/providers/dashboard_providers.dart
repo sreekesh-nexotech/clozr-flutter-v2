@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart' show DateTimeRange;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/auth/session_gate.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
 import '../../../../core/network/network_providers.dart';
@@ -22,13 +24,24 @@ final dashboardRepositoryProvider = Provider<DashboardRepository>((ref) {
   }
   // Only once *this* session's role has loaded: while it reloads the provider
   // still carries the previous user's role, and before it loads at all the
-  // first dashboard load would ask for the Operations widgets on every sign-in.
-  final includePmo = ref.watch(moduleAccessProvider.select((a) =>
-      !a.isLoading && a.value != null && visibleDashboardTabs(a.value).contains('ops')));
+  // first dashboard load would ask for every group on every sign-in. A group
+  // the role cannot read is never requested at all — each such call is a 403
+  // that used to surface as a permission toast and an empty Team picker.
+  bool can(String tab) => ref.watch(moduleAccessProvider.select((a) =>
+      !a.isLoading &&
+      a.value != null &&
+      visibleDashboardTabs(a.value).contains(tab)));
+  final includePmo = can('ops');
+  final includeAdmin = can('business');
+  final includeCrm = can('crm');
+  final includeIssue = can('help');
   return DashboardApiRepository(
     DashboardRemoteDataSource(
       ref.watch(apiServiceProvider),
       includePmo: includePmo,
+      includeAdmin: includeAdmin,
+      includeCrm: includeCrm,
+      includeIssue: includeIssue,
     ),
   );
 });
@@ -53,6 +66,34 @@ String dashApiPeriod(String label) {
   }
   return 'month';
 }
+
+/// Display label for a custom range, e.g. `1 Jun 2026 – 12 Jun 2026` (a single
+/// day collapses to `5 Jun 2026`). The year is part of the label so the chip
+/// is unambiguous.
+String dashCustomLabel(DateTimeRange r) {
+  const m = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  String d(DateTime t) => '${t.day} ${m[t.month - 1]} ${t.year}';
+  final same = r.start.year == r.end.year &&
+      r.start.month == r.end.month &&
+      r.start.day == r.end.day;
+  return same ? d(r.start) : '${d(r.start)} – ${d(r.end)}';
+}
+
+String _ymd(DateTime t) =>
+    '${t.year.toString().padLeft(4, '0')}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 
 /// The dashboard's load phase: the current bundle plus loading/error flags so
 /// the screen can branch skeleton → error → panels. [settled] flips true once a
@@ -97,7 +138,8 @@ class DashboardPhase {
 class DashboardDataNotifier extends StateNotifier<DashboardPhase> {
   DashboardDataNotifier.mock()
       : _repository = null,
-        super(DashboardPhase(data: const DashboardMockDataSource().load(), settled: true));
+        super(DashboardPhase(
+            data: const DashboardMockDataSource().load(), settled: true));
 
   DashboardDataNotifier.api(DashboardRepository repository)
       : _repository = repository,
@@ -108,20 +150,43 @@ class DashboardDataNotifier extends StateNotifier<DashboardPhase> {
   String _period = 'month';
   String? _teamId;
   String? _userId;
+  String? _from;
+  String? _to;
+  DateTime? _loadedAt;
 
-  Future<void> load({String period = 'month', String? teamId, String? userId}) async {
+  /// Re-runs the last request when the data on screen is older than [maxAge] —
+  /// called when the Dashboard is entered again, so a figure changed elsewhere
+  /// (a lead won, a ticket resolved) is not shown stale. A load in flight or a
+  /// first load not yet finished is left alone.
+  Future<void> maybeRefresh(
+      {Duration maxAge = const Duration(seconds: 45)}) async {
+    final at = _loadedAt;
+    if (_repository == null || at == null || state.loading) return;
+    if (DateTime.now().difference(at) < maxAge) return;
+    await reload();
+  }
+
+  Future<void> load(
+      {String period = 'month',
+      String? teamId,
+      String? userId,
+      String? from,
+      String? to}) async {
     final repo = _repository;
     if (repo == null) return; // mock mode: the seed never refreshes.
     _period = period;
     _teamId = teamId;
     _userId = userId;
+    _from = from;
+    _to = to;
     final seq = ++_requestSeq;
     if (mounted) state = state.copyWith(loading: true, clearError: true);
     try {
-      final data =
-          await repo.getDashboard(period: period, teamId: teamId, userId: userId);
+      final data = await repo.getDashboard(
+          period: period, teamId: teamId, userId: userId, from: from, to: to);
       // A newer request (period/team changed mid-flight) wins.
       if (mounted && seq == _requestSeq) {
+        _loadedAt = DateTime.now();
         state = DashboardPhase(data: data, loading: false, settled: true);
       }
     } on AppError catch (e) {
@@ -144,8 +209,8 @@ class DashboardDataNotifier extends StateNotifier<DashboardPhase> {
   }
 
   /// Re-runs the last request — wired to the error state's Retry.
-  Future<void> reload() =>
-      load(period: _period, teamId: _teamId, userId: _userId);
+  Future<void> reload() => load(
+      period: _period, teamId: _teamId, userId: _userId, from: _from, to: _to);
 }
 
 /// Internal loader; the screen reads phase from here, panels read the bundle
@@ -155,19 +220,37 @@ final dashboardDataNotifierProvider =
   if (!ApiConfig.apiEnabled) {
     return DashboardDataNotifier.mock();
   }
-  final notifier = DashboardDataNotifier.api(ref.watch(dashboardRepositoryProvider));
+  // One notifier per signed-in user: another user's figures must never show
+  // while their own load is in flight.
+  ref.watch(dashSessionUserProvider);
+  final notifier =
+      DashboardDataNotifier.api(ref.watch(dashboardRepositoryProvider));
   void reload() {
+    // A custom range is held beside the chip label; it is cleared whenever a
+    // preset is applied, so a non-null range always belongs to the label.
+    final range = ref.read(dashCustomRangeProvider);
     notifier.load(
-      period: dashApiPeriod(ref.read(dashPeriodProvider)),
+      period: range != null
+          ? 'custom'
+          : dashApiPeriod(ref.read(dashPeriodProvider)),
       teamId: ref.read(dashTeamProvider),
       userId: ref.read(dashMemberProvider),
+      from: range == null ? null : _ymd(range.start),
+      to: range == null ? null : _ymd(range.end),
     );
   }
 
   ref.listen<String>(dashPeriodProvider, (_, __) => reload());
   ref.listen<String>(dashTeamProvider, (_, __) => reload());
   ref.listen<String>(dashMemberProvider, (_, __) => reload());
-  reload();
+  // Not before this session's role has loaded: with the modules still in
+  // flight every group is excluded, so the first fetch asked for nothing,
+  // and "nothing" came back as "Couldn't load the dashboard" with a Retry
+  // for the half-second until `/auth/me/modules/` answered. The screen holds
+  // its skeleton meanwhile; when the access lands this provider rebuilds
+  // (the repository above watches it) and the load runs with the right groups.
+  final access = ref.watch(moduleAccessProvider);
+  if (!access.isLoading && access.valueOrNull != null) reload();
   return notifier;
 });
 
@@ -178,25 +261,60 @@ final dashboardDataProvider = Provider<DashboardData>(
 
 // ── Scope selectors (functional selection state) ──
 
+/// The signed-in user's id, or '' when signed out. Every scope selection below
+/// watches it so one user's team / member / period never carries into the
+/// next sign-in on the same device.
+final dashSessionUserProvider = Provider<String>((ref) => ref.watch(
+    sessionControllerProvider.select((s) =>
+        s.status == SessionStatus.authenticated ? s.user?.id ?? '' : '')));
+
 /// Active period label shown in the period chip (prototype default "This month").
-final dashPeriodProvider = StateProvider<String>((ref) => 'This month');
+final dashPeriodProvider = StateProvider<String>((ref) {
+  ref.watch(dashSessionUserProvider);
+  return 'This month';
+});
+
+/// The inclusive date range behind a custom period label, or null while a
+/// preset is active. Set *before* [dashPeriodProvider] so the reload that the
+/// label change triggers already sees it.
+final dashCustomRangeProvider = StateProvider<DateTimeRange?>((ref) {
+  ref.watch(dashSessionUserProvider);
+  return null;
+});
 
 /// Selected team id for the team chip ('all' → All teams).
-final dashTeamProvider = StateProvider<String>((ref) => 'all');
+final dashTeamProvider = StateProvider<String>((ref) {
+  ref.watch(dashSessionUserProvider);
+  return 'all';
+});
 
 /// Selected member id for the member chip (empty → All members).
-final dashMemberProvider = StateProvider<String>((ref) => '');
+final dashMemberProvider = StateProvider<String>((ref) {
+  ref.watch(dashSessionUserProvider);
+  return '';
+});
 
-/// The Member dropdown's options for one panel, from
-/// `/dashboard-new/users/?module=…&team_id=…`.
-///
-/// Keyed by both because the API requires `module` and scopes the list to the
-/// selected team — a member list is not shared across panels or teams.
-final dashMemberOptionsProvider = FutureProvider.autoDispose
-    .family<List<DashTeamOption>, ({String module, String teamId})>((ref, key) {
-  if (!ApiConfig.apiEnabled) return Future.value(const <DashTeamOption>[]);
+/// The Team and Member options for one panel (`crm` | `pmo`), from that
+/// module's `filter-options` feed. Keyed by module only: the member list for a
+/// team is derived from it, so a team change costs no request.
+final dashFilterOptionsProvider =
+    FutureProvider.autoDispose.family<DashFilterOptions, String>((ref, module) {
+  ref.watch(dashSessionUserProvider);
+  if (!ApiConfig.apiEnabled) {
+    return Future.value(const DashFilterOptions(
+        [DashTeamOption('all', 'All teams', '')], [], {}));
+  }
   return DashboardRemoteDataSource(ref.watch(apiServiceProvider))
-      .fetchMembers(module: key.module, teamId: key.teamId);
+      .fetchFilterOptions(module);
+});
+
+/// The Member dropdown's options for one panel, narrowed to the selected team.
+final dashMemberOptionsProvider = Provider.autoDispose
+    .family<AsyncValue<List<DashTeamOption>>, ({String module, String teamId})>(
+        (ref, key) {
+  return ref
+      .watch(dashFilterOptionsProvider(key.module))
+      .whenData((o) => o.membersOf(key.teamId));
 });
 
 // ── Per-panel toggle state ──
@@ -225,8 +343,8 @@ String dashMemberLabel(List<DashTeamOption> options, String id) {
 }
 
 /// Resolve the selected team's display name for the chip label.
-String dashTeamLabel(DashboardData data, String id) {
-  for (final t in data.teamOptions) {
+String dashTeamLabel(List<DashTeamOption> options, String id) {
+  for (final t in options) {
     if (t.id == id) return t.id == 'all' ? 'All teams' : t.name;
   }
   return 'All teams';

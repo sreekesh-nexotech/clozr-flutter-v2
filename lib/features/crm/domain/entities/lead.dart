@@ -63,7 +63,7 @@ class Lead extends Equatable {
   /// them.
   final Map<String, Object?> customFields;
 
-    /// The row exactly as the API sent it.
+  /// The row exactly as the API sent it.
   ///
   /// The typed fields cover the card's fixed frame; this is what makes the rest
   /// dynamic — a column the org adds to its layout is read from here by name,

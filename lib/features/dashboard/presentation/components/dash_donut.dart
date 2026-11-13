@@ -48,7 +48,11 @@ class DashDonut extends StatelessWidget {
                     centerSpaceRadius: 40.r,
                     startDegreeOffset: -90,
                     sections: [
-                      PieChartSectionData(value: 1, color: DashColors.track, radius: 24.r, showTitle: false),
+                      PieChartSectionData(
+                          value: 1,
+                          color: DashColors.track,
+                          radius: 24.r,
+                          showTitle: false),
                     ],
                   )),
                 ),
@@ -64,7 +68,10 @@ class DashDonut extends StatelessWidget {
                     sections: visible.isEmpty
                         ? [
                             PieChartSectionData(
-                                value: 1, color: DashColors.track, radius: 24.r, showTitle: false),
+                                value: 1,
+                                color: DashColors.track,
+                                radius: 24.r,
+                                showTitle: false),
                           ]
                         : [
                             for (final p in visible)
@@ -93,15 +100,22 @@ class DashDonut extends StatelessWidget {
                   Container(
                     width: 9.w,
                     height: 9.w,
-                    decoration: BoxDecoration(color: p.color, shape: BoxShape.circle),
+                    decoration:
+                        BoxDecoration(color: p.color, shape: BoxShape.circle),
                   ),
                   SizedBox(width: 9.w),
                   Expanded(
                     child: Text(p.label,
-                        style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textBodyMuted)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: AppColors.textBodyMuted)),
                   ),
                   Text('${p.count}',
-                      style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 13.5,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ),
@@ -111,16 +125,23 @@ class DashDonut extends StatelessWidget {
             margin: EdgeInsets.only(top: 4.h),
             padding: EdgeInsets.fromLTRB(2.w, 10.h, 2.w, 3.h),
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppColors.bgLight, width: 1)),
+              border:
+                  Border(top: BorderSide(color: AppColors.bgLight, width: 1)),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(totalLabel!,
-                      style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ),
                 Text(totalValue ?? '$total',
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
               ],
             ),
           ),

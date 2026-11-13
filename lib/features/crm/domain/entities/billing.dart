@@ -168,8 +168,10 @@ class BillingPlan {
   final Map<String, dynamic> features;
 
   /// The modules this plan switches on, in the order the API listed them.
-  List<String> get enabledModules =>
-      [for (final e in features.entries) if (e.value == true) e.key];
+  List<String> get enabledModules => [
+        for (final e in features.entries)
+          if (e.value == true) e.key
+      ];
 
   /// "Up to 25 users", "Unlimited users" — null when the plan says nothing.
   String? get userLimitLabel {

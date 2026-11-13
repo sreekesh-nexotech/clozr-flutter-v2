@@ -44,7 +44,8 @@ final accountingRepositoryProvider = Provider<AccountingRepository>((ref) {
 /// enforces the plan on every request regardless of what the menu shows.
 final planFeaturesProvider = FutureProvider<Set<String>?>((ref) async {
   if (!ApiConfig.apiEnabled) return null;
-  if (ref.watch(sessionControllerProvider).status != SessionStatus.authenticated) return null;
+  if (ref.watch(sessionControllerProvider).status !=
+      SessionStatus.authenticated) return null;
   try {
     return await ref.watch(accountingRepositoryProvider).myFeatures();
   } on Object {
@@ -61,14 +62,17 @@ final planFeaturesProvider = FutureProvider<Set<String>?>((ref) async {
 /// see: `ACCOUNTING_NOT_ACTIVE` means inactive, a normal answer means active.
 final accountingStatusProvider = FutureProvider<AccountingStatus>((ref) async {
   if (!ApiConfig.apiEnabled) return AccountingStatus.unavailable;
-  if (ref.watch(sessionControllerProvider).status != SessionStatus.authenticated) {
+  if (ref.watch(sessionControllerProvider).status !=
+      SessionStatus.authenticated) {
     return AccountingStatus.unknown;
   }
   final access = await ref.watch(moduleAccessProvider.future);
-  if (access != null && !access.canAny(accModules)) return AccountingStatus.noAccess;
+  if (access != null && !access.canAny(accModules))
+    return AccountingStatus.noAccess;
 
   final features = await ref.watch(planFeaturesProvider.future);
-  if (features != null && !features.contains('accounting')) return AccountingStatus.notInPlan;
+  if (features != null && !features.contains('accounting'))
+    return AccountingStatus.notInPlan;
 
   final repo = ref.watch(accountingRepositoryProvider);
   if (access == null || access.can('acc_setup')) {
@@ -83,7 +87,9 @@ final accountingStatusProvider = FutureProvider<AccountingStatus>((ref) async {
   }
   final path = _probePath(access);
   if (path == null) return AccountingStatus.noAccess;
-  return await repo.probeActive(path) ? AccountingStatus.active : AccountingStatus.inactive;
+  return await repo.probeActive(path)
+      ? AccountingStatus.active
+      : AccountingStatus.inactive;
 });
 
 AccountingStatus _fromActivation(String? s) => switch (s) {
@@ -108,7 +114,9 @@ String? _probePath(ModuleAccess? access) {
 /// this to decide whether to show accounting affordances at all (tax profile,
 /// Issue invoice, Bill ticket, financials) — never true in mock mode.
 final accountingActiveProvider = Provider<bool>(
-  (ref) => ref.watch(accountingStatusProvider).valueOrNull == AccountingStatus.active,
+  (ref) =>
+      ref.watch(accountingStatusProvider).valueOrNull ==
+      AccountingStatus.active,
 );
 
 /// One accounting module's verbs for the signed-in user.
@@ -118,10 +126,16 @@ final accountingActiveProvider = Provider<bool>(
 /// `full_access` get everything; note money-posting endpoints no longer honour
 /// `is_staff` alone (handover §3), which the server enforces.
 class AccPerm {
-  const AccPerm({this.read = true, this.create = true, this.update = true, this.delete = true, this.approve = true});
+  const AccPerm(
+      {this.read = true,
+      this.create = true,
+      this.update = true,
+      this.delete = true,
+      this.approve = true});
 
   static const open = AccPerm();
-  static const none = AccPerm(read: false, create: false, update: false, delete: false, approve: false);
+  static const none = AccPerm(
+      read: false, create: false, update: false, delete: false, approve: false);
 
   final bool read;
   final bool create;
@@ -145,12 +159,14 @@ class AccPerm {
 final accPermProvider = Provider.family<AccPerm, String>((ref, module) {
   final access = ref.watch(moduleAccessProvider).valueOrNull;
   if (access == null || access.isSuperuser) return AccPerm.open;
-  final base = access.fullAccess ? AccPerm.open : AccPerm.of(access.modules[module]);
+  final base =
+      access.fullAccess ? AccPerm.open : AccPerm.of(access.modules[module]);
   // The posting verbs come from `money_posting` when the backend sends it:
   // staff with full access are refused money-posting endpoints unless they
   // hold the seeded codename, so "full access" must not light up a button
   // that the server will 403.
-  final posting = access.moneyPostingBypass ? null : access.moneyPosting[module];
+  final posting =
+      access.moneyPostingBypass ? null : access.moneyPosting[module];
   if (posting == null) return base;
   return AccPerm(
     read: base.read,
@@ -171,7 +187,9 @@ final gstStatesProvider = FutureProvider<List<GstState>>((ref) async {
 final gstStateNameProvider = Provider<String Function(String?)>((ref) {
   final states = ref.watch(gstStatesProvider).valueOrNull ?? const [];
   final byCode = {for (final s in states) s.code: s.name};
-  return (code) => code == null ? '—' : (byCode[code] == null ? code : '${byCode[code]} ($code)');
+  return (code) => code == null
+      ? '—'
+      : (byCode[code] == null ? code : '${byCode[code]} ($code)');
 });
 
 /// The org's active bank / cash / gateway accounts, default first.

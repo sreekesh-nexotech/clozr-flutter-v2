@@ -45,7 +45,13 @@ final _schemaBody = <String, dynamic>{
   },
   'all_fields': {
     'columns': [
-      {'name': 'product_id', 'label': 'ID', 'order': 1, 'visible': true, 'is_fixed': true},
+      {
+        'name': 'product_id',
+        'label': 'ID',
+        'order': 1,
+        'visible': true,
+        'is_fixed': true
+      },
       {
         'name': 'product_name',
         'label': 'Product',
@@ -117,7 +123,12 @@ final _schemaBody = <String, dynamic>{
         'visible': true,
         'field_info': {'type': 'string', 'is_custom': true},
       },
-      {'name': 'deals_count', 'label': 'Deals using this', 'order': 12, 'visible': true},
+      {
+        'name': 'deals_count',
+        'label': 'Deals using this',
+        'order': 12,
+        'visible': true
+      },
       {'name': 'hsn_sac', 'label': 'HSN / SAC', 'order': 13, 'visible': false},
     ],
   },
@@ -188,7 +199,10 @@ void main() {
 
     test('a visible column the record has no value for renders as a dash', () {
       final sparse = recordRows(
-        const {'product_type_name': 'Joinery', 'custom_fields': <String, dynamic>{}},
+        const {
+          'product_type_name': 'Joinery',
+          'custom_fields': <String, dynamic>{}
+        },
         schema,
         skip: kProductDetailChromeColumns,
       );
@@ -205,7 +219,16 @@ void main() {
       expect(names, isNot(contains('product_name')));
       expect(names, isNot(contains('item_type')));
       // Everything else the org configured stays, price and status included.
-      expect(names, containsAll(['product_type', 'product_code', 'billing_unit', 'tax_rate', 'price', 'is_active']));
+      expect(
+          names,
+          containsAll([
+            'product_type',
+            'product_code',
+            'billing_unit',
+            'tax_rate',
+            'price',
+            'is_active'
+          ]));
     });
 
     test('a package form also drops the derived price and the status', () {
@@ -222,14 +245,18 @@ void main() {
       // `product_id` and `product_type_name` arrive with no `field_info`, so
       // they are readouts — a box around either accepts input the API discards.
       final names = [
-        for (final c in productFormSchema(schema, isPackage: false).editableColumns) c.name,
+        for (final c
+            in productFormSchema(schema, isPackage: false).editableColumns)
+          c.name,
       ];
       expect(names, isNot(contains('product_id')));
       expect(names, isNot(contains('product_type_name')));
     });
 
     test('an empty schema stays empty, which is the built-in form signal', () {
-      expect(productFormSchema(ViewSchema.empty, isPackage: false).editableColumns, isEmpty);
+      expect(
+          productFormSchema(ViewSchema.empty, isPackage: false).editableColumns,
+          isEmpty);
     });
   });
 
@@ -259,7 +286,11 @@ void main() {
       // `product_code` is unique per org (§3) — posting `""` stores the empty
       // code, and the next blank create collides with it.
       final payload = productCreatePayload(
-        const {'product_code': '', 'hsn_sac': '   ', 'description': 'Real text'},
+        const {
+          'product_code': '',
+          'hsn_sac': '   ',
+          'description': 'Real text'
+        },
         name: 'Reception joinery',
         isPackage: false,
       );
@@ -280,7 +311,12 @@ void main() {
 
     test('a package never sends a price, and is created inactive', () {
       final payload = productCreatePayload(
-        const {'price': 500000, 'is_active': true, 'components': [], 'product_code': 'PKG-1'},
+        const {
+          'price': 500000,
+          'is_active': true,
+          'components': [],
+          'product_code': 'PKG-1'
+        },
         name: 'Starter bundle',
         isPackage: true,
       );

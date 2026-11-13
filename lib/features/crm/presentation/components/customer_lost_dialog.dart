@@ -16,11 +16,13 @@ import '../../application/providers/lead_lifecycle_providers.dart';
 /// `GET /crm/customers/{id}/lost-impact/` — always fresh (an invoice can be
 /// paid or credited at any time). Null when the check itself failed: the
 /// move may then go ahead and the server's own 409 guard still applies.
-final customerLostImpactProvider =
-    FutureProvider.autoDispose.family<CustomerLostImpact?, String>((ref, id) async {
+final customerLostImpactProvider = FutureProvider.autoDispose
+    .family<CustomerLostImpact?, String>((ref, id) async {
   if (id.isEmpty) return null;
   try {
-    final body = await ref.read(apiServiceProvider).get(ApiEndpoints.customerLostImpact(id), quiet: true);
+    final body = await ref
+        .read(apiServiceProvider)
+        .get(ApiEndpoints.customerLostImpact(id), quiet: true);
     return CustomerLostImpact.fromJson(body) ?? const CustomerLostImpact();
   } on AppError {
     return null;
@@ -39,12 +41,16 @@ Future<LostChoice?> showCustomerLostDialog(
 }) {
   return showClozrSheet<LostChoice>(
     context: context,
-    builder: (_) => _CustomerLostSheet(customerId: customerId, statusName: statusName, blocked: blocked),
+    builder: (_) => _CustomerLostSheet(
+        customerId: customerId, statusName: statusName, blocked: blocked),
   );
 }
 
 class _CustomerLostSheet extends ConsumerStatefulWidget {
-  const _CustomerLostSheet({required this.customerId, required this.statusName, required this.blocked});
+  const _CustomerLostSheet(
+      {required this.customerId,
+      required this.statusName,
+      required this.blocked});
 
   final String customerId;
   final String statusName;
@@ -67,14 +73,18 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
   @override
   Widget build(BuildContext context) {
     final reasons = ref.watch(leadLostReasonsProvider);
-    final impactAsync = ref.watch(customerLostImpactProvider(widget.customerId));
+    final impactAsync =
+        ref.watch(customerLostImpactProvider(widget.customerId));
     final impact = impactAsync.valueOrNull;
     final invoiceImpacts = widget.blocked.isNotEmpty
         ? widget.blocked
-        : (impact != null && impact.hasOpenInvoices ? [impact] : const <CustomerLostImpact>[]);
+        : (impact != null && impact.hasOpenInvoices
+            ? [impact]
+            : const <CustomerLostImpact>[]);
     final needsCredit = invoiceImpacts.isNotEmpty;
     final anyCanCredit = invoiceImpacts.any((i) => i.canCredit);
-    final allCanCredit = needsCredit && invoiceImpacts.every((i) => i.canCredit);
+    final allCanCredit =
+        needsCredit && invoiceImpacts.every((i) => i.canCredit);
     final blockedSingle = needsCredit && !allCanCredit;
     final checking = impactAsync.isLoading && widget.blocked.isEmpty;
     final options = reasons.valueOrNull ?? const [];
@@ -85,10 +95,13 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
             ? 'Issue credit notes and mark Lost'
             : 'Mark as lost';
     final received = impact == null ? null : describeMoneyReceived(impact);
-    final summary = impact == null ? const <String>[] : lostSummaryLines(impact);
+    final summary =
+        impact == null ? const <String>[] : lostSummaryLines(impact);
     final caption = AppText.caption(color: AppColors.textSecondary);
 
-    Widget box(List<Widget> children, {Color bg = AppColors.bgLight, Color? border}) => Container(
+    Widget box(List<Widget> children,
+            {Color bg = AppColors.bgLight, Color? border}) =>
+        Container(
           width: double.infinity,
           margin: EdgeInsets.only(bottom: 14.h),
           padding: EdgeInsets.all(12.r),
@@ -97,7 +110,8 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
             borderRadius: BorderRadius.circular(10.r),
             border: border == null ? null : Border.all(color: border),
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: children),
         );
 
     return SafeArea(
@@ -116,15 +130,19 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
                     box([
                       Text(
                         describeOpenInvoices(
-                          invoiceImpacts.fold<int>(0, (n, i) => n + i.openInvoices.length),
-                          invoiceImpacts.fold<num>(0, (n, i) => n + i.amountDue),
+                          invoiceImpacts.fold<int>(
+                              0, (n, i) => n + i.openInvoices.length),
+                          invoiceImpacts.fold<num>(
+                              0, (n, i) => n + i.amountDue),
                         ),
-                        style: AppText.captionStrong(color: AppColors.textPrimary),
+                        style:
+                            AppText.captionStrong(color: AppColors.textPrimary),
                       ),
                       SizedBox(height: 6.h),
                       for (final i in invoiceImpacts)
                         for (final inv in i.openInvoices)
-                          Text('• ${inv.number}${inv.date != null ? ' · ${inv.date}' : ''} · ${lostMoney(inv.amountDue)} due',
+                          Text(
+                              '• ${inv.number}${inv.date != null ? ' · ${inv.date}' : ''} · ${lostMoney(inv.amountDue)} due',
                               style: caption),
                       if (!allCanCredit) ...[
                         SizedBox(height: 6.h),
@@ -134,10 +152,15 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
                           style: AppText.caption(color: AppColors.error),
                         ),
                       ],
-                    ], bg: AppColors.white, border: allCanCredit ? AppColors.warning : AppColors.error),
+                    ],
+                        bg: AppColors.white,
+                        border:
+                            allCanCredit ? AppColors.warning : AppColors.error),
                   if (summary.isNotEmpty)
                     box([
-                      Text(lostSummaryHeading, style: AppText.captionStrong(color: AppColors.textPrimary)),
+                      Text(lostSummaryHeading,
+                          style: AppText.captionStrong(
+                              color: AppColors.textPrimary)),
                       SizedBox(height: 6.h),
                       for (final s in summary) Text('• $s', style: caption),
                     ]),
@@ -147,14 +170,21 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
                         TextSpan(text: '$received ', style: caption),
                         TextSpan(
                             text: 'Next step: Refund via Accounts',
-                            style: AppText.captionStrong(color: AppColors.textPrimary)),
-                        TextSpan(text: ' — only if the customer asks for the money back.', style: caption),
+                            style: AppText.captionStrong(
+                                color: AppColors.textPrimary)),
+                        TextSpan(
+                            text:
+                                ' — only if the customer asks for the money back.',
+                            style: caption),
                       ])),
                     ], bg: AppColors.tintBlue),
-                  Text('Why was this customer lost? The reason shows on the customer and in reports.',
+                  Text(
+                      'Why was this customer lost? The reason shows on the customer and in reports.',
                       style: AppText.body(color: AppColors.textMuted)),
                   SizedBox(height: 14.h),
-                  Text('Lost reason (required)', style: AppText.captionStrong(color: AppColors.textSecondary)),
+                  Text('Lost reason (required)',
+                      style: AppText.captionStrong(
+                          color: AppColors.textSecondary)),
                   SizedBox(height: 8.h),
                   if (reasons.isLoading)
                     Text('Loading reasons…', style: AppText.caption())
@@ -162,7 +192,8 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
                     Text('Couldn’t load the reasons. Close this and try again.',
                         style: AppText.caption(color: AppColors.error))
                   else if (options.isEmpty)
-                    Text(noLostReasonsCopy, style: AppText.caption(color: AppColors.error))
+                    Text(noLostReasonsCopy,
+                        style: AppText.caption(color: AppColors.error))
                   else
                     Wrap(
                       spacing: 8.w,
@@ -191,7 +222,11 @@ class _CustomerLostSheetState extends ConsumerState<_CustomerLostSheet> {
             padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 12.h),
             child: Row(
               children: [
-                Expanded(child: PrimaryButton(label: 'Cancel', ghost: true, onTap: () => Navigator.of(context).pop())),
+                Expanded(
+                    child: PrimaryButton(
+                        label: 'Cancel',
+                        ghost: true,
+                        onTap: () => Navigator.of(context).pop())),
                 SizedBox(width: 10.w),
                 Expanded(
                   flex: 2,

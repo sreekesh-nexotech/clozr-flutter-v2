@@ -79,8 +79,10 @@ class LeadFilterCodec {
 
     final value = v.range('value');
     if (value != null && value.isActive) {
-      if (value.min != null) out['lead_value_min'] = (value.min! * _lakh).round();
-      if (value.max != null) out['lead_value_max'] = (value.max! * _lakh).round();
+      if (value.min != null)
+        out['lead_value_min'] = (value.min! * _lakh).round();
+      if (value.max != null)
+        out['lead_value_max'] = (value.max! * _lakh).round();
     }
 
     final score = v.radio('score');
@@ -144,11 +146,13 @@ class LeadFilterCodec {
   FilterValues decode(Map<String, dynamic> def, FilterSpec spec) {
     final v = spec.defaults();
 
-    _decodeChoice(def, v, 'sources', 'lead_source', (id) => _nameOf(sources, id));
+    _decodeChoice(
+        def, v, 'sources', 'lead_source', (id) => _nameOf(sources, id));
     _decodeChoice(def, v, 'products', 'product', (id) => _nameOf(products, id));
     _decodeChoice(def, v, 'stages', 'status', (id) => _keyOf(statuses, id));
     _decodeChoice(def, v, 'teams', 'assigned_team', (id) => _teamOption(id));
-    _decodeChoice(def, v, 'owners', 'assignees', (id) => id == currentUserId ? 'me' : id);
+    _decodeChoice(
+        def, v, 'owners', 'assignees', (id) => id == currentUserId ? 'me' : id);
 
     final stale = _int(def['stale_days']);
     if (stale != null) _setRadio(v, spec, 'aging', '$stale');
@@ -189,7 +193,8 @@ class LeadFilterCodec {
     String? Function(String serverId) toOptionId,
   ) {
     for (final isNot in [false, true]) {
-      final raw = def['$param${isNot ? '__not' : '__in'}'] ?? (isNot ? null : def[param]);
+      final raw = def['$param${isNot ? '__not' : '__in'}'] ??
+          (isNot ? null : def[param]);
       final ids = _idList(raw);
       if (ids.isEmpty) continue;
       final mapped = <String>{};
@@ -197,7 +202,8 @@ class LeadFilterCodec {
         final o = toOptionId(id);
         if (o != null && o.isNotEmpty) mapped.add(o);
       }
-      if (mapped.isNotEmpty) out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
+      if (mapped.isNotEmpty)
+        out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
       return;
     }
   }
@@ -205,10 +211,11 @@ class LeadFilterCodec {
   /// Accepts both documented forms: `"a,b"` and `["a","b"]`.
   List<String> _idList(Object? raw) {
     if (raw == null) return const [];
-    final parts = raw is List
-        ? raw.map((e) => e.toString())
-        : raw.toString().split(',');
-    return [for (final p in parts) p.trim(), ].where((s) => s.isNotEmpty).toList();
+    final parts =
+        raw is List ? raw.map((e) => e.toString()) : raw.toString().split(',');
+    return [
+      for (final p in parts) p.trim(),
+    ].where((s) => s.isNotEmpty).toList();
   }
 
   String? _nameOf(List<CatalogOption> catalog, String id) {
@@ -263,8 +270,7 @@ class LeadFilterCodec {
     return DateTime.tryParse(v.toString().trim());
   }
 
-  static String _ymd(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
+  static String _ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 }

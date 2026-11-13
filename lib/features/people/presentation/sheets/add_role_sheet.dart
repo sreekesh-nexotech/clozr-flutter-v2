@@ -192,7 +192,10 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
               ),
               SizedBox(height: 16.h),
               Text('Visibility scope',
-                  style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
               SizedBox(height: 8.h),
               Wrap(
                 spacing: 8.w,
@@ -203,11 +206,17 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
               ),
               SizedBox(height: 16.h),
               Text('Capabilities',
-                  style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
               if (_showErrors && !_capsOk) ...[
                 SizedBox(height: 4.h),
                 Text('Pick at least one',
-                    style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+                    style: AppText.custom(
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: AppColors.error)),
               ],
               SizedBox(height: 6.h),
               for (final g in catalog.groups) _capRow(g),
@@ -217,7 +226,9 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
                   'This is a built-in role, so it cannot be changed. Create a '
                   'custom role to grant a different set of capabilities.',
                   style: AppText.custom(
-                      size: 12, weight: FontWeight.w500, color: AppColors.textMuted),
+                      size: 12,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted),
                 ),
                 SizedBox(height: 10.h),
               ],
@@ -249,7 +260,8 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
         decoration: BoxDecoration(
           color: on ? AppColors.navy : AppColors.white,
           borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(color: on ? AppColors.navy : AppColors.borderInput, width: 1.5),
+          border: Border.all(
+              color: on ? AppColors.navy : AppColors.borderInput, width: 1.5),
         ),
         child: Text(s,
             style: AppText.custom(
@@ -287,9 +299,14 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
                 decoration: BoxDecoration(
                   color: on ? AppColors.navy : AppColors.white,
                   borderRadius: BorderRadius.circular(6.r),
-                  border: on ? null : Border.all(color: AppColors.borderInput, width: 1.5),
+                  border: on
+                      ? null
+                      : Border.all(color: AppColors.borderInput, width: 1.5),
                 ),
-                child: on ? Icon(PhosphorIconsBold.check, size: 13.sp, color: AppColors.white) : null,
+                child: on
+                    ? Icon(PhosphorIconsBold.check,
+                        size: 13.sp, color: AppColors.white)
+                    : null,
               ),
               SizedBox(width: 10.w),
               Expanded(
@@ -302,8 +319,11 @@ class _AddRoleSheetState extends ConsumerState<_AddRoleSheet> {
                           child: Text(group.label,
                               style: AppText.custom(
                                   size: 13.5,
-                                  weight: on ? FontWeight.w600 : FontWeight.w500,
-                                  color: on ? AppColors.textPrimary : AppColors.textLabelAlt)),
+                                  weight:
+                                      on ? FontWeight.w600 : FontWeight.w500,
+                                  color: on
+                                      ? AppColors.textPrimary
+                                      : AppColors.textLabelAlt)),
                         ),
                         if (locked) ...[
                           SizedBox(width: 6.w),

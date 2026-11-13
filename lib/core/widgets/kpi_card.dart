@@ -45,7 +45,8 @@ class KpiCard extends StatelessWidget {
   /// up-arrow in a red pill. Defaults to [trendUp] when omitted.
   final bool? arrowUp;
   final List<double>? spark;
-  final double? progress; // 0..1 → renders a progress bar instead of a sparkline
+  final double?
+      progress; // 0..1 → renders a progress bar instead of a sparkline
   final VoidCallback? onTap;
 
   @override
@@ -59,8 +60,14 @@ class KpiCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16.r),
           border: Border.all(color: AppColors.borderCardSoft),
           boxShadow: [
-            BoxShadow(color: const Color(0xFF101828).withOpacity(0.04), blurRadius: 2, offset: const Offset(0, 1)),
-            BoxShadow(color: const Color(0xFF101828).withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 10)),
+            BoxShadow(
+                color: const Color(0xFF101828).withOpacity(0.04),
+                blurRadius: 2,
+                offset: const Offset(0, 1)),
+            BoxShadow(
+                color: const Color(0xFF101828).withOpacity(0.05),
+                blurRadius: 24,
+                offset: const Offset(0, 10)),
           ],
         ),
         child: Column(
@@ -73,7 +80,8 @@ class KpiCard extends StatelessWidget {
                 Container(
                   width: 34.w,
                   height: 34.w,
-                  decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10.r)),
+                  decoration: BoxDecoration(
+                      color: iconBg, borderRadius: BorderRadius.circular(10.r)),
                   child: Icon(icon, size: 18.sp, color: iconColor),
                 ),
                 if (trend != null) _trendPill(),
@@ -87,14 +95,23 @@ class KpiCard extends StatelessWidget {
                 Text(value, style: AppText.kpiNumber()),
                 if (unit != null) ...[
                   SizedBox(width: 3.w),
-                  Text(unit!, style: AppText.captionStrong(color: AppColors.textPlaceholder)),
+                  Text(unit!,
+                      style: AppText.captionStrong(
+                          color: AppColors.textPlaceholder)),
                 ],
               ],
             ),
             SizedBox(height: 2.h),
-            Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBodyMuted)),
+            Text(label,
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBodyMuted)),
             SizedBox(height: 1.h),
-            Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.micro()),
+            Text(sub,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.micro()),
             SizedBox(height: 8.h),
             if (progress != null)
               ClipRRect(
@@ -133,7 +150,10 @@ class KpiCard extends StatelessWidget {
               size: 11.sp, color: up ? AppColors.success : AppColors.error),
           SizedBox(width: 3.w),
           Text(trend!,
-              style: AppText.custom(size: 11, weight: FontWeight.w700, color: up ? AppColors.success : AppColors.error)),
+              style: AppText.custom(
+                  size: 11,
+                  weight: FontWeight.w700,
+                  color: up ? AppColors.success : AppColors.error)),
         ],
       ),
     );

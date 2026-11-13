@@ -14,7 +14,8 @@ class StatusPill extends StatelessWidget {
     this.vPad = 3,
   });
 
-  StatusPill.meta(StatusMeta meta, {super.key, this.fontSize = 11, this.hPad = 8, this.vPad = 3})
+  StatusPill.meta(StatusMeta meta,
+      {super.key, this.fontSize = 11, this.hPad = 8, this.vPad = 3})
       : label = meta.label,
         color = meta.color;
 
@@ -55,12 +56,13 @@ class PriorityPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tone = StatusMeta$.priorityTone[priority] ?? StatusMeta$.priorityTone['low']!;
+    final tone = StatusMeta$.priorityToneOf(priority);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 3.h),
-      decoration: BoxDecoration(color: tone.bg, borderRadius: BorderRadius.circular(7.r)),
+      decoration: BoxDecoration(
+          color: tone.bg, borderRadius: BorderRadius.circular(7.r)),
       child: Text(
-        priority,
+        StatusMeta$.priorityLabel(priority),
         style: TextStyle(
           fontFamily: 'Manrope',
           fontVariations: const [FontVariation('wght', 700.0)],

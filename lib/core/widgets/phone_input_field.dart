@@ -89,7 +89,8 @@ class _PhoneInputFieldState extends ConsumerState<PhoneInputField> {
     // per `PhoneController.seedOnce`'s own guard.
     if (countries.isNotEmpty) widget.controller.seedOnce(countries);
 
-    final current = countries.where((c) => c.iso2 == widget.controller.iso2).firstOrNull;
+    final current =
+        countries.where((c) => c.iso2 == widget.controller.iso2).firstOrNull;
     final flag = current?.flag ?? '';
     final dialCode = current?.dialCode ?? widget.controller.dialCode;
 
@@ -99,9 +100,16 @@ class _PhoneInputFieldState extends ConsumerState<PhoneInputField> {
         Row(
           children: [
             Text(widget.label,
-                style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
             if (widget.required)
-              Text(' *', style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.error)),
+              Text(' *',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: AppColors.error)),
           ],
         ),
         SizedBox(height: 7.h),
@@ -112,7 +120,9 @@ class _PhoneInputFieldState extends ConsumerState<PhoneInputField> {
             color: AppColors.white,
             borderRadius: BorderRadius.circular(11.r),
             border: Border.all(
-              color: widget.errorText != null ? AppColors.error : AppColors.borderInput,
+              color: widget.errorText != null
+                  ? AppColors.error
+                  : AppColors.borderInput,
               width: 1.5,
             ),
           ),
@@ -128,14 +138,17 @@ class _PhoneInputFieldState extends ConsumerState<PhoneInputField> {
                       Text(flag, style: TextStyle(fontSize: 15.sp)),
                       SizedBox(width: 5.w),
                     ],
-                    Text(dialCode, style: AppText.body(color: AppColors.textMuted)),
+                    Text(dialCode,
+                        style: AppText.body(color: AppColors.textMuted)),
                     SizedBox(width: 3.w),
-                    Icon(PhosphorIconsBold.caretDown, size: 12.sp, color: AppColors.textPlaceholder),
+                    Icon(PhosphorIconsBold.caretDown,
+                        size: 12.sp, color: AppColors.textPlaceholder),
                   ],
                 ),
               ),
               SizedBox(width: 8.w),
-              Container(width: 1, height: 20.h, color: AppColors.borderCardSoft),
+              Container(
+                  width: 1, height: 20.h, color: AppColors.borderCardSoft),
               SizedBox(width: 8.w),
               Expanded(
                 child: TextField(
@@ -143,7 +156,8 @@ class _PhoneInputFieldState extends ConsumerState<PhoneInputField> {
                   keyboardType: TextInputType.phone,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(widget.controller.rule.max),
+                    LengthLimitingTextInputFormatter(
+                        widget.controller.rule.max),
                   ],
                   style: AppText.body(),
                   cursorColor: AppColors.blueBright,
@@ -161,7 +175,8 @@ class _PhoneInputFieldState extends ConsumerState<PhoneInputField> {
         if (widget.errorText != null) ...[
           SizedBox(height: 5.h),
           Text(widget.errorText!,
-              style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.error)),
+              style: AppText.custom(
+                  size: 11, weight: FontWeight.w500, color: AppColors.error)),
         ],
       ],
     );

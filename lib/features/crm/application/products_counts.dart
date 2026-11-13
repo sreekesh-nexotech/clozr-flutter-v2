@@ -11,10 +11,12 @@ import '../domain/entities/product.dart';
 ///
 /// [mode] is `products` | `packages`. It used to be hardcoded to the product
 /// side, so every chip in the Packages tab counted the products behind it.
-int prodCatCount(List<Product> products, String key, {String mode = 'products'}) {
+int prodCatCount(List<Product> products, String key,
+    {String mode = 'products'}) {
   final wantPackages = mode == 'packages';
   return products
-      .where((p) => p.isPackage == wantPackages && (key == 'all' || p.cat == key))
+      .where(
+          (p) => p.isPackage == wantPackages && (key == 'all' || p.cat == key))
       .length;
 }
 

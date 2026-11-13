@@ -58,13 +58,18 @@ class RewardGoalCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(goal.title,
-                    style: AppText.custom(size: 15.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 15.5,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 4.h),
                 Row(
                   children: [
-                    Icon(PhosphorIconsRegular.calendarBlank, size: 12.sp, color: AppColors.textPlaceholder),
+                    Icon(PhosphorIconsRegular.calendarBlank,
+                        size: 12.sp, color: AppColors.textPlaceholder),
                     SizedBox(width: 5.w),
-                    Text(goal.date, style: AppText.caption(color: AppColors.textMuted)),
+                    Text(goal.date,
+                        style: AppText.caption(color: AppColors.textMuted)),
                   ],
                 ),
               ],
@@ -83,23 +88,34 @@ class RewardGoalCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const RewardOverline(icon: PhosphorIconsRegular.target, label: 'To achieve'),
+          const RewardOverline(
+              icon: PhosphorIconsRegular.target, label: 'To achieve'),
           SizedBox(height: 8.h),
           Text(goal.achieveTitle,
-              style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+              style: AppText.custom(
+                  size: 14,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 2.h),
-          Text(goal.achieveSub, style: AppText.caption(color: AppColors.textMuted)),
+          Text(goal.achieveSub,
+              style: AppText.caption(color: AppColors.textMuted)),
           SizedBox(height: 11.h),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: Text(goal.progLeft,
-                    style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
               ),
               SizedBox(width: 10.w),
               Text(goal.progRight,
-                  style: AppText.custom(size: 12, weight: FontWeight.w700, color: RewardsColors.muted)),
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: RewardsColors.muted)),
             ],
           ),
           SizedBox(height: 7.h),
@@ -109,7 +125,8 @@ class RewardGoalCard extends StatelessWidget {
             margin: EdgeInsets.only(top: 15.h, bottom: 13.h),
             color: AppColors.bgLight,
           ),
-          const RewardOverline(icon: PhosphorIconsRegular.gift, label: "You'll get"),
+          const RewardOverline(
+              icon: PhosphorIconsRegular.gift, label: "You'll get"),
           SizedBox(height: 10.h),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,7 +135,9 @@ class RewardGoalCard extends StatelessWidget {
                 width: 40.w,
                 height: 40.w,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: goal.rwBg, borderRadius: BorderRadius.circular(12.r)),
+                decoration: BoxDecoration(
+                    color: goal.rwBg,
+                    borderRadius: BorderRadius.circular(12.r)),
                 child: Icon(goal.rwIcon, size: 19.sp, color: goal.rwColor),
               ),
               SizedBox(width: 11.w),
@@ -132,13 +151,17 @@ class RewardGoalCard extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(goal.rwTitle,
-                            style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                            style: AppText.custom(
+                                size: 14,
+                                weight: FontWeight.w700,
+                                color: AppColors.textPrimary)),
                         _valueChip(goal.rwChip),
                       ],
                     ),
                     SizedBox(height: 3.h),
                     Text(goal.rwDesc,
-                        style: AppText.caption(color: AppColors.textMuted).copyWith(height: 1.5)),
+                        style: AppText.caption(color: AppColors.textMuted)
+                            .copyWith(height: 1.5)),
                   ],
                 ),
               ),
@@ -151,12 +174,16 @@ class RewardGoalCard extends StatelessWidget {
               children: [
                 Padding(
                   padding: EdgeInsets.only(top: 1.h),
-                  child: Icon(PhosphorIconsFill.hourglassMedium, size: 13.sp, color: AppColors.warningDeep),
+                  child: Icon(PhosphorIconsFill.hourglassMedium,
+                      size: 13.sp, color: AppColors.warningDeep),
                 ),
                 SizedBox(width: 7.w),
                 Expanded(
                   child: Text(goal.pending,
-                      style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.warningDeep)
+                      style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w600,
+                              color: AppColors.warningDeep)
                           .copyWith(height: 1.45)),
                 ),
               ],
@@ -178,11 +205,18 @@ class RewardGoalCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(expanded ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
-                size: 11.sp, color: RewardsColors.muted),
+            Icon(
+                expanded
+                    ? PhosphorIconsBold.caretUp
+                    : PhosphorIconsBold.caretDown,
+                size: 11.sp,
+                color: RewardsColors.muted),
             SizedBox(width: 7.w),
             Text('Past periods (${goal.past.length})',
-                style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                style: AppText.custom(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: AppColors.textLabelAlt)),
           ],
         ),
       ),
@@ -200,7 +234,10 @@ class RewardGoalCard extends StatelessWidget {
         children: [
           Expanded(
             child: Text(row.period,
-                style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textSecondary)),
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textSecondary)),
           ),
           SizedBox(width: 10.w),
           Text(row.result,
@@ -222,7 +259,10 @@ class RewardGoalCard extends StatelessWidget {
         border: Border.all(color: RewardsColors.chipBorder, width: 1),
       ),
       child: Text(label,
-          style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textLabelAlt)),
+          style: AppText.custom(
+              size: 10.5,
+              weight: FontWeight.w700,
+              color: AppColors.textLabelAlt)),
     );
   }
 
@@ -266,7 +306,9 @@ class RewardGoalCard extends StatelessWidget {
         children: [
           Icon(icon, size: 12.sp, color: fg),
           SizedBox(width: 5.w),
-          Text(label, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: fg)),
+          Text(label,
+              style: AppText.custom(
+                  size: 11.5, weight: FontWeight.w700, color: fg)),
         ],
       ),
     );

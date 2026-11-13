@@ -9,9 +9,38 @@ class CallLogsMockDataSource {
   const CallLogsMockDataSource();
 
   List<CallLog> fetchCallLogsForLead(String leadId) => [
-        CallLog(id: 'CL-$leadId-1', leadId: leadId, direction: 'outgoing', isMissed: false, connected: true, outcome: 'Connected · 4m 12s', time: 'Today, 9:32 AM', summary: 'Discussed scope and timeline.'),
-        CallLog(id: 'CL-$leadId-2', leadId: leadId, direction: 'outgoing', isMissed: false, connected: false, outcome: 'No answer', time: 'Yesterday, 5:10 PM'),
-        CallLog(id: 'CL-$leadId-3', leadId: leadId, direction: 'incoming', isMissed: false, connected: true, outcome: 'Connected · 2m 40s', time: '2 days ago, 11:04 AM'),
-        CallLog(id: 'CL-$leadId-4', leadId: leadId, direction: 'incoming', isMissed: true, connected: false, outcome: 'Missed call', time: '4 days ago, 3:22 PM'),
+        CallLog(
+            id: 'CL-$leadId-1',
+            leadId: leadId,
+            direction: 'outgoing',
+            isMissed: false,
+            connected: true,
+            outcome: 'Connected · 4m 12s',
+            time: 'Today, 9:32 AM',
+            summary: 'Discussed scope and timeline.'),
+        CallLog(
+            id: 'CL-$leadId-2',
+            leadId: leadId,
+            direction: 'outgoing',
+            isMissed: false,
+            connected: false,
+            outcome: 'No answer',
+            time: 'Yesterday, 5:10 PM'),
+        CallLog(
+            id: 'CL-$leadId-3',
+            leadId: leadId,
+            direction: 'incoming',
+            isMissed: false,
+            connected: true,
+            outcome: 'Connected · 2m 40s',
+            time: '2 days ago, 11:04 AM'),
+        CallLog(
+            id: 'CL-$leadId-4',
+            leadId: leadId,
+            direction: 'incoming',
+            isMissed: true,
+            connected: false,
+            outcome: 'Missed call',
+            time: '4 days ago, 3:22 PM'),
       ];
 }

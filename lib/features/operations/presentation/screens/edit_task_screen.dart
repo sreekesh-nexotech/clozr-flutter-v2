@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/filters/filter_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -44,6 +45,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
   bool _fromDetail = false;
   bool _dirty = false;
   bool _saving = false;
+
   /// The uuid — the write key, never shown.
   String _id = '';
 
@@ -53,6 +55,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
   String? _projId;
   String _groupId = '';
   String _group = 'No group';
+
   /// `task_type_id`, empty when the task has no type.
   String _ttype = '';
   String _status = 'open';
@@ -83,7 +86,14 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
 
   /// The colour-tag swatches (any `#rrggbb` is valid server-side).
   static const _swatches = [
-    '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#34495e',
+    '#e74c3c',
+    '#e67e22',
+    '#f1c40f',
+    '#2ecc71',
+    '#1abc9c',
+    '#3498db',
+    '#9b59b6',
+    '#34495e',
   ];
 
   @override
@@ -128,7 +138,9 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     // keep whatever is stored so an untouched 3.5 is not silently rewritten.
     _weight = task.weight == null ? '1' : opsDecimalLabel(task.weight!);
     _dept.text = task.dept;
-    _color = RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(task.color.name) ? task.color.name.toLowerCase() : '';
+    _color = RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(task.color.name)
+        ? task.color.name.toLowerCase()
+        : '';
     _milestone = task.milestone;
     _hadEnd = task.endISO.trim().isNotEmpty;
     // `subtasks` is never embedded by the API, so the count is what says
@@ -191,14 +203,19 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     final catalog = ref.read(opsTaskStatusOptionsProvider);
     if (catalog.isEmpty) {
       return [
-        for (final e in StatusMeta$.opsTask.entries) (e.key, e.value.label, e.value.color),
+        for (final e in StatusMeta$.opsTask.entries)
+          (e.key, e.value.label, e.value.color),
       ];
     }
     return [
       for (final s in catalog)
         // The org's own colour (Settings › PMO) — the built-in palette only
         // when the org left it blank.
-        (s.name, s.name, s.color ?? StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)]?.color),
+        (
+          s.name,
+          s.name,
+          s.color ?? StatusMeta$.opsTask[opsTaskStatusKey(name: s.name)]?.color
+        ),
     ];
   }
 
@@ -240,7 +257,8 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     final original = _original ?? const <String, dynamic>{};
     final patch = <String, dynamic>{
       for (final e in body.entries)
-        if (!original.containsKey(e.key) || !_same(original[e.key], e.value)) e.key: e.value,
+        if (!original.containsKey(e.key) || !_same(original[e.key], e.value))
+          e.key: e.value,
     };
     if (patch.isEmpty) {
       ref.read(toastProvider.notifier).show('Changes saved');
@@ -256,7 +274,7 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
         fields: patch,
         hadDate: _hadEnd,
         dateKey: 'exp_end_date',
-        fieldLabel: 'Expected end',
+        fieldLabel: 'Due date',
         dateLabel: _end == null ? 'no end date' : dueDateLabel(apiDate(_end!)),
       );
       if (!mounted) return;
@@ -271,8 +289,9 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
       ref.invalidate(opsTaskDetailProvider(_id));
       await ref.read(opsTaskDetailProvider(_id).future);
       if (!mounted) return;
-      // A parked change already said "Sent to your manager for approval".
-      if (outcome == DueDateWrite.saved) ref.read(toastProvider.notifier).show('Changes saved');
+      // A parked change already said "Sent for approval".
+      if (outcome == DueDateWrite.saved)
+        ref.read(toastProvider.notifier).show('Changes saved');
       context.pop();
     } on AppError catch (e) {
       if (!mounted) return;
@@ -280,7 +299,9 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
       // only thing explaining why the save did nothing, so it must be shown.
       setState(() => _saving = false);
       ref.read(apiServiceProvider).handled(e);
-      ref.read(toastProvider.notifier).showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
+      ref
+          .read(toastProvider.notifier)
+          .showError(projectTaskErrorMessage(e, ProjectTaskAction.update));
     }
   }
 
@@ -316,21 +337,34 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
 
     final projName = (_projId ?? '').isEmpty
         ? 'No project (standalone)'
-        : projects.where((p) => p.id == _projId).map((p) => p.name).firstOrNull ?? task.projectName;
+        : projects
+                .where((p) => p.id == _projId)
+                .map((p) => p.name)
+                .firstOrNull ??
+            task.projectName;
 
     // The project's real lanes, same source as the create form. This used to
     // gather group *names* off loaded tasks, and `task_group` wants a UUID.
-    final groupCatalog =
-        (_projId ?? '').isEmpty ? const <CatalogOption>[] : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
+    final groupCatalog = (_projId ?? '').isEmpty
+        ? const <CatalogOption>[]
+        : ref.watch(taskGroupsProvider(_projId!)).valueOrNull ?? const [];
     final groupName = _groupId.isEmpty
         ? 'No group'
-        : groupCatalog.where((g) => g.id == _groupId).map((g) => g.name).firstOrNull ?? _group;
+        : groupCatalog
+                .where((g) => g.id == _groupId)
+                .map((g) => g.name)
+                .firstOrNull ??
+            _group;
 
     // The org's own task types, keyed by `task_type_id`. The picker offered a
     // hardcoded Task / Approval / Site visit / Meeting, none of which was a
     // real type.
     final typeCatalog = ref.watch(opsTaskTypeOptionsProvider);
-    final typeName = typeCatalog.where((t) => t.id == _ttype).map((t) => t.name).firstOrNull ?? '';
+    final typeName = typeCatalog
+            .where((t) => t.id == _ttype)
+            .map((t) => t.name)
+            .firstOrNull ??
+        '';
 
     final statusChips = _statusChips;
     final statusKey = _statusKey;
@@ -346,9 +380,19 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
       onSave: _save,
       children: [
         const OpsSectionLabel('Basics', first: true),
-        AppTextField(label: 'Subject', required: true, controller: _subject, hint: 'What needs to happen?', onChanged: (_) => setState(_dirtied)),
+        AppTextField(
+            label: 'Subject',
+            required: true,
+            controller: _subject,
+            hint: 'What needs to happen?',
+            onChanged: (_) => setState(_dirtied)),
         SizedBox(height: 14.h),
-        AppTextField(label: 'Description', controller: _desc, hint: 'Add detail for the crew…', multiline: true, onChanged: (_) => _dirtied()),
+        AppTextField(
+            label: 'Description',
+            controller: _desc,
+            hint: 'Add detail for the crew…',
+            multiline: true,
+            onChanged: (_) => _dirtied()),
         SizedBox(height: 14.h),
         OpsPickerField(
           label: 'Project',
@@ -356,13 +400,22 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
           placeholder: 'Select project…',
           caret: PhosphorIconsBold.caretRight,
           onTap: () async {
-            final v = await showOpsOptionPicker(context: context, title: 'Select project', options: [
-              (value: '', label: 'No project (standalone)'),
-              for (final p in projects) (value: p.id, label: p.name),
-            ], currentValue: _projId ?? '');
+            final v = await showOpsOptionPicker(
+                context: context,
+                title: 'Select project',
+                options: [
+                  (value: '', label: 'No project (standalone)'),
+                  for (final p in projects) (value: p.id, label: p.name),
+                ],
+                currentValue: _projId ?? '');
             // Webapp: a project change always drops the group (groups belong
             // to a project).
-            if (v != null && v != (_projId ?? '')) setState(() { _projId = v.isEmpty ? null : v; _groupId = ''; _dirtied(); });
+            if (v != null && v != (_projId ?? ''))
+              setState(() {
+                _projId = v.isEmpty ? null : v;
+                _groupId = '';
+                _dirtied();
+              });
           },
         ),
         SizedBox(height: 14.h),
@@ -380,11 +433,16 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
                     title: 'Task group',
                     options: [
                       (value: '', label: 'No group'),
-                      for (final g in groupCatalog) (value: g.id, label: g.name),
+                      for (final g in groupCatalog)
+                        (value: g.id, label: g.name),
                     ],
                     currentValue: _groupId,
                   );
-                  if (v != null) setState(() { _groupId = v; _dirtied(); });
+                  if (v != null)
+                    setState(() {
+                      _groupId = v;
+                      _dirtied();
+                    });
                 },
               ),
             ),
@@ -398,10 +456,17 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
                     context: context,
                     title: 'Type',
                     // "—" clears the type (sent as null).
-                    options: [(value: '', label: '—'), for (final t in typeCatalog) (value: t.id, label: t.name)],
+                    options: [
+                      (value: '', label: '—'),
+                      for (final t in typeCatalog) (value: t.id, label: t.name)
+                    ],
                     currentValue: _ttype,
                   );
-                  if (v != null) setState(() { _ttype = v; _dirtied(); });
+                  if (v != null)
+                    setState(() {
+                      _ttype = v;
+                      _dirtied();
+                    });
                 },
               ),
             ),
@@ -412,14 +477,28 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
           for (final (key, label, tone) in statusChips)
-            OpsFormChip(label: label, selected: statusKey == key, tone: tone, onTap: () => setState(() { _status = key; _dirtied(); })),
+            OpsFormChip(
+                label: label,
+                selected: statusKey == key,
+                tone: tone,
+                onTap: () => setState(() {
+                      _status = key;
+                      _dirtied();
+                    })),
         ]),
         SizedBox(height: 14.h),
         _label('Priority'),
         SizedBox(height: 7.h),
         Wrap(spacing: 8.w, runSpacing: 8.h, children: [
           for (final p in const ['Urgent', 'High', 'Medium', 'Low'])
-            OpsFormChip(label: p, selected: _pri == p, tone: StatusMeta$.projectPriority[p], onTap: () => setState(() { _pri = p; _dirtied(); })),
+            OpsFormChip(
+                label: p,
+                selected: _pri == p,
+                tone: StatusMeta$.projectPriority[p],
+                onTap: () => setState(() {
+                      _pri = p;
+                      _dirtied();
+                    })),
         ]),
         SizedBox(height: 14.h),
         _label('Assignee'),
@@ -432,15 +511,36 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
               color: MockUsers.memberColors[r.id] ?? AppColors.navy,
               selected: _assignees.contains(r.id),
               filled: false,
-              onTap: () => setState(() { _assignees.contains(r.id) ? _assignees.remove(r.id) : _assignees.add(r.id); _dirtied(); }),
+              onTap: () => setState(() {
+                _assignees.contains(r.id)
+                    ? _assignees.remove(r.id)
+                    : _assignees.add(r.id);
+                _dirtied();
+              }),
             ),
         ]),
         const OpsSectionLabel('Schedule'),
         Row(
           children: [
-            Expanded(flex: 13, child: _dateField('Expected start', _start, (d) => setState(() { _start = d; _dirtied(); }))),
+            Expanded(
+                flex: 13,
+                child: _dateField(
+                    'Expected start',
+                    _start,
+                    (d) => setState(() {
+                          _start = d;
+                          _dirtied();
+                        }))),
             SizedBox(width: 10.w),
-            Expanded(flex: 10, child: _timeField('Time', _startTime, (t) => setState(() { _startTime = t; _dirtied(); }))),
+            Expanded(
+                flex: 10,
+                child: _timeField(
+                    'Time',
+                    _startTime,
+                    (t) => setState(() {
+                          _startTime = t;
+                          _dirtied();
+                        }))),
           ],
         ),
         SizedBox(height: 14.h),
@@ -451,31 +551,65 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _dateField('Expected end', _end, (d) => setState(() { _end = d; _dirtied(); })),
+                  _dateField(
+                      'Due date',
+                      _end,
+                      (d) => setState(() {
+                            _end = d;
+                            _dirtied();
+                          })),
                   if (_endErr)
                     Padding(
                       padding: EdgeInsets.only(top: 6.h),
-                      child: Text('Ends before it starts', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.error)),
+                      child: Text('Ends before it starts',
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w500,
+                              color: AppColors.error)),
                     ),
                 ],
               ),
             ),
             SizedBox(width: 10.w),
-            Expanded(flex: 10, child: _timeField('Time', _endTime, (t) => setState(() { _endTime = t; _dirtied(); }))),
+            Expanded(
+                flex: 10,
+                child: _timeField(
+                    'Time',
+                    _endTime,
+                    (t) => setState(() {
+                          _endTime = t;
+                          _dirtied();
+                        }))),
           ],
         ),
         SizedBox(height: 14.h),
         Row(
           children: [
-            Expanded(child: AppTextField(label: 'Expected time (hrs)', controller: _hours, keyboardType: TextInputType.number, onChanged: (_) => _dirtied())),
+            Expanded(
+                child: AppTextField(
+                    label: 'Expected time (hrs)',
+                    controller: _hours,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                    ],
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => _dirtied())),
             SizedBox(width: 10.w),
             Expanded(
               child: OpsPickerField(
                 label: 'Task weight',
                 value: _weight,
                 onTap: () async {
-                  final v = await showOpsOptionPicker(context: context, title: 'Task weight', options: [for (final w in _weights) (value: w, label: w)], currentValue: _weight);
-                  if (v != null) setState(() { _weight = v; _dirtied(); });
+                  final v = await showOpsOptionPicker(
+                      context: context,
+                      title: 'Task weight',
+                      options: [for (final w in _weights) (value: w, label: w)],
+                      currentValue: _weight);
+                  if (v != null)
+                    setState(() {
+                      _weight = v;
+                      _dirtied();
+                    });
                 },
               ),
             ),
@@ -483,7 +617,11 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
         ),
         const OpsSectionLabel('Classification'),
         // Free text server-side (no Department model), as on the webapp.
-        AppTextField(label: 'Department', controller: _dept, hint: 'e.g. Design', onChanged: (_) => _dirtied()),
+        AppTextField(
+            label: 'Department',
+            controller: _dept,
+            hint: 'e.g. Design',
+            onChanged: (_) => _dirtied()),
         SizedBox(height: 14.h),
         _label('Color tag'),
         SizedBox(height: 7.h),
@@ -503,7 +641,10 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
           ? AppColors.white
           : Color(int.parse('FF${hex.substring(1)}', radix: 16));
       return GestureDetector(
-        onTap: () => setState(() { _color = hex; _dirtied(); }),
+        onTap: () => setState(() {
+          _color = hex;
+          _dirtied();
+        }),
         child: Container(
           width: 30.w,
           height: 30.w,
@@ -511,17 +652,27 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
           decoration: BoxDecoration(
             color: fill,
             shape: BoxShape.circle,
-            border: Border.all(color: on ? AppColors.navy : AppColors.borderCardSoft, width: on ? 2.5 : 1.2),
+            border: Border.all(
+                color: on ? AppColors.navy : AppColors.borderCardSoft,
+                width: on ? 2.5 : 1.2),
           ),
-          child: hex.isEmpty ? Icon(PhosphorIconsBold.prohibit, size: 14.sp, color: AppColors.textPlaceholder) : null,
+          child: hex.isEmpty
+              ? Icon(PhosphorIconsBold.prohibit,
+                  size: 14.sp, color: AppColors.textPlaceholder)
+              : null,
         ),
       );
     }
 
-    return Wrap(spacing: 9.w, runSpacing: 9.h, children: [dot(''), for (final h in _swatches) dot(h)]);
+    return Wrap(
+        spacing: 9.w,
+        runSpacing: 9.h,
+        children: [dot(''), for (final h in _swatches) dot(h)]);
   }
 
-  Widget _label(String t) => Text(t, style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
+  Widget _label(String t) => Text(t,
+      style: AppText.custom(
+          size: 12, weight: FontWeight.w600, color: AppColors.textLabelAlt));
 
   Widget _milestoneToggle() {
     return Container(
@@ -537,20 +688,32 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Milestone', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text('Milestone',
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 1.h),
-                Text('Marks a key delivery point', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text('Marks a key delivery point',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () => setState(() { _milestone = !_milestone; _dirtied(); }),
+            onTap: () => setState(() {
+              _milestone = !_milestone;
+              _dirtied();
+            }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               width: 46.w,
               height: 27.h,
               padding: EdgeInsets.all(3.r),
-              alignment: _milestone ? Alignment.centerRight : Alignment.centerLeft,
+              alignment:
+                  _milestone ? Alignment.centerRight : Alignment.centerLeft,
               decoration: BoxDecoration(
                 color: _milestone ? AppColors.navy : const Color(0xFFD8DADF),
                 borderRadius: BorderRadius.circular(999.r),
@@ -561,7 +724,12 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.white,
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 3, offset: const Offset(0, 1))],
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.25),
+                        blurRadius: 3,
+                        offset: const Offset(0, 1))
+                  ],
                 ),
               ),
             ),
@@ -586,7 +754,11 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
             children: [
               _label('Progress'),
               const Spacer(),
-              Text('${_progress.round()}%', style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text('${_progress.round()}%',
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ],
           ),
           SizedBox(height: 4.h),
@@ -602,7 +774,10 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
               min: 0,
               max: 100,
               divisions: 20,
-              onChanged: (v) => setState(() { _progress = v; _dirtied(); }),
+              onChanged: (v) => setState(() {
+                _progress = v;
+                _dirtied();
+              }),
             ),
           ),
         ],
@@ -614,38 +789,56 @@ class _EditTaskScreenState extends ConsumerState<EditTaskScreen> {
     return Container(
       height: 46.h,
       padding: EdgeInsets.symmetric(horizontal: 14.w),
-      decoration: BoxDecoration(color: const Color(0xFFEFF0F2), borderRadius: BorderRadius.circular(11.r)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFEFF0F2),
+          borderRadius: BorderRadius.circular(11.r)),
       child: Row(
         children: [
-          Text('${_progress.round()}%', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+          Text('${_progress.round()}%',
+              style: AppText.custom(
+                  size: 14,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPlaceholder)),
           const Spacer(),
-          Text('Calculated from subtasks', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text('Calculated from subtasks',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
         ],
       ),
     );
   }
 
-  Widget _dateField(String label, DateTime? value, ValueChanged<DateTime> onPick) {
+  Widget _dateField(
+      String label, DateTime? value, ValueChanged<DateTime> onPick) {
     return OpsPickerField(
       label: label,
       value: value == null ? '' : opsFmtDate(value),
       placeholder: 'Pick a date',
       caret: PhosphorIconsRegular.calendarBlank,
       onTap: () async {
-        final d = await showDatePicker(context: context, initialDate: value ?? kFilterToday, firstDate: DateTime(2024), lastDate: DateTime(2030));
+        final d = await showDatePicker(
+            context: context,
+            initialDate: value ?? kFilterToday,
+            firstDate: DateTime(2024),
+            lastDate: DateTime(2030));
         if (d != null) onPick(d);
       },
     );
   }
 
-  Widget _timeField(String label, TimeOfDay? value, ValueChanged<TimeOfDay> onPick) {
+  Widget _timeField(
+      String label, TimeOfDay? value, ValueChanged<TimeOfDay> onPick) {
     return OpsPickerField(
       label: label,
       value: value == null ? '' : opsFmtTime(value),
       placeholder: 'Time',
       caret: PhosphorIconsRegular.clock,
       onTap: () async {
-        final t = await showTimePicker(context: context, initialTime: value ?? const TimeOfDay(hour: 9, minute: 0));
+        final t = await showTimePicker(
+            context: context,
+            initialTime: value ?? const TimeOfDay(hour: 9, minute: 0));
         if (t != null) onPick(t);
       },
     );

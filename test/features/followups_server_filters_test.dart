@@ -20,9 +20,12 @@ import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/followu
 /// The Acme org's real task statuses.
 final _statuses = [
   const CatalogOption(id: 'st-open', name: 'Open', statusType: 'open'),
-  const CatalogOption(id: 'st-prog', name: 'In Progress', statusType: 'in_progress'),
-  const CatalogOption(id: 'st-done', name: 'Completed', statusType: 'completed'),
-  const CatalogOption(id: 'st-canc', name: 'Cancelled', statusType: 'cancelled'),
+  const CatalogOption(
+      id: 'st-prog', name: 'In Progress', statusType: 'in_progress'),
+  const CatalogOption(
+      id: 'st-done', name: 'Completed', statusType: 'completed'),
+  const CatalogOption(
+      id: 'st-canc', name: 'Cancelled', statusType: 'cancelled'),
 ];
 
 const _priorities = [
@@ -30,7 +33,8 @@ const _priorities = [
   CatalogOption(id: 'pr-low', name: 'low'),
 ];
 
-TaskFilterCodec _codec() => TaskFilterCodec(statuses: _statuses, priorities: _priorities);
+TaskFilterCodec _codec() =>
+    TaskFilterCodec(statuses: _statuses, priorities: _priorities);
 
 const _types = [
   CatalogOption(id: 'uuid-call', name: 'Call'),
@@ -60,7 +64,8 @@ class _Adapter implements HttpClientAdapter {
 }
 
 ApiService _api(_Adapter a) {
-  final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))..httpClientAdapter = a;
+  final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
+    ..httpClientAdapter = a;
   return ApiService(tokens: TokenStorage(), dio: dio);
 }
 
@@ -69,35 +74,65 @@ FilterValues _values(Map<String, FilterValue> m) => FilterValues(m);
 void main() {
   group('drawer → /crm/tasks/ params (webapp task drawer)', () {
     test('offers the webapp facets, with the org follow-up types by name', () {
-      final spec = buildFollowupsFilterSpec(typeCatalog: _types, statusCatalog: _statuses, priorityCatalog: _priorities);
-      final fields = {for (final f in spec.sections.expand((s) => s.fields)) f.id: f};
-      expect(fields.keys, containsAll(['assignees', 'statuses', 'types', 'priorities', 'due']));
+      final spec = buildFollowupsFilterSpec(
+          typeCatalog: _types,
+          statusCatalog: _statuses,
+          priorityCatalog: _priorities);
+      final fields = {
+        for (final f in spec.sections.expand((s) => s.fields)) f.id: f
+      };
+      expect(fields.keys,
+          containsAll(['assignees', 'statuses', 'types', 'priorities', 'due']));
       expect(fields['types']!.options.map((o) => o.id), ['Call', 'Site Visit']);
       expect(spec.title, 'Filter follow-ups by:');
     });
 
-    test('falls back to the built-in follow-up types before the catalog loads', () {
+    test('falls back to the built-in follow-up types before the catalog loads',
+        () {
       final spec = buildFollowupsFilterSpec();
-      final types = spec.sections.expand((s) => s.fields).firstWhere((f) => f.id == 'types');
+      final types = spec.sections
+          .expand((s) => s.fields)
+          .firstWhere((f) => f.id == 'types');
       expect(types.options.map((o) => o.id), kBuiltinFollowupTypes);
     });
 
     test('type sends names; status is sends NAMES, is-not sends ids', () {
-      expect(_codec().encode(_values({'types': ChoiceValue(ids: {'Call'})})), {'task_type__in': 'Call'});
-      expect(_codec().encode(_values({'statuses': ChoiceValue(ids: {'st-done'})})), {'status__in': 'Completed'});
-      expect(_codec().encode(_values({'statuses': ChoiceValue(ids: {'st-done'}, isNot: true)})), {'status__not': 'st-done'});
+      expect(
+          _codec().encode(_values({
+            'types': ChoiceValue(ids: {'Call'})
+          })),
+          {'task_type__in': 'Call'});
+      expect(
+          _codec().encode(_values({
+            'statuses': ChoiceValue(ids: {'st-done'})
+          })),
+          {'status__in': 'Completed'});
+      expect(
+          _codec().encode(_values({
+            'statuses': ChoiceValue(ids: {'st-done'}, isNot: true)
+          })),
+          {'status__not': 'st-done'});
     });
 
     test('Overdue is is_overdue; a range is due_date_after/before', () {
-      expect(_codec().encode(_values({'due': const DateValue(chip: 'overdue')})), {'is_overdue': 'true'});
       expect(
-        _codec().encode(_values({'due': DateValue(from: DateTime(2026, 10, 1), to: DateTime(2026, 10, 31))})),
+          _codec().encode(_values({'due': const DateValue(chip: 'overdue')})),
+          {'is_overdue': 'true'});
+      expect(
+        _codec().encode(_values({
+          'due':
+              DateValue(from: DateTime(2026, 10, 1), to: DateTime(2026, 10, 31))
+        })),
         {'due_date_after': '2026-10-01', 'due_date_before': '2026-10-31'},
       );
     });
 
-    test('a saved view decodes back into the same drawer (shared with Tasks)', () {
-      final spec = buildFollowupsFilterSpec(typeCatalog: _types, statusCatalog: _statuses, priorityCatalog: _priorities);
+    test('a saved view decodes back into the same drawer (shared with Tasks)',
+        () {
+      final spec = buildFollowupsFilterSpec(
+          typeCatalog: _types,
+          statusCatalog: _statuses,
+          priorityCatalog: _priorities);
       final def = _codec().encode(_values({
         'types': ChoiceValue(ids: {'Call'}),
         'statuses': ChoiceValue(ids: {'st-open'}, isNot: true),
@@ -128,7 +163,8 @@ void main() {
       expect(q['status__not'], 'st-done');
       expect(q['task_type__in'], 'Email');
       expect(q['is_followup'], 'true'); // the scope is never lost
-      expect(q['page'], isNull, reason: 'a stored page must not steer the walk');
+      expect(q['page'], isNull,
+          reason: 'a stored page must not steer the walk');
     });
   });
 
@@ -140,18 +176,25 @@ void main() {
           'columns': [
             {'name': 'title', 'label': 'Task', 'order': 1, 'visible': true},
             {'name': 'status', 'label': 'Status', 'order': 2, 'visible': true},
-            {'name': 'priority', 'label': 'Priority', 'order': 3, 'visible': true},
+            {
+              'name': 'priority',
+              'label': 'Priority',
+              'order': 3,
+              'visible': true
+            },
           ],
         },
       });
 
-      final schema = await FollowupSchemaRemoteDataSource(_api(adapter)).fetchCardSchema();
+      final schema =
+          await FollowupSchemaRemoteDataSource(_api(adapter)).fetchCardSchema();
 
       final q = adapter.requests.first.queryParameters;
       expect(q['view_type'], 'mobile');
       // Without this the response describes the Tasks screen instead.
       expect(q['is_followup'], true);
-      expect(schema.columns.map((c) => c.name), ['title', 'status', 'priority']);
+      expect(
+          schema.columns.map((c) => c.name), ['title', 'status', 'priority']);
     });
 
     test('falls back to the list layout when mobile has no columns', () async {
@@ -163,7 +206,8 @@ void main() {
         },
       });
       await FollowupSchemaRemoteDataSource(_api(adapter)).fetchCardSchema();
-      expect(adapter.requests.map((r) => r.queryParameters['view_type']).toList(),
+      expect(
+          adapter.requests.map((r) => r.queryParameters['view_type']).toList(),
           ['mobile', 'list']);
     });
 
@@ -201,20 +245,30 @@ void main() {
       expect(fu.priority, 'High');
     });
 
-    test('due caption: overdue / Today / In 2-3d, none once completed or cancelled', () {
+    test(
+        'due caption: overdue / Today / In 2-3d, none once completed or cancelled',
+        () {
       final now = DateTime(2026, 10, 24);
-      String note(String due, {String status = 'Open', Map<String, String> types = const {}}) =>
+      String note(String due,
+              {String status = 'Open', Map<String, String> types = const {}}) =>
           FollowupsRemoteDataSource.followupFromJson(
             {'task_id': 'x', 'title': 'X', 'status': status, 'due_date': due},
             now: now,
             statusTypes: types,
-          )!.dueNote;
+          )!
+              .dueNote;
       expect(note('2026-10-22'), '2d overdue');
       expect(note('2026-10-24'), 'Today');
       expect(note('2026-10-26'), 'In 2d');
       expect(note('2026-10-30'), '');
-      expect(note('2026-10-22', status: 'Completed', types: const {'completed': 'completed'}), '');
-      expect(note('2026-10-22', status: 'Cancelled', types: const {'cancelled': 'cancelled'}), '');
+      expect(
+          note('2026-10-22',
+              status: 'Completed', types: const {'completed': 'completed'}),
+          '');
+      expect(
+          note('2026-10-22',
+              status: 'Cancelled', types: const {'cancelled': 'cancelled'}),
+          '');
     });
 
     test('a row with no status falls back to the derived bucket', () {

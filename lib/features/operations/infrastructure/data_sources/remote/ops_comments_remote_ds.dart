@@ -33,7 +33,8 @@ class OpsCommentsRemoteDataSource {
       'related_to_id': recordId,
       'page_size': 100,
     });
-    final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+    final rows =
+        Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
     return [for (final row in rows) noteFromComment(row)];
   }
 

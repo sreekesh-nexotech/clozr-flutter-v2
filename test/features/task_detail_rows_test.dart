@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:clozrapp/features/crm/application/record_rows.dart';
 import 'package:clozrapp/features/crm/domain/entities/view_schema.dart';
 
-Map<String, dynamic> _col(String name, String label, int order, String type) => {
+Map<String, dynamic> _col(String name, String label, int order, String type) =>
+    {
       'name': name,
       'label': label,
       'order': order,
@@ -95,12 +96,14 @@ void main() {
     });
 
     test('skip is still honoured when a caller asks for it', () {
-      final rows = recordRows(_row, _schema, skip: const {'title', 'description'});
+      final rows =
+          recordRows(_row, _schema, skip: const {'title', 'description'});
 
       expect(rows.any((r) => r.label == 'Description'), isFalse);
     });
 
-    test('the empty schema yields nothing, so the panel keeps built-in rows', () {
+    test('the empty schema yields nothing, so the panel keeps built-in rows',
+        () {
       expect(recordRows(_row, ViewSchema.empty), isEmpty);
     });
   });
@@ -113,7 +116,8 @@ void main() {
 
     test('foreign keys read their nested name, not the object', () {
       expect(byLabel()['Status'], 'Open');
-      expect(byLabel()['Priority'], 'critical');
+      // Priority reads capitalised (UI/UX audit #28).
+      expect(byLabel()['Priority'], 'Critical');
       expect(byLabel()['Assigned To'], 'Admin Acme');
     });
 
@@ -127,7 +131,7 @@ void main() {
 
     test('dates and times are display-formatted, seconds dropped', () {
       // `absoluteDate`'s house format — day is not zero-padded.
-      expect(byLabel()['Due Date'], '9 Jul 2026');
+      expect(byLabel()['Due Date'], '09/07/2026');
       expect(byLabel()['Due Time'], '10:30');
     });
 
@@ -142,10 +146,12 @@ void main() {
   });
 
   group('robustness', () {
-    test('a column the payload does not carry at all still renders, as a dash', () {
+    test('a column the payload does not carry at all still renders, as a dash',
+        () {
       // Layout and payload disagreeing is worth surfacing as "nothing here";
       // dropping the row would hide the disagreement.
-      final rows = recordRows(const {'title': 'x', 'task_type': 'Call'}, _schema,
+      final rows = recordRows(
+          const {'title': 'x', 'task_type': 'Call'}, _schema,
           skip: const {'title'});
 
       expect(rows.length, _schema.columns.length - 1);
@@ -156,13 +162,14 @@ void main() {
     });
 
     test('a key present as null still renders — that is real information', () {
-      final rows = recordRows(
-          const {'task_type': null}, _schema, skip: const {'title'});
+      final rows =
+          recordRows(const {'task_type': null}, _schema, skip: const {'title'});
 
       expect(rows.firstWhere((r) => r.name == 'task_type').value, '—');
     });
 
-    test('an unrecognised nested object degrades to a dash, never a Map dump', () {
+    test('an unrecognised nested object degrades to a dash, never a Map dump',
+        () {
       expect(recordValueText(const {'unexpected': 1}, 'foreignkey'), '—');
     });
 

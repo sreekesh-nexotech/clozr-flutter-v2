@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../../core/widgets/row_actions_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/router/routes.dart';
@@ -68,7 +69,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     // Contextual add: the bottom-nav `+` opens the Add product/package sheet.
     registerAdd(
       ref,
-      AddAction(label: 'Add product', module: 'product', run: (ctx) => showAddProductSheet(ctx, mode: mode)),
+      AddAction(
+          label: 'Add product',
+          module: 'product',
+          run: (ctx) => showAddProductSheet(ctx, mode: mode)),
     );
 
     final all = ref.watch(allProductsProvider);
@@ -96,21 +100,25 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             const HeaderHairline(),
             SizedBox(height: 14.h),
             ScreenTitleRow(
-              title: 'Products & Services',
+              title: 'Products',
               hasSearchQuery: query.isNotEmpty,
               filterCount: filterCount,
-              onSearch: () => ref.read(prodSearchOpenProvider.notifier).state = !searchOpen,
+              onSearch: () =>
+                  ref.read(prodSearchOpenProvider.notifier).state = !searchOpen,
               onFilter: _openFilters,
             ),
             SizedBox(height: 14.h),
             ModeToggle(
               options: [
-                ModeOption(PhosphorIconsRegular.package, 'Products (${prodModeCount(all, 'products')})'),
-                ModeOption(PhosphorIconsRegular.stack, 'Packages (${prodModeCount(all, 'packages')})'),
+                ModeOption(PhosphorIconsRegular.package,
+                    'Products (${prodModeCount(all, 'products')})'),
+                ModeOption(PhosphorIconsRegular.stack,
+                    'Packages (${prodModeCount(all, 'packages')})'),
               ],
               selectedIndex: mode == 'products' ? 0 : 1,
               onChanged: (i) {
-                ref.read(prodModeProvider.notifier).state = i == 0 ? 'products' : 'packages';
+                ref.read(prodModeProvider.notifier).state =
+                    i == 0 ? 'products' : 'packages';
                 ref.read(prodCatProvider.notifier).state = 'all';
               },
             ),
@@ -119,7 +127,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               SearchField(
                 controller: _searchCtrl,
                 hint: 'Search products, SKU, HSN…',
-                onChanged: (v) => ref.read(prodSearchProvider.notifier).state = v,
+                onChanged: (v) =>
+                    ref.read(prodSearchProvider.notifier).state = v,
                 onClose: () {
                   _searchCtrl.clear();
                   ref.read(prodSearchProvider.notifier).state = '';
@@ -134,7 +143,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 children: [
                   for (final k in catKeys)
                     TabChip(
-                      label: '${k == 'all' ? 'All' : k} (${prodCatCount(all, k, mode: mode)})',
+                      label:
+                          '${k == 'all' ? 'All' : k} (${prodCatCount(all, k, mode: mode)})',
                       active: cat == k,
                       onTap: () => ref.read(prodCatProvider.notifier).state = k,
                     ),
@@ -160,8 +170,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     EmptyState(
                       icon: PhosphorIconsRegular.package,
                       title: 'No items found',
-                      body: 'Try a different category, clear filters, or add a catalog item.',
-                      ctaLabel: mode == 'packages' ? 'Add package' : 'Add product',
+                      body:
+                          'Try a different category, clear filters, or add a catalog item.',
+                      ctaLabel:
+                          mode == 'packages' ? 'Add package' : 'Add product',
                       ctaIcon: PhosphorIconsBold.plus,
                       onCta: () => showAddProductSheet(context, mode: mode),
                     ),
@@ -179,7 +191,21 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     // Packages have their own View Settings layout.
                     schema: product.isPackage ? packageSchema : productSchema,
                     product: product,
-                    onTap: () => context.push('${Routes.productDetail}?id=${product.id}'),
+                    onTap: () => context
+                        .push('${Routes.productDetail}?id=${product.id}'),
+                    // Products have no mobile edit form yet: View only.
+                    onLongPress: () async {
+                      final pick = await showRowActionsSheet(context,
+                          title: product.name,
+                          actions: [
+                            RowAction.view(
+                                product.isPackage ? 'package' : 'product')
+                          ]);
+                      if (pick == 'view' && context.mounted) {
+                        context
+                            .push('${Routes.productDetail}?id=${product.id}');
+                      }
+                    },
                   );
                 },
               );
@@ -226,9 +252,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       context: context,
       spec: spec,
       initial: current,
-      previewCount: (draft) => base.where((p) => productMatchesFilters(p, draft)).length,
+      previewCount: (draft) =>
+          base.where((p) => productMatchesFilters(p, draft)).length,
       activeViewName: activeView?.name,
-      existingViewNames: ref.read(productSavedViewsProvider).views.map((v) => v.name).toSet(),
+      existingViewNames:
+          ref.read(productSavedViewsProvider).views.map((v) => v.name).toSet(),
       onSaveView: (name, draft) {
         ref.read(productSavedViewsProvider.notifier).upsert(name, draft);
         ref.read(toastProvider.notifier).show('View "$name" saved');
@@ -268,7 +296,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     // debug, a swallowed tap in release. Fail inert and say so instead.
     final view = saved.views.where((v) => v.id == id).firstOrNull;
     if (view == null) {
-      ref.read(toastProvider.notifier).show('That view is no longer available.');
+      ref
+          .read(toastProvider.notifier)
+          .show('That view is no longer available.');
       return;
     }
     ref.read(productSavedViewsProvider.notifier).apply(id);

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -18,6 +20,7 @@ import '../../application/providers/customers_providers.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../components/customer_address_fields.dart';
 import '../components/lead_schema_form.dart';
+import '../sheets/add_sheet_kit.dart' show confirmDiscardChanges;
 
 /// Edit customer — the org's own Customer layout, rendered as a form.
 ///
@@ -43,6 +46,29 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   /// The billing / delivery address and GSTIN block, seeded from the record
   /// the first time it is on screen.
   CustomerAddressController? _address;
+
+  String? _baseline;
+  String _snapshot(String id) {
+    try {
+      return jsonEncode({
+        'form': _formKey.currentState?.payload ?? const {},
+        'address': _address
+                ?.patchAgainst(ref.read(customerRowProvider(id)).valueOrNull) ??
+            const {},
+      });
+    } on Object {
+      return '';
+    }
+  }
+
+  /// System back, the header arrow and Cancel: asks "Discard changes?" when
+  /// something was edited.
+  Future<void> _onSystemBack(String id) async {
+    final dirty = _baseline != null && !_saving && _snapshot(id) != _baseline;
+    if (!dirty || await confirmDiscardChanges(context)) {
+      if (mounted) context.pop();
+    }
+  }
 
   @override
   void dispose() {
@@ -76,7 +102,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     try {
       // `If-Match` with the version the form was filled from: a customer
       // changed elsewhere since is refused instead of silently edited.
-      final seeded = ref.read(customerRowProvider(id)).valueOrNull?['updated_at'];
+      final seeded =
+          ref.read(customerRowProvider(id)).valueOrNull?['updated_at'];
       await ref.read(customersRepositoryProvider).updateCustomer(id, payload,
           version: _version ?? (seeded is String ? seeded : null));
       if (!mounted) return;
@@ -102,7 +129,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         // so saving again applies just these edits on top of the other change.
         final current = e.extra?['current_updated_at'];
         if (current is String && current.isNotEmpty) _version = current;
-        ref.read(toastProvider.notifier).showError('Changed elsewhere — ${e.message}');
+        ref
+            .read(toastProvider.notifier)
+            .showError('Changed elsewhere — ${e.message}');
         return;
       }
       // Field messages go under their inputs; a toast only for what has none.
@@ -138,86 +167,102 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     ref.watch(customerStatusCatalogProvider);
     final statuses = ref.watch(customerStatusesProvider);
 
-    return Container(
-      color: AppColors.bgDetail,
-      child: Column(
-        children: [
-          DetailAppBar(
-            section: 'Customer',
-            name: 'Edit customer',
-            onBack: () => context.pop(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onSystemBack(id);
+      },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _baseline ??= _snapshot(id),
+        child: Container(
+          color: AppColors.bgDetail,
+          child: Column(
+            children: [
+              DetailAppBar(
+                section: 'Customer',
+                name: 'Edit customer',
+                onBack: () => _onSystemBack(id),
+              ),
+              Expanded(
+                child: switch (row) {
+                  AsyncValue(hasError: true) => Center(
+                      child: Text('Could not load this customer',
+                          style: AppText.body(color: AppColors.textMuted)),
+                    ),
+                  AsyncValue(value: null, isLoading: true) =>
+                    const DetailSkeleton(),
+                  _ => ListView(
+                      padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 24.h),
+                      children: [
+                        if (schema.editableColumns.isEmpty)
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 32.h),
+                            child: Text(
+                              'This workspace has not configured any editable '
+                              'customer fields yet.',
+                              textAlign: TextAlign.center,
+                              style: AppText.body(color: AppColors.textMuted),
+                            ),
+                          )
+                        else ...[
+                          LeadSchemaForm(
+                            key: _formKey,
+                            schema: schema,
+                            // Edit, not create: send only what changed, so an
+                            // untouched Save says "Nothing to save" rather than
+                            // rewriting all 12 configured columns.
+                            diffAgainstRow: true,
+                            row: row.valueOrNull,
+                            // Only the name is required for a customer.
+                            mobileRequired: false,
+                            requiredOnly: const {'name'},
+                            includeCustomFields: true,
+                            // The address / GSTIN columns are the block's below.
+                            hiddenColumns: addressOwnedColumns,
+                            // The same two overrides the Add customer sheet needs.
+                            // A customer writes its status as plain `status`, where
+                            // the Lead default renames it to `status_id` — the wrong
+                            // key is accepted and ignored, so the status would
+                            // silently never change.
+                            writeKey: (c) => c.name,
+                            // `products` is a list of **objects**: the serializer
+                            // wants `{product_id, quantity}` and answers "Expected a
+                            // dictionary, but got str" for a bare id.
+                            writeMulti: (c, ids) => c.name == 'products'
+                                ? [
+                                    for (final id in ids)
+                                      {'product_id': id, 'quantity': 1}
+                                  ]
+                                : ids,
+                            // The shared form resolves a foreign key by its
+                            // `relatedModel`, and it knows `LeadStatus` but not
+                            // `CustomerStatus` — without this the picker opens empty
+                            // on the field most likely to be edited.
+                            optionsByColumn: {
+                              if (statuses.isNotEmpty)
+                                'status': [
+                                  for (final s in statuses)
+                                    CatalogOption(id: s.id, name: s.name),
+                                ],
+                            },
+                          ),
+                        ],
+                        if (row.hasValue) ...[
+                          SizedBox(height: 18.h),
+                          CustomerAddressFields(
+                            controller: _address ??=
+                                CustomerAddressController(row: row.valueOrNull),
+                          ),
+                        ],
+                      ],
+                    ),
+                },
+              ),
+              _actionBar(id),
+            ],
           ),
-          Expanded(
-            child: switch (row) {
-              AsyncValue(hasError: true) => Center(
-                  child: Text('Could not load this customer',
-                      style: AppText.body(color: AppColors.textMuted)),
-                ),
-              AsyncValue(value: null, isLoading: true) => const DetailSkeleton(),
-              _ => ListView(
-                  padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 24.h),
-                  children: [
-                    if (schema.editableColumns.isEmpty)
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32.h),
-                        child: Text(
-                          'This workspace has not configured any editable '
-                          'customer fields yet.',
-                          textAlign: TextAlign.center,
-                          style: AppText.body(color: AppColors.textMuted),
-                        ),
-                      )
-                    else ...[
-                      LeadSchemaForm(
-                        key: _formKey,
-                        schema: schema,
-                        // Edit, not create: send only what changed, so an
-                        // untouched Save says "Nothing to save" rather than
-                        // rewriting all 12 configured columns.
-                        diffAgainstRow: true,
-                        row: row.valueOrNull,
-                        // Only the name is required for a customer.
-                        mobileRequired: false,
-                        requiredOnly: const {'name'},
-                        // The address / GSTIN columns are the block's below.
-                        hiddenColumns: addressOwnedColumns,
-                        // The same two overrides the Add customer sheet needs.
-                        // A customer writes its status as plain `status`, where
-                        // the Lead default renames it to `status_id` — the wrong
-                        // key is accepted and ignored, so the status would
-                        // silently never change.
-                        writeKey: (c) => c.name,
-                        // `products` is a list of **objects**: the serializer
-                        // wants `{product_id, quantity}` and answers "Expected a
-                        // dictionary, but got str" for a bare id.
-                        writeMulti: (c, ids) => c.name == 'products'
-                            ? [for (final id in ids) {'product_id': id, 'quantity': 1}]
-                            : ids,
-                        // The shared form resolves a foreign key by its
-                        // `relatedModel`, and it knows `LeadStatus` but not
-                        // `CustomerStatus` — without this the picker opens empty
-                        // on the field most likely to be edited.
-                        optionsByColumn: {
-                          if (statuses.isNotEmpty)
-                            'status': [
-                              for (final s in statuses) CatalogOption(id: s.id, name: s.name),
-                            ],
-                        },
-                      ),
-                    ],
-                    if (row.hasValue) ...[
-                      SizedBox(height: 18.h),
-                      CustomerAddressFields(
-                        controller: _address ??=
-                            CustomerAddressController(row: row.valueOrNull),
-                      ),
-                    ],
-                  ],
-                ),
-            },
-          ),
-          _actionBar(id),
-        ],
+        ),
       ),
     );
   }
@@ -232,7 +277,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => context.pop(),
+            // UAT: Cancel asks "Discard changes?" like system back does.
+            onTap: () => _onSystemBack(id),
             child: Container(
               width: 100.w,
               height: 48.h,
@@ -244,7 +290,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
               ),
               child: Text('Cancel',
                   style: AppText.custom(
-                      size: 14, weight: FontWeight.w600, color: AppColors.textLabelAlt)),
+                      size: 14,
+                      weight: FontWeight.w600,
+                      color: AppColors.textLabelAlt)),
             ),
           ),
           SizedBox(width: 10.w),
@@ -268,11 +316,14 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(PhosphorIconsBold.check, size: 16.sp, color: AppColors.white),
+                          Icon(PhosphorIconsBold.check,
+                              size: 16.sp, color: AppColors.white),
                           SizedBox(width: 8.w),
                           Text('Save changes',
                               style: AppText.custom(
-                                  size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                                  size: 15,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.white)),
                         ],
                       ),
               ),

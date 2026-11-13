@@ -21,13 +21,15 @@ class BoardRow extends StatelessWidget {
     final pill = boardPill(ticket);
     // Null when nobody is on the ticket. It used to fall back to `'me'`, so an
     // unassigned ticket wore the signed-in user's initials and read as theirs.
-    final rep = ticket.assignees.isEmpty ? null : MockUsers.of(ticket.assignees.first);
+    final rep =
+        ticket.assignees.isEmpty ? null : MockUsers.of(ticket.assignees.first);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 11.h),
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.bgLight))),
+        decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.bgLight))),
         child: Row(
           children: [
             // `displayRef` ("TKT-0025"), never `id` — that is the `issue_id`
@@ -42,27 +44,42 @@ class BoardRow extends StatelessWidget {
               child: Text(ticket.displayRef,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+                  style: AppText.custom(
+                      size: 11,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPlaceholder)),
             ),
             SizedBox(width: 8.w),
             Expanded(
               child: Text(ticket.subject,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.custom(size: 13.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPrimary)),
             ),
             if (ticket.taskId != null) ...[
               SizedBox(width: 8.w),
-              Icon(PhosphorIconsRegular.linkSimple, size: 13.sp, color: AppColors.textPlaceholder),
+              Icon(PhosphorIconsRegular.linkSimple,
+                  size: 13.sp, color: AppColors.textPlaceholder),
             ],
             SizedBox(width: 8.w),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-              decoration: BoxDecoration(color: pill.bg, borderRadius: BorderRadius.circular(7.r)),
-              child: Text(pill.label, style: AppText.custom(size: 10.5, weight: FontWeight.w700, color: pill.fg)),
+              decoration: BoxDecoration(
+                  color: pill.bg, borderRadius: BorderRadius.circular(7.r)),
+              child: Text(pill.label,
+                  style: AppText.custom(
+                      size: 10.5, weight: FontWeight.w700, color: pill.fg)),
             ),
             SizedBox(width: 8.w),
-            Container(width: 8.w, height: 8.w, decoration: BoxDecoration(color: ticketPriDotColor(ticket.pri), shape: BoxShape.circle)),
+            Container(
+                width: 8.w,
+                height: 8.w,
+                decoration: BoxDecoration(
+                    color: ticketPriDotColor(ticket.pri),
+                    shape: BoxShape.circle)),
             SizedBox(width: 8.w),
             Container(
               width: 19.w,
@@ -75,9 +92,13 @@ class BoardRow extends StatelessWidget {
               child: rep == null
                   // An empty slot keeps the row's alignment while saying, truthfully,
                   // that nobody is on it.
-                  ? Icon(PhosphorIconsRegular.user, size: 10.sp, color: AppColors.textPlaceholder)
+                  ? Icon(PhosphorIconsRegular.user,
+                      size: 10.sp, color: AppColors.textPlaceholder)
                   : Text(rep.initials,
-                      style: AppText.custom(size: 8.5, weight: FontWeight.w700, color: AppColors.white)),
+                      style: AppText.custom(
+                          size: 8.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.white)),
             ),
           ],
         ),

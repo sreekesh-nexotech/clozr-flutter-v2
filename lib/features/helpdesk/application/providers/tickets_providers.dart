@@ -1,3 +1,5 @@
+import '../../../crm/domain/entities/lead_file.dart';
+import '../../../crm/application/providers/attachments_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/filters/filter_models.dart';
@@ -5,6 +7,7 @@ import '../../../../data/api/roster.dart';
 import '../../../../data/api/user_directory.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/network/api_endpoints.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../board_rules.dart';
 import '../../../../core/auth/session_gate.dart';
 import '../../../auth/application/providers/auth_providers.dart';
@@ -88,13 +91,15 @@ void refreshTickets(WidgetRef ref) => ref.invalidate(ticketsScopedProvider);
 /// Empty — no request — for a role without the Helpdesk module: a ticket's
 /// assignee may still open their ticket (and its audit log, which reads this),
 /// but the catalog answers them 403, and that refusal must not toast.
-final ticketStatusCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final ticketStatusCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   if (!ref.watch(helpdeskReadableProvider)) return const [];
   return ref.watch(ticketsRepositoryProvider).getIssueStatuses();
 });
 
 /// The org's own issue types (`/crm/issue-types/`) — the Category chips.
-final ticketTypeCatalogProvider = FutureProvider<List<CatalogOption>>((ref) async {
+final ticketTypeCatalogProvider =
+    FutureProvider<List<CatalogOption>>((ref) async {
   if (!ref.watch(helpdeskReadableProvider)) return const [];
   return ref.watch(ticketsRepositoryProvider).getIssueTypes();
 });
@@ -126,13 +131,16 @@ final ticketStatusOptionsProvider = Provider<List<CatalogOption>>(
 /// [ticketFilterParamsFor]).
 final ticketFilterParamsProvider = Provider<Map<String, dynamic>>(
   (ref) => ticketFilterParamsFor(
+    openOnly: ref.watch(ticketOpenOnlyProvider),
+    extra: ref.watch(ticketScopeParamsProvider),
     mine: ref.watch(ticketMineProvider),
     breach: ref.watch(ticketBreachingProvider),
     search: ref.watch(ticketSearchProvider),
-    statusChips: ref.watch(ticketStatusChipsProvider),
+    statusChips: ref.watch(ticketEffectiveChipsProvider),
     catalog: ref.watch(ticketStatusOptionsProvider),
     drawer: ref.watch(ticketFiltersProvider),
-    savedFilterId: ref.watch(ticketSavedFiltersProvider.select((s) => s.activeId)),
+    savedFilterId:
+        ref.watch(ticketSavedFiltersProvider.select((s) => s.activeId)),
   ),
 );
 
@@ -140,13 +148,16 @@ final ticketFilterParamsProvider = Provider<Map<String, dynamic>>(
 /// status chips themselves (and the resolved-work rule that rides on them).
 final ticketCountParamsProvider = Provider<Map<String, dynamic>>(
   (ref) => ticketFilterParamsFor(
+    openOnly: ref.watch(ticketOpenOnlyProvider),
+    extra: ref.watch(ticketScopeParamsProvider),
     mine: ref.watch(ticketMineProvider),
     breach: ref.watch(ticketBreachingProvider),
     search: ref.watch(ticketSearchProvider),
     statusChips: ref.watch(ticketStatusChipsProvider),
     catalog: ref.watch(ticketStatusOptionsProvider),
     drawer: ref.watch(ticketFiltersProvider),
-    savedFilterId: ref.watch(ticketSavedFiltersProvider.select((s) => s.activeId)),
+    savedFilterId:
+        ref.watch(ticketSavedFiltersProvider.select((s) => s.activeId)),
     forCounts: true,
   ),
 );
@@ -160,7 +171,9 @@ final ticketSavedFiltersProvider =
   ref.watch(helpdeskSessionUserProvider);
   return SavedFiltersController(
     module: 'issue',
-    remote: ref.watch(helpdeskReadableProvider) ? ref.watch(savedFiltersRemoteProvider) : null,
+    remote: ref.watch(helpdeskReadableProvider)
+        ? ref.watch(savedFiltersRemoteProvider)
+        : null,
   );
 });
 
@@ -179,13 +192,18 @@ final ticketsFilteredProvider = FutureProvider<List<Ticket>>(
 ///
 /// Empty (mock mode, a failed call) means the strip falls back to counting the
 /// rows it has — which is only right when every page happens to be downloaded.
-final ticketStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+final ticketStatusCountsProvider =
+    FutureProvider<Map<String, int>>((ref) async {
   // Same gate as the list: a role without Helpdesk would only be refused.
   if (!ref.watch(helpdeskReadableProvider)) return const {};
   final raw = await ref
       .watch(ticketsRepositoryProvider)
       .getStatusCounts(ref.watch(ticketCountParamsProvider));
-  return foldTicketCounts(raw, ref.watch(ticketStatusOptionsProvider));
+  final catalog = ref.watch(ticketStatusOptionsProvider);
+  final folded = foldTicketCounts(raw, catalog);
+  return ref.watch(ticketOpenOnlyProvider)
+      ? hideResolvedCounts(folded, catalog)
+      : folded;
 });
 
 /// One ticket's activity feed, from the ticket's **own** endpoint
@@ -205,7 +223,9 @@ final ticketActivityProvider =
     final real = UserDirectory.realUserId(u.id);
     if (real != null) names[real] = u.name;
   }
-  return ref.watch(ticketsRepositoryProvider).getActivity(issueId, names: names);
+  return ref
+      .watch(ticketsRepositoryProvider)
+      .getActivity(issueId, names: names);
 });
 
 /// One ticket, read directly (`GET /crm/issues/{id}/`).
@@ -233,8 +253,8 @@ final ticketLinkedTasksProvider =
 
 /// One parent's direct children (`issues/{id}/children/`) — the Child
 /// tickets tab. Empty on failure, which reads as "No child tickets".
-final ticketChildrenProvider =
-    FutureProvider.autoDispose.family<List<Ticket>, String>((ref, issueId) async {
+final ticketChildrenProvider = FutureProvider.autoDispose
+    .family<List<Ticket>, String>((ref, issueId) async {
   ref.watch(apiWriteTickProvider);
   try {
     return await ref.watch(ticketsRepositoryProvider).getChildren(issueId);
@@ -245,8 +265,8 @@ final ticketChildrenProvider =
 
 /// "Attach a child ticket" candidates for the typed search: tickets without
 /// a parent (webapp `isChild: false`), first 20.
-final ticketAttachCandidatesProvider =
-    FutureProvider.autoDispose.family<List<Ticket>, String>((ref, search) async {
+final ticketAttachCandidatesProvider = FutureProvider.autoDispose
+    .family<List<Ticket>, String>((ref, search) async {
   try {
     return await ref.watch(ticketsRepositoryProvider).searchRootTickets(search);
   } on Object {
@@ -280,8 +300,10 @@ final boardSummaryProvider = FutureProvider<IssueSummary?>((ref) async {
   // The Support Overview is the whole page (webapp), so a failure surfaces as
   // the page's error notice instead of a silent fallback. Quiet: the page
   // explains the refusal itself.
-  final body = await ref.watch(apiServiceProvider).get(ApiEndpoints.issueSummary,
-      query: const {'due_soon_minutes': boardDueSoonMinutes}, quiet: true);
+  final body = await ref.watch(apiServiceProvider).get(
+      ApiEndpoints.issueSummary,
+      query: const {'due_soon_minutes': boardDueSoonMinutes},
+      quiet: true);
   return IssueSummary.fromJson(body) ?? const IssueSummary();
 });
 
@@ -314,7 +336,8 @@ class TicketLookups {
       List<Customer> customers, List<Project> projects) {
     return TicketLookups(
       customers: {
-        for (final c in customers) c.id: TicketCustomer(c.id, c.name, c.company ?? ''),
+        for (final c in customers)
+          c.id: TicketCustomer(c.id, c.name, c.company ?? ''),
       },
       projects: {
         for (final p in projects) p.id: TicketProject(p.id, p.name, p.cost),
@@ -352,7 +375,8 @@ final ticketDirectoryProvider = Provider<TicketLookups>((ref) {
 /// sign-in starts on the webapp's defaults (empty search, no status chip, no
 /// quick chips, no facets) instead of inheriting the previous user's.
 final helpdeskSessionUserProvider = Provider<String>((ref) => ref.watch(
-    sessionControllerProvider.select((s) => s.status == SessionStatus.authenticated ? s.user?.id ?? '' : '')));
+    sessionControllerProvider.select((s) =>
+        s.status == SessionStatus.authenticated ? s.user?.id ?? '' : '')));
 
 /// Applied drawer filters for the Tickets list (the source of the badge count).
 ///
@@ -370,6 +394,27 @@ final ticketStatusChipsProvider = StateProvider<Set<String>>((ref) {
   ref.watch(helpdeskSessionUserProvider);
   return const <String>{};
 });
+
+/// The status group picked on the Tickets header (`open` / `on_hold` /
+/// `resolved`, from the status's `is_resolved` / `is_on_hold`), or null for
+/// "All". With no status chip picked inside it, the list shows every status of
+/// that group.
+final ticketGroupProvider = StateProvider<String?>((ref) {
+  ref.watch(helpdeskSessionUserProvider);
+  return null;
+});
+
+/// [ticketStatusChipsProvider] as the list applies it: the picked chips, else
+/// every status id of the picked group.
+final ticketEffectiveChipsProvider = Provider<Set<String>>(
+  (ref) => StatusGroups.effectiveKeys(
+    picked: ref.watch(ticketStatusChipsProvider),
+    group: ref.watch(ticketGroupProvider),
+    statuses: ref.watch(ticketStatusOptionsProvider),
+    groupOf: StatusGroups.ofTicket,
+    keyOf: (s) => s.id,
+  ),
+);
 
 /// Search query.
 final ticketSearchProvider = StateProvider<String>((ref) {
@@ -397,6 +442,16 @@ final ticketSearchOpenProvider = StateProvider<bool>((ref) {
 /// on the signed-in user's open work. A user with nothing assigned gets the
 /// "No tickets assigned to you" state, which offers New Ticket and points at
 /// the "All" preset.
+/// A dashboard "Open tickets" card: the org-wide list without the resolved
+/// statuses (what the card counts). Cleared with the filters.
+final ticketOpenOnlyProvider = StateProvider<bool>((ref) => false);
+
+/// A dashboard figure's created window (the tab's period) as server params —
+/// `created_at_after` / `created_at_before`. Counted in the filter badge and
+/// cleared with Clear filters. Empty = no window.
+final ticketScopeParamsProvider =
+    StateProvider<Map<String, String>>((ref) => const {});
+
 final ticketMineProvider = StateProvider<bool>((ref) {
   ref.watch(helpdeskSessionUserProvider);
   return true;
@@ -431,14 +486,15 @@ final visibleTicketsProvider = Provider<List<Ticket>>((ref) {
   // (resolved work hidden) and the search — re-filtering here dropped rows
   // the server matched, e.g. a search for "TKT-0006" (DEF-HD-009).
   if (ApiConfig.apiEnabled) return base;
-  final chips = ref.watch(ticketStatusChipsProvider);
+  final chips = ref.watch(ticketEffectiveChipsProvider);
   final mine = ref.watch(ticketMineProvider);
   final breach = ref.watch(ticketBreachingProvider);
   final q = ref.watch(ticketSearchProvider).trim().toLowerCase();
 
   Iterable<Ticket> out = base;
   if (chips.isNotEmpty) {
-    out = out.where((t) => chips.contains(t.status) || chips.contains(t.statusId));
+    out = out
+        .where((t) => chips.contains(t.status) || chips.contains(t.statusId));
   } else if (mine && !breach) {
     out = out.where((t) => t.status != 'resolved' && t.status != 'closed');
   }
@@ -446,7 +502,9 @@ final visibleTicketsProvider = Provider<List<Ticket>>((ref) {
     final dir = ref.watch(ticketDirectoryProvider);
     out = out.where((t) {
       final cust = dir.customer(t.custId);
-      return '${t.subject} ${t.displayRef} ${t.cat} ${cust?.display ?? ''}'.toLowerCase().contains(q);
+      return '${t.subject} ${t.displayRef} ${t.cat} ${cust?.display ?? ''}'
+          .toLowerCase()
+          .contains(q);
     });
   }
   return out.toList();
@@ -469,7 +527,11 @@ int ticketTabCount(List<Ticket> all, bool mine, bool breach, String key) {
       ? all.where((t) => t.isMine).toList()
       : (breach ? all.where(ticketBreaching).toList() : all);
   if (key == 'all') {
-    return mine && !breach ? base.where((t) => t.status != 'resolved' && t.status != 'closed').length : base.length;
+    return mine && !breach
+        ? base
+            .where((t) => t.status != 'resolved' && t.status != 'closed')
+            .length
+        : base.length;
   }
   // The key is an org `issue_status_id` once the catalog has loaded, a folded
   // built-in key before it does.
@@ -487,4 +549,14 @@ final helpSlaValProvider = StateProvider<bool>((ref) => true);
 final boardExpandedProvider = StateProvider<Map<String, bool>>((ref) {
   ref.watch(helpdeskSessionUserProvider);
   return {'breached': true};
+});
+
+/// The ticket's files — the shared attachments list (`related_to=issue`),
+/// which also carries files sent with the ticket's notes and replies
+/// (`source.kind == "note"`) — webapp parity C03. Refetched after any write.
+final ticketFilesProvider =
+    FutureProvider.autoDispose.family<List<LeadFile>, String>((ref, issueId) {
+  ref.watch(apiWriteTickProvider);
+  if (issueId.isEmpty) return Future.value(const <LeadFile>[]);
+  return ref.watch(attachmentsRepositoryProvider).getFiles('issue', issueId);
 });

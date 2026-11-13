@@ -49,3 +49,6 @@ app.*.map.json
 
 # Kotlin compiler session/error cache
 android/.kotlin/
+
+# Firebase service account (server-side secret) — never ship or commit it.
+*-firebase-adminsdk-*.json

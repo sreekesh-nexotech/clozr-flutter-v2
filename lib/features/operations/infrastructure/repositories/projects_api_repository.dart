@@ -24,10 +24,12 @@ class ProjectsApiRepository implements ProjectsRepository {
   }
 
   @override
-  Future<List<Project>> getProjects({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Project>> getProjects(
+      {Map<String, dynamic> filters = const {}}) async {
     try {
       final projects = await _remote.fetchProjects(filters: filters);
-      await AppCache.put(_box, _keyFor(filters), [for (final p in projects) _toJson(p)]);
+      await AppCache.put(
+          _box, _keyFor(filters), [for (final p in projects) _toJson(p)]);
       return projects;
     } on AppError catch (e) {
       if (e.type == AppErrorType.network || e.type == AppErrorType.timeout) {
@@ -154,7 +156,8 @@ class ProjectsApiRepository implements ProjectsRepository {
       );
 
   @override
-  Future<List<CatalogOption>> getProjectStatuses() => _remote.fetchProjectStatuses();
+  Future<List<CatalogOption>> getProjectStatuses() =>
+      _remote.fetchProjectStatuses();
 
   @override
   Future<Map<String, int>> getStatusCounts(Map<String, dynamic> filters) =>

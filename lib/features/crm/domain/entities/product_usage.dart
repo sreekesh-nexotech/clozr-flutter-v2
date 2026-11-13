@@ -26,6 +26,7 @@ class ProductUsage extends Equatable {
       final list = body[listKey];
       return list is List ? list.length : 0;
     }
+
     return ProductUsage(
       leads: count('leads_count', 'leads'),
       quotes: count('quotes_count', 'quotes'),

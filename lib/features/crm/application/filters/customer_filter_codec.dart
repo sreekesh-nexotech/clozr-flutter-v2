@@ -123,14 +123,16 @@ class CustomerFilterCodec {
     final v = spec.defaults();
 
     _decodeChoice(def, v, 'statuses', 'status', (id) => _keyOf(statuses, id));
-    _decodeChoice(def, v, 'sources', _sourceParam, (id) => _nameOf(sources, id));
-    _decodeChoice(def, v, 'products', 'products', (id) => _nameOf(products, id));
+    _decodeChoice(
+        def, v, 'sources', _sourceParam, (id) => _nameOf(sources, id));
+    _decodeChoice(
+        def, v, 'products', 'products', (id) => _nameOf(products, id));
     _decodeChoice(def, v, 'companies', 'organization_name', (id) => id);
     // Views saved by the webapp still carry the old `assigned_to` key.
     _decodeChoice(def, v, 'owners', 'assigned_to',
         (id) => id == currentUserId ? 'me' : id);
-    _decodeChoice(def, v, 'owners', 'assignees',
-        (id) => id == currentUserId ? 'me' : id);
+    _decodeChoice(
+        def, v, 'owners', 'assignees', (id) => id == currentUserId ? 'me' : id);
 
     final min = _int(def['revenue__min']);
     final max = _int(def['revenue__max']);
@@ -158,8 +160,8 @@ class CustomerFilterCodec {
     String? Function(String serverId) toOptionId,
   ) {
     for (final isNot in [false, true]) {
-      final raw =
-          def['$param${isNot ? '__not' : '__in'}'] ?? (isNot ? null : def[param]);
+      final raw = def['$param${isNot ? '__not' : '__in'}'] ??
+          (isNot ? null : def[param]);
       final ids = _idList(raw);
       if (ids.isEmpty) continue;
       final mapped = <String>{};
@@ -167,7 +169,8 @@ class CustomerFilterCodec {
         final o = toOptionId(id);
         if (o != null && o.isNotEmpty) mapped.add(o);
       }
-      if (mapped.isNotEmpty) out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
+      if (mapped.isNotEmpty)
+        out[fieldId] = ChoiceValue(ids: mapped, isNot: isNot);
     }
   }
 
@@ -192,7 +195,11 @@ class CustomerFilterCodec {
     if (raw is List) {
       return [for (final e in raw) '$e'.trim()]..removeWhere((e) => e.isEmpty);
     }
-    return '$raw'.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return '$raw'
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
   }
 
   static int? _int(Object? raw) {
@@ -203,8 +210,7 @@ class CustomerFilterCodec {
   static DateTime? _date(Object? raw) =>
       raw == null ? null : DateTime.tryParse('$raw');
 
-  static String _ymd(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
+  static String _ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 }

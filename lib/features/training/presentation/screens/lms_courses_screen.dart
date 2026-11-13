@@ -15,10 +15,13 @@ import '../components/lms_filter_chip.dart';
 import '../components/lms_footer.dart';
 import '../components/lms_header.dart';
 import '../components/lms_search_field.dart';
+import '../lms_course_actions.dart';
 import '../lms_nav.dart';
 
-/// All Courses — persistent search, status chips, course cards and an empty
-/// state.
+/// Webapp `AllCoursesScreen` (Training › Course builder): "All Courses" with
+/// search on title / role names, status filter, Clear filters, per-course
+/// View / Edit / Delete (platform courses View only) and a "Showing N of M"
+/// count.
 class LmsCoursesScreen extends ConsumerStatefulWidget {
   const LmsCoursesScreen({super.key});
 
@@ -42,7 +45,8 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
   }
 
   void _openCourse(Course c) {
-    if (c.isPublished) {
+    // Platform courses are read-only for tenants — always the detail.
+    if (c.isPublished || c.isGlobal) {
       context.push('${Routes.lmsCourseDetail}?id=${c.id}');
     } else {
       context.push('${Routes.lmsBuilder}?id=${c.id}');
@@ -62,11 +66,23 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
 
     var list = courses.where((c) => status == 'all' || c.status == status);
     if (query.isNotEmpty) {
-      list = list.where((c) => '${c.title} ${c.sub}'.toLowerCase().contains(query));
+      list = list.where((c) =>
+          c.title.toLowerCase().contains(query) ||
+          c.listSubtitle.toLowerCase().contains(query));
     }
     final rows = list.toList();
+    final hasActive = query.isNotEmpty || status != 'all';
+    void clear() {
+      _searchCtrl.clear();
+      ref.read(lmsCourseSearchProvider.notifier).state = '';
+      ref.read(lmsCourseStatusProvider.notifier).state = 'all';
+    }
 
-    final chips = <(String, String)>[('all', 'All'), ('published', 'Published'), ('draft', 'Drafts')];
+    final chips = <(String, String)>[
+      ('all', 'All Status'),
+      ('published', 'Published'),
+      ('draft', 'Draft')
+    ];
 
     return Container(
       color: AppColors.bgScreen,
@@ -74,8 +90,12 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
         children: [
           LmsHeader(
             onBack: () => lmsBack(context),
-            title: Text('All Courses',
-                style: AppText.custom(size: 22, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4)),
+            title: Text('Course builder',
+                style: AppText.custom(
+                    size: 22,
+                    weight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.4)),
             titleGap: 12,
             bottomPadding: 12,
             bottom: Column(
@@ -83,8 +103,9 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
               children: [
                 LmsSearchField(
                   controller: _searchCtrl,
-                  hint: 'Search courses…',
-                  onChanged: (v) => ref.read(lmsCourseSearchProvider.notifier).state = v,
+                  hint: 'Search courses..',
+                  onChanged: (v) =>
+                      ref.read(lmsCourseSearchProvider.notifier).state = v,
                 ),
                 SizedBox(height: 12.h),
                 Row(
@@ -94,9 +115,26 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
                       LmsFilterChip.solid(
                         label: chips[i].$2,
                         active: status == chips[i].$1,
-                        onTap: () => ref.read(lmsCourseStatusProvider.notifier).state = chips[i].$1,
+                        onTap: () => ref
+                            .read(lmsCourseStatusProvider.notifier)
+                            .state = chips[i].$1,
                       ),
                     ],
+                    const Spacer(),
+                    if (hasActive)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: clear,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 4.w, vertical: 6.h),
+                          child: Text('Clear filters',
+                              style: AppText.custom(
+                                  size: 13,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.navy)),
+                        ),
+                      ),
                   ],
                 ),
               ],
@@ -106,23 +144,53 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
             child: load.loading
                 ? const ListSkeleton()
                 : load.error != null
-                    ? ErrorState.forError(load.error!, onRetry: () => reloadLms(ref))
-                    : rows.isEmpty
-                ? ListView(
-                    padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
-                    children: [_empty()],
-                  )
-                : ListView.separated(
-                    padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => SizedBox(height: 11.h),
-                    itemBuilder: (context, i) => LmsCourseCard.from(
-                      course: rows[i],
-                      records: records,
-                      onTap: () => _openCourse(rows[i]),
-                      onEdit: () => context.push('${Routes.lmsBuilder}?id=${rows[i].id}'),
-                    ),
-                  ),
+                    ? ErrorState.forError(load.error!,
+                        onRetry: () => reloadLms(ref))
+                    : ListView(
+                        padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 40.h),
+                        children: [
+                          Text('All Courses',
+                              style: AppText.custom(
+                                  size: 19,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.textPrimary)),
+                          SizedBox(height: 3.h),
+                          Text(
+                              'Create, edit and publish the training your team is assigned.',
+                              style: AppText.custom(
+                                  size: 13,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted)),
+                          SizedBox(height: 14.h),
+                          if (rows.isEmpty)
+                            _empty(
+                                noCourses: courses.isEmpty,
+                                hasActive: hasActive,
+                                onClear: clear),
+                          for (int i = 0; i < rows.length; i++) ...[
+                            if (i > 0) SizedBox(height: 11.h),
+                            LmsCourseCard.from(
+                              course: rows[i],
+                              records: records,
+                              builderList: true,
+                              onTap: () => _openCourse(rows[i]),
+                              onEdit: () => context.push(
+                                  '${Routes.lmsBuilder}?id=${rows[i].id}'),
+                              onDelete: () => deleteCourseWithConfirm(
+                                  context, ref, rows[i]),
+                            ),
+                          ],
+                          Padding(
+                            padding: EdgeInsets.only(top: 14.h),
+                            child: Text(
+                                'Showing ${rows.length} of ${courses.length} courses',
+                                style: AppText.custom(
+                                    size: 13,
+                                    weight: FontWeight.w500,
+                                    color: AppColors.textMuted)),
+                          ),
+                        ],
+                      ),
           ),
           LmsFooter(
             child: LmsCtaButton(
@@ -136,7 +204,10 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
     );
   }
 
-  Widget _empty() {
+  Widget _empty(
+      {required bool noCourses,
+      required bool hasActive,
+      required VoidCallback onClear}) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 42.h),
       child: Column(
@@ -145,15 +216,37 @@ class _LmsCoursesScreenState extends ConsumerState<LmsCoursesScreen> {
             width: 66.r,
             height: 66.r,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.borderCardSoft, borderRadius: BorderRadius.circular(19.r)),
-            child: Icon(PhosphorIconsRegular.bookOpenText, size: 30.sp, color: AppColors.textPlaceholder),
+            decoration: BoxDecoration(
+                color: AppColors.borderCardSoft,
+                borderRadius: BorderRadius.circular(19.r)),
+            child: Icon(PhosphorIconsRegular.bookOpenText,
+                size: 30.sp, color: AppColors.textPlaceholder),
           ),
           SizedBox(height: 16.h),
-          Text('No courses found', style: AppText.sectionTitle()),
-          SizedBox(height: 6.h),
-          Text('Try a different search or status filter.',
-              textAlign: TextAlign.center,
-              style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+          Text(noCourses ? 'No courses yet' : 'No courses match your filters',
+              style: AppText.sectionTitle()),
+          if (hasActive) ...[
+            SizedBox(height: 12.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onClear,
+              child: Container(
+                height: 38.h,
+                padding: EdgeInsets.symmetric(horizontal: 16.w),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(10.r),
+                  border: Border.all(color: AppColors.borderInput),
+                ),
+                child: Text('Clear filters',
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: AppColors.textSecondary)),
+              ),
+            ),
+          ],
         ],
       ),
     );

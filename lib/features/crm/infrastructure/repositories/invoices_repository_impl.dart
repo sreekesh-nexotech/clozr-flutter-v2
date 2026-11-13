@@ -21,5 +21,6 @@ class InvoicesRepositoryImpl implements InvoicesRepository {
   Future<InvoiceSummary?> getInvoiceSummary(String paymentId) async => null;
 
   @override
-  Future<void> updatePlanBilling(String paymentId, Map<String, Object?> fields) async {}
+  Future<void> updatePlanBilling(
+      String paymentId, Map<String, Object?> fields) async {}
 }

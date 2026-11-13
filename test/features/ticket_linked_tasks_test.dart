@@ -95,7 +95,8 @@ void _writePayloadTests() {
     });
 
     test('the built-in category words are never sent as a type', () {
-      final out = TicketsRemoteDataSource.writePayload({'issue_type': 'Complaint'});
+      final out =
+          TicketsRemoteDataSource.writePayload({'issue_type': 'Complaint'});
       expect(out.containsKey('issue_type'), isFalse);
     });
 

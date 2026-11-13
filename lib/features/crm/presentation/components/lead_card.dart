@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../application/leads_columns.dart';
@@ -14,6 +16,7 @@ class LeadCard extends StatelessWidget {
     super.key,
     required this.lead,
     required this.onTap,
+    this.onLongPress,
     required this.onCall,
     this.status,
     this.schema = LeadListSchema.empty,
@@ -29,6 +32,9 @@ class LeadCard extends StatelessWidget {
   final LeadListSchema schema;
 
   final VoidCallback onTap;
+
+  /// Long press — the shared row-actions sheet.
+  final VoidCallback? onLongPress;
   final VoidCallback onCall;
 
   @override
@@ -47,7 +53,10 @@ class LeadCard extends StatelessWidget {
       fallbackPeople: [for (final id in lead.team) MockUsers.of(id).name],
       mockCell: (c) => leadColumnText(lead, c),
       onTap: onTap,
+      onLongPress: onLongPress,
       onCall: onCall,
+      badge: PendingApprovalChip(
+          recordId: lead.id, padding: EdgeInsets.only(top: 4.h)),
     );
   }
 }

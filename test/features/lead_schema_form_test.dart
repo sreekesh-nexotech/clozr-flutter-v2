@@ -174,7 +174,8 @@ void main() {
 
     test('a body with no all_fields block parses to empty rather than throwing',
         () {
-      expect(ViewSchema.fromResponse({'model': 'Lead'}).editableColumns, isEmpty);
+      expect(
+          ViewSchema.fromResponse({'model': 'Lead'}).editableColumns, isEmpty);
       expect(ViewSchema.fromResponse(null).editableColumns, isEmpty);
     });
   });

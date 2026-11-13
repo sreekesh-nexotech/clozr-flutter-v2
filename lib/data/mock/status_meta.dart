@@ -24,8 +24,22 @@ class StatusMeta$ {
     'lost': StatusMeta('Lost', AppColors.error),
     'archived': StatusMeta('Junk / Spam', AppColors.textMuted),
   };
-  static const List<String> leadOrder = ['new', 'qualified', 'quote', 'negotiation', 'won'];
-  static const List<String> leadAll = ['new', 'qualified', 'quote', 'negotiation', 'won', 'lost', 'archived'];
+  static const List<String> leadOrder = [
+    'new',
+    'qualified',
+    'quote',
+    'negotiation',
+    'won'
+  ];
+  static const List<String> leadAll = [
+    'new',
+    'qualified',
+    'quote',
+    'negotiation',
+    'won',
+    'lost',
+    'archived'
+  ];
 
   // Customers (this.CSTATUS)
   static const customer = <String, StatusMeta>{
@@ -34,7 +48,12 @@ class StatusMeta$ {
     'completed': StatusMeta('Completed', AppColors.blueBright),
     'lost': StatusMeta('Lost', AppColors.error),
   };
-  static const List<String> customerOrder = ['active', 'upsell', 'completed', 'lost'];
+  static const List<String> customerOrder = [
+    'active',
+    'upsell',
+    'completed',
+    'lost'
+  ];
 
   // CRM tasks (this.TASKSTATUS)
   static const task = <String, StatusMeta>{
@@ -182,6 +201,25 @@ class StatusMeta$ {
     'Urgent': (bg: AppColors.tintRedSoft, fg: AppColors.error),
   };
 
+  /// The one priority palette every module uses (UI/UX audit #28 — CRM,
+  /// Operations and Helpdesk each coloured priority differently): Critical /
+  /// Urgent / High red, Medium amber, Low grey. Case-insensitive.
+  static ({Color bg, Color fg}) priorityToneOf(String priority) =>
+      switch (priority.trim().toLowerCase()) {
+        'critical' || 'urgent' || 'high' => (
+            bg: AppColors.tintRedSoft,
+            fg: AppColors.error
+          ),
+        'medium' => (bg: AppColors.tintAmber, fg: AppColors.warningDeep),
+        _ => (bg: AppColors.bgHover, fg: AppColors.textMuted),
+      };
+
+  /// "medium" → "Medium": priorities read capitalised everywhere (#28).
+  static String priorityLabel(String priority) {
+    final p = priority.trim();
+    return p.isEmpty ? p : p[0].toUpperCase() + p.substring(1);
+  }
+
   /// Project priority dot colours (this.PROJPRI).
   ///
   /// `Urgent` is one of the four [priorityKey] folds and one the org's own
@@ -193,6 +231,6 @@ class StatusMeta$ {
     'Urgent': AppColors.error,
     'High': AppColors.error,
     'Medium': AppColors.warningDeep,
-    'Low': AppColors.success,
+    'Low': AppColors.textMuted,
   };
 }

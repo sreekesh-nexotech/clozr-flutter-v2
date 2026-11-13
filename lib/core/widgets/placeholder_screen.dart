@@ -45,7 +45,8 @@ class PlaceholderScreen extends StatelessWidget {
                 color: AppColors.borderCardSoft,
                 borderRadius: BorderRadius.circular(19.r),
               ),
-              child: Icon(PhosphorIcons.wrench(), size: 30.sp, color: AppColors.textPlaceholder),
+              child: Icon(PhosphorIcons.wrench(),
+                  size: 30.sp, color: AppColors.textPlaceholder),
             ),
             SizedBox(height: 16.h),
             Text(title, style: AppText.sectionTitle()),
@@ -59,10 +60,12 @@ class PlaceholderScreen extends StatelessWidget {
     if (!showHeader) return content;
     return Column(
       children: [
-        SafeArea(bottom: false, child: Padding(
-          padding: EdgeInsets.fromLTRB(14.w, 8.h, 14.w, 0),
-          child: const AppHeaderBar(),
-        )),
+        SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(14.w, 8.h, 14.w, 0),
+              child: const AppHeaderBar(),
+            )),
         Expanded(child: content),
       ],
     );

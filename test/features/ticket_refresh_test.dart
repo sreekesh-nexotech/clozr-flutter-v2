@@ -40,6 +40,17 @@ Ticket _ticket(String subject) => Ticket(
 /// Serves a new subject on every fetch, so a stale read is visible.
 class _CountingRepo implements TicketsRepository {
   @override
+  Future<void> deleteTicket(String id) async {}
+
+  @override
+  Future<({List<Ticket> rows, bool more})> getDeletedTickets(
+          {String search = '', int page = 1}) async =>
+      (rows: const <Ticket>[], more: false);
+
+  @override
+  Future<void> restoreTicket(String id) async {}
+
+  @override
   Future<List<Ticket>> getChildren(String issueId) async => const [];
 
   @override
@@ -55,12 +66,14 @@ class _CountingRepo implements TicketsRepository {
   Future<void> sendReply(String issueId, String body) async {}
 
   @override
-  Future<void> uploadAttachment(String issueId, {required String path, required String name}) async {}
+  Future<void> uploadAttachment(String issueId,
+      {required String path, required String name}) async {}
 
   int fetches = 0;
 
   @override
-  Future<List<Ticket>> getTickets({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Ticket>> getTickets(
+      {Map<String, dynamic> filters = const {}}) async {
     fetches++;
     return [_ticket('subject-$fetches')];
   }
@@ -83,13 +96,16 @@ class _CountingRepo implements TicketsRepository {
   Future<IssueSummary?> getSummary(Map<String, dynamic> filters) async => null;
 
   @override
-  Future<Map<String, int>> getStatusCounts(Map<String, dynamic> filters) async => const {};
+  Future<Map<String, int>> getStatusCounts(
+          Map<String, dynamic> filters) async =>
+      const {};
 
   @override
   Future<Ticket?> createTicket(Map<String, dynamic> fields) async => null;
 
   @override
-  Future<void> updateTicket(String id, Map<String, dynamic> fields) async {}
+  Future<void> updateTicket(String id, Map<String, dynamic> fields,
+      {String? version}) async {}
 
   @override
   Future<void> setTicketStatusByKey(String id, String uiStatusKey) async {}
@@ -120,7 +136,8 @@ void main() {
 
   test('refreshTickets refetches, so an edited ticket comes back changed',
       () async {
-    final sub = container.listen(ticketsProvider, (_, __) {}, fireImmediately: true);
+    final sub =
+        container.listen(ticketsProvider, (_, __) {}, fireImmediately: true);
     addTearDown(sub.close);
     await container.read(ticketsProvider.future);
     expect(repo.fetches, 1);
@@ -147,7 +164,8 @@ void main() {
   });
 
   test('invalidating the derived provider alone is not enough', () async {
-    final sub = container.listen(ticketsProvider, (_, __) {}, fireImmediately: true);
+    final sub =
+        container.listen(ticketsProvider, (_, __) {}, fireImmediately: true);
     addTearDown(sub.close);
     await container.read(ticketsProvider.future);
 

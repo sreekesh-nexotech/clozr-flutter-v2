@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "267679337763",
+    "project_id": "nexocrm-bb56a",
+    "storage_bucket": "nexocrm-bb56a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:267679337763:android:9fb9ae60b0b159ecf21096",
+        "android_client_info": {
+          "package_name": "com.nexotech.clozrapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAW1hN3X8d9S3CJc_yicu2qmyivdJVvs9U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

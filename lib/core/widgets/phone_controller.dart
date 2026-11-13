@@ -58,7 +58,8 @@ class PhoneController extends ChangeNotifier {
     if (match != null) {
       iso2 = match.iso2;
       dialCode = match.dialCode;
-      digits.text = raw.substring(match.dialCode.length).replaceAll(RegExp(r'\D'), '');
+      digits.text =
+          raw.substring(match.dialCode.length).replaceAll(RegExp(r'\D'), '');
     } else {
       // Unrecognised prefix — keep the default country rather than guess, but
       // still surface the digits so nothing the record held silently vanishes.

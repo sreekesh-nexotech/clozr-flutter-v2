@@ -22,7 +22,8 @@ final leadSchemaRemoteDataSourceProvider =
 /// `GET /crm/leads/schema/` — fetched once per org, not per list refresh: the
 /// layout changes when an admin edits it, not when leads change. Deliberately
 /// independent of the My/All scope, which affects rows, never columns.
-final leadListSchemaFutureProvider = FutureProvider<LeadListSchema>((ref) async {
+final leadListSchemaFutureProvider =
+    FutureProvider<LeadListSchema>((ref) async {
   final ds = ref.watch(leadSchemaRemoteDataSourceProvider);
   return ds == null ? LeadListSchema.empty : ds.fetchListSchema();
 });
@@ -31,7 +32,9 @@ final leadListSchemaFutureProvider = FutureProvider<LeadListSchema>((ref) async 
 /// so the list renders immediately with the built-in layout and adopts the
 /// org's one when it arrives, rather than holding the rows behind a spinner.
 final leadListSchemaProvider = Provider<LeadListSchema>(
-  (ref) => ref.watch(leadListSchemaFutureProvider).valueOrNull ?? LeadListSchema.empty,
+  (ref) =>
+      ref.watch(leadListSchemaFutureProvider).valueOrNull ??
+      LeadListSchema.empty,
 );
 
 /// `GET /crm/leads/schema/?view_type=detail` — the lead detail page's layout.
@@ -39,7 +42,8 @@ final leadListSchemaProvider = Provider<LeadListSchema>(
 /// Kept separate from the list schema rather than derived from it: the two view
 /// types are independently configurable, and an org routinely shows fields on
 /// the detail page that its list omits.
-final leadDetailSchemaFutureProvider = FutureProvider<LeadListSchema>((ref) async {
+final leadDetailSchemaFutureProvider =
+    FutureProvider<LeadListSchema>((ref) async {
   final ds = ref.watch(leadSchemaRemoteDataSourceProvider);
   return ds == null ? LeadListSchema.empty : ds.fetchDetailSchema();
 });
@@ -47,5 +51,7 @@ final leadDetailSchemaFutureProvider = FutureProvider<LeadListSchema>((ref) asyn
 /// Synchronous view of [leadDetailSchemaFutureProvider]. Same empty-while-
 /// loading contract as [leadListSchemaProvider].
 final leadDetailSchemaProvider = Provider<LeadListSchema>(
-  (ref) => ref.watch(leadDetailSchemaFutureProvider).valueOrNull ?? LeadListSchema.empty,
+  (ref) =>
+      ref.watch(leadDetailSchemaFutureProvider).valueOrNull ??
+      LeadListSchema.empty,
 );

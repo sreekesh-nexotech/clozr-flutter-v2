@@ -32,8 +32,10 @@ FilterSpec buildMembersFilterSpec(
     managerNames[m.managerId] = m.reportsTo.trim();
   }
   final managerOpts = [
-    for (final e in managerNames.entries.toList()
-      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase())))
+    for (final e
+        in managerNames.entries.toList()
+          ..sort(
+              (a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase())))
       FilterOption(id: e.key, label: e.value),
   ];
 
@@ -110,11 +112,13 @@ final membersFilterSpecProvider = Provider<FilterSpec>((ref) {
 });
 
 /// Applied drawer filters for the Members list (the source of the badge count).
-final memberFiltersProvider = StateProvider<FilterValues>((ref) => FilterValues());
+final memberFiltersProvider =
+    StateProvider<FilterValues>((ref) => FilterValues());
 
 /// Saved views for the Members list (bookmark chips).
 final memberSavedViewsProvider =
-    StateNotifierProvider<SavedViewsController, SavedViewsState>((ref) => SavedViewsController());
+    StateNotifierProvider<SavedViewsController, SavedViewsState>(
+        (ref) => SavedViewsController());
 
 /// The Members list with the role tab + search ([visibleMembersProvider]) AND
 /// the applied drawer filters applied. The screen renders this.

@@ -70,7 +70,8 @@ void main() {
       expect(customer.notif, 0);
     });
 
-    test("maps assigned_to (object or bare uuid) to owner, with 'me' sentinel", () {
+    test("maps assigned_to (object or bare uuid) to owner, with 'me' sentinel",
+        () {
       final withObject = fullRow()
         ..['assigned_to'] = {'user_id': meUuid, 'full_name': 'Manoj Varma'};
       expect(CustomersRemoteDataSource.mapCustomer(withObject)!.owner, 'me');

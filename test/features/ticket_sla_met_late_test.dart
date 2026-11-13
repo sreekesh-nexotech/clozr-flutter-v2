@@ -71,7 +71,8 @@ void main() {
 
     test('unknown when either side is missing — never a silent "on time"', () {
       expect(_ticket(resolvedISO: '2026-08-22T18:30:00Z').resolvedLate, isNull);
-      expect(_ticket(resolveByISO: '2026-08-22T17:00:00Z').resolvedLate, isNull);
+      expect(
+          _ticket(resolveByISO: '2026-08-22T17:00:00Z').resolvedLate, isNull);
       expect(_ticket().resolvedLate, isNull);
     });
 

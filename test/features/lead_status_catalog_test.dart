@@ -14,19 +14,60 @@ import 'package:clozrapp/features/crm/infrastructure/data_sources/remote/leads_r
 /// The Ivtern dev org's real `/crm/lead-statuses/` payload — eight stages,
 /// two of which ("Contacted", "Proposal Sent") have no built-in equivalent.
 List<Map<String, dynamic>> statusRows() => [
-      {'lead_status_id': 's0', 'name': 'New', 'status_type': 'new', 'color': '#3B82F6'},
-      {'lead_status_id': 's1', 'name': 'Contacted', 'status_type': 'in_progress', 'color': '#8B5CF6'},
-      {'lead_status_id': 's2', 'name': 'Qualified', 'status_type': 'in_progress', 'color': '#F59E0B'},
-      {'lead_status_id': 's3', 'name': 'Proposal Sent', 'status_type': 'in_progress', 'color': '#F97316'},
-      {'lead_status_id': 's4', 'name': 'Negotiation', 'status_type': 'in_progress', 'color': '#EC4899'},
-      {'lead_status_id': 's5', 'name': 'Won', 'status_type': 'won', 'color': '#10B981'},
-      {'lead_status_id': 's6', 'name': 'Lost', 'status_type': 'lost', 'color': '#EF4444'},
-      {'lead_status_id': 's7', 'name': 'Disqualified', 'status_type': 'junk', 'color': '#6B7280'},
+      {
+        'lead_status_id': 's0',
+        'name': 'New',
+        'status_type': 'new',
+        'color': '#3B82F6'
+      },
+      {
+        'lead_status_id': 's1',
+        'name': 'Contacted',
+        'status_type': 'in_progress',
+        'color': '#8B5CF6'
+      },
+      {
+        'lead_status_id': 's2',
+        'name': 'Qualified',
+        'status_type': 'in_progress',
+        'color': '#F59E0B'
+      },
+      {
+        'lead_status_id': 's3',
+        'name': 'Proposal Sent',
+        'status_type': 'in_progress',
+        'color': '#F97316'
+      },
+      {
+        'lead_status_id': 's4',
+        'name': 'Negotiation',
+        'status_type': 'in_progress',
+        'color': '#EC4899'
+      },
+      {
+        'lead_status_id': 's5',
+        'name': 'Won',
+        'status_type': 'won',
+        'color': '#10B981'
+      },
+      {
+        'lead_status_id': 's6',
+        'name': 'Lost',
+        'status_type': 'lost',
+        'color': '#EF4444'
+      },
+      {
+        'lead_status_id': 's7',
+        'name': 'Disqualified',
+        'status_type': 'junk',
+        'color': '#6B7280'
+      },
     ];
 
 List<CatalogOption> statusCatalog() => [
       for (final r in statusRows())
-        CrmCatalogRemoteDataSource.mapCatalogRow(r, 'lead_status_id', withType: true)!,
+        CrmCatalogRemoteDataSource.mapCatalogRow(r, 'lead_status_id',
+            withType: true)!,
     ];
 
 Lead leadWith({
@@ -67,7 +108,8 @@ void main() {
   group('catalog row mapping', () {
     test('maps name, hex colour and status_type', () {
       final o = CrmCatalogRemoteDataSource.mapCatalogRow(
-          statusRows()[1], 'lead_status_id', withType: true)!;
+          statusRows()[1], 'lead_status_id',
+          withType: true)!;
       expect(o.id, 's1');
       expect(o.name, 'Contacted');
       expect(o.statusType, 'in_progress');
@@ -77,14 +119,16 @@ void main() {
 
     test('a nameless row is skipped — it could never join to a lead row', () {
       expect(
-        CrmCatalogRemoteDataSource.mapCatalogRow({'lead_status_id': 'x', 'name': '  '}, 'lead_status_id'),
+        CrmCatalogRemoteDataSource.mapCatalogRow(
+            {'lead_status_id': 'x', 'name': '  '}, 'lead_status_id'),
         isNull,
       );
     });
 
     test('statusType is only read when asked for (sources have none)', () {
       final o = CrmCatalogRemoteDataSource.mapCatalogRow(
-          {'lead_source_id': 'src', 'name': 'Website', 'color': '#3B82F6'}, 'lead_source_id')!;
+          {'lead_source_id': 'src', 'name': 'Website', 'color': '#3B82F6'},
+          'lead_source_id')!;
       expect(o.statusType, isNull);
       expect(o.color, const Color(0xFF3B82F6));
     });
@@ -100,17 +144,20 @@ void main() {
 
   group('Lead.stageKey picks one vocabulary', () {
     test('API mode: the org name, not the bucket it folds into', () {
-      expect(leadWith(status: 'qualified', statusName: 'Contacted').stageKey, 'contacted');
+      expect(leadWith(status: 'qualified', statusName: 'Contacted').stageKey,
+          'contacted');
     });
 
     test('mock mode: the built-in key', () {
       expect(leadWith(status: 'new').stageKey, 'new');
     });
 
-    test('never both — a folded lead must not also match the org bucket tab', () {
+    test('never both — a folded lead must not also match the org bucket tab',
+        () {
       // Regression: a union of both vocabularies made this lead match the
       // org's own "Qualified" tab as well as "Contacted", double-counting it.
-      expect(leadWith(status: 'qualified', statusName: 'Contacted').stageKey, isNot('qualified'));
+      expect(leadWith(status: 'qualified', statusName: 'Contacted').stageKey,
+          isNot('qualified'));
     });
   });
 
@@ -124,12 +171,17 @@ void main() {
       expect(leadTabCount(base, 'qualified'), 1);
       expect(leadTabCount(base, 'all'), 2);
       // Every lead lands in exactly one stage tab.
-      final perTab = ['contacted', 'qualified'].map((k) => leadTabCount(base, k));
+      final perTab =
+          ['contacted', 'qualified'].map((k) => leadTabCount(base, k));
       expect(perTab.reduce((a, b) => a + b), base.length);
     });
 
     test('mock leads still count under the built-in keys', () {
-      final base = [leadWith(status: 'won'), leadWith(status: 'won'), leadWith(status: 'lost')];
+      final base = [
+        leadWith(status: 'won'),
+        leadWith(status: 'won'),
+        leadWith(status: 'lost')
+      ];
       expect(leadTabCount(base, 'won'), 2);
       expect(leadTabCount(base, 'lost'), 1);
     });
@@ -138,20 +190,30 @@ void main() {
   group('stage vocabulary resolution', () {
     test('tier 1 — the org catalog, in server order, with its colours', () {
       final v = leadStageVocabulary(statusCatalog(), const []);
-      expect(v.map((t) => t.label).toList(),
-          ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Disqualified']);
+      expect(v.map((t) => t.label).toList(), [
+        'New',
+        'Contacted',
+        'Qualified',
+        'Proposal Sent',
+        'Negotiation',
+        'Won',
+        'Lost',
+        'Disqualified'
+      ]);
       expect(v[1].id, 'contacted');
       expect(v[1].color, const Color(0xFF8B5CF6));
     });
 
-    test('tier 2 — catalog failed: derive the stages the loaded leads name', () {
+    test('tier 2 — catalog failed: derive the stages the loaded leads name',
+        () {
       final leads = [
         leadWith(status: 'qualified', statusName: 'Contacted'),
         leadWith(status: 'won', statusName: 'Won'),
         leadWith(status: 'qualified', statusName: 'Contacted'),
       ];
       final v = leadStageVocabulary(const [], leads);
-      expect(v.map((t) => t.label).toList(), ['Contacted', 'Won']); // deduped, pipeline order
+      expect(v.map((t) => t.label).toList(),
+          ['Contacted', 'Won']); // deduped, pipeline order
       // Crucially the ids still match what the leads report, so tabs count.
       expect(leadTabCount(leads, v.first.id), 2);
     });
@@ -166,21 +228,23 @@ void main() {
   group('status pill resolution', () {
     test('uses the org name and colour, so Contacted stays Contacted', () {
       final meta = leadStatusMeta(
-          leadWith(status: 'qualified', statusName: 'Contacted'), statusCatalog());
+          leadWith(status: 'qualified', statusName: 'Contacted'),
+          statusCatalog());
       expect(meta.label, 'Contacted');
       expect(meta.color, const Color(0xFF8B5CF6));
     });
 
     test('catalog empty: keeps the org name, so the pill matches its tab', () {
-      final meta =
-          leadStatusMeta(leadWith(status: 'qualified', statusName: 'Contacted'), const []);
+      final meta = leadStatusMeta(
+          leadWith(status: 'qualified', statusName: 'Contacted'), const []);
       expect(meta.label, 'Contacted');
       expect(meta.color, StatusMeta$.lead['qualified']!.color); // bucket colour
     });
 
     test('a stage the catalog no longer lists still shows its real name', () {
       final meta = leadStatusMeta(
-          leadWith(status: 'new', statusName: 'Some Removed Stage'), statusCatalog());
+          leadWith(status: 'new', statusName: 'Some Removed Stage'),
+          statusCatalog());
       expect(meta.label, 'Some Removed Stage');
     });
 
@@ -189,10 +253,12 @@ void main() {
     });
 
     test('a stage with no colour set borrows its bucket colour', () {
-      final o = CrmCatalogRemoteDataSource.mapCatalogRow(
-          {'lead_status_id': 'x', 'name': 'Demo Call', 'status_type': 'won', 'color': ''},
-          'lead_status_id',
-          withType: true)!;
+      final o = CrmCatalogRemoteDataSource.mapCatalogRow({
+        'lead_status_id': 'x',
+        'name': 'Demo Call',
+        'status_type': 'won',
+        'color': ''
+      }, 'lead_status_id', withType: true)!;
       expect(o.color, isNull);
       expect(leadStatusColor(o), isNotNull);
     });
@@ -200,27 +266,42 @@ void main() {
 
   group('filter spec Stage section', () {
     test('offers the org stages when the catalog loaded', () {
-      final spec = buildLeadsFilterSpec(const [], statusCatalog: statusCatalog());
+      final spec =
+          buildLeadsFilterSpec(const [], statusCatalog: statusCatalog());
       final stages = spec.fieldById('stages')!.options;
       expect(stages.map((o) => o.label).toList(), [
-        'New', 'Contacted', 'Qualified', 'Proposal Sent',
-        'Negotiation', 'Won', 'Lost', 'Disqualified',
+        'New',
+        'Contacted',
+        'Qualified',
+        'Proposal Sent',
+        'Negotiation',
+        'Won',
+        'Lost',
+        'Disqualified',
       ]);
       expect(stages.map((o) => o.id), contains('proposal sent'));
     });
 
     test('falls back to the seven built-ins when the catalog is empty', () {
-      final stages = buildLeadsFilterSpec(const []).fieldById('stages')!.options;
+      final stages =
+          buildLeadsFilterSpec(const []).fieldById('stages')!.options;
       expect(stages.length, 7);
       expect(stages.map((o) => o.id), contains('quote'));
     });
 
     test('a Contacted stage filter matches only the Contacted lead', () {
-      final spec = buildLeadsFilterSpec(const [], statusCatalog: statusCatalog());
+      final spec =
+          buildLeadsFilterSpec(const [], statusCatalog: statusCatalog());
       final values = spec.defaults();
       values['stages'] = ChoiceValue(ids: {'contacted'});
-      expect(leadMatchesFilters(leadWith(status: 'qualified', statusName: 'Contacted'), values), isTrue);
-      expect(leadMatchesFilters(leadWith(status: 'qualified', statusName: 'Qualified'), values), isFalse);
+      expect(
+          leadMatchesFilters(
+              leadWith(status: 'qualified', statusName: 'Contacted'), values),
+          isTrue);
+      expect(
+          leadMatchesFilters(
+              leadWith(status: 'qualified', statusName: 'Qualified'), values),
+          isFalse);
     });
   });
 
@@ -236,23 +317,26 @@ void main() {
         CrmCatalogRemoteDataSource.mapCatalogRow(
             {'product_id': 'p1', 'product_name': 'NexoCRM Pro'}, 'product_id',
             nameKey: 'product_name')!,
-        CrmCatalogRemoteDataSource.mapCatalogRow(
-            {'product_id': 'p2', 'product_name': 'WhatsApp Integration'}, 'product_id',
-            nameKey: 'product_name')!,
+        CrmCatalogRemoteDataSource.mapCatalogRow({
+          'product_id': 'p2',
+          'product_name': 'WhatsApp Integration'
+        }, 'product_id', nameKey: 'product_name')!,
       ];
       final spec = buildLeadsFilterSpec(
         const [],
         sourceCatalog: sources,
         productCatalog: products,
       );
-      expect(spec.fieldById('sources')!.options.map((o) => o.label), ['Website', 'Trade Show']);
+      expect(spec.fieldById('sources')!.options.map((o) => o.label),
+          ['Website', 'Trade Show']);
       expect(spec.fieldById('products')!.options.map((o) => o.label),
           ['NexoCRM Pro', 'WhatsApp Integration']);
     });
 
     test('still derive from the loaded leads when the catalogs are empty', () {
       final spec = buildLeadsFilterSpec([leadWith(status: 'new')]);
-      expect(spec.fieldById('sources')!.options.map((o) => o.label), ['Website']);
+      expect(
+          spec.fieldById('sources')!.options.map((o) => o.label), ['Website']);
       // The lead's empty `project` must not become a blank option row.
       expect(spec.fieldById('products')!.options, isEmpty);
     });
@@ -265,15 +349,19 @@ void main() {
     ];
 
     test('options are keyed by team_id when the catalog loaded', () {
-      final f = buildLeadsFilterSpec(const [], teamCatalog: teams).fieldById('teams')!;
+      final f = buildLeadsFilterSpec(const [], teamCatalog: teams)
+          .fieldById('teams')!;
       expect(f.options.map((o) => o.id).toList(), ['tm-north', 'tm-south']);
-      expect(f.options.map((o) => o.label).toList(), ['Team North', 'Team South']);
+      expect(
+          f.options.map((o) => o.label).toList(), ['Team North', 'Team South']);
     });
 
     test('a lead joins on either the assigned team id or its name', () {
-      expect(leadTeamValues(leadWith(status: 'new', assignedTeamId: 'tm-north')),
+      expect(
+          leadTeamValues(leadWith(status: 'new', assignedTeamId: 'tm-north')),
           contains('tm-north'));
-      expect(leadTeamValues(leadWith(status: 'new', assignedTeam: 'Team North')),
+      expect(
+          leadTeamValues(leadWith(status: 'new', assignedTeam: 'Team North')),
           contains('Team North'));
     });
 
@@ -281,8 +369,14 @@ void main() {
       final spec = buildLeadsFilterSpec(const [], teamCatalog: teams);
       final v = spec.defaults();
       v['teams'] = ChoiceValue(ids: {'tm-north'});
-      final north = leadWith(status: 'new', assignedTeam: 'Team North', assignedTeamId: 'tm-north');
-      final south = leadWith(status: 'new', assignedTeam: 'Team South', assignedTeamId: 'tm-south');
+      final north = leadWith(
+          status: 'new',
+          assignedTeam: 'Team North',
+          assignedTeamId: 'tm-north');
+      final south = leadWith(
+          status: 'new',
+          assignedTeam: 'Team South',
+          assignedTeamId: 'tm-south');
       expect(leadMatchesFilters(north, v), isTrue);
       expect(leadMatchesFilters(south, v), isFalse);
     });
@@ -294,9 +388,11 @@ void main() {
       expect(f.options, isEmpty);
     });
 
-    test('mock mode still offers the prototype teams, passed in explicitly', () {
-      final f = buildLeadsFilterSpec(const [], fallbackTeams: const ['Team Kochi'])
-          .fieldById('teams')!;
+    test('mock mode still offers the prototype teams, passed in explicitly',
+        () {
+      final f =
+          buildLeadsFilterSpec(const [], fallbackTeams: const ['Team Kochi'])
+              .fieldById('teams')!;
       expect(f.options.single.label, 'Team Kochi');
     });
 
@@ -312,14 +408,16 @@ void main() {
     test('falls back to the people-derived team when the API sent none', () {
       // Mock leads carry no assigned_team; the prototype path must still work.
       expect(leadWith(status: 'new').teamValues, isEmpty);
-      expect(leadTeamValues(leadWith(status: 'new')), teamNamesOfLead(leadWith(status: 'new')));
+      expect(leadTeamValues(leadWith(status: 'new')),
+          teamNamesOfLead(leadWith(status: 'new')));
     });
   });
 
   group('filter clock', () {
     tearDown(() => filterNow = defaultFilterNow);
 
-    test('quick ranges resolve against the injected now, not a frozen date', () {
+    test('quick ranges resolve against the injected now, not a frozen date',
+        () {
       filterNow = () => DateTime(2026, 8, 6, 14, 30);
       expect(kFilterToday, DateTime(2026, 8, 6)); // truncated to a date
       final (from, to) = FilterMatch.chipRange('last30');
@@ -336,7 +434,8 @@ void main() {
       expect(FilterMatch.matchDate(created, DateTime(2026, 6, 1)), isFalse);
     });
 
-    test('mock mode stays pinned to the prototype clock the seed data uses', () {
+    test('mock mode stays pinned to the prototype clock the seed data uses',
+        () {
       expect(kMockFilterToday, DateTime(2026, 7, 9));
     });
   });
@@ -346,7 +445,9 @@ void main() {
       'lead_id': 'l1',
       'lead_name': 'Testing call',
       'status': 'Contacted',
-    }, statusTypes: {'contacted': 'in_progress'})!;
+    }, statusTypes: {
+      'contacted': 'in_progress'
+    })!;
     expect(lead.statusName, 'Contacted');
     expect(lead.status, 'qualified'); // the built-in bucket, unchanged
     expect(lead.stageKey, 'contacted');

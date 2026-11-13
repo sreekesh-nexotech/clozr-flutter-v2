@@ -25,12 +25,16 @@ class LmsPeople {
   static final Map<String, LmsPerson> byId = {
     'me': const LmsPerson('Manoj Varma', 'MV', AppColors.navy, 'System Admin'),
     'an': const LmsPerson('Arjun Nair', 'AN', AppColors.teal, 'Manager'),
-    'am': const LmsPerson('Anjana Menon', 'AM', AppColors.blueBright, 'Sales rep'),
-    'rk': const LmsPerson('Rahul Krishnan', 'RK', AppColors.success, 'Sales rep'),
+    'am': const LmsPerson(
+        'Anjana Menon', 'AM', AppColors.blueBright, 'Sales rep'),
+    'rk':
+        const LmsPerson('Rahul Krishnan', 'RK', AppColors.success, 'Sales rep'),
     'fa': const LmsPerson('Fariz Ahmed', 'FA', AppColors.pending, 'Sales rep'),
     'dr': const LmsPerson('Deepak Raj', 'DR', AppColors.warning, 'Sales rep'),
-    'st': const LmsPerson('Sneha Thomas', 'ST', AppColors.navyMid, 'Project associate'),
-    'rj': const LmsPerson('Reena Jacob', 'RJ', AppColors.textPlaceholder, 'Viewer'),
+    'st': const LmsPerson(
+        'Sneha Thomas', 'ST', AppColors.navyMid, 'Project associate'),
+    'rj': const LmsPerson(
+        'Reena Jacob', 'RJ', AppColors.textPlaceholder, 'Viewer'),
   };
 
   static const List<Color> _palette = [
@@ -46,12 +50,14 @@ class LmsPeople {
 
   /// Adds/refreshes a real learner (API mode). Initials are derived from the
   /// name; avatar colours cycle the design palette deterministically.
-  static void register({required String rid, required String name, String role = ''}) {
+  static void register(
+      {required String rid, required String name, String role = ''}) {
     if (rid.isEmpty || name.isEmpty) return;
     final parts = name.trim().split(RegExp(r'\s+'));
     final initials = parts.length >= 2
         ? (parts.first[0] + parts.last[0]).toUpperCase()
-        : (parts.first.length >= 2 ? parts.first.substring(0, 2) : parts.first).toUpperCase();
+        : (parts.first.length >= 2 ? parts.first.substring(0, 2) : parts.first)
+            .toUpperCase();
     byId[rid] = LmsPerson(
       name,
       initials,

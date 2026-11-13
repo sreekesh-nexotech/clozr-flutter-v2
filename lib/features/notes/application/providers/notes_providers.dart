@@ -22,7 +22,8 @@ class _NoopNotesRepository implements NotesRepository {
   const _NoopNotesRepository();
 
   @override
-  Future<List<NoteEntry>> fetchNotes(String relatedTo, String relatedToId) async =>
+  Future<List<NoteEntry>> fetchNotes(
+          String relatedTo, String relatedToId) async =>
       const [];
 
   @override
@@ -36,7 +37,10 @@ class _NoopNotesRepository implements NotesRepository {
       null;
 
   @override
-  Future<void> updateNote({required String noteId, required String body, List<String> mentionedUserIds = const []}) async {}
+  Future<void> updateNote(
+      {required String noteId,
+      required String body,
+      List<String> mentionedUserIds = const []}) async {}
 
   @override
   Future<void> deleteNote(String noteId) async {}

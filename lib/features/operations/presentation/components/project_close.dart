@@ -23,8 +23,9 @@ const openTasksActionCancel = {'open_tasks_action': 'cancel'};
   return (count: n != null && n >= 0 ? n : null);
 }
 
-String _phrase(int? count) =>
-    count == null ? 'Its open tasks' : '$count open task${count == 1 ? '' : 's'}';
+String _phrase(int? count) => count == null
+    ? 'Its open tasks'
+    : '$count open task${count == 1 ? '' : 's'}';
 
 /// "Project closed — 2 open tasks were cancelled".
 String closedWithOpenTasksMessage(int? count) => count == null
@@ -38,7 +39,8 @@ Future<bool> confirmCloseWithOpenTasks(BuildContext context, int? count) async {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Close project with open tasks?'),
-      content: Text('${_phrase(count)} will be cancelled. Close the project anyway?'),
+      content: Text(
+          '${_phrase(count)} will be cancelled. Close the project anyway?'),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
@@ -46,7 +48,8 @@ Future<bool> confirmCloseWithOpenTasks(BuildContext context, int? count) async {
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: Text('Close project', style: TextStyle(color: AppColors.error)),
+          child:
+              Text('Close project', style: TextStyle(color: AppColors.error)),
         ),
       ],
     ),

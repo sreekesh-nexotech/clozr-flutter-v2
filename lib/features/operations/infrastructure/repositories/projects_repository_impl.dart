@@ -13,7 +13,8 @@ class ProjectsRepositoryImpl implements ProjectsRepository {
   final ProjectsMockDataSource _local;
 
   @override
-  Future<List<Project>> getProjects({Map<String, dynamic> filters = const {}}) async {
+  Future<List<Project>> getProjects(
+      {Map<String, dynamic> filters = const {}}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchProjects();
   }
@@ -31,7 +32,8 @@ class ProjectsRepositoryImpl implements ProjectsRepository {
   Future<Project?> getProject(String id) async => null;
 
   @override
-  Future<List<LeadFile>> getProjectAttachments(String projectId) async => const [];
+  Future<List<LeadFile>> getProjectAttachments(String projectId) async =>
+      const [];
 
   /// Mock write: no-op — there is no store to upload into.
   @override
@@ -51,7 +53,9 @@ class ProjectsRepositoryImpl implements ProjectsRepository {
 
   /// No aggregate in mock mode; the tab strip counts the seed rows itself.
   @override
-  Future<Map<String, int>> getStatusCounts(Map<String, dynamic> filters) async => const {};
+  Future<Map<String, int>> getStatusCounts(
+          Map<String, dynamic> filters) async =>
+      const {};
 
   @override
   Future<List<CatalogOption>> getProjectTypes() async => const [];

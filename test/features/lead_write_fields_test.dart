@@ -106,7 +106,8 @@ void main() {
       final adapter = _CaptureAdapter();
       final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
         ..httpClientAdapter = adapter;
-      final ds = LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+      final ds =
+          LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
 
       final fields = LeadsRemoteDataSource.leadWriteFields(
         name: 'Nitin Mishra',
@@ -129,7 +130,8 @@ void main() {
         () async {
       final dio = Dio(BaseOptions(baseUrl: 'https://x/api/v1'))
         ..httpClientAdapter = _ListAdapter();
-      final ds = LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
+      final ds =
+          LeadsRemoteDataSource(ApiService(tokens: TokenStorage(), dio: dio));
 
       expect(await ds.updateLead('lead-uuid-1', const {}), isNull);
     });

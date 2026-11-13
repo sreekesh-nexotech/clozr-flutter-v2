@@ -1,3 +1,4 @@
+import '../../../../data/mock/status_meta.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -21,7 +22,8 @@ final DateTime _kMockNowList = DateTime.parse('2026-07-09T09:00:00');
 final DateTime _kMockNowBoard = DateTime.parse('2026-07-09T09:41:00');
 
 DateTime get kNowList => ApiConfig.apiEnabled ? DateTime.now() : _kMockNowList;
-DateTime get kNowBoard => ApiConfig.apiEnabled ? DateTime.now() : _kMockNowBoard;
+DateTime get kNowBoard =>
+    ApiConfig.apiEnabled ? DateTime.now() : _kMockNowBoard;
 
 /// End of the day [kNowBoard] falls in — the boundary for the "Due today"
 /// bucket. Derived so it tracks the anchor instead of naming a fixed date.
@@ -30,14 +32,8 @@ DateTime get kEod {
   return DateTime(n.year, n.month, n.day, 23, 59, 59);
 }
 
-/// Priority → pill colour (`PROJPRI`) used by the list/detail priority pill.
-/// Urgent is not in the map, falling back to muted grey, matching the design.
-Color ticketPriPillColor(String pri) => const {
-      'High': AppColors.error,
-      'Medium': AppColors.warningDeep,
-      'Low': AppColors.success,
-    }[pri] ??
-    AppColors.textMuted;
+/// Priority → pill colour, from the shared palette (UI/UX audit #28).
+Color ticketPriPillColor(String pri) => StatusMeta$.priorityToneOf(pri).fg;
 
 /// The priorities `/crm/issues/` actually accepts and reports
 /// (`admin_helpdesk_dashboard.md` §3, verified live — all four are in use).
@@ -49,7 +45,8 @@ Color ticketPriPillColor(String pri) => const {
 const kTicketPriorities = ['Critical', 'High', 'Medium', 'Low'];
 
 /// Priority → dot / donut colour (`hhPRI`) used by the dashboard + board dots.
-Color ticketPriDotColor(String pri) => const {
+Color ticketPriDotColor(String pri) =>
+    const {
       'Urgent': AppColors.error,
       // The org's own name for the same level (the ticket form's chips).
       'Critical': AppColors.error,
@@ -70,7 +67,9 @@ String fmtLeft(int ms) {
 }
 
 int? _dueMs(Ticket t) {
-  final iso = (t.responded == null && t.respByISO != null) ? t.respByISO : t.resolveByISO;
+  final iso = (t.responded == null && t.respByISO != null)
+      ? t.respByISO
+      : t.resolveByISO;
   if (iso == null) return null;
   return DateTime.parse(iso).millisecondsSinceEpoch;
 }
@@ -95,8 +94,10 @@ String fmtSlaSeconds(double seconds) {
   return '${m}m';
 }
 
-const _noSlaChip = SlaChip('No SLA', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsRegular.timer);
-const _pausedChip = SlaChip('Paused', AppColors.textLabelAlt, AppColors.bgChipGrey, PhosphorIconsFill.pause);
+const _noSlaChip = SlaChip('No SLA', AppColors.textMuted2, AppColors.bgChipGrey,
+    PhosphorIconsRegular.timer);
+const _pausedChip = SlaChip('Paused', AppColors.textLabelAlt,
+    AppColors.bgChipGrey, PhosphorIconsFill.pause);
 
 /// The SLA chip every ticket surface shows — the webapp's `issueSlaChip`, read
 /// from the server's own pause-aware clock (`sla_remaining_seconds`):
@@ -112,35 +113,39 @@ SlaChip ticketListSlaChip(Ticket t) {
   if (f.statusResolved) {
     if (f.slaRemainingSeconds == null) return _noSlaChip;
     return (f.slaBreachedFlag || f.firstResponseBreached)
-        ? const SlaChip('Breached', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warning)
-        : const SlaChip('Met', AppColors.success, AppColors.tintGreen, PhosphorIconsBold.check);
+        ? const SlaChip('Breached', AppColors.error, AppColors.tintRed,
+            PhosphorIconsFill.warning)
+        : const SlaChip('Met', AppColors.success, AppColors.tintGreen,
+            PhosphorIconsBold.check);
   }
   final fr = f.firstResponseRemainingSeconds;
   if (f.firstResponseDue && !f.firstResponded && fr != null) {
     if (f.firstResponseBreached || fr < 0) {
-      return SlaChip('Overdue ${fmtSlaSeconds(fr)}', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warning);
+      return SlaChip('Overdue ${fmtSlaSeconds(fr)}', AppColors.error,
+          AppColors.tintRed, PhosphorIconsFill.warning);
     }
-    return SlaChip('Respond ${fmtSlaSeconds(fr)} left', AppColors.textPrimary, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+    return SlaChip('Respond ${fmtSlaSeconds(fr)} left', AppColors.textPrimary,
+        AppColors.bgChipGrey, PhosphorIconsRegular.clock);
   }
   final left = f.slaRemainingSeconds;
   if (left == null) return _noSlaChip;
   if (f.slaHoldStarted) return _pausedChip;
   if (left < 0) {
-    return SlaChip('Overdue ${fmtSlaSeconds(left)}', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warning);
+    return SlaChip('Overdue ${fmtSlaSeconds(left)}', AppColors.error,
+        AppColors.tintRed, PhosphorIconsFill.warning);
   }
   if (left <= 86400) {
-    return SlaChip('${fmtSlaSeconds(left)} left', AppColors.warningDeep, AppColors.tintAmber, PhosphorIconsRegular.clock);
+    return SlaChip('${fmtSlaSeconds(left)} left', AppColors.warningDeep,
+        AppColors.tintAmber, PhosphorIconsRegular.clock);
   }
-  return SlaChip('${fmtSlaSeconds(left)} left', AppColors.textPrimary, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+  return SlaChip('${fmtSlaSeconds(left)} left', AppColors.textPrimary,
+      AppColors.bgChipGrey, PhosphorIconsRegular.clock);
 }
 
-/// Webapp `priorityColor`: Critical red, High amber, Medium navy, Low grey.
-Color ticketPriorityColor(String priority) => switch (priority) {
-      'Critical' || 'Urgent' => AppColors.error,
-      'High' => AppColors.warningDeep,
-      'Medium' => AppColors.navy,
-      _ => AppColors.textMuted,
-    };
+/// The shared priority palette (UI/UX audit #28): the ticket badge matches
+/// CRM and Operations — Critical / High red, Medium amber, Low grey.
+Color ticketPriorityColor(String priority) =>
+    StatusMeta$.priorityToneOf(priority).fg;
 
 /// An org status colour (`#3B82F6`) as a [Color]; null when unset / malformed.
 Color? ticketStatusColor(String? hex) {
@@ -153,31 +158,44 @@ Color? ticketStatusColor(String? hex) {
 SlaChip _mockSlaChip(Ticket t) {
   final now = kNowList.millisecondsSinceEpoch;
   if (t.status == 'pending') {
-    return const SlaChip('Paused', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsFill.pause);
+    return const SlaChip('Paused', AppColors.textMuted2, AppColors.bgChipGrey,
+        PhosphorIconsFill.pause);
   }
   if (t.status == 'resolved' || t.status == 'closed') {
-    return const SlaChip('Resolved', AppColors.success, AppColors.tintGreen, PhosphorIconsFill.checkCircle);
+    return const SlaChip('Resolved', AppColors.success, AppColors.tintGreen,
+        PhosphorIconsFill.checkCircle);
   }
   if (t.responded == null && t.respByISO != null) {
     final ms = DateTime.parse(t.respByISO!).millisecondsSinceEpoch - now;
-    if (ms < 0) return SlaChip('Overdue ${fmtLeft(ms)}', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warningCircle);
-    return SlaChip('Respond by ${t.respByLabel ?? ''}', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+    if (ms < 0)
+      return SlaChip('Overdue ${fmtLeft(ms)}', AppColors.error,
+          AppColors.tintRed, PhosphorIconsFill.warningCircle);
+    return SlaChip('Respond by ${t.respByLabel ?? ''}', AppColors.textMuted2,
+        AppColors.bgChipGrey, PhosphorIconsRegular.clock);
   }
   if (t.resolveByISO != null) {
     final ms = DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch - now;
-    if (ms < 0) return SlaChip('Overdue ${fmtLeft(ms)}', AppColors.error, AppColors.tintRed, PhosphorIconsFill.warningCircle);
-    return SlaChip('Resolve by ${t.resolveByLabel ?? ''}', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+    if (ms < 0)
+      return SlaChip('Overdue ${fmtLeft(ms)}', AppColors.error,
+          AppColors.tintRed, PhosphorIconsFill.warningCircle);
+    return SlaChip('Resolve by ${t.resolveByLabel ?? ''}', AppColors.textMuted2,
+        AppColors.bgChipGrey, PhosphorIconsRegular.clock);
   }
-  return const SlaChip('—', AppColors.textMuted2, AppColors.bgChipGrey, PhosphorIconsRegular.clock);
+  return const SlaChip('—', AppColors.textMuted2, AppColors.bgChipGrey,
+      PhosphorIconsRegular.clock);
 }
 
 /// Whether the ticket is breaching within the next hour (the "Breaching soon"
 /// chip filter). Uses the list anchor (09:00).
 bool ticketBreaching(Ticket t) {
-  if (t.status == 'pending' || t.status == 'resolved' || t.status == 'closed') return false;
-  final iso = (t.responded == null && t.respByISO != null) ? t.respByISO : t.resolveByISO;
+  if (t.status == 'pending' || t.status == 'resolved' || t.status == 'closed')
+    return false;
+  final iso = (t.responded == null && t.respByISO != null)
+      ? t.respByISO
+      : t.resolveByISO;
   if (iso == null) return false;
-  final ms = DateTime.parse(iso).millisecondsSinceEpoch - kNowList.millisecondsSinceEpoch;
+  final ms = DateTime.parse(iso).millisecondsSinceEpoch -
+      kNowList.millisecondsSinceEpoch;
   return ms < 3600000;
 }
 
@@ -194,7 +212,20 @@ String? boardState(Ticket t) {
   return 'ontrack';
 }
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 String _clock(DateTime d) {
   var h = d.hour;
@@ -220,28 +251,37 @@ BoardPill boardPill(Ticket t) {
   // `on_track` because they cannot breach. Every branch below dereferenced
   // `due!`, so such a row crashed the board rather than rendering.
   if (due == null) {
-    return BoardPill('No due date', AppColors.bgChipGrey, AppColors.textLabelAlt);
+    return BoardPill(
+        'No due date', AppColors.bgChipGrey, AppColors.textLabelAlt);
   }
   if (st == 'breached') {
     final mins = (now - due) ~/ 60000;
-    return BoardPill('Overdue ${mins ~/ 60}h ${mins % 60}m', AppColors.tintRed, AppColors.error);
+    return BoardPill('Overdue ${mins ~/ 60}h ${mins % 60}m', AppColors.tintRed,
+        AppColors.error);
   }
   if (st == 'lt1h') {
     final mins = ((due - now) / 60000).ceil();
-    return BoardPill('Breach in ${mins < 1 ? 1 : mins}m', AppColors.tintAmber, AppColors.warningDeep);
+    return BoardPill('Breach in ${mins < 1 ? 1 : mins}m', AppColors.tintAmber,
+        AppColors.warningDeep);
   }
   final d = DateTime.fromMillisecondsSinceEpoch(due);
   if (st == 'today') {
-    return BoardPill('Due ${_clock(d)}', AppColors.bgChipGrey, AppColors.textLabelAlt);
+    return BoardPill(
+        'Due ${_clock(d)}', AppColors.bgChipGrey, AppColors.textLabelAlt);
   }
-  return BoardPill('Due ${d.day} ${_months[d.month - 1]}', AppColors.bgChipGrey, AppColors.textLabelAlt);
+  return BoardPill('Due ${d.day} ${_months[d.month - 1]}', AppColors.bgChipGrey,
+      AppColors.textLabelAlt);
 }
 
 // ── Home dashboard SLA state ──
 
 int _homeDue(Ticket t) {
-  final respDue = (t.respByISO != null && t.responded == null) ? DateTime.parse(t.respByISO!).millisecondsSinceEpoch : 1 << 62;
-  final resDue = t.resolveByISO != null ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch : 1 << 62;
+  final respDue = (t.respByISO != null && t.responded == null)
+      ? DateTime.parse(t.respByISO!).millisecondsSinceEpoch
+      : 1 << 62;
+  final resDue = t.resolveByISO != null
+      ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch
+      : 1 << 62;
   return respDue < resDue ? respDue : resDue;
 }
 

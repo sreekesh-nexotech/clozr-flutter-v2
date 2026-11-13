@@ -61,7 +61,8 @@ void main() {
     });
 
     test('dates use the API form, not the display one', () {
-      final body = build(start: DateTime(2026, 1, 5), end: DateTime(2026, 6, 28));
+      final body =
+          build(start: DateTime(2026, 1, 5), end: DateTime(2026, 6, 28));
       expect(body['expected_start_date'], '2026-01-05');
       expect(body['expected_end_date'], '2026-06-28');
     });
@@ -86,7 +87,8 @@ void main() {
       expect(build(typeLabel: '  fit-out ')['project_type'], 'type-1');
     });
 
-    test('a label the catalog does not know is omitted, not sent as a name', () {
+    test('a label the catalog does not know is omitted, not sent as a name',
+        () {
       // Sending the label would be a 400: every FK is an org-scoped UUID.
       final body = build(typeLabel: 'Something Else', statusLabel: 'Nope');
       expect(body.containsKey('project_type'), isFalse);
@@ -130,7 +132,8 @@ void main() {
       expect(body.containsKey('assignees'), isFalse);
     });
 
-    test('deselecting everyone clears the set, rather than saving no change', () {
+    test('deselecting everyone clears the set, rather than saving no change',
+        () {
       // Guarding on `isNotEmpty` meant removing the last assignee did nothing.
       final body = build(assigneeIds: const {});
       expect(body.containsKey('assignees'), isTrue);
@@ -178,15 +181,27 @@ void main() {
 
     test('any other method omits it — the API drops it silently there', () {
       // Task Completion / Progress / Weight all derive the figure from tasks.
-      for (final method in ['Task Completion', 'Task Progress', 'Task Weight']) {
+      for (final method in [
+        'Task Completion',
+        'Task Progress',
+        'Task Weight'
+      ]) {
         final body = build(progressMethod: method, percentComplete: '40');
         expect(body.containsKey('percent_complete'), isFalse, reason: method);
       }
     });
 
     test('out-of-range values are clamped, junk is dropped', () {
-      expect(build(progressMethod: 'Manual', percentComplete: '140')['percent_complete'], '100');
-      expect(build(progressMethod: 'Manual', percentComplete: '-5')['percent_complete'], '0');
+      expect(
+          build(
+              progressMethod: 'Manual',
+              percentComplete: '140')['percent_complete'],
+          '100');
+      expect(
+          build(
+              progressMethod: 'Manual',
+              percentComplete: '-5')['percent_complete'],
+          '0');
       expect(
         build(progressMethod: 'Manual', percentComplete: 'abc')
             .containsKey('percent_complete'),

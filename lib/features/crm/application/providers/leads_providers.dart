@@ -4,6 +4,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/network_providers.dart';
 import '../../../../core/network/paginated.dart';
+import '../../../../core/status_groups/status_groups.dart';
 import '../../../../data/api/status_keys.dart';
 import '../../../../data/mock/status_meta.dart';
 import '../../domain/entities/crm_catalog.dart';
@@ -11,6 +12,7 @@ import '../../domain/entities/lead.dart';
 import '../../domain/repositories/leads_repository.dart';
 import '../../infrastructure/data_sources/local/leads_mock_ds.dart';
 import '../../infrastructure/data_sources/remote/leads_remote_ds.dart';
+import '../../infrastructure/data_sources/remote/status_counts_remote_ds.dart';
 import '../../infrastructure/repositories/leads_api_repository.dart';
 import '../../infrastructure/repositories/leads_repository_impl.dart';
 import '../../../../core/filters/filter_models.dart';
@@ -58,7 +60,8 @@ class LeadListQuery {
 
   /// Order-independent identity — `{a,b}` and `{b,a}` are the same query.
   String get signature {
-    final parts = [for (final e in filters.entries) '${e.key}=${e.value}']..sort();
+    final parts = [for (final e in filters.entries) '${e.key}=${e.value}']
+      ..sort();
     return 'mine=$mineOnly|${parts.join('&')}';
   }
 
@@ -84,7 +87,8 @@ final leadsScopedProvider = FutureProvider.family<List<Lead>, LeadListQuery>(
 /// Shared by [leadFilterParamsProvider] and by the screen, which needs to build
 /// the *next* query key before it applies a filter. Both must agree exactly, or
 /// the screen would invalidate a key the list never watches.
-Map<String, dynamic> leadFilterParamsFor(FilterValues values, LeadFilterCodec codec) {
+Map<String, dynamic> leadFilterParamsFor(
+    FilterValues values, LeadFilterCodec codec) {
   // Mock mode has no query engine behind it — the matcher runs locally there.
   if (!ApiConfig.apiEnabled || values.isEmpty) return const {};
   return codec.encode(values);
@@ -114,15 +118,40 @@ final leadsListProvider = FutureProvider<List<Lead>>(
     leadsScopedProvider(leadListQueryFor(
       ref.watch(leadFilterParamsProvider),
       archived: ref.watch(leadArchivedProvider),
+      mine: ref.watch(leadMineProvider),
+      extra: ref.watch(leadScopeParamsProvider),
     )).future,
   ),
 );
 
+/// "My leads" — the leads the signed-in user owns or is assigned to, the
+/// server's `is_teams=true`. The CRM Home cards count exactly this set
+/// (`scope=own`), so their links set it; a "My New leads 1" used to land on the
+/// org's 293. Off by default, as on the webapp's list; cleared with the
+/// filters.
+final leadMineProvider = StateProvider<bool>((ref) => false);
+
+/// Extra server params a dashboard link puts on the list — the open pipeline
+/// (`status_type=new,in_progress&is_converted=false`) behind the Business
+/// tab's "Sales pipeline". Not a drawer facet; counted in the badge and
+/// cleared with Clear filters.
+final leadScopeParamsProvider =
+    StateProvider<Map<String, String>>((ref) => const {});
+
 /// The list query for [filters] in the current archived/active view. The
 /// webapp's Archived toggle is one more server param (`is_archive=true`) on the
 /// same list, so it rides in the filter map and stays part of the identity.
-LeadListQuery leadListQueryFor(Map<String, dynamic> filters, {bool archived = false}) =>
-    LeadListQuery(filters: {...filters, if (archived) 'is_archive': true});
+LeadListQuery leadListQueryFor(Map<String, dynamic> filters,
+        {bool archived = false,
+        bool mine = false,
+        Map<String, String> extra = const {}}) =>
+    LeadListQuery(filters: {
+      ...filters,
+      ...extra,
+      if (archived) 'is_archive': true,
+      // Owner OR assignee = the signed-in user (see [leadMineProvider]).
+      if (mine) 'is_teams': true,
+    });
 
 /// The webapp's "Archived" toggle at the end of the status chips: the list,
 /// the chip counts and the search all switch to archived leads only.
@@ -134,7 +163,8 @@ final leadArchivedProvider = StateProvider<bool>((ref) => false);
 /// scope: a draft usually *widens* the current selection, and counting inside
 /// an already-filtered list could only ever count down.
 final leadsUnfilteredQueryProvider = Provider<LeadListQuery>(
-  (ref) => leadListQueryFor(const {}, archived: ref.watch(leadArchivedProvider)),
+  (ref) =>
+      leadListQueryFor(const {}, archived: ref.watch(leadArchivedProvider)),
 );
 
 /// One lead from the **record** endpoint — the detail screen's source.
@@ -161,7 +191,8 @@ final leadDetailProvider = FutureProvider.family<Lead?, String>(
 /// for the session could offer someone since deactivated.
 final assignableUsersProvider =
     FutureProvider.autoDispose.family<List<CatalogOption>, String>(
-  (ref, leadId) => ref.watch(leadsRepositoryProvider).getAssignableUsers(leadId),
+  (ref, leadId) =>
+      ref.watch(leadsRepositoryProvider).getAssignableUsers(leadId),
 );
 
 final leadRowProvider =
@@ -206,9 +237,73 @@ const leadOtherTab = '__other__';
 /// Other is exclusive both ways.
 Set<String> toggleLeadTab(Set<String> current, String id) {
   if (id == 'all') return const {};
-  if (id == leadOtherTab) return current.contains(leadOtherTab) ? const {} : const {leadOtherTab};
+  if (id == leadOtherTab)
+    return current.contains(leadOtherTab) ? const {} : const {leadOtherTab};
   final next = {...current}..remove(leadOtherTab);
   return next.contains(id) ? (next..remove(id)) : (next..add(id));
+}
+
+/// The status group picked on the Leads header (`new` / `in_progress` / `won`
+/// / `lost` / `junk` — the status TYPE), or null for "All". With no status
+/// chip picked inside it, the list shows every status of that type.
+final leadGroupProvider = StateProvider<String?>((ref) => null);
+
+/// The stage keys the header selection stands for — the picked chips, else
+/// every stage of the picked group.
+final leadEffectiveTabProvider = Provider<Set<String>>(
+  (ref) => StatusGroups.effectiveKeys(
+    picked: ref.watch(leadTabProvider),
+    group: ref.watch(leadGroupProvider),
+    statuses: ref.watch(leadStatusesProvider),
+    groupOf: StatusGroups.ofTyped,
+    keyOf: (s) => s.key,
+  ),
+);
+
+/// The header's counts from `GET /crm/leads/status-counts/` — the "All"
+/// total, each group's, each stage's and "Other" — under the list's own scope
+/// (drawer filters, archived mode, search).
+///
+/// Empty (mock mode, a failed call) means the header counts the loaded rows.
+final leadStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+  if (!ApiConfig.apiEnabled) return const {};
+  final q = ref.watch(leadSearchProvider).trim();
+  final params = {
+    ...ref.watch(leadFilterParamsProvider),
+    if (ref.watch(leadArchivedProvider)) 'is_archive': true,
+    if (ref.watch(leadMineProvider)) 'is_teams': true,
+    ...ref.watch(leadScopeParamsProvider),
+    if (q.isNotEmpty) 'search': q,
+  };
+  // A status change or new lead anywhere moves the counts too.
+  ref.watch(apiWriteTickProvider);
+  if (!await settledFor(ref)) return const {};
+  final counts =
+      await StatusCountsRemoteDataSource(ref.read(apiServiceProvider))
+          .fetch(ApiEndpoints.leadStatusCounts, params);
+  return narrowCountsToStatusTypes(counts, params['status_type'] as String?);
+});
+
+/// `/status-counts/` ignores `status_type`, so under a status-type scope (the
+/// Business tab's pipeline = every type but lost) the header's "All" and the
+/// excluded groups are folded here: excluded groups read 0 and All is the sum
+/// of the groups kept — the figure the list shows.
+Map<String, int> narrowCountsToStatusTypes(
+    Map<String, int> counts, String? statusTypes) {
+  if (statusTypes == null || statusTypes.isEmpty) return counts;
+  final keep = statusTypes.split(',').map((t) => t.trim()).toSet();
+  final out = Map<String, int>.from(counts);
+  var all = 0;
+  for (final g in StatusGroups.lead) {
+    final key = StatusGroups.countKey(g.code);
+    if (keep.contains(g.code)) {
+      all += counts[key] ?? 0;
+    } else if (counts.containsKey(key)) {
+      out[key] = 0;
+    }
+  }
+  if (counts.containsKey('all')) out['all'] = all;
+  return out;
 }
 
 /// Search query on the Leads list.
@@ -246,9 +341,7 @@ final leadSearchedProvider = Provider<List<Lead>>((ref) {
       scope: {if (ref.watch(leadArchivedProvider)) 'is_archive': true},
     ),
   );
-  return all
-      .where((l) => matches([l.id], leadMatchesQuery(l, q)))
-      .toList();
+  return all.where((l) => matches([l.id], leadMatchesQuery(l, q))).toList();
 });
 
 /// The local half of the lead search — what the card itself can answer while
@@ -268,20 +361,28 @@ bool leadMatchesQuery(Lead l, String q) =>
 final visibleLeadsProvider = Provider<List<Lead>>((ref) {
   final base = ref.watch(leadSearchedProvider);
   final selected = ref.watch(leadTabProvider);
-  final lanes = {for (final t in ref.watch(leadTabsProvider)) if (t.id != 'all') t.id};
+  final effective = ref.watch(leadEffectiveTabProvider);
+  final lanes = {
+    for (final t in ref.watch(leadTabsProvider))
+      if (t.id != 'all') t.id
+  };
   Iterable<Lead> out = base;
   if (selected.contains(leadOtherTab)) {
     out = out.where((l) => !lanes.contains(l.stageKey));
+  } else if (selected.isEmpty && ref.watch(leadGroupProvider) != null) {
+    // A group on its own: every stage of that type (none → nothing matches).
+    out = out.where((l) => effective.contains(l.stageKey));
   } else {
     // A chip tapped before the status catalog resolved can name a stage the
     // org does not have; ignore it instead of silently emptying the list.
-    final chosen = selected.where(lanes.contains).toSet();
+    final chosen = effective.where(lanes.contains).toSet();
     if (chosen.isNotEmpty) out = out.where((l) => chosen.contains(l.stageKey));
   }
   // Mock mode has no query engine behind it, so the drawer is matched here.
   if (!ApiConfig.apiEnabled) {
     final filters = ref.watch(leadFiltersProvider);
-    if (!filters.isEmpty) out = out.where((l) => leadMatchesFilters(l, filters));
+    if (!filters.isEmpty)
+      out = out.where((l) => leadMatchesFilters(l, filters));
   }
   // The search box is already applied by [leadSearchedProvider].
   return out.toList();
@@ -290,7 +391,8 @@ final visibleLeadsProvider = Provider<List<Lead>>((ref) {
 /// Count of leads for a given tab key within [base].
 int leadTabCount(List<Lead> base, String key, {Set<String> lanes = const {}}) {
   if (key == 'all') return base.length;
-  if (key == leadOtherTab) return base.where((l) => !lanes.contains(l.stageKey)).length;
+  if (key == leadOtherTab)
+    return base.where((l) => !lanes.contains(l.stageKey)).length;
   return base.where((l) => l.stageKey == key).length;
 }
 
@@ -316,9 +418,12 @@ class LeadTab {
 ///    would match nothing at all;
 /// 3. the built-in `StatusMeta$` vocabulary — mock mode, where leads carry no
 ///    status name.
-List<LeadTab> leadStageVocabulary(List<CatalogOption> catalog, List<Lead> leads) {
+List<LeadTab> leadStageVocabulary(
+    List<CatalogOption> catalog, List<Lead> leads) {
   if (catalog.isNotEmpty) {
-    return [for (final s in catalog) LeadTab(s.key, s.name, leadStatusColor(s))];
+    return [
+      for (final s in catalog) LeadTab(s.key, s.name, leadStatusColor(s))
+    ];
   }
 
   // First spelling of each name wins; the key is what rows join on.
@@ -344,7 +449,8 @@ List<LeadTab> leadStageVocabulary(List<CatalogOption> catalog, List<Lead> leads)
     });
   return [
     for (final e in entries)
-      LeadTab(e.key, e.value, StatusMeta$.lead[leadStatusKey(name: e.value)]!.color),
+      LeadTab(e.key, e.value,
+          StatusMeta$.lead[leadStatusKey(name: e.value)]!.color),
   ];
 }
 
@@ -360,22 +466,23 @@ final leadTabsProvider = Provider<List<LeadTab>>((ref) => [
       ),
     ]);
 
-
 /// Who a **new** lead may be owned by or assigned to — the webapp's
 /// `GET /management/assignable-users/?module=lead`. The server only returns
 /// staff and roles that can read leads; anyone else would be refused with
 /// "Cannot assign to …". Empty on failure, and the form then falls back to the
 /// org roster.
-final leadAssignableUsersProvider = FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
+final leadAssignableUsersProvider =
+    FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
   if (!ApiConfig.apiEnabled) return const [];
   try {
-    final body = await ref.read(apiServiceProvider).get(
-      ApiEndpoints.assignableUsers,
-      query: {'module': 'lead', 'page_size': 200},
-      quiet: true,
-    );
+    final body = await ref.read(apiServiceProvider).getAllPages(
+          ApiEndpoints.assignableUsers,
+          query: {'module': 'lead', 'page_size': 200},
+          quiet: true,
+        );
     return [
-      for (final u in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+      for (final u
+          in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
         if (u['user_id'] != null)
           CatalogOption(
             id: '${u['user_id']}',
@@ -390,15 +497,18 @@ final leadAssignableUsersProvider = FutureProvider.autoDispose<List<CatalogOptio
 /// Teams a lead may be assigned to — the webapp's
 /// `GET /management/assignable-teams/?module=lead` (readable by CRM roles,
 /// unlike `/management/teams/`).
-final leadAssignableTeamsProvider = FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
-  final body = await ref.read(apiServiceProvider).get(
+final leadAssignableTeamsProvider =
+    FutureProvider.autoDispose<List<CatalogOption>>((ref) async {
+  final body = await ref.read(apiServiceProvider).getAllPages(
     ApiEndpoints.assignableTeams,
     query: {'module': 'lead', 'page_size': 100},
   );
   return [
-    for (final t in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+    for (final t
+        in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
       if ((t['team_id'] ?? t['id']) != null)
-        CatalogOption(id: '${t['team_id'] ?? t['id']}', name: '${t['name'] ?? ''}'),
+        CatalogOption(
+            id: '${t['team_id'] ?? t['id']}', name: '${t['name'] ?? ''}'),
   ];
 });
 
@@ -407,34 +517,39 @@ final leadAssignableTeamsProvider = FutureProvider.autoDispose<List<CatalogOptio
 /// ask. Empty on failure; callers then fall back to the org roster.
 /// `GET /management/assignable-teams/?module=` — the teams a record of that
 /// module may be assigned to (tasks read `module=task`).
-final assignableTeamsForModuleProvider =
-    FutureProvider.autoDispose.family<List<CatalogOption>, String>((ref, module) async {
+final assignableTeamsForModuleProvider = FutureProvider.autoDispose
+    .family<List<CatalogOption>, String>((ref, module) async {
   if (!ApiConfig.apiEnabled) return const [];
-  final body = await ref.read(apiServiceProvider).get(
-    ApiEndpoints.assignableTeams,
-    query: {'module': module, 'page_size': 100},
-    quiet: true,
-  );
+  final body = await ref.read(apiServiceProvider).getAllPages(
+        ApiEndpoints.assignableTeams,
+        query: {'module': module, 'page_size': 100},
+        quiet: true,
+      );
   return [
-    for (final t in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+    for (final t
+        in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
       if ((t['team_id'] ?? t['id']) != null)
-        CatalogOption(id: '${t['team_id'] ?? t['id']}', name: '${t['name'] ?? ''}'),
+        CatalogOption(
+            id: '${t['team_id'] ?? t['id']}', name: '${t['name'] ?? ''}'),
   ];
 });
 
-final assignableUsersForModuleProvider =
-    FutureProvider.autoDispose.family<List<CatalogOption>, String>((ref, module) async {
+final assignableUsersForModuleProvider = FutureProvider.autoDispose
+    .family<List<CatalogOption>, String>((ref, module) async {
   if (!ApiConfig.apiEnabled) return const [];
   try {
-    final body = await ref.read(apiServiceProvider).get(
-      ApiEndpoints.assignableUsers,
-      query: {'module': module, 'page_size': 200},
-      quiet: true,
-    );
+    final body = await ref.read(apiServiceProvider).getAllPages(
+          ApiEndpoints.assignableUsers,
+          query: {'module': module, 'page_size': 200},
+          quiet: true,
+        );
     return [
-      for (final u in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
+      for (final u
+          in Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results)
         if (u['user_id'] != null)
-          CatalogOption(id: '${u['user_id']}', name: '${u['full_name'] ?? u['email'] ?? ''}'.trim()),
+          CatalogOption(
+              id: '${u['user_id']}',
+              name: '${u['full_name'] ?? u['email'] ?? ''}'.trim()),
     ];
   } on Object {
     return const [];

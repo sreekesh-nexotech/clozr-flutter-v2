@@ -1,3 +1,4 @@
+import '../utils/relative_time.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -154,10 +155,19 @@ class _FilterSheetState extends State<_FilterSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(widget.spec.title,
-                    style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 17,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 1.h),
-                Text(active > 0 ? '$active filter${active == 1 ? '' : 's'} set' : 'No filters set',
-                    style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                Text(
+                    active > 0
+                        ? '$active filter${active == 1 ? '' : 's'} set'
+                        : 'No filters set',
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ],
             ),
           ),
@@ -167,8 +177,11 @@ class _FilterSheetState extends State<_FilterSheet> {
             child: Container(
               width: 32.w,
               height: 32.w,
-              decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
-              child: Icon(Icons.close_rounded, size: 17.sp, color: AppColors.textLabelAlt),
+              decoration: BoxDecoration(
+                  color: AppColors.bgChipGrey,
+                  borderRadius: BorderRadius.circular(9.r)),
+              child: Icon(Icons.close_rounded,
+                  size: 17.sp, color: AppColors.textLabelAlt),
             ),
           ),
         ],
@@ -180,7 +193,10 @@ class _FilterSheetState extends State<_FilterSheet> {
         padding: EdgeInsets.only(top: 16.h, bottom: 4.h),
         child: Text(title.toUpperCase(),
             style: AppText.custom(
-                size: 11.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.7)),
+                size: 11.5,
+                weight: FontWeight.w700,
+                color: AppColors.textPlaceholder,
+                letterSpacing: 0.7)),
       );
 
   // ── Field dispatch ──
@@ -200,8 +216,8 @@ class _FilterSheetState extends State<_FilterSheet> {
     }
   }
 
-  BoxDecoration get _rowDivider =>
-      BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgChipGrey)));
+  BoxDecoration get _rowDivider => BoxDecoration(
+      border: Border(bottom: BorderSide(color: AppColors.bgChipGrey)));
 
   // ── Checkbox group (+ optional is/is-not) ──
   Widget _checkboxField(FilterField f) {
@@ -236,7 +252,9 @@ class _FilterSheetState extends State<_FilterSheet> {
           Expanded(child: _checkRow(f, v, f.options[i])),
           SizedBox(width: 10.w),
           Expanded(
-              child: i + 1 < f.options.length ? _checkRow(f, v, f.options[i + 1]) : const SizedBox()),
+              child: i + 1 < f.options.length
+                  ? _checkRow(f, v, f.options[i + 1])
+                  : const SizedBox()),
         ],
       ));
     }
@@ -259,7 +277,11 @@ class _FilterSheetState extends State<_FilterSheet> {
               SizedBox(width: 6.w),
             ],
             if (o.dot != null) ...[
-              Container(width: 8.w, height: 8.w, decoration: BoxDecoration(color: o.dot, shape: BoxShape.circle)),
+              Container(
+                  width: 8.w,
+                  height: 8.w,
+                  decoration:
+                      BoxDecoration(color: o.dot, shape: BoxShape.circle)),
               SizedBox(width: 7.w),
             ],
             Flexible(
@@ -283,9 +305,12 @@ class _FilterSheetState extends State<_FilterSheet> {
         decoration: BoxDecoration(
           color: on ? AppColors.navy : AppColors.white,
           borderRadius: BorderRadius.circular(6.r),
-          border: on ? null : Border.all(color: AppColors.borderInput, width: 1.5),
+          border:
+              on ? null : Border.all(color: AppColors.borderInput, width: 1.5),
         ),
-        child: on ? Icon(PhosphorIconsBold.check, size: 12.sp, color: AppColors.white) : null,
+        child: on
+            ? Icon(PhosphorIconsBold.check, size: 12.sp, color: AppColors.white)
+            : null,
       );
 
   // ── Search & Select ──
@@ -319,20 +344,27 @@ class _FilterSheetState extends State<_FilterSheet> {
             constraints: BoxConstraints(maxHeight: 240.h),
             child: opts.isEmpty
                 ? Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 4.w),
+                    padding:
+                        EdgeInsets.symmetric(vertical: 14.h, horizontal: 4.w),
                     child: Text('No matches',
                         style: AppText.custom(
-                            size: 12.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPlaceholder)),
                   )
                 : SingleChildScrollView(
-                    child: Column(children: [for (final o in opts) _checkRow(f, v, o)]),
+                    child: Column(
+                        children: [for (final o in opts) _checkRow(f, v, o)]),
                   ),
           ),
           if (v.ids.isNotEmpty)
             Padding(
               padding: EdgeInsets.only(top: 4.h),
               child: Text('${v.ids.length} selected',
-                  style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                  style: AppText.custom(
+                      size: 11.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.blueBright)),
             ),
         ],
       ),
@@ -341,7 +373,8 @@ class _FilterSheetState extends State<_FilterSheet> {
 
   // ── Radio ──
   Widget _radioField(FilterField f) {
-    final v = _draft.radio(f.id) ?? RadioValue(id: f.radioDefaultId, defaultId: f.radioDefaultId);
+    final v = _draft.radio(f.id) ??
+        RadioValue(id: f.radioDefaultId, defaultId: f.radioDefaultId);
     return Container(
       padding: EdgeInsets.only(top: 12.h, bottom: 4.h),
       decoration: _rowDivider,
@@ -363,8 +396,12 @@ class _FilterSheetState extends State<_FilterSheet> {
                     Text(o.label,
                         style: AppText.custom(
                             size: 13.5,
-                            weight: v.id == o.id ? FontWeight.w600 : FontWeight.w500,
-                            color: v.id == o.id ? AppColors.textPrimary : AppColors.textLabel)),
+                            weight: v.id == o.id
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: v.id == o.id
+                                ? AppColors.textPrimary
+                                : AppColors.textLabel)),
                   ],
                 ),
               ),
@@ -379,7 +416,9 @@ class _FilterSheetState extends State<_FilterSheet> {
         height: 19.w,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: on ? AppColors.navy : AppColors.borderInput, width: on ? 5.5 : 1.5),
+          border: Border.all(
+              color: on ? AppColors.navy : AppColors.borderInput,
+              width: on ? 5.5 : 1.5),
         ),
       );
 
@@ -433,22 +472,39 @@ class _FilterSheetState extends State<_FilterSheet> {
         SizedBox(height: 5.h),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() {
-            if (open) {
+          // The same pop-up date picker every form uses (UI/UX audit #19 —
+          // filters had their own inline calendar).
+          onTap: () async {
+            final first =
+                bound == 'to' && v.from != null ? v.from! : DateTime(2015);
+            final last = bound == 'from' && v.to != null
+                ? v.to!
+                : DateTime(kFilterToday.year + 5, 12, 31);
+            var initial = value ?? kFilterToday;
+            if (initial.isBefore(first)) initial = first;
+            if (initial.isAfter(last)) initial = last;
+            final picked = await showDatePicker(
+              context: context,
+              helpText: '${f.label} — ${bound == 'from' ? 'from' : 'to'}',
+              initialDate: initial,
+              firstDate: first,
+              lastDate: last,
+            );
+            if (picked == null || !mounted) return;
+            setState(() {
               _calFieldId = null;
-            } else {
-              _calFieldId = f.id;
-              _calBound = bound;
-              _calMonth = value ?? kFilterToday;
-            }
-          }),
+              _draft[f.id] =
+                  bound == 'from' ? v.withFrom(picked) : v.withTo(picked);
+            });
+          },
           child: Container(
             height: 42.h,
             padding: EdgeInsets.symmetric(horizontal: 12.w),
             decoration: BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.circular(10.r),
-              border: Border.all(color: open ? AppColors.navy : AppColors.borderInput),
+              border: Border.all(
+                  color: open ? AppColors.navy : AppColors.borderInput),
             ),
             child: Row(
               children: [
@@ -457,9 +513,12 @@ class _FilterSheetState extends State<_FilterSheet> {
                       style: AppText.custom(
                           size: 13.5,
                           weight: FontWeight.w500,
-                          color: value != null ? AppColors.textBody : AppColors.textPlaceholder)),
+                          color: value != null
+                              ? AppColors.textBody
+                              : AppColors.textPlaceholder)),
                 ),
-                Icon(PhosphorIconsRegular.calendarBlank, size: 15.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsRegular.calendarBlank,
+                    size: 15.sp, color: AppColors.textPlaceholder),
               ],
             ),
           ),
@@ -485,12 +544,19 @@ class _FilterSheetState extends State<_FilterSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _calNav(PhosphorIconsBold.caretLeft,
-                  () => setState(() => _calMonth = DateTime(_calMonth.year, _calMonth.month - 1, 1))),
+              _calNav(
+                  PhosphorIconsBold.caretLeft,
+                  () => setState(() => _calMonth =
+                      DateTime(_calMonth.year, _calMonth.month - 1, 1))),
               Text('${_monthName(_calMonth.month)} ${_calMonth.year}',
-                  style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-              _calNav(PhosphorIconsBold.caretRight,
-                  () => setState(() => _calMonth = DateTime(_calMonth.year, _calMonth.month + 1, 1))),
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              _calNav(
+                  PhosphorIconsBold.caretRight,
+                  () => setState(() => _calMonth =
+                      DateTime(_calMonth.year, _calMonth.month + 1, 1))),
             ],
           ),
           SizedBox(height: 8.h),
@@ -501,7 +567,9 @@ class _FilterSheetState extends State<_FilterSheet> {
                   child: Center(
                     child: Text(d,
                         style: AppText.custom(
-                            size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+                            size: 10.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPlaceholder)),
                   ),
                 ),
             ],
@@ -511,7 +579,9 @@ class _FilterSheetState extends State<_FilterSheet> {
             Row(
               children: [
                 for (var wd = 0; wd < 7; wd++)
-                  Expanded(child: _calCell(f, v, week * 7 + wd - leading + 1, daysInMonth, selected)),
+                  Expanded(
+                      child: _calCell(f, v, week * 7 + wd - leading + 1,
+                          daysInMonth, selected)),
               ],
             ),
         ],
@@ -519,7 +589,8 @@ class _FilterSheetState extends State<_FilterSheet> {
     );
   }
 
-  Widget _calCell(FilterField f, DateValue v, int day, int daysInMonth, DateTime? selected) {
+  Widget _calCell(FilterField f, DateValue v, int day, int daysInMonth,
+      DateTime? selected) {
     if (day < 1 || day > daysInMonth) return SizedBox(height: 32.h);
     final date = DateTime(_calMonth.year, _calMonth.month, day);
     final on = selected != null &&
@@ -556,7 +627,9 @@ class _FilterSheetState extends State<_FilterSheet> {
         child: Container(
           width: 30.w,
           height: 30.w,
-          decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(8.r)),
+          decoration: BoxDecoration(
+              color: AppColors.bgChipGrey,
+              borderRadius: BorderRadius.circular(8.r)),
           child: Icon(icon, size: 13.sp, color: AppColors.textSecondary),
         ),
       );
@@ -578,7 +651,9 @@ class _FilterSheetState extends State<_FilterSheet> {
                 SizedBox(width: 7.w),
                 Text(f.unit!,
                     style: AppText.custom(
-                        size: 11.5, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                        size: 11.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.textPlaceholder)),
               ],
             ],
           ),
@@ -619,7 +694,8 @@ class _FilterSheetState extends State<_FilterSheet> {
   Widget _footer(int count) {
     return Container(
       padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 24.h),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
+      decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.borderCardSoft))),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -638,7 +714,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                   onTap: () async {
                     final name = _viewName.text.trim();
                     if (name.isEmpty) return;
-                    if (name != widget.activeViewName && widget.existingViewNames.contains(name)) {
+                    if (name != widget.activeViewName &&
+                        widget.existingViewNames.contains(name)) {
                       final overwrite = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
@@ -652,7 +729,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                                 child: const Text('Cancel')),
                             TextButton(
                               onPressed: () => Navigator.of(ctx).pop(true),
-                              child: Text('Replace', style: TextStyle(color: AppColors.error)),
+                              child: Text('Replace',
+                                  style: TextStyle(color: AppColors.error)),
                             ),
                           ],
                         ),
@@ -666,9 +744,15 @@ class _FilterSheetState extends State<_FilterSheet> {
                     height: 44.h,
                     padding: EdgeInsets.symmetric(horizontal: 16.w),
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.tintNavy, borderRadius: BorderRadius.circular(11.r)),
-                    child: Text(widget.activeViewName != null ? 'Update' : 'Save',
-                        style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.navy)),
+                    decoration: BoxDecoration(
+                        color: AppColors.tintNavy,
+                        borderRadius: BorderRadius.circular(11.r)),
+                    child: Text(
+                        widget.activeViewName != null ? 'Update' : 'Save',
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.navy)),
                   ),
                 ),
               ],
@@ -683,7 +767,10 @@ class _FilterSheetState extends State<_FilterSheet> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 6.h),
                   child: Text('Reset All',
-                      style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w700,
+                          color: AppColors.blueBright)),
                 ),
               ),
               SizedBox(width: 10.w),
@@ -697,9 +784,13 @@ class _FilterSheetState extends State<_FilterSheet> {
                     decoration: BoxDecoration(
                       color: AppColors.white,
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: _savePanel ? AppColors.navy : AppColors.borderInput),
+                      border: Border.all(
+                          color: _savePanel
+                              ? AppColors.navy
+                              : AppColors.borderInput),
                     ),
-                    child: Icon(PhosphorIconsRegular.bookmarkSimple, size: 19.sp, color: AppColors.textSecondary),
+                    child: Icon(PhosphorIconsRegular.bookmarkSimple,
+                        size: 19.sp, color: AppColors.textSecondary),
                   ),
                 ),
                 SizedBox(width: 10.w),
@@ -711,12 +802,19 @@ class _FilterSheetState extends State<_FilterSheet> {
                   child: Container(
                     height: 48.h,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(12.r)),
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(12.r)),
                     child: Text(
                         // A negative count means "not known before applying"
                         // (a server-side filter) — the webapp's plain label.
-                        count < 0 ? 'Apply filters' : 'Apply · $count ${count == 1 ? 'result' : 'results'}',
-                        style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                        count < 0
+                            ? 'Apply filters'
+                            : 'Apply · $count ${count == 1 ? 'result' : 'results'}',
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.white)),
                   ),
                 ),
               ),
@@ -731,7 +829,9 @@ class _FilterSheetState extends State<_FilterSheet> {
   Widget _isNotToggle(FilterField f, ChoiceValue v) {
     return Container(
       padding: EdgeInsets.all(2.w),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
+      decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(9.r)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -753,11 +853,14 @@ class _FilterSheetState extends State<_FilterSheet> {
           ),
           child: Text(label,
               style: AppText.custom(
-                  size: 11.5, weight: FontWeight.w700, color: on ? AppColors.white : AppColors.textMuted2)),
+                  size: 11.5,
+                  weight: FontWeight.w700,
+                  color: on ? AppColors.white : AppColors.textMuted2)),
         ),
       );
 
-  Widget _dateChip(String label, bool on, VoidCallback onTap) => GestureDetector(
+  Widget _dateChip(String label, bool on, VoidCallback onTap) =>
+      GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         // No fixed height + no `alignment:` — inside a Wrap an aligned Container
@@ -804,15 +907,24 @@ class _FilterSheetState extends State<_FilterSheet> {
             child: TextField(
               controller: controller,
               onChanged: onChanged,
-              keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-              inputFormatters:
-                  number ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))] : null,
-              style: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textBody),
+              keyboardType: number
+                  ? const TextInputType.numberWithOptions(decimal: true)
+                  : TextInputType.text,
+              inputFormatters: number
+                  ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))]
+                  : null,
+              style: AppText.custom(
+                  size: 13.5,
+                  weight: FontWeight.w500,
+                  color: AppColors.textBody),
               decoration: InputDecoration(
                 isCollapsed: true,
                 border: InputBorder.none,
                 hintText: hint,
-                hintStyle: AppText.custom(size: 13.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                hintStyle: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w500,
+                    color: AppColors.textPlaceholder),
               ),
             ),
           ),
@@ -821,16 +933,27 @@ class _FilterSheetState extends State<_FilterSheet> {
     );
   }
 
-  TextStyle get _fieldLabel =>
-      AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textSecondary);
-  TextStyle get _miniLabel =>
-      AppText.custom(size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder);
+  TextStyle get _fieldLabel => AppText.custom(
+      size: 13.5, weight: FontWeight.w700, color: AppColors.textSecondary);
+  TextStyle get _miniLabel => AppText.custom(
+      size: 11, weight: FontWeight.w600, color: AppColors.textPlaceholder);
 
-  String _fmtDate(DateTime d) => '${d.day} ${_monthName(d.month)} ${d.year}';
-  String _fmtNum(double d) => d == d.roundToDouble() ? d.toInt().toString() : d.toString();
+  String _fmtDate(DateTime d) => fmtDay(d); // DD/MM/YYYY (C17)
+  String _fmtNum(double d) =>
+      d == d.roundToDouble() ? d.toInt().toString() : d.toString();
   String _monthName(int m) => const [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
       ][m - 1];
 }
 

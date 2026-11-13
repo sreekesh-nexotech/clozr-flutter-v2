@@ -13,7 +13,8 @@ class OpsTasksRepositoryImpl implements OpsTasksRepository {
   final OpsTasksMockDataSource _local;
 
   @override
-  Future<List<OpsTask>> getOpsTasks({Map<String, dynamic> filters = const {}}) async {
+  Future<List<OpsTask>> getOpsTasks(
+      {Map<String, dynamic> filters = const {}}) async {
     await Future<void>.delayed(AppConstants.mockLatency);
     return _local.fetchOpsTasks();
   }
@@ -32,7 +33,8 @@ class OpsTasksRepositoryImpl implements OpsTasksRepository {
 
   /// No aggregate endpoint in mock mode; the strip counts the seed rows.
   @override
-  Future<Map<String, int>> getStatusCounts(Map<String, dynamic> filters) async =>
+  Future<Map<String, int>> getStatusCounts(
+          Map<String, dynamic> filters) async =>
       const {};
 
   /// Nothing to delete against; the screen's toast is the whole behaviour.
@@ -41,7 +43,8 @@ class OpsTasksRepositoryImpl implements OpsTasksRepository {
 
   /// Mock edges live in the seed only; the screen keeps its local behaviour.
   @override
-  Future<void> addDependency({required String taskId, required String dependsOn}) async {}
+  Future<void> addDependency(
+      {required String taskId, required String dependsOn}) async {}
 
   @override
   Future<void> removeDependency(String edgeId) async {}
@@ -64,6 +67,8 @@ class OpsTasksRepositoryImpl implements OpsTasksRepository {
     required String parentId,
     required String subject,
     String projectId = '',
+    String? endIso,
+    String? assigneeId,
   }) async {}
 
   /// No audit trail in mock mode; the screen falls back to its derived rows.

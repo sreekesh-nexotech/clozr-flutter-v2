@@ -72,8 +72,16 @@ class PartyTaxProfile extends Equatable {
       registrationType == 'REGISTERED' && (gstin ?? '').isNotEmpty;
 
   @override
-  List<Object?> get props =>
-      [exists, registrationType, gstin, stateCode, pan, entityKind, tdsApplicable, tdsNatureDefault];
+  List<Object?> get props => [
+        exists,
+        registrationType,
+        gstin,
+        stateCode,
+        pan,
+        entityKind,
+        tdsApplicable,
+        tdsNatureDefault
+      ];
 }
 
 /// A product's accounting tax defaults (handover §8.2).
@@ -95,8 +103,13 @@ class ProductTaxProfile extends Equatable {
   final bool cessApplicable;
 
   @override
-  List<Object?> get props =>
-      [exists, taxTreatmentDefault, rateVariantKey, isRcmOutward, cessApplicable];
+  List<Object?> get props => [
+        exists,
+        taxTreatmentDefault,
+        rateVariantKey,
+        isRcmOutward,
+        cessApplicable
+      ];
 }
 
 /// A bank / cash / gateway account money can move through.
@@ -119,7 +132,8 @@ class BankAccount extends Equatable {
   final bool isDefault;
   final bool isActive;
 
-  String get label => (accountNoMasked ?? '').isEmpty ? name : '$name · $accountNoMasked';
+  String get label =>
+      (accountNoMasked ?? '').isEmpty ? name : '$name · $accountNoMasked';
 
   @override
   List<Object?> get props => [id, name, kind, isDefault, isActive];

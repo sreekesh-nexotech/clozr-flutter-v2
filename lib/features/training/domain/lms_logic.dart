@@ -18,8 +18,7 @@ class LmsLogic {
   /// tile said 0, while `/lms/learners/` for the same enrolment said
   /// `status: overdue`. Every other module's clock already switches on
   /// [ApiConfig.apiEnabled]; this one had been left behind.
-  static DateTime get now =>
-      ApiConfig.apiEnabled ? DateTime.now() : _mockNow;
+  static DateTime get now => ApiConfig.apiEnabled ? DateTime.now() : _mockNow;
 
   static final DateTime _mockNow = DateTime.parse('2026-07-09T09:41:00');
 
@@ -45,19 +44,24 @@ class LmsLogic {
   }
 
   /// Aggregate status across all a learner's courses.
-  static String aggStatus(LearnerRecord rec, Course? Function(String) courseOf) {
+  static String aggStatus(
+      LearnerRecord rec, Course? Function(String) courseOf) {
     // The server already judged this learner; its verdict has the deadlines
     // the aggregate rows lack.
     if (rec.serverStatus case final st?) return st;
-    final sts = rec.courses.map((e) => statusOf(e, courseOf(e.courseId))).toList();
+    final sts =
+        rec.courses.map((e) => statusOf(e, courseOf(e.courseId))).toList();
     if (sts.contains('overdue')) return 'overdue';
     if (sts.contains('inprogress')) return 'inprogress';
-    if (sts.isNotEmpty && sts.every((x) => x == 'completed')) return 'completed';
+    if (sts.isNotEmpty && sts.every((x) => x == 'completed'))
+      return 'completed';
     return sts.contains('notstarted') ? 'notstarted' : 'completed';
   }
 
   /// Whether module [idx] is locked behind an incomplete previous module
   /// (only when the course enforces sequential progression).
   static bool lockedAt(CourseProgress e, Course c, int idx) =>
-      c.sequential && idx > 0 && (idx - 1 < e.mods.length ? e.mods[idx - 1] : 0) < 100;
+      c.sequential &&
+      idx > 0 &&
+      (idx - 1 < e.mods.length ? e.mods[idx - 1] : 0) < 100;
 }

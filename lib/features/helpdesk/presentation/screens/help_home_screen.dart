@@ -15,6 +15,10 @@ import '../../../../core/widgets/kpi_card.dart';
 import '../../../../core/widgets/list_header.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../../../auth/application/providers/auth_providers.dart';
+import '../../../dashboard/application/dash_navigation.dart';
+import '../../../dashboard/application/providers/dashboard_providers.dart';
+import '../../../dashboard/presentation/components/period_picker_sheet.dart';
+import '../../application/help_home_rules.dart';
 import '../../application/providers/help_dashboard_providers.dart';
 import '../../application/providers/tickets_providers.dart';
 import '../../domain/entities/help_dashboard.dart';
@@ -29,8 +33,12 @@ class HelpHomeScreen extends ConsumerWidget {
   const HelpHomeScreen({super.key});
 
   int _homeDue(Ticket t) {
-    final resp = (t.respByISO != null && t.responded == null) ? DateTime.parse(t.respByISO!).millisecondsSinceEpoch : (1 << 62);
-    final res = t.resolveByISO != null ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch : (1 << 62);
+    final resp = (t.respByISO != null && t.responded == null)
+        ? DateTime.parse(t.respByISO!).millisecondsSinceEpoch
+        : (1 << 62);
+    final res = t.resolveByISO != null
+        ? DateTime.parse(t.resolveByISO!).millisecondsSinceEpoch
+        : (1 << 62);
     return resp < res ? resp : res;
   }
 
@@ -52,7 +60,11 @@ class HelpHomeScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Helpdesk', style: AppText.custom(size: 13, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      Text('Helpdesk',
+                          style: AppText.custom(
+                              size: 13,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted)),
                       SizedBox(height: 1.h),
                       Text('Dashboard', style: AppText.screenTitle()),
                     ],
@@ -64,7 +76,10 @@ class HelpHomeScreen extends ConsumerWidget {
                   // "Thu, 9 Jul" — the prototype's frozen date, which read as
                   // stale on every other day of the year.
                   child: Text(DateFormat('EEE, d MMM').format(DateTime.now()),
-                      style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPlaceholder)),
                 ),
               ],
             ),
@@ -80,22 +95,40 @@ class HelpHomeScreen extends ConsumerWidget {
               final dir = ref.watch(ticketDirectoryProvider);
               final summary = ref.watch(myTicketSummaryProvider).valueOrNull;
               final mineAll = tickets.where((t) => t.isMine).toList();
-              final openT = mineAll.where((t) => t.status == 'new' || t.status == 'open' || t.status == 'pending').toList();
-              final doneMine = mineAll.where((t) => t.status == 'resolved' || t.status == 'closed').toList();
-              final breached = openT.where((t) => homeState(t) == 'breached').toList()..sort((a, b) => _homeDue(b).compareTo(_homeDue(a)));
+              final openT = mineAll
+                  .where((t) =>
+                      t.status == 'new' ||
+                      t.status == 'open' ||
+                      t.status == 'pending')
+                  .toList();
+              final doneMine = mineAll
+                  .where((t) => t.status == 'resolved' || t.status == 'closed')
+                  .toList();
+              final breached = openT
+                  .where((t) => homeState(t) == 'breached')
+                  .toList()
+                ..sort((a, b) => _homeDue(b).compareTo(_homeDue(a)));
               final risk = openT.where((t) => homeState(t) == 'risk').toList();
-              final withinOpen = openT.where((t) => homeState(t) == 'within').length;
+              final withinOpen =
+                  openT.where((t) => homeState(t) == 'within').length;
 
-              final attn = openT.where((t) => homeState(t) != 'within' || t.status == 'pending').toList()
+              final attn = openT
+                  .where(
+                      (t) => homeState(t) != 'within' || t.status == 'pending')
+                  .toList()
                 ..sort((a, b) {
                   final ra = homeState(a) == 'breached' ? 0 : 1;
                   final rb = homeState(b) == 'breached' ? 0 : 1;
-                  return ra != rb ? ra - rb : _homeDue(a).compareTo(_homeDue(b));
+                  return ra != rb
+                      ? ra - rb
+                      : _homeDue(a).compareTo(_homeDue(b));
                 });
 
               return ListView(
                 padding: EdgeInsets.fromLTRB(18.w, 14.h, 18.w, 120.h),
                 children: [
+                  _periodChip(context, ref),
+                  SizedBox(height: 14.h),
                   // The server's own figures where it has them: its counts are
                   // scoped by `assigned_to_me` rather than by `isMine` over a
                   // loaded page, and its SLA arithmetic is pause-aware.
@@ -125,6 +158,54 @@ class HelpHomeScreen extends ConsumerWidget {
     );
   }
 
+  /// The Period the server-measured figures (medians, trends, mix, resolved
+  /// grid) are for. Shared with the Dashboard tabs' Period selection.
+  Widget _periodChip(BuildContext context, WidgetRef ref) {
+    final label = ref.watch(dashPeriodProvider);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => showDashPeriodPicker(context, ref, label),
+        child: Container(
+          height: 34.h,
+          padding: EdgeInsets.symmetric(horizontal: 12.w),
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(10.r),
+            border: Border.all(color: AppColors.borderCardSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PhosphorIconsRegular.calendarBlank,
+                  size: 15.sp, color: AppColors.textSecondary),
+              SizedBox(width: 7.w),
+              Text('Period',
+                  style: AppText.custom(
+                      size: 12.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
+              SizedBox(width: 6.w),
+              Flexible(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textSecondary)),
+              ),
+              SizedBox(width: 7.w),
+              Icon(PhosphorIconsBold.caretDown,
+                  size: 11.sp,
+                  color: AppColors.textSecondary.withOpacity(0.65)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Pull-to-refresh: the tickets behind every card, plus the server's KPI
   /// figures (the medians and trends have no local fallback).
   Future<void> _refresh(WidgetRef ref) async {
@@ -143,62 +224,82 @@ class HelpHomeScreen extends ConsumerWidget {
   }
 
   // ── KPI grid ──
-  Widget _kpiGrid(BuildContext context, WidgetRef ref, int openCount, int breachCount) {
-    void goTickets({bool breach = false, String tab = 'all'}) {
-      ref.read(ticketMineProvider.notifier).state = true;
-      ref.read(ticketBreachingProvider.notifier).state = breach;
-      ref.read(ticketStatusChipsProvider.notifier).state = tab == 'all' ? const <String>{} : {tab};
-      ref.read(ticketSavedFiltersProvider.notifier).deactivate();
-      context.go(Routes.tickets);
-    }
+  Widget _kpiGrid(
+      BuildContext context, WidgetRef ref, int openCount, int breachCount) {
+    // My Tickets on the slice the card counted (no `all=1`, so "mine"); via
+    // dashGo so a facet the list kept from a Dashboard link is cleared.
+    void goTickets({bool breach = false, String tab = 'all'}) => dashGo(
+        context,
+        ref,
+        '${Routes.tickets}?mine=1'
+        '${breach ? '&breaching=1' : ''}'
+        '${tab == 'all' ? '' : '&group=$tab'}');
 
     // Counts stay local (the ticket list is already loaded); the trends and the
     // two medians come from the server or not at all — see [helpKpisProvider].
     // They were fixed constants: "3.2 days", "1.4 hours" and four invented
     // trend chips that never moved whatever the tickets did.
     final kpis = ref.watch(helpKpisProvider).valueOrNull;
+    final period = ref.watch(dashPeriodProvider);
+    // A chip belongs to the figure the server measured: shown only when the
+    // server's count equals the card's (see [HelpHomeRules.trendFor]).
+    final openKpi = HelpHomeRules.trendFor(kpis?.openTickets, openCount);
+    final breachKpi = HelpHomeRules.trendFor(kpis?.slaBreaches, breachCount);
     final resolution = kpis?.avgResolution;
     final response = kpis?.firstResponse;
-    final name = ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
+    final name =
+        ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
 
     final cards = <Widget>[
       KpiCard(
-        icon: PhosphorIconsFill.ticket, iconColor: AppColors.blueBright, iconBg: AppColors.tintBlue,
-        value: '$openCount', label: 'My Open Tickets',
+        icon: PhosphorIconsFill.ticket,
+        iconColor: AppColors.blueBright,
+        iconBg: AppColors.tintBlue,
+        value: '$openCount',
+        label: 'My Open Tickets',
         sub: name.isEmpty ? 'Assigned to me' : 'Assigned to $name',
         accent: AppColors.blueBright,
-        trend: kpis?.openTickets?.trendLabel,
-        trendUp: kpis?.openTickets?.trendUp ?? true,
+        trend: openKpi?.trendLabel,
+        // More open tickets is worse, so the pill's colour inverts the arrow.
+        trendUp: !(openKpi?.trendUp ?? true),
+        arrowUp: openKpi?.trendUp ?? false,
         onTap: () => goTickets(),
       ),
       KpiCard(
-        icon: PhosphorIconsFill.warningCircle, iconColor: AppColors.error, iconBg: AppColors.tintRed,
-        value: '$breachCount', label: 'My SLA Breaches', sub: 'Response or resolution', accent: AppColors.error,
-        trend: kpis?.slaBreaches?.trendLabel,
+        icon: PhosphorIconsFill.warningCircle, iconColor: AppColors.error,
+        iconBg: AppColors.tintRed,
+        value: '$breachCount', label: 'My SLA Breaches',
+        sub: 'Response or resolution', accent: AppColors.error,
+        trend: breachKpi?.trendLabel,
         // More breaches is worse, so the pill's colour inverts the arrow.
-        trendUp: !(kpis?.slaBreaches?.trendUp ?? true),
-        arrowUp: kpis?.slaBreaches?.trendUp ?? false,
+        trendUp: !(breachKpi?.trendUp ?? true),
+        arrowUp: breachKpi?.trendUp ?? false,
         onTap: () => goTickets(breach: true),
       ),
       KpiCard(
-        icon: PhosphorIconsFill.timer, iconColor: AppColors.error, iconBg: AppColors.tintRed,
+        icon: PhosphorIconsFill.timer, iconColor: AppColors.error,
+        iconBg: AppColors.tintRed,
         // Sent in minutes; this card reads in days.
         value: resolution?.days == null ? '—' : _trim(resolution!.days!),
         unit: resolution?.days == null ? null : 'days',
-        label: 'My Avg Resolution', sub: 'Median, this period', accent: AppColors.error,
-        trend: resolution?.trendLabel,
+        label: 'My Avg Resolution', sub: 'Median · $period',
+        accent: AppColors.error,
+        // No chip without a measured trend (an empty label drew a bare arrow).
+        trend: resolution?.hasTrend == true ? resolution!.trendLabel : null,
         // A shorter resolution is better, so falling is the good direction.
         trendUp: !(resolution?.trendUp ?? true),
         arrowUp: resolution?.trendUp ?? false,
         onTap: () => goTickets(tab: 'resolved'),
       ),
       KpiCard(
-        icon: PhosphorIconsFill.lightning, iconColor: AppColors.success, iconBg: AppColors.tintGreen,
+        icon: PhosphorIconsFill.lightning, iconColor: AppColors.success,
+        iconBg: AppColors.tintGreen,
         // Sent in minutes; this card reads in hours.
         value: response?.hours == null ? '—' : _trim(response!.hours!),
         unit: response?.hours == null ? null : 'hours',
-        label: 'My First Response', sub: 'Median, this period', accent: AppColors.success,
-        trend: response?.trendLabel,
+        label: 'My First Response', sub: 'Median · $period',
+        accent: AppColors.success,
+        trend: response?.hasTrend == true ? response!.trendLabel : null,
         trendUp: !(response?.trendUp ?? true),
         arrowUp: response?.trendUp ?? false,
         onTap: () => goTickets(),
@@ -206,21 +307,33 @@ class HelpHomeScreen extends ConsumerWidget {
     ];
     return Column(
       children: [
-        Row(children: [Expanded(child: cards[0]), SizedBox(width: 12.w), Expanded(child: cards[1])]),
+        Row(children: [
+          Expanded(child: cards[0]),
+          SizedBox(width: 12.w),
+          Expanded(child: cards[1])
+        ]),
         SizedBox(height: 12.h),
-        Row(children: [Expanded(child: cards[2]), SizedBox(width: 12.w), Expanded(child: cards[3])]),
+        Row(children: [
+          Expanded(child: cards[2]),
+          SizedBox(width: 12.w),
+          Expanded(child: cards[3])
+        ]),
       ],
     );
   }
 
   // ── SLA status & priority mix ──
-  Widget _slaMixCard(WidgetRef ref, int withinOpen, int done, int risk, int breached, List<Ticket> mineAll) {
+  Widget _slaMixCard(WidgetRef ref, int withinOpen, int done, int risk,
+      int breached, List<Ticket> mineAll) {
     // `sla-priority-mix/` (§3) when it answered; the loaded tickets otherwise.
     final mix = ref.watch(helpSlaMixProvider).valueOrNull;
 
-    final within = mix?.withinSla ?? (withinOpen + done);
-    final atRisk = mix?.atRisk ?? risk;
-    final over = mix?.breached ?? breached;
+    // The server's mix counts tickets created in the period, so for a user
+    // whose open tickets are older it answers all zeros beside a card that
+    // reports a breach — then the figures the cards use are shown instead.
+    final sla = HelpHomeRules.sla(
+        mix, (within: withinOpen + done, atRisk: risk, breached: breached));
+    final within = sla.within, atRisk = sla.atRisk, over = sla.breached;
     final slaParts = [
       DonutSegment(within.toDouble(), AppColors.success),
       DonutSegment(atRisk.toDouble(), AppColors.warning),
@@ -236,14 +349,21 @@ class HelpHomeScreen extends ConsumerWidget {
     // `'Urgent'`, which is not one of them — so it was permanently 0 while
     // every Critical ticket went uncounted.
     int byPri(String p) => mineAll.where((t) => t.pri == p).length;
+    final pri = HelpHomeRules.priority(mix, (
+      critical: byPri('Critical'),
+      high: byPri('High'),
+      medium: byPri('Medium'),
+      low: byPri('Low'),
+    ));
     final priCounts = <String, (int, Color)>{
-      'Critical': (mix?.critical ?? byPri('Critical'), AppColors.error),
-      'High': (mix?.high ?? byPri('High'), AppColors.warning),
-      'Medium': (mix?.medium ?? byPri('Medium'), AppColors.blueBright),
-      'Low': (mix?.low ?? byPri('Low'), AppColors.textPlaceholder),
+      'Critical': (pri.critical, AppColors.error),
+      'High': (pri.high, AppColors.warning),
+      'Medium': (pri.medium, AppColors.blueBright),
+      'Low': (pri.low, AppColors.textPlaceholder),
     };
     final priParts = [
-      for (final e in priCounts.entries) DonutSegment(e.value.$1.toDouble(), e.value.$2),
+      for (final e in priCounts.entries)
+        DonutSegment(e.value.$1.toDouble(), e.value.$2),
     ];
     final priLegend = [
       for (final e in priCounts.entries) (e.key, e.value.$1, e.value.$2),
@@ -253,20 +373,38 @@ class HelpHomeScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('SLA Status & Priority Mix', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('SLA Status & Priority Mix',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
           // The signed-in user, not the prototype's seed name — this card is
           // "my tickets", so it named the wrong person for everyone but him.
-          Text(_mineLabel(ref), style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text(_mineLabel(ref),
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
           SizedBox(height: 16.h),
-          Center(child: Text('SLA Status', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary))),
+          Center(
+              child: Text('SLA Status',
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.textSecondary))),
           SizedBox(height: 10.h),
           Center(child: DonutChart(segments: slaParts, size: 148.w)),
           SizedBox(height: 6.h),
           for (final l in slaLegend) _legendRow(l.$1, l.$2, l.$3),
           const ClozrDivider(margin: EdgeInsets.only(top: 14, bottom: 2)),
           SizedBox(height: 12.h),
-          Center(child: Text('Priority Mix', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.textSecondary))),
+          Center(
+              child: Text('Priority Mix',
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: AppColors.textSecondary))),
           SizedBox(height: 10.h),
           Center(child: DonutChart(segments: priParts, size: 148.w)),
           SizedBox(height: 6.h),
@@ -281,17 +419,30 @@ class HelpHomeScreen extends ConsumerWidget {
       padding: EdgeInsets.symmetric(vertical: 7.h, horizontal: 2.w),
       child: Row(
         children: [
-          Container(width: 9.w, height: 9.w, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          Container(
+              width: 9.w,
+              height: 9.w,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           SizedBox(width: 9.w),
-          Expanded(child: Text(label, style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textBodyMuted))),
-          Text('$count', style: AppText.custom(size: 13.5, weight: FontWeight.w800, color: AppColors.textPrimary)),
+          Expanded(
+              child: Text(label,
+                  style: AppText.custom(
+                      size: 13,
+                      weight: FontWeight.w600,
+                      color: AppColors.textBodyMuted))),
+          Text('$count',
+              style: AppText.custom(
+                  size: 13.5,
+                  weight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
         ],
       ),
     );
   }
 
   // ── Crossed SLA ──
-  Widget _crossedCard(BuildContext context, WidgetRef ref, List<Ticket> breached, bool slaVal, TicketLookups dir) {
+  Widget _crossedCard(BuildContext context, WidgetRef ref,
+      List<Ticket> breached, bool slaVal, TicketLookups dir) {
     return ClozrCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,9 +454,17 @@ class HelpHomeScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('My Tickets Crossed SLA', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text('My Tickets Crossed SLA',
+                        style: AppText.custom(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
                     SizedBox(height: 1.h),
-                    Text('Breached targets', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    Text('Breached targets',
+                        style: AppText.custom(
+                            size: 12,
+                            weight: FontWeight.w500,
+                            color: AppColors.textPlaceholder)),
                   ],
                 ),
               ),
@@ -315,7 +474,12 @@ class HelpHomeScreen extends ConsumerWidget {
           if (breached.isEmpty)
             Padding(
               padding: EdgeInsets.only(top: 24.h, bottom: 10.h),
-              child: Center(child: Text('No breached tickets right now.', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder))),
+              child: Center(
+                  child: Text('No breached tickets right now.',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPlaceholder))),
             )
           else
             for (final t in breached) _crossedRow(context, t, slaVal, dir),
@@ -334,29 +498,48 @@ class HelpHomeScreen extends ConsumerWidget {
           decoration: BoxDecoration(
             color: active ? AppColors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(7.r),
-            boxShadow: active ? [BoxShadow(color: const Color(0xFF101828).withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 1))] : null,
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                        color: const Color(0xFF101828).withOpacity(0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1))
+                  ]
+                : null,
           ),
-          child: Text(label, style: AppText.custom(size: 12, weight: FontWeight.w700, color: active ? AppColors.navy : AppColors.textMuted)),
+          child: Text(label,
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w700,
+                  color: active ? AppColors.navy : AppColors.textMuted)),
         ),
       );
     }
 
     return Container(
       padding: EdgeInsets.all(2.r),
-      decoration: BoxDecoration(color: AppColors.bgChipGrey, borderRadius: BorderRadius.circular(9.r)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [seg('₹ Value', true), seg('Days', false)]),
+      decoration: BoxDecoration(
+          color: AppColors.bgChipGrey,
+          borderRadius: BorderRadius.circular(9.r)),
+      child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [seg('₹ Value', true), seg('Days', false)]),
     );
   }
 
-  Widget _crossedRow(BuildContext context, Ticket t, bool slaVal, TicketLookups dir) {
+  Widget _crossedRow(
+      BuildContext context, Ticket t, bool slaVal, TicketLookups dir) {
     final cust = dir.customer(t.custId);
-    final right = slaVal ? (dir.project(t.projId)?.cost ?? '—') : homeOverLabel(t);
+    final right =
+        slaVal ? (dir.project(t.projId)?.cost ?? '—') : homeOverLabel(t);
     return GestureDetector(
       onTap: () => context.push('${Routes.ticketDetail}?id=${t.id}'),
       child: Container(
         margin: EdgeInsets.only(top: 11.h),
         padding: EdgeInsets.symmetric(horizontal: 13.w, vertical: 12.h),
-        decoration: BoxDecoration(color: AppColors.tintRed, borderRadius: BorderRadius.circular(12.r)),
+        decoration: BoxDecoration(
+            color: AppColors.tintRed,
+            borderRadius: BorderRadius.circular(12.r)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -364,16 +547,32 @@ class HelpHomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(t.displayRef, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.errorDeep)),
+                  Text(t.displayRef,
+                      style: AppText.custom(
+                          size: 11.5,
+                          weight: FontWeight.w700,
+                          color: AppColors.errorDeep)),
                   SizedBox(height: 2.h),
-                  Text(t.subject, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(t.subject,
+                      style: AppText.custom(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   SizedBox(height: 3.h),
-                  Text('${cust?.display ?? '—'} · ${t.contact}', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+                  Text('${cust?.display ?? '—'} · ${t.contact}',
+                      style: AppText.custom(
+                          size: 12,
+                          weight: FontWeight.w500,
+                          color: AppColors.textMuted)),
                 ],
               ),
             ),
             SizedBox(width: 10.w),
-            Text(right, style: AppText.custom(size: 12.5, weight: FontWeight.w800, color: slaVal ? AppColors.textPrimary : AppColors.error)),
+            Text(right,
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w800,
+                    color: slaVal ? AppColors.textPrimary : AppColors.error)),
           ],
         ),
       ),
@@ -381,20 +580,34 @@ class HelpHomeScreen extends ConsumerWidget {
   }
 
   // ── Needing attention ──
-  Widget _attentionCard(BuildContext context, List<Ticket> attn, TicketLookups dir) {
+  Widget _attentionCard(
+      BuildContext context, List<Ticket> attn, TicketLookups dir) {
     return ClozrCard(
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 6.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('My Tickets Needing Attention', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('My Tickets Needing Attention',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
-          Text('Breached, paused & at-risk', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text('Breached, paused & at-risk',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
           SizedBox(height: 4.h),
           if (attn.isEmpty)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 24.h),
-              child: Center(child: Text('Nothing needs attention right now.', style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textPlaceholder))),
+              child: Center(
+                  child: Text('Nothing needs attention right now.',
+                      style: AppText.custom(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPlaceholder))),
             )
           else
             for (final t in attn) _attnRow(context, t, dir),
@@ -406,32 +619,68 @@ class HelpHomeScreen extends ConsumerWidget {
   Widget _attnRow(BuildContext context, Ticket t, TicketLookups dir) {
     final cust = dir.customer(t.custId);
     final breachedNow = homeState(t) == 'breached';
-    final slaLabel = breachedNow ? homeOverLabel(t) : 'Respond by ${t.respByLabel ?? t.resolveByLabel ?? '—'}';
+    final slaLabel = breachedNow
+        ? homeOverLabel(t)
+        : 'Respond by ${t.respByLabel ?? t.resolveByLabel ?? '—'}';
     return GestureDetector(
       onTap: () => context.push('${Routes.ticketDetail}?id=${t.id}'),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.bgLight))),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(t.displayRef, style: AppText.custom(size: 11.5, weight: FontWeight.w700, color: AppColors.textPlaceholder)),
+            Text(t.displayRef,
+                style: AppText.custom(
+                    size: 11.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder)),
             SizedBox(height: 2.h),
-            Text(t.subject, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text(t.subject,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.custom(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             SizedBox(height: 2.h),
-            Text('${cust?.display ?? '—'} · ${t.contact}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
+            Text('${cust?.display ?? '—'} · ${t.contact}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.custom(
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted)),
             SizedBox(height: 8.h),
             Row(
               children: [
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
-                  decoration: BoxDecoration(color: breachedNow ? AppColors.tintRed : AppColors.bgChipGrey, borderRadius: BorderRadius.circular(7.r)),
+                  decoration: BoxDecoration(
+                      color: breachedNow
+                          ? AppColors.tintRed
+                          : AppColors.bgChipGrey,
+                      borderRadius: BorderRadius.circular(7.r)),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(breachedNow ? PhosphorIconsFill.warning : PhosphorIconsRegular.clock, size: 11.sp, color: breachedNow ? AppColors.error : AppColors.textBodyMuted),
+                      Icon(
+                          breachedNow
+                              ? PhosphorIconsFill.warning
+                              : PhosphorIconsRegular.clock,
+                          size: 11.sp,
+                          color: breachedNow
+                              ? AppColors.error
+                              : AppColors.textBodyMuted),
                       SizedBox(width: 4.w),
-                      Text(slaLabel, style: AppText.custom(size: 11, weight: FontWeight.w800, color: breachedNow ? AppColors.error : AppColors.textBodyMuted)),
+                      Text(slaLabel,
+                          style: AppText.custom(
+                              size: 11,
+                              weight: FontWeight.w800,
+                              color: breachedNow
+                                  ? AppColors.error
+                                  : AppColors.textBodyMuted)),
                     ],
                   ),
                 ),
@@ -448,7 +697,8 @@ class HelpHomeScreen extends ConsumerWidget {
   /// The SLA card's sub-label. Falls back to the bare "My tickets" rather than
   /// a placeholder name when there is no session (mock mode).
   static String _mineLabel(WidgetRef ref) {
-    final name = ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
+    final name =
+        ref.watch(sessionControllerProvider).user?.fullName.trim() ?? '';
     return name.isEmpty ? 'My tickets' : 'My tickets · $name';
   }
 
@@ -457,33 +707,45 @@ class HelpHomeScreen extends ConsumerWidget {
       v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
 
   // ── Resolved grid ──
-  Widget _resolvedGrid(BuildContext context, WidgetRef ref, List<Ticket> doneMine) {
+  Widget _resolvedGrid(
+      BuildContext context, WidgetRef ref, List<Ticket> doneMine) {
     final grid = ref.watch(helpCompletedGridProvider).valueOrNull;
-    void goResolved() {
-      ref.read(ticketMineProvider.notifier).state = true;
-      ref.read(ticketBreachingProvider.notifier).state = false;
-      ref.read(ticketStatusChipsProvider.notifier).state = const {'resolved'};
-      ref.read(ticketSavedFiltersProvider.notifier).deactivate();
-      context.go(Routes.tickets);
-    }
+    // The Resolved group (its folded chip over the header's group).
+    void goResolved() =>
+        dashGo(context, ref, '${Routes.tickets}?mine=1&group=resolved');
 
     return ClozrCard(
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 8.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Tickets Resolved Grid', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Tickets Resolved Grid',
+              style: AppText.custom(
+                  size: 15,
+                  weight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
           SizedBox(height: 1.h),
-          Text('By priority, this period', style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+          Text('By priority · ${ref.watch(dashPeriodProvider)}',
+              style: AppText.custom(
+                  size: 12,
+                  weight: FontWeight.w500,
+                  color: AppColors.textPlaceholder)),
           SizedBox(height: 14.h),
           Container(
             padding: EdgeInsets.only(bottom: 9.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.bgLight))),
             child: Row(
               children: [
                 Expanded(child: Text('PRIORITY', style: _hdr())),
-                SizedBox(width: 82.w, child: Text('WITHIN SLA', textAlign: TextAlign.center, style: _hdr())),
-                SizedBox(width: 82.w, child: Text('AFTER BREACH', textAlign: TextAlign.center, style: _hdr())),
+                SizedBox(
+                    width: 82.w,
+                    child: Text('WITHIN SLA',
+                        textAlign: TextAlign.center, style: _hdr())),
+                SizedBox(
+                    width: 82.w,
+                    child: Text('AFTER BREACH',
+                        textAlign: TextAlign.center, style: _hdr())),
               ],
             ),
           ),
@@ -506,14 +768,16 @@ class HelpHomeScreen extends ConsumerWidget {
   /// The local fallback splits on whether the ticket beat its resolution SLA;
   /// "after breach" used to be a hard-coded 0, so every resolved ticket read as
   /// on time however late it actually was.
-  int _gridCount(List<CompletedGridRow>? grid, List<Ticket> doneMine, String pri,
+  int _gridCount(
+      List<CompletedGridRow>? grid, List<Ticket> doneMine, String pri,
       {required bool afterBreach}) {
     final row = grid
         ?.where((r) => r.priority.trim().toLowerCase() == pri.toLowerCase())
         .firstOrNull;
     if (row != null) return afterBreach ? row.afterDue : row.beforeDue;
     return doneMine
-        .where((t) => t.pri == pri && (t.resolvedAfterBreach == true) == afterBreach)
+        .where((t) =>
+            t.pri == pri && (t.resolvedAfterBreach == true) == afterBreach)
         .length;
   }
 
@@ -523,27 +787,45 @@ class HelpHomeScreen extends ConsumerWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 10.h),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.bgLight))),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.bgLight))),
         child: Row(
           children: [
-            Expanded(child: Align(alignment: Alignment.centerLeft, child: StatusPill(label: pri, color: ticketPriPillColor(pri)))),
-            SizedBox(width: 82.w, child: Center(child: _gridBadge('$within', false))),
-            SizedBox(width: 82.w, child: Center(child: _gridBadge('$after', true))),
+            Expanded(
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: StatusPill(
+                        label: pri, color: ticketPriPillColor(pri)))),
+            SizedBox(
+                width: 82.w,
+                child: Center(child: _gridBadge('$within', false))),
+            SizedBox(
+                width: 82.w, child: Center(child: _gridBadge('$after', true))),
           ],
         ),
       ),
     );
   }
 
-  TextStyle _hdr() => AppText.custom(size: 10.5, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.6);
+  TextStyle _hdr() => AppText.custom(
+      size: 10.5,
+      weight: FontWeight.w700,
+      color: AppColors.textPlaceholder,
+      letterSpacing: 0.6);
 
   Widget _gridBadge(String value, bool bad) {
     return Container(
       width: 26.w,
       height: 26.w,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: bad ? AppColors.tintRed : AppColors.tintGreen, shape: BoxShape.circle),
-      child: Text(value, style: AppText.custom(size: 12, weight: FontWeight.w800, color: bad ? AppColors.error : AppColors.success)),
+      decoration: BoxDecoration(
+          color: bad ? AppColors.tintRed : AppColors.tintGreen,
+          shape: BoxShape.circle),
+      child: Text(value,
+          style: AppText.custom(
+              size: 12,
+              weight: FontWeight.w800,
+              color: bad ? AppColors.error : AppColors.success)),
     );
   }
 }

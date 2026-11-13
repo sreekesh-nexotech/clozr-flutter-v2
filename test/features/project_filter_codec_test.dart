@@ -16,18 +16,24 @@ void main() {
       // Verified against dev (12 Aug 2026): `?is_overdue=true` and `=false`
       // both return an AssertionError 500, so encoding either side would take
       // the whole list down. Both stay with the local matcher.
-      expect(encode('health', const RadioValue(id: 'overdue', defaultId: 'any')), isEmpty);
-      expect(encode('health', const RadioValue(id: 'ontrack', defaultId: 'any')), isEmpty);
+      expect(
+          encode('health', const RadioValue(id: 'overdue', defaultId: 'any')),
+          isEmpty);
+      expect(
+          encode('health', const RadioValue(id: 'ontrack', defaultId: 'any')),
+          isEmpty);
     });
 
     test('Due in 14 days is the one option with a working param', () {
-      final out = encode('health', const RadioValue(id: 'risk', defaultId: 'any'));
+      final out =
+          encode('health', const RadioValue(id: 'risk', defaultId: 'any'));
       expect(out['due_within_days'], '14');
       expect(out.containsKey('is_overdue'), isFalse);
     });
 
     test('Any encodes nothing', () {
-      expect(encode('health', const RadioValue(id: 'any', defaultId: 'any')), isEmpty);
+      expect(encode('health', const RadioValue(id: 'any', defaultId: 'any')),
+          isEmpty);
     });
   });
 
@@ -39,10 +45,10 @@ void main() {
     });
 
     test('an open-ended range sends only the bound that is set', () {
-      expect(encode('cost', const RangeValue(min: 10)),
-          {'budget_min': '1000000'});
-      expect(encode('cost', const RangeValue(max: 10)),
-          {'budget_max': '1000000'});
+      expect(
+          encode('cost', const RangeValue(min: 10)), {'budget_min': '1000000'});
+      expect(
+          encode('cost', const RangeValue(max: 10)), {'budget_max': '1000000'});
       expect(encode('cost', const RangeValue()), isEmpty);
     });
   });

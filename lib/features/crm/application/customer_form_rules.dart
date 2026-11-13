@@ -11,7 +11,8 @@ import '../domain/repositories/customers_repository.dart';
 const customerNameRequiredMessage = 'Enter a customer name';
 
 /// The hint beside the GSTIN input.
-const gstinHint = "15 characters; its first two digits are the billing state's GST code.";
+const gstinHint =
+    "15 characters; its first two digits are the billing state's GST code.";
 
 /// One input of the address / GSTIN block.
 class AddressFieldSpec {
@@ -33,8 +34,10 @@ List<AddressFieldSpec> _block(String prefix) => [
       AddressFieldSpec('${prefix}_pincode', 'PIN code', 'pincode'),
     ];
 
-final List<AddressFieldSpec> billingAddressFields = List.unmodifiable(_block('billing'));
-final List<AddressFieldSpec> deliveryAddressFields = List.unmodifiable(_block('delivery'));
+final List<AddressFieldSpec> billingAddressFields =
+    List.unmodifiable(_block('billing'));
+final List<AddressFieldSpec> deliveryAddressFields =
+    List.unmodifiable(_block('delivery'));
 const gstinField = AddressFieldSpec('gstin', 'GSTIN', 'gstin');
 
 /// Every input of the block, in form order.
@@ -46,7 +49,14 @@ List<AddressFieldSpec> get allAddressFields =>
 /// server now fills from the billing block.
 final Set<String> addressOwnedColumns = {
   for (final p in const ['billing', 'delivery'])
-    for (final part in const ['address_line1', 'address_line2', 'city', 'state_code', 'pincode', 'country'])
+    for (final part in const [
+      'address_line1',
+      'address_line2',
+      'city',
+      'state_code',
+      'pincode',
+      'country'
+    ])
       '${p}_$part',
   'gstin',
   'address',
@@ -69,7 +79,8 @@ String? addressWireValue(AddressFieldSpec spec, String raw) {
 
 /// The raw input each key takes its value from: with "Same as billing
 /// address" the delivery block repeats the billing one.
-String _sourceText(Map<String, String> values, AddressFieldSpec spec, bool sameAsBilling) {
+String _sourceText(
+    Map<String, String> values, AddressFieldSpec spec, bool sameAsBilling) {
   if (sameAsBilling) {
     final i = deliveryAddressFields.indexWhere((d) => d.name == spec.name);
     if (i >= 0) return values[billingAddressFields[i].name] ?? '';
@@ -79,7 +90,8 @@ String _sourceText(Map<String, String> values, AddressFieldSpec spec, bool sameA
 
 /// The block's part of a **create** body (webapp `addressPayload`): blank
 /// inputs are left out.
-Map<String, String> customerAddressPayload(Map<String, String> values, {required bool sameAsBilling}) {
+Map<String, String> customerAddressPayload(Map<String, String> values,
+    {required bool sameAsBilling}) {
   final out = <String, String>{};
   for (final spec in allAddressFields) {
     final v = addressWireValue(spec, _sourceText(values, spec, sameAsBilling));
@@ -103,7 +115,8 @@ Map<String, String?> customerAddressPatch(
 }) {
   final out = <String, String?>{};
   for (final spec in allAddressFields) {
-    final next = addressWireValue(spec, _sourceText(values, spec, sameAsBilling));
+    final next =
+        addressWireValue(spec, _sourceText(values, spec, sameAsBilling));
     if ((next ?? '') != _stored(row, spec)) out[spec.name] = next;
   }
   return out;

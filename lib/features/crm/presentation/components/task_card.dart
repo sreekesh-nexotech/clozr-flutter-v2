@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../approvals/presentation/components/approval_parts.dart';
 import '../../../../data/mock/mock_users.dart';
 import '../../application/providers/crm_catalog_providers.dart';
 import '../../application/task_columns.dart';
@@ -19,12 +21,16 @@ class TaskCard extends ConsumerWidget {
     super.key,
     required this.task,
     required this.onTap,
+    this.onLongPress,
     required this.onCall,
     this.schema = ViewSchema.empty,
   });
 
   final CrmTask task;
   final VoidCallback onTap;
+
+  /// Long press — the shared row-actions sheet.
+  final VoidCallback? onLongPress;
   final VoidCallback onCall;
 
   /// The org's configured column set for the mobile card.
@@ -43,10 +49,15 @@ class TaskCard extends ConsumerWidget {
       statusLabel: meta.label,
       statusColor: meta.color,
       fallbackTime: task.due,
-      fallbackPeople: [if (task.assignee.isNotEmpty) MockUsers.of(task.assignee).name],
+      fallbackPeople: [
+        if (task.assignee.isNotEmpty) MockUsers.of(task.assignee).name
+      ],
       mockCell: (c) => taskColumnText(task, c),
       onTap: onTap,
+      onLongPress: onLongPress,
       onCall: onCall,
+      badge: PendingApprovalChip(
+          recordId: task.id, padding: EdgeInsets.only(top: 4.h)),
     );
   }
 }

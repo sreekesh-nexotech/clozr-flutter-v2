@@ -1,0 +1,15 @@
+{
+  "folders": [
+    {
+      "name": "CLOZR",
+      "path": ".."
+    },
+    {
+      "name": "Logo variants - complete set",
+      "path": "../../../Downloads/Logo variants - complete set"
+    }
+  ],
+  "settings": {
+    "dart.flutterSdkPath": ".fvm/versions/3.24.5"
+  }
+}

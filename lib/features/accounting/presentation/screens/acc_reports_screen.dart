@@ -20,11 +20,36 @@ class AccReportsScreen extends ConsumerWidget {
   const AccReportsScreen({super.key});
 
   static const _reports = <(String, IconData, String, String)>[
-    ('ar_aging', PhosphorIconsRegular.arrowCircleDown, 'Receivable aging', 'Who owes you, and for how long'),
-    ('ap_aging', PhosphorIconsRegular.arrowCircleUp, 'Payable aging', 'What you owe vendors, by age'),
-    ('pnl', PhosphorIconsRegular.chartLineUp, 'Profit & loss', 'Income, expenses and net profit'),
-    ('balance_sheet', PhosphorIconsRegular.scales, 'Balance sheet', 'Assets, liabilities and equity'),
-    ('trial_balance', PhosphorIconsRegular.listNumbers, 'Trial balance', 'Every account’s closing balance'),
+    (
+      'ar_aging',
+      PhosphorIconsRegular.arrowCircleDown,
+      'Receivable aging',
+      'Who owes you, and for how long'
+    ),
+    (
+      'ap_aging',
+      PhosphorIconsRegular.arrowCircleUp,
+      'Payable aging',
+      'What you owe vendors, by age'
+    ),
+    (
+      'pnl',
+      PhosphorIconsRegular.chartLineUp,
+      'Profit & loss',
+      'Income, expenses and net profit'
+    ),
+    (
+      'balance_sheet',
+      PhosphorIconsRegular.scales,
+      'Balance sheet',
+      'Assets, liabilities and equity'
+    ),
+    (
+      'trial_balance',
+      PhosphorIconsRegular.listNumbers,
+      'Trial balance',
+      'Every account’s closing balance'
+    ),
   ];
 
   @override
@@ -61,7 +86,10 @@ class AccReportsScreen extends ConsumerWidget {
                         GestureDetector(
                           onTap: () => context.push(Routes.accPeriods),
                           child: Text('Open Periods',
-                              style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                              style: AppText.custom(
+                                  size: 13,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.blueBright)),
                         ),
                       ],
                     ),
@@ -85,13 +113,22 @@ class AccReportsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(r.$3, style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text(r.$3,
+                    style: AppText.custom(
+                        size: 14.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
                 SizedBox(height: 3.h),
-                Text(r.$4, style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                Text(r.$4,
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted)),
               ],
             ),
           ),
-          Icon(PhosphorIconsBold.caretRight, size: 13.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsBold.caretRight,
+              size: 13.sp, color: AppColors.textPlaceholder),
         ],
       ),
     );

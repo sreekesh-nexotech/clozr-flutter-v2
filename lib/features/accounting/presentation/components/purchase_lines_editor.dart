@@ -26,9 +26,13 @@ class PurchaseLineDraft {
     hsn.dispose();
   }
 
-  bool get hsnValid => hsn.text.trim().isEmpty || RegExp(r'^\d{4,8}$').hasMatch(hsn.text.trim());
+  bool get hsnValid =>
+      hsn.text.trim().isEmpty || RegExp(r'^\d{4,8}$').hasMatch(hsn.text.trim());
 
-  bool get complete => description.text.trim().isNotEmpty && moneyInput(amount.text) != null && !moneyIsZero(moneyInput(amount.text));
+  bool get complete =>
+      description.text.trim().isNotEmpty &&
+      moneyInput(amount.text) != null &&
+      !moneyIsZero(moneyInput(amount.text));
 
   Map<String, Object?> toJson() => {
         'description': description.text.trim(),
@@ -41,12 +45,13 @@ class PurchaseLineDraft {
 
 /// The sum of the lines' amounts — a hint for the confirm step only; tax,
 /// TDS and the payable are the server's (handover §12.9).
-String purchaseLinesHint(List<PurchaseLineDraft> lines) =>
-    toMoneyStr(lines.fold(0.0, (s, l) => s + moneyNum(moneyInput(l.amount.text))));
+String purchaseLinesHint(List<PurchaseLineDraft> lines) => toMoneyStr(
+    lines.fold(0.0, (s, l) => s + moneyNum(moneyInput(l.amount.text))));
 
 /// Editable list of purchase lines with an "Add line" control.
 class PurchaseLinesEditor extends StatelessWidget {
-  const PurchaseLinesEditor({super.key, required this.lines, required this.onChanged});
+  const PurchaseLinesEditor(
+      {super.key, required this.lines, required this.onChanged});
 
   final List<PurchaseLineDraft> lines;
   final VoidCallback onChanged;
@@ -71,9 +76,14 @@ class PurchaseLinesEditor extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 6.h),
             child: Row(
               children: [
-                Icon(PhosphorIconsBold.plus, size: 13.sp, color: AppColors.blueBright),
+                Icon(PhosphorIconsBold.plus,
+                    size: 13.sp, color: AppColors.blueBright),
                 SizedBox(width: 6.w),
-                Text('Add line', style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                Text('Add line',
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: AppColors.blueBright)),
               ],
             ),
           ),
@@ -98,7 +108,10 @@ class PurchaseLinesEditor extends StatelessWidget {
             children: [
               Expanded(
                 child: Text('Line ${i + 1}',
-                    style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 12,
+                        weight: FontWeight.w700,
+                        color: AppColors.textMuted)),
               ),
               if (lines.length > 1)
                 GestureDetector(
@@ -106,7 +119,8 @@ class PurchaseLinesEditor extends StatelessWidget {
                     lines.removeAt(i).dispose();
                     onChanged();
                   },
-                  child: Icon(PhosphorIconsRegular.trash, size: 17.sp, color: AppColors.error),
+                  child: Icon(PhosphorIconsRegular.trash,
+                      size: 17.sp, color: AppColors.error),
                 ),
             ],
           ),
@@ -123,7 +137,12 @@ class PurchaseLinesEditor extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: MoneyField(label: 'Amount', required: true, controller: l.amount, onChanged: (_) => onChanged())),
+              Expanded(
+                  child: MoneyField(
+                      label: 'Amount',
+                      required: true,
+                      controller: l.amount,
+                      onChanged: (_) => onChanged())),
               SizedBox(width: 9.w),
               Expanded(
                 child: AccInput(
@@ -132,7 +151,10 @@ class PurchaseLinesEditor extends StatelessWidget {
                   hint: 'Optional',
                   errorText: l.hsnValid ? null : '4 to 8 digits',
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(8)
+                  ],
                   onChanged: (_) => onChanged(),
                 ),
               ),

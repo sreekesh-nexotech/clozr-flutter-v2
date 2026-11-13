@@ -30,7 +30,8 @@ Future<String?> showReassignOwnerSheet({
     builder: (ctx) => Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SheetHeader(title: 'Reassign owner', onClose: () => Navigator.of(ctx).pop()),
+        SheetHeader(
+            title: 'Reassign owner', onClose: () => Navigator.of(ctx).pop()),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -51,7 +52,8 @@ Future<String?> showReassignOwnerSheet({
 }
 
 class _OwnerRow extends StatelessWidget {
-  const _OwnerRow({required this.user, required this.selected, required this.onTap});
+  const _OwnerRow(
+      {required this.user, required this.selected, required this.onTap});
 
   final CatalogOption user;
   final bool selected;
@@ -79,17 +81,21 @@ class _OwnerRow extends StatelessWidget {
               width: 34.w,
               height: 34.w,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: known.color, shape: BoxShape.circle),
+              decoration:
+                  BoxDecoration(color: known.color, shape: BoxShape.circle),
               child: Text(
                 initials,
                 style: AppText.custom(
-                    size: 12.5, weight: FontWeight.w700, color: AppColors.white),
+                    size: 12.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.white),
               ),
             ),
             SizedBox(width: 12.w),
             Expanded(child: Text(user.name, style: AppText.bodyStrong())),
             if (selected)
-              Icon(PhosphorIconsBold.check, size: 18.sp, color: AppColors.success),
+              Icon(PhosphorIconsBold.check,
+                  size: 18.sp, color: AppColors.success),
           ],
         ),
       ),

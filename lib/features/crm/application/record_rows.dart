@@ -1,3 +1,5 @@
+import '../../../data/mock/status_meta.dart';
+import '../../../core/utils/phone_format.dart';
 import '../../../core/utils/relative_time.dart';
 import '../domain/entities/view_schema.dart';
 
@@ -21,6 +23,7 @@ typedef RecordRow = ({
   String name,
   String label,
   String value,
+
   /// The column behind the row, so a detail screen can offer to edit it: the
   /// column is what names the API field, gives its type, and says whether it
   /// is writable at all.
@@ -34,8 +37,15 @@ typedef RecordRow = ({
 /// that — those rows stay read-only rather than inviting input the write would
 /// reject.
 const Set<String> kInlineEditableTypes = {
-  'string', 'email', 'url', 'phone', 'text',
-  'decimal', 'integer', 'number', 'float',
+  'string',
+  'email',
+  'url',
+  'phone',
+  'text',
+  'decimal',
+  'integer',
+  'number',
+  'float',
 };
 
 /// Whether long-pressing this row should turn it into a text box.
@@ -48,8 +58,59 @@ bool fieldEditsInline(ViewColumn column) =>
     !column.hasChoices &&
     kInlineEditableTypes.contains(column.type);
 
-/// Why a long press on this row did not open a box, phrased for the person who
-/// pressed it. Null when the row *is* editable in place.
+/// How a detail row edits in place — webapp `InfoFieldList` editor types.
+///
+/// [text], [multiline] and [number] open a box in the row; the rest open a
+/// small sheet with the right control (date picker, Yes / No, a choice list).
+enum InlineKind {
+  none,
+  text,
+  multiline,
+  number,
+  date,
+  datetime,
+  boolean,
+  select,
+  multiselect,
+}
+
+/// The editor a long press on this column opens, or [InlineKind.none] when it
+/// is read-only here.
+///
+/// Webapp `customEditor` / `standardEditor`: a custom field edits by its own
+/// type (text, textarea, number, date, datetime, boolean, dropdown,
+/// multi-select …); a built-in field edits when it is a plain string, number,
+/// boolean, date or fixed choice. Foreign keys, money and server-owned columns
+/// stay read-only (the screens that can pick them wire their own pickers).
+InlineKind inlineKindOf(ViewColumn column) {
+  if (column.isCustom) {
+    return switch (column.customType) {
+      'text' || 'email' || 'phone' || 'url' => InlineKind.text,
+      'textarea' => InlineKind.multiline,
+      'number' || 'decimal' => InlineKind.number,
+      'date' => InlineKind.date,
+      'datetime' => InlineKind.datetime,
+      'boolean' => InlineKind.boolean,
+      'dropdown' => column.hasChoices ? InlineKind.select : InlineKind.none,
+      'multi_select' =>
+        column.hasChoices ? InlineKind.multiselect : InlineKind.none,
+      _ => InlineKind.none,
+    };
+  }
+  if (!column.isEditable) return InlineKind.none;
+  if (column.hasChoices) return InlineKind.select;
+  return switch (column.type) {
+    'string' || 'email' || 'url' || 'phone' => InlineKind.text,
+    'text' => InlineKind.multiline,
+    'decimal' || 'integer' || 'number' || 'float' => InlineKind.number,
+    'boolean' => InlineKind.boolean,
+    'date' => InlineKind.date,
+    _ => InlineKind.none,
+  };
+}
+
+/// Why a long press on this row did not open an editor, phrased for the person
+/// who pressed it. Null when the row *is* editable in place.
 ///
 /// A gesture that silently does nothing reads as a missed press, so every row
 /// answers — the ones that cannot be edited say which kind of "cannot" it is,
@@ -59,12 +120,40 @@ String? inlineEditHint(ViewColumn? column, {required String editForm}) {
     // No org layout loaded: nothing names the API field or its type.
     return 'This field cannot be edited here.';
   }
-  if (fieldEditsInline(column)) return null;
+  if (inlineKindOf(column) != InlineKind.none) return null;
   if (column.isCustom) {
-    return '${column.label} is a custom field and cannot be edited in the app yet.';
+    return '${column.label} cannot be edited here — use $editForm to change it.';
   }
   if (!column.isEditable) return '${column.label} is read-only.';
   return '${column.label} is chosen from a list — use $editForm to change it.';
+}
+
+/// The stored value behind [column] on [row] — a custom field lives under
+/// `custom_fields.<slug>`, anything else under its own key.
+Object? rawFieldValue(Map<String, dynamic>? row, ViewColumn? column) {
+  if (row == null || column == null) return null;
+  if (column.isCustom) {
+    final custom = row['custom_fields'];
+    return custom is Map ? custom[column.customKey] : null;
+  }
+  return row[column.name];
+}
+
+/// The PATCH body for one edited field. A custom field (`custom_fields.<slug>`)
+/// goes out nested under `custom_fields` with the record's other custom values
+/// alongside it: the backend replaces that object wholesale, so sending the
+/// one slug alone would wipe the rest (webapp `saveField` does the same).
+Map<String, dynamic> inlineWriteBody(
+    String key, Object? value, Map<String, dynamic>? row) {
+  const prefix = 'custom_fields.';
+  if (!key.startsWith(prefix)) return {key: value};
+  final existing = row?['custom_fields'];
+  return {
+    'custom_fields': {
+      if (existing is Map) ...Map<String, dynamic>.from(existing),
+      key.substring(prefix.length): value,
+    },
+  };
 }
 
 /// The rows to render: **every** visible column, in the org's order and under
@@ -99,7 +188,12 @@ List<RecordRow> recordRows(
       column: column,
       // The absent sentinel is not a value the formatter should see; a column
       // the payload omits reads the same as one it sent empty.
-      value: identical(raw, _absent) ? _dash : recordValueText(raw, column.type),
+      value: identical(raw, _absent)
+          ? _dash
+          : column.name == 'priority'
+              ? StatusMeta$.priorityLabel(recordValueText(raw, column.type))
+              : recordValueText(
+                  raw, isPhoneField(column.name) ? 'phone' : column.type),
     ));
   }
   return out;
@@ -112,6 +206,16 @@ Object? _customValue(Map<String, dynamic> row, String key) {
   final custom = row['custom_fields'];
   if (custom is! Map || !custom.containsKey(key)) return _absent;
   return custom[key];
+}
+
+/// Whether a column holds a phone number. The schema types `mobile_no` /
+/// `whatsapp_no` as plain `string`, so the name decides (UI/UX audit #40).
+bool isPhoneField(String name) {
+  final n = name.toLowerCase();
+  return n.contains('mobile') ||
+      n.contains('phone') ||
+      n.contains('whatsapp') ||
+      n == 'contact_no';
 }
 
 /// Formats one value for display, using the type the schema reported.
@@ -127,7 +231,9 @@ String recordValueText(Object? value, String type) {
       return date != null ? absoluteDate(date) : _plain(value);
     case 'datetime':
       final at = parseApiDate(value);
-      return at != null ? '${absoluteDate(at)} · ${relativeTime(at)}' : _plain(value);
+      // The webapp's `fmtDateTime` — "10 Nov 2026, 10:00". A relative stamp
+      // reads "Just now" for a meeting that is still ahead.
+      return at != null ? absoluteDateTime(at) : _plain(value);
     case 'time':
       // `HH:MM:SS` → `HH:MM`; a task's due time never needs seconds.
       final text = '$value'.trim();
@@ -135,6 +241,10 @@ String recordValueText(Object? value, String type) {
       return parts.length >= 2 ? '${parts[0]}:${parts[1]}' : _plain(value);
     case 'boolean':
       return value == true ? 'Yes' : 'No';
+    case 'phone':
+      return value is String && value.trim().isNotEmpty
+          ? PhoneFormat.display(value)
+          : _plain(value);
     case 'integer':
     case 'number':
     case 'decimal':
@@ -205,7 +315,8 @@ Object? schemaWriteValue(String type, String text) {
     case 'decimal':
     case 'number':
       if (trimmed.isEmpty) return null; // emptied on purpose → clear it
-      final n = type == 'integer' ? int.tryParse(trimmed) : num.tryParse(trimmed);
+      final n =
+          type == 'integer' ? int.tryParse(trimmed) : num.tryParse(trimmed);
       // Unparseable is not an instruction to clear; leave the stored value be
       // rather than 400 or wipe it.
       return n ?? absentValue;

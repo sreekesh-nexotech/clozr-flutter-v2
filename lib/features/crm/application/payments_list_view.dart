@@ -35,7 +35,10 @@ Map<String, PlanRecordCount> planRecordCounts(Iterable<Payment> records) {
     count[key] = (count[key] ?? 0) + 1;
     if (r.settlementState == 'paid') settled[key] = (settled[key] ?? 0) + 1;
   }
-  return {for (final e in count.entries) e.key: PlanRecordCount(e.value, settled[e.key] ?? 0)};
+  return {
+    for (final e in count.entries)
+      e.key: PlanRecordCount(e.value, settled[e.key] ?? 0)
+  };
 }
 
 /// Webapp `settledLabel` — the PROGRESS cell: a recurring schedule counts
@@ -50,7 +53,8 @@ String planProgressText(Invoice iv, {PlanRecordCount? counts}) {
     return '${sub.periodsPaid} of ${sub.periodsScheduled} scheduled periods paid · ongoing';
   }
   if (iv.of > 0) return '${iv.settled}/${iv.of} settled';
-  if (counts != null && counts.count > 0) return '${counts.settled}/${counts.count} settled';
+  if (counts != null && counts.count > 0)
+    return '${counts.settled}/${counts.count} settled';
   return '${iv.settledPct}% settled';
 }
 
@@ -63,7 +67,11 @@ String? asQuotedNote(double inclGst, double quoted) =>
 
 /// The two money cells of a plan row (webapp `planListFigures`).
 class PlanFigures {
-  const PlanFigures({required this.total, required this.totalSub, required this.due, required this.dueSub});
+  const PlanFigures(
+      {required this.total,
+      required this.totalSub,
+      required this.due,
+      required this.dueSub});
   final double total;
   final String totalSub;
   final double due;
@@ -102,8 +110,10 @@ PayTone planStatusTone(String statusKey) => switch (statusKey) {
 /// badge — [isLead]), else an em dash. The plan list row carries no lead
 /// name, so it comes from the plan's records ([leadName]).
 ({String name, bool isLead}) planWho(String? customer, String? leadName) {
-  if (customer != null && customer.trim().isNotEmpty) return (name: customer, isLead: false);
-  if (leadName != null && leadName.trim().isNotEmpty) return (name: leadName, isLead: true);
+  if (customer != null && customer.trim().isNotEmpty)
+    return (name: customer, isLead: false);
+  if (leadName != null && leadName.trim().isNotEmpty)
+    return (name: leadName, isLead: true);
   return (name: '—', isLead: false);
 }
 
@@ -173,7 +183,8 @@ int paymentChipCount(Iterable<Payment> payments, String chip) =>
 }
 
 /// True when the incl.-GST figure differs from the stored (as-quoted) amount.
-bool hasGstOnTop(Payment p) => (p.amountDueInclGst - p.amountExpected).abs() >= 0.005;
+bool hasGstOnTop(Payment p) =>
+    (p.amountDueInclGst - p.amountExpected).abs() >= 0.005;
 
 /// The small hint beside a record's main figure: where it comes from.
 String amountDueHint(Payment p) => switch (p.amountDueBasis) {
@@ -201,7 +212,8 @@ String quotedAmountNote(Payment p) =>
 /// "<quote> · <label or Installment N>" + " · Linked to tax invoice".
 String paymentSubLine(Payment p) {
   final quote = p.invId ?? p.planUuid ?? '';
-  final label = p.label.isNotEmpty ? p.label : 'Installment ${p.installmentNumber}';
+  final label =
+      p.label.isNotEmpty ? p.label : 'Installment ${p.installmentNumber}';
   return '$quote · $label${p.isLinkedToDocument ? ' · Linked to tax invoice' : ''}';
 }
 
@@ -212,7 +224,8 @@ const milestonePlanType = 'installment_custom';
 /// record sits on a milestone-based plan ([planType]) and it is neither
 /// paid (nothing received on it) nor linked to a tax document — the server's
 /// own rule, so the action is only offered where it can succeed.
-bool canDeletePaymentRecord(Payment p, {required String? planType, required bool hasDeletePermission}) {
+bool canDeletePaymentRecord(Payment p,
+    {required String? planType, required bool hasDeletePermission}) {
   if (!hasDeletePermission) return false;
   if (planType != milestonePlanType) return false;
   if (p.isCancelled || p.isLinkedToDocument) return false;

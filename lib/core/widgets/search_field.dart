@@ -34,7 +34,8 @@ class SearchField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(PhosphorIconsRegular.magnifyingGlass, size: 18.sp, color: AppColors.textPlaceholder),
+          Icon(PhosphorIconsRegular.magnifyingGlass,
+              size: 18.sp, color: AppColors.textPlaceholder),
           SizedBox(width: 10.w),
           Expanded(
             child: TextField(
@@ -60,7 +61,8 @@ class SearchField extends StatelessWidget {
                 color: const Color(0xFFECEDEF),
                 borderRadius: BorderRadius.circular(8.r),
               ),
-              child: Icon(PhosphorIconsBold.x, size: 12.sp, color: AppColors.textLabelAlt),
+              child: Icon(PhosphorIconsBold.x,
+                  size: 12.sp, color: AppColors.textLabelAlt),
             ),
           ),
         ],

@@ -37,7 +37,8 @@ class LeadSchemaRemoteDataSource {
   /// then keeps the layout it already has (`valueOrNull` holds the previous
   /// value through an error), instead of a slow server silently swapping every
   /// card back to the built-in layout.
-  Future<LeadListSchema> fetchListSchema() => _fetch('mobile', rethrowOutage: true);
+  Future<LeadListSchema> fetchListSchema() =>
+      _fetch('mobile', rethrowOutage: true);
 
   /// The layout for the lead detail page.
   ///
@@ -52,7 +53,8 @@ class LeadSchemaRemoteDataSource {
   /// the layout is what makes the trim start applying.
   Future<LeadListSchema> fetchDetailSchema() => _fetch('detail');
 
-  Future<LeadListSchema> _fetch(String viewType, {bool rethrowOutage = false}) async {
+  Future<LeadListSchema> _fetch(String viewType,
+      {bool rethrowOutage = false}) async {
     try {
       final body = await _api.get(
         ApiEndpoints.leadSchema,
@@ -60,7 +62,9 @@ class LeadSchemaRemoteDataSource {
       );
       return mapSchema(body);
     } on AppError catch (e) {
-      if (rethrowOutage && (e.type == AppErrorType.network || e.type == AppErrorType.timeout)) rethrow;
+      if (rethrowOutage &&
+          (e.type == AppErrorType.network || e.type == AppErrorType.timeout))
+        rethrow;
       return LeadListSchema.empty;
     } on Object {
       return LeadListSchema.empty;
@@ -74,7 +78,8 @@ class LeadSchemaRemoteDataSource {
   // entry points.
 
   /// Maps a `/schema/` response.
-  static LeadListSchema mapSchema(Object? body) => ViewSchema.fromResponse(body);
+  static LeadListSchema mapSchema(Object? body) =>
+      ViewSchema.fromResponse(body);
 
   /// Maps one column, or null when it is hidden or unusable.
   static LeadColumn? mapColumn(Object? row) => ViewColumn.fromJson(row);

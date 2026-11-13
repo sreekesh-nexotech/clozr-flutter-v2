@@ -30,7 +30,8 @@ class ProductTaxProfileCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(accountingActiveProvider) || !ref.watch(accPermProvider('acc_setup')).read) {
+    if (!ref.watch(accountingActiveProvider) ||
+        !ref.watch(accPermProvider('acc_setup')).read) {
       return const SizedBox.shrink();
     }
     final async = ref.watch(productTaxProfileProvider(productId));
@@ -47,13 +48,20 @@ class ProductTaxProfileCard extends ConsumerWidget {
             if (!p.exists)
               Padding(
                 padding: EdgeInsets.only(top: 4.h, bottom: 6.h),
-                child: Text('No tax profile yet — invoices use the rate for the product\'s HSN/SAC.',
+                child: Text(
+                    'No tax profile yet — invoices use the rate for the product\'s HSN/SAC.',
                     style: AppText.body(color: AppColors.textMuted)),
               )
             else ...[
-              MetaRow(label: 'Default treatment', value: label(taxTreatmentLabels, p.taxTreatmentDefault)),
-              MetaRow(label: 'Reverse charge on sales', value: p.isRcmOutward ? 'Yes' : 'No'),
-              MetaRow(label: 'Cess applies', value: p.cessApplicable ? 'Yes' : 'No'),
+              MetaRow(
+                  label: 'Default treatment',
+                  value: label(taxTreatmentLabels, p.taxTreatmentDefault)),
+              MetaRow(
+                  label: 'Reverse charge on sales',
+                  value: p.isRcmOutward ? 'Yes' : 'No'),
+              MetaRow(
+                  label: 'Cess applies',
+                  value: p.cessApplicable ? 'Yes' : 'No'),
               MetaRow(
                 label: 'Pinned rate variant',
                 value: p.rateVariantKey ?? 'None — set from an invoice preview',
@@ -66,14 +74,19 @@ class ProductTaxProfileCard extends ConsumerWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: () => showClozrSheet<void>(
                   context: context,
-                  builder: (_) => _ProductTaxSheet(productId: productId, profile: p),
+                  builder: (_) =>
+                      _ProductTaxSheet(productId: productId, profile: p),
                 ),
                 child: Row(
                   children: [
-                    Icon(PhosphorIconsRegular.pencilSimple, size: 15.sp, color: AppColors.blueBright),
+                    Icon(PhosphorIconsRegular.pencilSimple,
+                        size: 15.sp, color: AppColors.blueBright),
                     SizedBox(width: 6.w),
                     Text(p.exists ? 'Edit tax profile' : 'Set up tax profile',
-                        style: AppText.custom(size: 13, weight: FontWeight.w700, color: AppColors.blueBright)),
+                        style: AppText.custom(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.blueBright)),
                   ],
                 ),
               ),
@@ -107,10 +120,13 @@ class _ProductTaxSheetState extends ConsumerState<_ProductTaxSheet> {
       _error = null;
     });
     try {
-      await ref.read(accountingRepositoryProvider).saveProductTaxProfile(widget.productId, {
+      await ref
+          .read(accountingRepositoryProvider)
+          .saveProductTaxProfile(widget.productId, {
         'tax_treatment_default': _treatment,
         // Kept as it is: only an invoice preview's candidate list sets it.
-        if (widget.profile.rateVariantKey != null) 'rate_variant_key': widget.profile.rateVariantKey,
+        if (widget.profile.rateVariantKey != null)
+          'rate_variant_key': widget.profile.rateVariantKey,
         'is_rcm_outward': _rcm,
         'cess_applicable': _cess,
       });
@@ -140,7 +156,12 @@ class _ProductTaxSheetState extends ConsumerState<_ProductTaxSheet> {
       children: [
         AccChoiceChips(
           label: 'Default treatment',
-          options: const {'TAXABLE': 'Taxable', 'NIL': 'Nil rated', 'EXEMPT': 'Exempt', 'NON_GST': 'Non-GST'},
+          options: const {
+            'TAXABLE': 'Taxable',
+            'NIL': 'Nil rated',
+            'EXEMPT': 'Exempt',
+            'NON_GST': 'Non-GST'
+          },
           selected: _treatment,
           onSelected: (v) => setState(() => _treatment = v),
         ),
@@ -150,7 +171,10 @@ class _ProductTaxSheetState extends ConsumerState<_ProductTaxSheet> {
           value: _rcm,
           onChanged: (v) => setState(() => _rcm = v),
         ),
-        AccCheckRow(label: 'Cess applies', value: _cess, onChanged: (v) => setState(() => _cess = v)),
+        AccCheckRow(
+            label: 'Cess applies',
+            value: _cess,
+            onChanged: (v) => setState(() => _cess = v)),
       ],
     );
   }

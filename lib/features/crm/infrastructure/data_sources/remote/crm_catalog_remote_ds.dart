@@ -74,7 +74,8 @@ class CrmCatalogRemoteDataSource {
   /// The org's task statuses, with their fixed `status_type`
   /// (`open` / `in_progress` / `completed` / `cancelled`).
   Future<List<CatalogOption>> fetchTaskStatuses() =>
-      _fetch(ApiEndpoints.crmTaskStatuses, 'crm_task_status_id', withType: true);
+      _fetch(ApiEndpoints.crmTaskStatuses, 'crm_task_status_id',
+          withType: true);
 
   /// The task **types**, which are model choices rather than an org catalog —
   /// so they come from the form schema, not a list endpoint:
@@ -127,8 +128,10 @@ class CrmCatalogRemoteDataSource {
   /// their children, groups disabled.
   Future<List<CatalogOption>> fetchTerritories() async {
     try {
-      final body = await _api.get(ApiEndpoints.territories, query: {'page_size': _pageSize}, quiet: true);
-      return territoryTree(Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
+      final body = await _api.get(ApiEndpoints.territories,
+          query: {'page_size': _pageSize}, quiet: true);
+      return territoryTree(
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results);
     } on Object {
       return const [];
     }
@@ -141,11 +144,14 @@ class CrmCatalogRemoteDataSource {
     final nodes = <String, Map<String, dynamic>>{};
     for (final r in rows) {
       final id = '${r['territory_id'] ?? ''}';
-      if (id.isNotEmpty && '${r['name'] ?? ''}'.trim().isNotEmpty) nodes[id] = r;
+      if (id.isNotEmpty && '${r['name'] ?? ''}'.trim().isNotEmpty)
+        nodes[id] = r;
     }
     String? parentOf(String id) {
       final p = nodes[id]!['parent_territory']?.toString();
-      return p == null || p.isEmpty || p == id || !nodes.containsKey(p) ? null : p;
+      return p == null || p.isEmpty || p == id || !nodes.containsKey(p)
+          ? null
+          : p;
     }
 
     final children = <String?, List<String>>{};
@@ -190,11 +196,14 @@ class CrmCatalogRemoteDataSource {
   }) async {
     try {
       // Quiet: every catalog is an optional option list with its own fallback.
-      final body = await _api.get(path, query: {'page_size': _pageSize, ...query}, quiet: true);
-      final rows = Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
+      final body = await _api.get(path,
+          query: {'page_size': _pageSize, ...query}, quiet: true);
+      final rows =
+          Paginated.fromAny<Map<String, dynamic>>(body, (m) => m).results;
       final out = <CatalogOption>[];
       for (final row in rows) {
-        final option = mapCatalogRow(row, idKey, withType: withType, nameKey: nameKey);
+        final option =
+            mapCatalogRow(row, idKey, withType: withType, nameKey: nameKey);
         if (option != null) out.add(option);
       }
       return out;

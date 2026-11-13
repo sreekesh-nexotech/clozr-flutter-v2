@@ -110,7 +110,10 @@ List<Invoice> invoicesFromApiRows(List<dynamic> rows) {
   }
   return [
     for (final iv in mapped)
-      if ((seen[iv.id] ?? 0) > 1 && iv.uuid.isNotEmpty) iv.withId(iv.uuid) else iv,
+      if ((seen[iv.id] ?? 0) > 1 && iv.uuid.isNotEmpty)
+        iv.withId(iv.uuid)
+      else
+        iv,
   ];
 }
 
@@ -146,7 +149,9 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
       id: id,
       uuid: _str(row['payment_id']) ?? '',
       custId: _str(row['customer_id']) ??
-          (row['customer'] is Map ? _str((row['customer'] as Map)['customer_id']) : null),
+          (row['customer'] is Map
+              ? _str((row['customer'] as Map)['customer_id'])
+              : null),
       // The list serializer sends only `customer_name`; the detail nests a
       // `customer` object. Both are read, so a card always has something to
       // show instead of an em dash on every single row.
@@ -181,7 +186,9 @@ Invoice? invoiceFromApi(Map<String, dynamic> row) {
       autoIssue: row['auto_issue'] == true,
       amountsAre: _str(row['amounts_are']),
       projectId: _str(row['project']) ??
-          (row['project'] is Map ? _str((row['project'] as Map)['project_id']) : null),
+          (row['project'] is Map
+              ? _str((row['project'] as Map)['project_id'])
+              : null),
       contractRef: _str(row['contract_ref']),
       paymentType: _str(row['payment_type']) ?? '',
       backendStatus: _str(row['status']),
@@ -225,7 +232,8 @@ double? _dec(Object? v) {
   return parseAmount(v);
 }
 
-int _intOr0(Object? v) => v is num ? v.toInt() : (int.tryParse('${v ?? ''}') ?? 0);
+int _intOr0(Object? v) =>
+    v is num ? v.toInt() : (int.tryParse('${v ?? ''}') ?? 0);
 
 /// `subscription` → [PlanSubscription]; null when absent or malformed.
 PlanSubscription? planSubscriptionFromApi(Object? v) {

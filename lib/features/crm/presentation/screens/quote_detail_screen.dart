@@ -43,7 +43,8 @@ import '../../application/quote_lifecycle.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/crm_catalog.dart';
 import '../../domain/entities/quote.dart';
-import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart' show hexColor;
+import '../../infrastructure/data_sources/remote/crm_catalog_remote_ds.dart'
+    show hexColor;
 import '../../infrastructure/data_sources/remote/quotes_remote_ds.dart';
 import '../components/crm_async.dart';
 import '../components/finance_widgets.dart';
@@ -55,7 +56,8 @@ import '../components/quote_discount_approval.dart';
 // `confirmDeleteQuote` — the webapp's "Delete this quote?" dialog, shared with the list.
 import 'quotes_screen.dart' show confirmDeleteQuote;
 
-final _uuidRe = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+final _uuidRe = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
 String _str(Object? v) {
   if (v == null) return '';
@@ -92,7 +94,11 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   Widget _scaffold(Widget child, {String? name, Widget? trailing}) => Container(
         color: AppColors.bgDetail,
         child: Column(children: [
-          DetailAppBar(section: 'Quote', name: name, onBack: () => context.pop(), trailing: trailing),
+          DetailAppBar(
+              section: 'Quote',
+              name: name,
+              onBack: () => context.pop(),
+              trailing: trailing),
           Expanded(child: child),
         ]),
       );
@@ -117,9 +123,11 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
       uuid = id;
     } else {
       final list = ref.watch(quotesProvider);
-      if (list.isLoading && !list.hasValue) return _scaffold(const DetailSkeleton());
+      if (list.isLoading && !list.hasValue)
+        return _scaffold(const DetailSkeleton());
       if (list.hasError && !list.hasValue) {
-        return _scaffold(ErrorState.forError(crmAppError(list.error!), onRetry: () => ref.invalidate(quotesProvider)));
+        return _scaffold(ErrorState.forError(crmAppError(list.error!),
+            onRetry: () => ref.invalidate(quotesProvider)));
       }
       listQuote = ref.watch(quoteByIdProvider(id));
       if (listQuote == null) return _scaffold(_notFound());
@@ -140,13 +148,15 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
       };
     } else {
       final rowAsync = ref.watch(quoteRowProvider(uuid));
-      if (rowAsync.isLoading && !rowAsync.hasValue) return _scaffold(const DetailSkeleton());
+      if (rowAsync.isLoading && !rowAsync.hasValue)
+        return _scaffold(const DetailSkeleton());
       row = rowAsync.valueOrNull;
       if (row == null) {
         final err = ref.watch(quoteLoadErrorProvider(uuid));
         if (err.isLoading) return _scaffold(const DetailSkeleton());
         final e = err.valueOrNull;
-        if (e == null || e.type == AppErrorType.notFound) return _scaffold(_notFound());
+        if (e == null || e.type == AppErrorType.notFound)
+          return _scaffold(_notFound());
         return _scaffold(EmptyState(
           icon: PhosphorIconsRegular.warning,
           title: 'Couldn’t load this quote',
@@ -187,6 +197,7 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     ref.invalidate(invoicesProvider);
     ref.invalidate(paymentsProvider);
     ref.invalidate(quoteLatestRevisionProvider);
+    ref.invalidate(quoteGroupProvider);
     ref.invalidate(quotePaymentInstructionsProvider(uuid));
   }
 
@@ -195,16 +206,21 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   /// Webapp `onWriteError`: a lifecycle 409 becomes the warning banner, an
   /// accounting lock the lock banner, anything else a toast without the
   /// `field:` prefix. The shell's generic toast is withdrawn either way.
-  void _onWriteError(AppError e, QuoteFacts facts, {bool statusChange = false}) {
+  void _onWriteError(AppError e, QuoteFacts facts,
+      {bool statusChange = false}) {
     ref.read(apiServiceProvider).handled(e);
     if (!mounted) return;
     final c = lifecycleConflict(e);
     if (c != null) {
-      final approvalShown = facts.approvalStatus == 'PENDING' || facts.approvalStatus == 'REJECTED';
-      if (!(c.code == 'APPROVAL_PENDING' && approvalShown)) setState(() => _conflict = c);
+      final approvalShown = facts.approvalStatus == 'PENDING' ||
+          facts.approvalStatus == 'REJECTED';
+      if (!(c.code == 'APPROVAL_PENDING' && approvalShown))
+        setState(() => _conflict = c);
       return;
     }
-    final kind = quoteLockKind(e, wasStatusChange: statusChange, wasAccepted: facts.statusType == 'ACCEPTED' || facts.isConverted);
+    final kind = quoteLockKind(e,
+        wasStatusChange: statusChange,
+        wasAccepted: facts.statusType == 'ACCEPTED' || facts.isConverted);
     if (kind != null) {
       setState(() => _lockKind = kind);
     } else {
@@ -214,7 +230,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
 
   // ── Writes ──────────────────────────────────────────────────────────────
 
-  Future<bool> _patch(QuoteFacts facts, Map<String, dynamic> body, String success, {bool statusChange = false}) async {
+  Future<bool> _patch(
+      QuoteFacts facts, Map<String, dynamic> body, String success,
+      {bool statusChange = false}) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return false;
     setState(() => _busy = true);
     try {
@@ -236,13 +254,28 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
 
   /// Webapp `moveToStatus`: Rejected-type opens the decline dialog,
   /// Accepted-type the accept dialog, anything else moves straight away.
-  Future<void> _moveToStatus(QuoteFacts facts, List<QuoteStatusRow> statuses, QuoteStatusRow? target, String success) async {
+  Future<void> _moveToStatus(QuoteFacts facts, List<QuoteStatusRow> statuses,
+      QuoteStatusRow? target, String success) async {
     if (target == null) {
       ref.read(toastProvider.notifier).showError(kStatusNotConfigured);
       return;
     }
     final legacy = isLegacyStatusList(statuses);
     final type = resolveStatusType(target, legacy);
+    if (facts.isGrouped) {
+      // The group moves as one: send / accept (the customer's pick) / reject.
+      if (type == 'REJECTED') {
+        await _decline(facts, target);
+      } else if (type == 'ACCEPTED') {
+        await _accept(facts, statuses);
+      } else if (type == 'SENT') {
+        await _groupSend(facts, target, success);
+      } else {
+        ref.read(toastProvider.notifier).showError(
+            'This quote is one option of a group: send, accept, reject or revise the group instead.');
+      }
+      return;
+    }
     if (!legacy && needsDeclineReason(type, facts.statusType)) {
       await _decline(facts, target);
       return;
@@ -255,6 +288,56 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     await _patch(facts, {'status_id': target.id}, success, statusChange: true);
   }
 
+  /// The option-group helpers (rulebook v1.7): every write goes through the
+  /// group, so the options never drift apart.
+  Future<void> _groupSend(
+      QuoteFacts facts, QuoteStatusRow target, String success) async {
+    if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(quoteActionsDsProvider)
+          .groupAction(facts.optionGroupId, 'send', {'status_id': target.id});
+    } on AppError catch (e) {
+      _onWriteError(e, facts, statusChange: true);
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _conflict = null;
+    });
+    _afterWrite(facts.id);
+    ref.read(toastProvider.notifier).show(
+        '${success.isEmpty ? 'Quote marked ${target.name}' : success} — every option');
+  }
+
+  /// "Option A · QTN-0012".
+  static String _optionCaption(Map o) {
+    final l = _str(o['option_label']);
+    final n = _str(o['quotation_number']);
+    final label = l.isEmpty ? 'Option' : 'Option $l';
+    return n.isEmpty ? label : '$label · $n';
+  }
+
+  /// The option of a (new) group standing where [facts] stood, else its primary.
+  Map? _sameOptionIn(Map<String, dynamic> group, QuoteFacts facts) {
+    final opts = [
+      for (final o
+          in (group['options'] is List ? group['options'] as List : const []))
+        if (o is Map) o
+    ];
+    return opts
+            .where((o) => _str(o['option_label']) == facts.optionLabel)
+            .firstOrNull ??
+        opts
+            .where((o) =>
+                _str(o['quotation_id']) == _str(group['primary_quotation_id']))
+            .firstOrNull ??
+        opts.firstOrNull;
+  }
+
   Future<void> _decline(QuoteFacts facts, QuoteStatusRow target) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
     final api = ref.read(apiServiceProvider);
@@ -265,11 +348,19 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
       statusLabel: target.name,
       onSubmit: (d) async {
         try {
-          await ref.read(quoteActionsDsProvider).patch(facts.id, {
+          final body = {
             'status_id': target.id,
             'decline_reason': d.reasonId,
             if (d.note.isNotEmpty) 'decline_note': d.note,
-          });
+          };
+          if (facts.isGrouped) {
+            // The customer declined every option.
+            await ref
+                .read(quoteActionsDsProvider)
+                .groupAction(facts.optionGroupId, 'reject', body);
+          } else {
+            await ref.read(quoteActionsDsProvider).patch(facts.id, body);
+          }
           return null;
         } on AppError catch (e) {
           api.handled(e);
@@ -287,7 +378,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     _afterWrite(facts.id);
     if (!conflicted) {
       setState(() => _conflict = null);
-      ref.read(toastProvider.notifier).show('Quote marked ${target.name}');
+      ref.read(toastProvider.notifier).show(facts.isGrouped
+          ? 'Every option marked ${target.name}'
+          : 'Quote marked ${target.name}');
     }
   }
 
@@ -300,19 +393,59 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     }
     final api = ref.read(apiServiceProvider);
     var current = facts;
+    // An alternative-options quote: the customer's ONE choice is required.
+    var optionRows = <Map>[];
+    if (facts.isGrouped) {
+      try {
+        final g =
+            await ref.read(quoteGroupProvider(facts.optionGroupId).future);
+        optionRows = [
+          for (final o
+              in (g['options'] is List ? g['options'] as List : const []))
+            if (o is Map) o
+        ];
+      } on AppError catch (e) {
+        api.handled(e);
+        ref.read(toastProvider.notifier).showError(e.bareMessage);
+        return;
+      }
+    }
+    String? pickedOption;
     while (mounted) {
       var conflicted = false;
       final result = await showAcceptQuoteDialog(
         context,
         quote: current,
-        amountLabel: current.grandTotal == null ? '' : '${quoteMoney(current.grandTotal)} incl. GST',
+        amountLabel: current.grandTotal == null
+            ? ''
+            : '${quoteMoney(current.grandTotal)} incl. GST',
+        options: [
+          for (final o in optionRows)
+            (
+              id: _str(o['quotation_id']),
+              label: _optionCaption(o),
+              amount: _str(o['grand_total']).isEmpty
+                  ? ''
+                  : '${quoteMoney(_str(o['grand_total']))} incl. GST',
+            )
+        ],
         onSubmit: (choice) async {
           try {
-            await ref.read(quoteActionsDsProvider).patch(current.id, {
+            final body = {
               'status_id': accepted.id,
               'accepted_on': choice.acceptedOn,
-              if (choice.schedule != null) 'schedule': choice.schedule!.toJson(),
-            });
+              if (choice.schedule != null)
+                'schedule': choice.schedule!.toJson(),
+            };
+            if (facts.isGrouped) {
+              pickedOption = choice.optionId;
+              await ref.read(quoteActionsDsProvider).groupAction(
+                  facts.optionGroupId,
+                  'accept',
+                  {...body, 'selected_quotation_id': choice.optionId});
+            } else {
+              await ref.read(quoteActionsDsProvider).patch(current.id, body);
+            }
             return null;
           } on AppError catch (e) {
             api.handled(e);
@@ -330,33 +463,50 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
       if (result == 'change') {
         // R5: the builder's payment section (read-only on a sent quote);
         // closing it comes back to the Accept dialog.
-        await context.push('${Routes.editQuote}?id=${current.id}&focus=payment');
+        await context
+            .push('${Routes.editQuote}?id=${current.id}&focus=payment');
         if (!mounted) return;
         ref.invalidate(quoteRowProvider(current.id));
         final fresh = await ref.read(quoteRowProvider(current.id).future);
-        if (fresh != null) current = QuoteFacts.fromRow(fresh, statuses: statuses);
+        if (fresh != null)
+          current = QuoteFacts.fromRow(fresh, statuses: statuses);
         continue;
       }
       if (result == 'accepted') {
         _afterWrite(current.id);
         if (!conflicted) {
           setState(() => _conflict = null);
-          ref.read(toastProvider.notifier).show('Quote accepted — payment plan created');
+          final chosen = optionRows
+              .where((o) => _str(o['quotation_id']) == pickedOption)
+              .firstOrNull;
+          ref.read(toastProvider.notifier).show(facts.isGrouped
+              ? '${chosen == null ? 'The option' : _optionCaption(chosen)} accepted — payment plan created; the other options are Not chosen'
+              : 'Quote accepted — payment plan created');
+          // Land on the option the customer chose.
+          if (facts.isGrouped &&
+              pickedOption != null &&
+              pickedOption!.isNotEmpty &&
+              pickedOption != facts.id) {
+            context.pushReplacement('${Routes.quoteDetail}?id=$pickedOption');
+          }
         }
       }
       return;
     }
   }
 
-  void _markSent(QuoteFacts facts, QuoteLifecycleActions a, List<QuoteStatusRow> statuses) {
+  void _markSent(QuoteFacts facts, QuoteLifecycleActions a,
+      List<QuoteStatusRow> statuses) {
     if (a.sendBlocked) {
       ref.read(toastProvider.notifier).show(a.sendBlockedReason);
       return;
     }
-    _moveToStatus(facts, statuses, findStatusOfType(statuses, 'SENT'), 'Quote marked as sent');
+    _moveToStatus(facts, statuses, findStatusOfType(statuses, 'SENT'),
+        'Quote marked as sent');
   }
 
-  void _tapAccept(QuoteFacts facts, QuoteLifecycleActions a, List<QuoteStatusRow> statuses) {
+  void _tapAccept(QuoteFacts facts, QuoteLifecycleActions a,
+      List<QuoteStatusRow> statuses) {
     if (a.acceptBlocked) {
       ref.read(toastProvider.notifier).show(a.acceptBlockedReason);
       return;
@@ -366,7 +516,8 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
 
   void _tapReject(QuoteFacts facts, List<QuoteStatusRow> statuses) {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
-    _moveToStatus(facts, statuses, findStatusOfType(statuses, 'REJECTED'), 'Quote rejected');
+    _moveToStatus(facts, statuses, findStatusOfType(statuses, 'REJECTED'),
+        'Quote rejected');
   }
 
   /// Opens a freshly created quote (revision / duplicate / renewal).
@@ -377,10 +528,27 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   }
 
   Future<void> _revise(QuoteFacts facts) async {
-    if (!ensurePermission(ref, 'quotation', PermVerb.update) || !ensurePermission(ref, 'quotation', PermVerb.create)) return;
+    if (!ensurePermission(ref, 'quotation', PermVerb.update) ||
+        !ensurePermission(ref, 'quotation', PermVerb.create)) return;
     if (!await confirmReviseQuote(context, facts.number) || !mounted) return;
     setState(() => _busy = true);
     try {
+      if (facts.isGrouped) {
+        final next = await ref
+            .read(quoteActionsDsProvider)
+            .groupAction(facts.optionGroupId, 'revise');
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _conflict = null;
+        });
+        _afterWrite(facts.id);
+        final open = _sameOptionIn(next, facts);
+        ref.read(toastProvider.notifier).show(
+            'Every option revised as a new draft${open == null || _str(open['quotation_number']).isEmpty ? '' : ' (${_str(open['quotation_number'])})'}');
+        if (open != null) _open(Map<String, dynamic>.from(open));
+        return;
+      }
       final created = await ref.read(quoteActionsDsProvider).revise(facts.id);
       if (!mounted) return;
       setState(() {
@@ -388,7 +556,8 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
         _conflict = null;
       });
       _afterWrite(facts.id);
-      ref.read(toastProvider.notifier).show('Revision ${_str(created['quotation_number'])} created as a draft');
+      ref.read(toastProvider.notifier).show(
+          'Revision ${_str(created['quotation_number'])} created as a draft');
       _open(created);
     } on AppError catch (e) {
       _onWriteError(e, facts);
@@ -400,12 +569,15 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     if (!ensurePermission(ref, 'quotation', PermVerb.create)) return;
     setState(() => _busy = true);
     try {
-      final created = await ref.read(quoteActionsDsProvider).duplicate(facts.id);
+      final created =
+          await ref.read(quoteActionsDsProvider).duplicate(facts.id);
       if (!mounted) return;
       setState(() => _busy = false);
       ref.invalidate(quotesProvider);
       final n = _str(created['quotation_number']);
-      ref.read(toastProvider.notifier).show('Duplicated as ${n.isEmpty ? 'a new draft' : n}');
+      ref
+          .read(toastProvider.notifier)
+          .show('Duplicated as ${n.isEmpty ? 'a new draft' : n}');
       _open(created);
     } on AppError catch (e) {
       ref.read(apiServiceProvider).handled(e);
@@ -415,12 +587,27 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   }
 
   Future<void> _renew(QuoteFacts facts) async {
-    if (!ensurePermission(ref, 'quotation', PermVerb.update) || !ensurePermission(ref, 'quotation', PermVerb.create)) return;
+    if (!ensurePermission(ref, 'quotation', PermVerb.update) ||
+        !ensurePermission(ref, 'quotation', PermVerb.create)) return;
     final api = ref.read(apiServiceProvider);
     Map<String, dynamic>? created;
-    final ok = await showRenewQuoteDialog(context, quoteLabel: facts.label, onSubmit: (validUntil) async {
+    final ok = await showRenewQuoteDialog(context, quoteLabel: facts.label,
+        onSubmit: (validUntil) async {
       try {
-        created = await ref.read(quoteActionsDsProvider).renew(facts.id, validUntil);
+        if (facts.isGrouped) {
+          final next = await ref.read(quoteActionsDsProvider).groupAction(
+              facts.optionGroupId,
+              'renew',
+              validUntil == null || validUntil.isEmpty
+                  ? const {}
+                  : {'valid_until': validUntil});
+          final open = _sameOptionIn(next, facts);
+          created = open == null ? null : Map<String, dynamic>.from(open);
+        } else {
+          created = await ref
+              .read(quoteActionsDsProvider)
+              .renew(facts.id, validUntil);
+        }
         return null;
       } on AppError catch (e) {
         api.handled(e);
@@ -436,28 +623,42 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     setState(() => _conflict = null);
     _afterWrite(facts.id);
     final n = _str(created!['quotation_number']);
-    ref.read(toastProvider.notifier).show('Renewed as ${n.isEmpty ? 'a new revision' : n} at today’s prices');
+    ref.read(toastProvider.notifier).show(facts.isGrouped
+        ? 'Every option renewed at today’s prices'
+        : 'Renewed as ${n.isEmpty ? 'a new revision' : n} at today’s prices');
     _open(created!);
   }
 
   Future<void> _delete(QuoteFacts facts) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.delete)) return;
-    final reason = deleteBlockedReason(facts);
-    if (reason.isNotEmpty) {
-      ref.read(toastProvider.notifier).show(reason);
+    if (!await confirmDeleteQuote(context, facts.number,
+            grouped: facts.isGrouped) ||
+        !mounted) {
       return;
     }
-    if (!await confirmDeleteQuote(context, facts.number) || !mounted) return;
     try {
-      await ref.read(quoteActionsDsProvider).delete(facts.id);
+      facts.isGrouped
+          ? await ref
+              .read(quoteActionsDsProvider)
+              .deleteGroup(facts.optionGroupId)
+          : await ref.read(quoteActionsDsProvider).delete(facts.id);
     } on AppError catch (e) {
+      // 409 QUOTE_HAS_PAYMENTS (a paid / receipted / invoiced plan): the server's
+      // own reason, as a toast — not the lifecycle banner.
+      if (e.code == 'QUOTE_HAS_PAYMENTS') {
+        ref.read(apiServiceProvider).handled(e);
+        ref.read(toastProvider.notifier).showError(e.bareMessage);
+        return;
+      }
       _onWriteError(e, facts);
       return;
     }
     if (!mounted) return;
     ref.invalidate(quotesProvider);
     ref.invalidate(invoicesProvider);
-    ref.read(toastProvider.notifier).show('${facts.number.isEmpty ? 'Quote' : facts.number} deleted');
+    ref.read(toastProvider.notifier).show(facts.isGrouped
+        ? 'Every option of the quote deleted'
+        : '${facts.number.isEmpty ? 'Quote' : facts.number} deleted');
     context.pop();
   }
 
@@ -471,12 +672,15 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     try {
       final bytes = await ref.read(quoteActionsDsProvider).pdf(facts.id);
       final dir = await getTemporaryDirectory();
-      final name = (facts.number.isEmpty ? facts.id : facts.number).replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+      final name = (facts.number.isEmpty ? facts.id : facts.number)
+          .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
       final file = File('${dir.path}/$name.pdf');
       await file.writeAsBytes(bytes);
       final result = await OpenFile.open(file.path, type: 'application/pdf');
       if (result.type != ResultType.done) {
-        toast.show(result.message.isNotEmpty ? result.message : 'No app on this device can open this file.');
+        toast.show(result.message.isNotEmpty
+            ? result.message
+            : 'No app on this device can open this file.');
       }
     } on AppError catch (e) {
       ref.read(apiServiceProvider).handled(e);
@@ -491,23 +695,74 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   Future<void> _generateDocument(QuoteFacts facts) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
     final api = ref.read(apiServiceProvider);
-    final ok = await showGenerateDocumentDialog(context, onSubmit: (v) async {
-      try {
-        await ref.read(quoteActionsDsProvider).generateDocument(generateDocumentBody(v.template, facts.id, v.values));
-        return null;
-      } on AppError catch (e) {
-        api.handled(e);
-        return e.bareMessage;
-      }
-    });
-    if (ok && mounted) ref.read(toastProvider.notifier).show('Document generated');
+    final ds = ref.read(quoteActionsDsProvider);
+    final ok = await showGenerateDocumentDialog(context,
+        onPreview: (t, values) =>
+            ds.previewDocument(generateDocumentBody(t, facts.id, values)),
+        onSubmit: (t, values) async {
+          try {
+            final r = await ds
+                .generateDocument(generateDocumentBody(t, facts.id, values));
+            return (
+              error: null,
+              fileUrl: '${r['file_url_signed'] ?? r['file_url'] ?? ''}',
+              number: '${r['document_number'] ?? ''}'
+            );
+          } on AppError catch (e) {
+            api.handled(e);
+            return (error: e.bareMessage, fileUrl: '', number: '');
+          }
+        });
+    if (ok && mounted) ref.invalidate(quoteDocumentsProvider(facts.id));
+  }
+
+  Future<void> _regenerateDocument(QuoteFacts facts, GeneratedDoc doc) async {
+    if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
+    final api = ref.read(apiServiceProvider);
+    final ds = ref.read(quoteActionsDsProvider);
+    final ok = await showGenerateDocumentDialog(context,
+        regenerate: doc,
+        onPreview: (t, values) =>
+            ds.previewDocument(generateDocumentBody(t, facts.id, values)),
+        onSubmit: (t, values) async {
+          try {
+            final fv = generateDocumentBody(t, facts.id, values)['field_values']
+                as Map<String, dynamic>;
+            final r = await ds.regenerateDocument(doc.id, fv);
+            return (
+              error: null,
+              fileUrl: '${r['file_url_signed'] ?? r['file_url'] ?? ''}',
+              number: '${r['document_number'] ?? doc.number}'
+            );
+          } on AppError catch (e) {
+            api.handled(e);
+            return (error: e.bareMessage, fileUrl: '', number: '');
+          }
+        });
+    if (ok && mounted) ref.invalidate(quoteDocumentsProvider(facts.id));
+  }
+
+  Future<void> _deleteDocument(QuoteFacts facts, GeneratedDoc doc) async {
+    if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
+    if (!await confirmDeleteDocument(context, doc) || !mounted) return;
+    final toast = ref.read(toastProvider.notifier);
+    try {
+      await ref.read(quoteActionsDsProvider).deleteDocument(doc.id);
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      toast.showError(e.bareMessage);
+      return;
+    }
+    ref.invalidate(quoteDocumentsProvider(facts.id));
+    toast.show('Document deleted');
   }
 
   Future<void> _reassignOwner(QuoteFacts facts, String ownerId) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
     // The webapp's Reassign owner reads the task picker roster
     // (`assignable-users?module=task`); `module=quotation` is refused (400).
-    final users = await ref.read(assignableUsersForModuleProvider('task').future);
+    final users =
+        await ref.read(assignableUsersForModuleProvider('task').future);
     if (!mounted) return;
     final picked = await showOptionPicker(
       context: context,
@@ -516,12 +771,15 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
       selected: {if (ownerId.isNotEmpty) ownerId},
       emptyNote: 'No users can own quotes here.',
     );
-    if (picked == null || picked.isEmpty || picked.first == ownerId || !mounted) return;
-    final name = users.where((u) => u.id == picked.first).firstOrNull?.name ?? 'new owner';
+    if (picked == null || picked.isEmpty || picked.first == ownerId || !mounted)
+      return;
+    final name = users.where((u) => u.id == picked.first).firstOrNull?.name ??
+        'new owner';
     // `owner_id`, not `owner`: the quote serializer treats `owner` as read-only
     // and silently ignores it (200, owner unchanged — verified on dev), which
     // is what the webapp sends. `owner_id` is the writable key.
-    await _patch(facts, {'owner_id': picked.first}, 'Owner reassigned to $name');
+    await _patch(
+        facts, {'owner_id': picked.first}, 'Owner reassigned to $name');
   }
 
   // ── Inline edits ────────────────────────────────────────────────────────
@@ -529,17 +787,20 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   Future<String?> _promptText(String title, String initial, String hint) =>
       showDialog<String>(
         context: context,
-        builder: (_) => _TextPromptDialog(title: title, initial: initial, hint: hint),
+        builder: (_) =>
+            _TextPromptDialog(title: title, initial: initial, hint: hint),
       );
 
-  Future<void> _editText(QuoteFacts facts, String label, String key, String initial, String hint, String success) async {
+  Future<void> _editText(QuoteFacts facts, String label, String key,
+      String initial, String hint, String success) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
     final v = await _promptText(label, initial, hint);
     if (v == null || v.trim() == initial.trim() || !mounted) return;
     await _patch(facts, {key: v.trim()}, success);
   }
 
-  Future<void> _editDate(QuoteFacts facts, String key, String current, String success) async {
+  Future<void> _editDate(
+      QuoteFacts facts, String key, String current, String success) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
     final now = DateTime.now();
     final d = await showDatePicker(
@@ -552,17 +813,67 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     await _patch(facts, {key: isoDayOf(d)}, success);
   }
 
-  Future<void> _editChoice(QuoteFacts facts, String title, String key, List<CatalogOption> options, String current, String success) async {
+  Future<void> _editChoice(QuoteFacts facts, String title, String key,
+      List<CatalogOption> options, String current, String success) async {
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
-    final picked = await showOptionPicker(context: context, title: title, options: options, selected: {if (current.isNotEmpty) current});
-    if (picked == null || picked.isEmpty || picked.first == current || !mounted) return;
+    final picked = await showOptionPicker(
+        context: context,
+        title: title,
+        options: options,
+        selected: {if (current.isNotEmpty) current});
+    if (picked == null || picked.isEmpty || picked.first == current || !mounted)
+      return;
     await _patch(facts, {key: picked.first}, success);
   }
 
   // ── Build ───────────────────────────────────────────────────────────────
 
+  /// Webapp v1.7 note: one option of an alternative-options quote — the group
+  /// moves as one — with a jump to each sibling option.
+  Widget _optionGroupNotice(QuoteFacts facts) {
+    final group =
+        ref.watch(quoteGroupProvider(facts.optionGroupId)).valueOrNull;
+    final opts = [
+      for (final o
+          in (group?['options'] is List ? group!['options'] as List : const []))
+        if (o is Map) o
+    ];
+    final role = facts.optionRole == 'primary'
+        ? ' (primary)'
+        : facts.optionRole == 'chosen'
+            ? ' (the customer’s choice)'
+            : '';
+    final caption =
+        'Option ${facts.optionLabel.isEmpty ? '?' : facts.optionLabel}${facts.number.isEmpty ? '' : ' · ${facts.number}'}';
+    final text = opts.length == 1
+        ? 'An alternative-options quote with a single option. Add alternatives from Edit quote while it is a draft; the customer receives one document.'
+        : '$caption$role of an alternative-options quote${group == null ? '' : ' with ${opts.length} options'}. The customer receives one document and accepts one option; edit, send, accept, reject and revise move every option together.'
+            '${facts.optionRole == 'alternative' ? ' This alternative does not count toward the lead’s value while the customer decides.' : ''}';
+    return QuoteNotice(
+      icon: PhosphorIconsRegular.stack,
+      tone: AppColors.textSecondary,
+      bg: AppColors.bgSubtle,
+      text: text,
+      actions: [
+        for (final o in opts)
+          if (_str(o['quotation_id']) != facts.id)
+            (
+              'Option ${_str(o['option_label'])}${_statusNameOf(o).isEmpty ? '' : ' · ${_statusNameOf(o)}'}',
+              () => context
+                  .push('${Routes.quoteDetail}?id=${_str(o['quotation_id'])}')
+            ),
+      ],
+    );
+  }
+
+  static String _statusNameOf(Map o) {
+    final s = o['status'];
+    return s is Map ? _str(s['name']) : '';
+  }
+
   Widget _buildQuote(String uuid, Map<String, dynamic> row) {
-    final statuses = ref.watch(quoteLifecycleStatusesProvider).valueOrNull ?? const <QuoteStatusRow>[];
+    final statuses = ref.watch(quoteLifecycleStatusesProvider).valueOrNull ??
+        const <QuoteStatusRow>[];
     final facts = QuoteFacts.fromRow(row, statuses: statuses);
     final a = quoteLifecycleActions(facts);
     final legacy = isLegacyStatusList(statuses);
@@ -572,17 +883,26 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     final canExport = ref.watch(quoteCanExportProvider);
     final readOnly = a.isReadOnly;
     final latest = a.isSuperseded
-        ? ref.watch(quoteLatestRevisionProvider('${facts.id}|${facts.number}|${facts.revisionNo}')).valueOrNull
+        ? ref
+            .watch(quoteLatestRevisionProvider(
+                '${facts.id}|${facts.number}|${facts.revisionNo}'))
+            .valueOrNull
         : null;
     final latestId = latest?.id ?? _conflict?.latestRevisionId ?? '';
-    final latestNumber = (latest?.number ?? '').isNotEmpty ? latest!.number : (_conflict?.latestQuotationNumber ?? '');
+    final latestNumber = (latest?.number ?? '').isNotEmpty
+        ? latest!.number
+        : (_conflict?.latestQuotationNumber ?? '');
     final paidLocked = _isPaidLocked(uuid);
 
     void showReason(String r) => ref.read(toastProvider.notifier).show(r);
 
     final menu = DetailIconAction(
       icon: PhosphorIconsBold.dotsThreeVertical,
-      onTap: () => _openMenu(facts, a, statuses, row, canUpdate: canUpdate, canCreate: canCreate, canDelete: canDelete, canExport: canExport),
+      onTap: () => _openMenu(facts, a, statuses, row,
+          canUpdate: canUpdate,
+          canCreate: canCreate,
+          canDelete: canDelete,
+          canExport: canExport),
     );
 
     return _scaffold(
@@ -597,7 +917,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                 icon: PhosphorIconsRegular.lockSimple,
                 title: quoteLockCopy[_lockKind ?? QuoteLockKind.paid]!.title,
                 text: quoteLockCopy[_lockKind ?? QuoteLockKind.paid]!.body,
-                onDismiss: _lockKind == null ? null : () => setState(() => _lockKind = null),
+                onDismiss: _lockKind == null
+                    ? null
+                    : () => setState(() => _lockKind = null),
               ),
               SizedBox(height: 14.h),
             ],
@@ -607,27 +929,37 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                 tone: AppColors.textMuted,
                 bg: AppColors.tintGrey,
                 title: 'Superseded.',
-                text: 'A newer revision replaced this quote, so it is read-only and can no longer be accepted.',
+                text:
+                    'A newer revision replaced this quote, so it is read-only and can no longer be accepted.',
                 actions: [
                   if (latestId.isNotEmpty)
-                    ('Open ${latestNumber.isEmpty ? 'latest revision' : latestNumber}',
-                        () => context.push('${Routes.quoteDetail}?id=$latestId')),
+                    (
+                      'Open ${latestNumber.isEmpty ? 'latest revision' : latestNumber}',
+                      () => context.push('${Routes.quoteDetail}?id=$latestId')
+                    ),
                 ],
               ),
               SizedBox(height: 14.h),
             ],
             if (_conflict != null) ...[
-              _conflictBanner(_conflict!, facts, a, statuses, latestId, latestNumber, canUpdate, canCreate),
+              _conflictBanner(_conflict!, facts, a, statuses, latestId,
+                  latestNumber, canUpdate, canCreate),
+              SizedBox(height: 14.h),
+            ],
+            if (facts.isGrouped) ...[
+              _optionGroupNotice(facts),
               SizedBox(height: 14.h),
             ],
             _headerCard(facts, a, statuses, legacy, row, canUpdate),
             // ── Discount approval banner (plan 5.5; component from
             // quote_discount_approval.dart). Renders only for a PENDING /
             // REJECTED approval and carries its own top margin.
-            DiscountApprovalBanner(row: row, onChanged: () => _afterWrite(uuid)),
+            DiscountApprovalBanner(
+                row: row, onChanged: () => _afterWrite(uuid)),
             SizedBox(height: 14.h),
             _relatedCard(facts, row),
-            _infoCard(facts, a, row, canUpdate: canUpdate, readOnly: readOnly, onLocked: showReason),
+            _infoCard(facts, a, row,
+                canUpdate: canUpdate, readOnly: readOnly, onLocked: showReason),
             SizedBox(height: 14.h),
             _lineItemsCard(row),
             QuoteTermsCard(row: row),
@@ -636,11 +968,24 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
               FinanceCard(
                 title: 'Notes on the quote',
                 child: Text(_str(row['notes']),
-                    style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.6)),
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w500,
+                        color: AppColors.textLabelAlt,
+                        height: 1.6)),
               ),
             ],
             SizedBox(height: 14.h),
-            QuotePaymentInstructionsCard(quotationId: uuid, canConfigure: hasPermission(ref, 'settings', PermVerb.update)),
+            QuotePaymentInstructionsCard(
+                quotationId: uuid,
+                canConfigure: hasPermission(ref, 'settings', PermVerb.update)),
+            SizedBox(height: 14.h),
+            QuoteDocumentsCard(
+              quotationId: uuid,
+              canManage: hasPermission(ref, 'quotation', PermVerb.update),
+              onRegenerate: (d) => _regenerateDocument(facts, d),
+              onDelete: (d) => _deleteDocument(facts, d),
+            ),
             SizedBox(height: 14.h),
             _notesThread(uuid, readOnly),
             SizedBox(height: 14.h),
@@ -660,39 +1005,62 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     final invoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
     final plan = invoices.where((i) => i.quoteUuid == uuid).firstOrNull;
     if (plan == null) return false;
-    return ref.watch(paymentsForInvoiceProvider(plan.id)).any((p) => p.status == 'paid' || p.linkedDocumentId != null);
+    return ref
+        .watch(paymentsForInvoiceProvider(plan.id))
+        .any((p) => p.status == 'paid' || p.linkedDocumentId != null);
   }
 
-  Widget _conflictBanner(LifecycleConflict c, QuoteFacts facts, QuoteLifecycleActions a, List<QuoteStatusRow> statuses,
-      String latestId, String latestNumber, bool canUpdate, bool canCreate) {
+  Widget _conflictBanner(
+      LifecycleConflict c,
+      QuoteFacts facts,
+      QuoteLifecycleActions a,
+      List<QuoteStatusRow> statuses,
+      String latestId,
+      String latestNumber,
+      bool canUpdate,
+      bool canCreate) {
     final actions = <(String, VoidCallback)>[
-      if (c.next == 'REVISE' && a.canRevise && canUpdate && canCreate) ('Revise', () => _revise(facts)),
-      if (c.next == 'RENEW' && canUpdate && canCreate) ('Renew', () => _renew(facts)),
+      if (c.next == 'REVISE' && a.canRevise && canUpdate && canCreate)
+        ('Revise', () => _revise(facts)),
+      if (c.next == 'RENEW' && canUpdate && canCreate)
+        ('Renew', () => _renew(facts)),
       if (c.next == 'MARK_SENT' && a.canMarkSent && !a.sendBlocked && canUpdate)
         ('Mark as sent', () => _markSent(facts, a, statuses)),
       if (c.next == 'OPEN_ACCEPTED_QUOTE' && c.acceptedQuotationId.isNotEmpty)
-        ('Open ${c.acceptedQuotationNumber.isEmpty ? 'accepted quote' : c.acceptedQuotationNumber}',
-            () => context.push('${Routes.quoteDetail}?id=${c.acceptedQuotationId}')),
+        (
+          'Open ${c.acceptedQuotationNumber.isEmpty ? 'accepted quote' : c.acceptedQuotationNumber}',
+          () =>
+              context.push('${Routes.quoteDetail}?id=${c.acceptedQuotationId}')
+        ),
       if (c.next == 'OPEN_LATEST_REVISION' && latestId.isNotEmpty)
-        ('Open ${latestNumber.isEmpty ? 'latest revision' : latestNumber}', () => context.push('${Routes.quoteDetail}?id=$latestId')),
+        (
+          'Open ${latestNumber.isEmpty ? 'latest revision' : latestNumber}',
+          () => context.push('${Routes.quoteDetail}?id=$latestId')
+        ),
     ];
     return QuoteNotice(
-      icon: c.code == 'APPROVAL_PENDING' ? PhosphorIconsRegular.hourglassMedium : PhosphorIconsRegular.lockSimple,
+      icon: c.code == 'APPROVAL_PENDING'
+          ? PhosphorIconsRegular.hourglassMedium
+          : PhosphorIconsRegular.lockSimple,
       text: c.message,
       actions: actions,
       onDismiss: () => setState(() => _conflict = null),
     );
   }
 
-  Future<void> _openStatusPicker(QuoteFacts facts, QuoteLifecycleActions a, List<QuoteStatusRow> statuses, bool legacy) async {
+  Future<void> _openStatusPicker(QuoteFacts facts, QuoteLifecycleActions a,
+      List<QuoteStatusRow> statuses, bool legacy) async {
     if (a.isReadOnly) return;
     if (!ensurePermission(ref, 'quotation', PermVerb.update)) return;
     if (statuses.isEmpty) {
       ref.read(toastProvider.notifier).showError(kStatusNotConfigured);
       return;
     }
-    final pickable = pickableStatuses(statuses, facts.statusId, wasSent: a.wasSent);
-    final acceptBlocked = a.acceptBlocked || facts.acceptanceBlock != null && !canBackdateAcceptance(facts.acceptanceBlock);
+    final pickable =
+        pickableStatuses(statuses, facts.statusId, wasSent: a.wasSent);
+    final acceptBlocked = a.acceptBlocked ||
+        facts.acceptanceBlock != null &&
+            !canBackdateAcceptance(facts.acceptanceBlock);
     final chosen = await showQuoteStatusPicker(
       context,
       currentId: facts.statusId,
@@ -702,78 +1070,148 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
             id: s.id,
             name: s.name,
             color: hexColor(s.color) ?? AppColors.textMuted,
-            disabledReason: s.id != facts.statusId && resolveStatusType(s, legacy) == 'ACCEPTED' && acceptBlocked
-                ? (a.acceptBlockedReason.isNotEmpty ? a.acceptBlockedReason : facts.acceptanceBlock?.message)
+            disabledReason: s.id != facts.statusId &&
+                    resolveStatusType(s, legacy) == 'ACCEPTED' &&
+                    acceptBlocked
+                ? (a.acceptBlockedReason.isNotEmpty
+                    ? a.acceptBlockedReason
+                    : facts.acceptanceBlock?.message)
                 : null,
           ),
       ],
     );
     if (chosen == null || chosen == facts.statusId || !mounted) return;
     final target = statuses.where((s) => s.id == chosen).firstOrNull;
-    await _moveToStatus(facts, statuses, target, target == null ? '' : 'Status set to ${target.name}');
+    await _moveToStatus(facts, statuses, target,
+        target == null ? '' : 'Status set to ${target.name}');
   }
 
-  Widget _headerCard(QuoteFacts facts, QuoteLifecycleActions a, List<QuoteStatusRow> statuses, bool legacy,
-      Map<String, dynamic> row, bool canUpdate) {
+  Widget _headerCard(
+      QuoteFacts facts,
+      QuoteLifecycleActions a,
+      List<QuoteStatusRow> statuses,
+      bool legacy,
+      Map<String, dynamic> row,
+      bool canUpdate) {
     final current = statuses.where((s) => s.id == facts.statusId).firstOrNull;
-    final statusName = facts.statusName.isNotEmpty ? facts.statusName : (current?.name ?? 'Status');
-    final statusColor = hexColor((row['status'] is Map ? (row['status'] as Map)['color'] : null) ?? current?.color) ?? AppColors.textMuted;
+    final statusName = facts.statusName.isNotEmpty
+        ? facts.statusName
+        : (current?.name ?? 'Status');
+    final statusColor = hexColor(
+            (row['status'] is Map ? (row['status'] as Map)['color'] : null) ??
+                current?.color) ??
+        AppColors.textMuted;
     final meta = StatusMeta(statusName, statusColor);
     final title = facts.title.isNotEmpty
         ? facts.title
-        : (_str(row['customer_name']).isNotEmpty ? _str(row['customer_name']) : _str(row['lead_name']));
+        : (_str(row['customer_name']).isNotEmpty
+            ? _str(row['customer_name'])
+            : _str(row['lead_name']));
     final issued = fmtQuoteDate(_str(row['created_at']));
     final valid = fmtQuoteDate(facts.validUntil);
     final chip = approvalChipLabel(row);
     final grand = _str(row['grand_total']);
-    final estimate = row['tax_summary'] is Map && (row['tax_summary'] as Map)['is_estimate'] == true && parseMoneyNonZero(row['tax_total']);
+    final estimate = row['tax_summary'] is Map &&
+        (row['tax_summary'] as Map)['is_estimate'] == true &&
+        parseMoneyNonZero(row['tax_total']);
 
     // The primary action: Mark as sent on a draft, Accept on a sent quote.
     final primary = a.canMarkSent
-        ? (label: 'Mark as sent', icon: PhosphorIconsBold.paperPlaneTilt, blocked: a.sendBlocked || !canUpdate,
-            reason: a.sendBlocked ? a.sendBlockedReason : '', onTap: () => _markSent(facts, a, statuses))
+        ? (
+            label: 'Mark as sent',
+            icon: PhosphorIconsBold.paperPlaneTilt,
+            blocked: a.sendBlocked || !canUpdate,
+            reason: a.sendBlocked ? a.sendBlockedReason : '',
+            onTap: () => _markSent(facts, a, statuses)
+          )
         : a.canAccept
-            ? (label: 'Accept quote', icon: PhosphorIconsBold.check, blocked: a.acceptBlocked || !canUpdate,
-                reason: a.acceptBlockedReason, onTap: () => _tapAccept(facts, a, statuses))
+            ? (
+                label: 'Accept quote',
+                icon: PhosphorIconsBold.check,
+                blocked: a.acceptBlocked || !canUpdate,
+                reason: a.acceptBlockedReason,
+                onTap: () => _tapAccept(facts, a, statuses)
+              )
             : null;
 
     return FinanceCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const IconChip(icon: PhosphorIconsRegular.fileText, size: 46, radius: 13, iconSize: 22),
+          const IconChip(
+              icon: PhosphorIconsRegular.fileText,
+              size: 46,
+              radius: 13,
+              iconSize: 22),
           SizedBox(width: 12.w),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Wrap(spacing: 8.w, runSpacing: 5.h, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                Text(facts.number.isEmpty ? (facts.title.isEmpty ? 'Quote' : facts.title) : facts.number,
-                    style: AppText.custom(size: 19, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
-                StatusPill.meta(meta),
-                if (facts.revisionNo > 0) QuoteHeadChip('REVISION ${facts.revisionNo}'),
-                if (facts.isLocked && !a.isSuperseded)
-                  const QuoteHeadChip('LOCKED', icon: PhosphorIconsBold.lock, color: AppColors.textSecondary, bg: AppColors.tintGrey),
-                if (chip != null)
-                  QuoteHeadChip(chip,
-                      color: chip == 'APPROVED' ? AppColors.success : (chip == 'PENDING APPROVAL' ? AppColors.warningDeep : AppColors.error),
-                      bg: chip == 'APPROVED' ? AppColors.tintGreen : (chip == 'PENDING APPROVAL' ? AppColors.tintAmber : AppColors.tintRed)),
-              ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Wrap(
+                  spacing: 8.w,
+                  runSpacing: 5.h,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                        facts.number.isEmpty
+                            ? (facts.title.isEmpty ? 'Quote' : facts.title)
+                            : facts.number,
+                        style: AppText.custom(
+                            size: 19,
+                            weight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3)),
+                    StatusPill.meta(meta),
+                    if (facts.revisionNo > 0)
+                      QuoteHeadChip('REVISION ${facts.revisionNo}'),
+                    if (facts.isLocked && !a.isSuperseded)
+                      const QuoteHeadChip('LOCKED',
+                          icon: PhosphorIconsBold.lock,
+                          color: AppColors.textSecondary,
+                          bg: AppColors.tintGrey),
+                    if (chip != null)
+                      QuoteHeadChip(chip,
+                          color: chip == 'APPROVED'
+                              ? AppColors.success
+                              : (chip == 'PENDING APPROVAL'
+                                  ? AppColors.warningDeep
+                                  : AppColors.error),
+                          bg: chip == 'APPROVED'
+                              ? AppColors.tintGreen
+                              : (chip == 'PENDING APPROVAL'
+                                  ? AppColors.tintAmber
+                                  : AppColors.tintRed)),
+                  ]),
               if (title.isNotEmpty) ...[
                 SizedBox(height: 4.h),
                 Text(title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: AppColors.textMuted)),
               ],
               SizedBox(height: 4.h),
-              Text('Issued ${issued.isEmpty ? '—' : issued} · Quote valid until ${valid.isEmpty ? '—' : valid}',
-                  style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+              Text(
+                  'Issued ${issued.isEmpty ? '—' : issued} · Quote valid until ${valid.isEmpty ? '—' : valid}',
+                  style: AppText.custom(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPlaceholder)),
               if (facts.revisionOf.isNotEmpty) ...[
                 SizedBox(height: 6.h),
                 GestureDetector(
-                  onTap: () => context.push('${Routes.quoteDetail}?id=${facts.revisionOf}'),
+                  onTap: () => context
+                      .push('${Routes.quoteDetail}?id=${facts.revisionOf}'),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('Previous revision', style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                    Text('Previous revision',
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.blueBright)),
                     SizedBox(width: 3.w),
-                    Icon(PhosphorIconsBold.arrowUpRight, size: 12.sp, color: AppColors.blueBright),
+                    Icon(PhosphorIconsBold.arrowUpRight,
+                        size: 12.sp, color: AppColors.blueBright),
                   ]),
                 ),
               ],
@@ -782,14 +1220,28 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
         ]),
         if (grand.isNotEmpty) ...[
           SizedBox(height: 12.h),
-          Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-            Text('GRAND TOTAL',
-                style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.4)),
-            const Spacer(),
-            Text(quoteMoney(grand), style: AppText.custom(size: 20, weight: FontWeight.w800, color: AppColors.navy, letterSpacing: -0.4)),
-          ]),
+          Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text('GRAND TOTAL',
+                    style: AppText.custom(
+                        size: 11,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPlaceholder,
+                        letterSpacing: 0.4)),
+                const Spacer(),
+                Text(quoteMoney(grand),
+                    style: AppText.custom(
+                        size: 20,
+                        weight: FontWeight.w800,
+                        color: AppColors.navy,
+                        letterSpacing: -0.4)),
+              ]),
           if (estimate)
-            Align(alignment: Alignment.centerRight, child: Text('incl. GST (estimate)', style: AppText.caption())),
+            Align(
+                alignment: Alignment.centerRight,
+                child: Text('incl. GST (estimate)', style: AppText.caption())),
         ],
         const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 15)),
         Row(children: [
@@ -798,7 +1250,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
             child: Opacity(
               opacity: a.isReadOnly ? 0.5 : 1,
               child: GestureDetector(
-                onTap: _busy ? null : () => _openStatusPicker(facts, a, statuses, legacy),
+                onTap: _busy
+                    ? null
+                    : () => _openStatusPicker(facts, a, statuses, legacy),
                 child: Container(
                   height: 44.h,
                   alignment: Alignment.center,
@@ -808,16 +1262,24 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                     border: Border.all(color: const Color(0xFFE6E7EA)),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Container(width: 8.w, height: 8.w, decoration: BoxDecoration(color: meta.color, shape: BoxShape.circle)),
+                    Container(
+                        width: 8.w,
+                        height: 8.w,
+                        decoration: BoxDecoration(
+                            color: meta.color, shape: BoxShape.circle)),
                     SizedBox(width: 8.w),
                     Flexible(
                       child: Text(meta.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textBody)),
+                          style: AppText.custom(
+                              size: 13.5,
+                              weight: FontWeight.w700,
+                              color: AppColors.textBody)),
                     ),
                     SizedBox(width: 6.w),
-                    Icon(PhosphorIconsBold.caretDown, size: 11.sp, color: AppColors.textMuted2),
+                    Icon(PhosphorIconsBold.caretDown,
+                        size: 11.sp, color: AppColors.textMuted2),
                   ]),
                 ),
               ),
@@ -842,7 +1304,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                   child: Container(
                     height: 44.h,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(11.r)),
+                    decoration: BoxDecoration(
+                        color: AppColors.navy,
+                        borderRadius: BorderRadius.circular(11.r)),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(primary.icon, size: 15.sp, color: AppColors.white),
                       SizedBox(width: 7.w),
@@ -850,7 +1314,10 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                         child: Text(primary.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppText.custom(size: 13, weight: FontWeight.w600, color: AppColors.white)),
+                            style: AppText.custom(
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.white)),
                       ),
                     ]),
                   ),
@@ -858,6 +1325,35 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
               ),
             ),
           ],
+          // Download PDF — a quiet icon button beside Reject, so it no longer
+          // hides in the ⋮ menu. Same 44 × 44 footprint as Reject.
+          SizedBox(width: 10.w),
+          Semantics(
+            button: true,
+            label: _pdfBusy ? 'Preparing PDF' : 'Download PDF',
+            child: GestureDetector(
+              onTap: _pdfBusy ? null : () => _downloadPdf(facts),
+              child: Container(
+                width: 44.w,
+                height: 44.h,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(11.r),
+                  border:
+                      Border.all(color: const Color(0xFFE6E7EA), width: 1.5),
+                ),
+                child: _pdfBusy
+                    ? SizedBox(
+                        width: 16.sp,
+                        height: 16.sp,
+                        child: const CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.navy))
+                    : Icon(PhosphorIconsBold.downloadSimple,
+                        size: 17.sp, color: AppColors.navy),
+              ),
+            ),
+          ),
           if (a.canReject) ...[
             SizedBox(width: 10.w),
             GestureDetector(
@@ -869,17 +1365,22 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.white,
                   borderRadius: BorderRadius.circular(11.r),
-                  border: Border.all(color: const Color(0xFFF3C1C1), width: 1.5),
+                  border:
+                      Border.all(color: const Color(0xFFF3C1C1), width: 1.5),
                 ),
-                child: Icon(PhosphorIconsBold.x, size: 16.sp, color: AppColors.error),
+                child: Icon(PhosphorIconsBold.x,
+                    size: 16.sp, color: AppColors.error),
               ),
             ),
           ],
         ]),
-        if (primary != null && primary.blocked && primary.reason.isNotEmpty) ...[
+        if (primary != null &&
+            primary.blocked &&
+            primary.reason.isNotEmpty) ...[
           SizedBox(height: 8.h),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(PhosphorIconsRegular.info, size: 13.sp, color: AppColors.textMuted),
+            Icon(PhosphorIconsRegular.info,
+                size: 13.sp, color: AppColors.textMuted),
             SizedBox(width: 6.w),
             Expanded(child: Text(primary.reason, style: AppText.caption())),
           ]),
@@ -888,13 +1389,19 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     );
   }
 
-  static bool parseMoneyNonZero(Object? v) => (double.tryParse(_str(v)) ?? 0).abs() >= 0.005;
+  static bool parseMoneyNonZero(Object? v) =>
+      (double.tryParse(_str(v)) ?? 0).abs() >= 0.005;
 
-  void _openMenu(QuoteFacts facts, QuoteLifecycleActions a, List<QuoteStatusRow> statuses, Map<String, dynamic> row,
-      {required bool canUpdate, required bool canCreate, required bool canDelete, required bool canExport}) {
+  void _openMenu(QuoteFacts facts, QuoteLifecycleActions a,
+      List<QuoteStatusRow> statuses, Map<String, dynamic> row,
+      {required bool canUpdate,
+      required bool canCreate,
+      required bool canDelete,
+      required bool canExport}) {
     String? perm(bool ok, PermVerb v) => ok ? null : permissionCopy(v);
-    final deleteReason = deleteBlockedReason(facts);
-    final ownerId = row['owner'] is Map ? _str((row['owner'] as Map)['user_id']) : _str(row['owner']);
+    final ownerId = row['owner'] is Map
+        ? _str((row['owner'] as Map)['user_id'])
+        : _str(row['owner']);
     showActionMenu(context, actions: [
       if (!a.isSuperseded)
         MenuAction(
@@ -915,7 +1422,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
           icon: PhosphorIconsRegular.paperPlaneTilt,
           label: 'Mark as sent',
           enabled: canUpdate && !a.sendBlocked,
-          sublabel: a.sendBlocked ? a.sendBlockedReason : perm(canUpdate, PermVerb.update),
+          sublabel: a.sendBlocked
+              ? a.sendBlockedReason
+              : perm(canUpdate, PermVerb.update),
           onTap: () => _markSent(facts, a, statuses),
         ),
       if (a.canAccept)
@@ -923,7 +1432,9 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
           icon: PhosphorIconsRegular.checkCircle,
           label: 'Accept quote',
           enabled: canUpdate && !a.acceptBlocked,
-          sublabel: a.acceptBlocked ? a.acceptBlockedReason : perm(canUpdate, PermVerb.update),
+          sublabel: a.acceptBlocked
+              ? a.acceptBlockedReason
+              : perm(canUpdate, PermVerb.update),
           onTap: () => _tapAccept(facts, a, statuses),
         ),
       if (a.canReject)
@@ -942,7 +1453,7 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
           sublabel: perm(canUpdate && canCreate, PermVerb.update),
           onTap: () => _revise(facts),
         ),
-      if (!a.isSuperseded)
+      if (!a.isSuperseded && !facts.isGrouped)
         MenuAction(
           icon: PhosphorIconsRegular.copy,
           label: 'Duplicate',
@@ -958,13 +1469,6 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
           sublabel: perm(canUpdate && canCreate, PermVerb.update),
           onTap: () => _renew(facts),
         ),
-      MenuAction(
-        icon: PhosphorIconsRegular.downloadSimple,
-        label: _pdfBusy ? 'Preparing…' : 'Download PDF',
-        enabled: canExport && !_pdfBusy,
-        sublabel: canExport ? null : kExportDenied,
-        onTap: () => _downloadPdf(facts),
-      ),
       if (!a.isSuperseded)
         MenuAction(
           icon: PhosphorIconsRegular.filePlus,
@@ -985,8 +1489,8 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
         icon: PhosphorIconsRegular.trash,
         label: 'Delete quote',
         destructive: true,
-        enabled: canDelete && deleteReason.isEmpty,
-        sublabel: deleteReason.isNotEmpty ? deleteReason : perm(canDelete, PermVerb.delete),
+        enabled: canDelete,
+        sublabel: perm(canDelete, PermVerb.delete),
         onTap: () => _delete(facts),
       ),
     ]);
@@ -995,20 +1499,40 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   Widget _relatedCard(QuoteFacts facts, Map<String, dynamic> row) {
     final leadId = _str(row['lead']);
     final custId = _str(row['customer']);
-    final leadRef = leadId.isEmpty ? '' : ref.watch(quoteLeadReferenceProvider(leadId)).valueOrNull ?? '';
-    final custRef = custId.isEmpty ? '' : ref.watch(quoteCustomerReferenceProvider(custId)).valueOrNull ?? '';
+    final leadRef = leadId.isEmpty
+        ? ''
+        : ref.watch(quoteLeadReferenceProvider(leadId)).valueOrNull ?? '';
+    final custRef = custId.isEmpty
+        ? ''
+        : ref.watch(quoteCustomerReferenceProvider(custId)).valueOrNull ?? '';
     final invoices = ref.watch(invoicesProvider).valueOrNull ?? const [];
-    final plan = facts.id.isEmpty ? null : invoices.where((i) => i.quoteUuid == facts.id).firstOrNull;
+    final plan = facts.id.isEmpty
+        ? null
+        : invoices.where((i) => i.quoteUuid == facts.id).firstOrNull;
     final items = <(IconData, String, String, String?)>[
       if (leadId.isNotEmpty)
-        (PhosphorIconsRegular.user, _str(row['lead_name']).isEmpty ? 'Lead' : _str(row['lead_name']),
-            leadRef.isEmpty ? 'Lead' : 'Lead · $leadRef', '${Routes.leadDetail}?id=$leadId'),
+        (
+          PhosphorIconsRegular.user,
+          _str(row['lead_name']).isEmpty ? 'Lead' : _str(row['lead_name']),
+          leadRef.isEmpty ? 'Lead' : 'Lead · $leadRef',
+          '${Routes.leadDetail}?id=$leadId'
+        ),
       if (custId.isNotEmpty)
-        (PhosphorIconsRegular.buildings, _str(row['customer_name']).isEmpty ? 'Customer' : _str(row['customer_name']),
-            custRef.isEmpty ? 'Customer' : 'Customer · $custRef', '${Routes.customerDetail}?id=$custId'),
+        (
+          PhosphorIconsRegular.buildings,
+          _str(row['customer_name']).isEmpty
+              ? 'Customer'
+              : _str(row['customer_name']),
+          custRef.isEmpty ? 'Customer' : 'Customer · $custRef',
+          '${Routes.customerDetail}?id=$custId'
+        ),
       if (facts.paymentPlanId.isNotEmpty)
-        (PhosphorIconsRegular.scroll, facts.number.isEmpty ? 'Payment plan' : 'Plan for ${facts.number}', 'Payment plan',
-            plan == null ? null : '${Routes.invoiceDetail}?id=${plan.id}'),
+        (
+          PhosphorIconsRegular.scroll,
+          facts.number.isEmpty ? 'Payment plan' : 'Plan for ${facts.number}',
+          'Payment plan',
+          plan == null ? null : '${Routes.invoiceDetail}?id=${plan.id}'
+        ),
     ];
     if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -1020,31 +1544,50 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
           Padding(
             padding: EdgeInsets.only(top: 7.h, bottom: 2.h),
             child: Text('RELATED',
-                style: AppText.custom(size: 11, weight: FontWeight.w700, color: AppColors.textPlaceholder, letterSpacing: 0.5)),
+                style: AppText.custom(
+                    size: 11,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPlaceholder,
+                    letterSpacing: 0.5)),
           ),
           for (var i = 0; i < items.length; i++)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: items[i].$4 == null ? null : () => context.push(items[i].$4!),
+              onTap:
+                  items[i].$4 == null ? null : () => context.push(items[i].$4!),
               child: Container(
                 padding: EdgeInsets.symmetric(vertical: 9.h),
                 decoration: i == items.length - 1
                     ? null
-                    : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+                    : const BoxDecoration(
+                        border: Border(
+                            bottom: BorderSide(color: Color(0xFFF3F4F5)))),
                 child: Row(children: [
-                  IconChip(icon: items[i].$1, size: 38, radius: 11, iconSize: 18),
+                  IconChip(
+                      icon: items[i].$1, size: 38, radius: 11, iconSize: 18),
                   SizedBox(width: 12.w),
                   Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(items[i].$2,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-                      SizedBox(height: 1.h),
-                      Text(items[i].$3, style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textMuted)),
-                    ]),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(items[i].$2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.custom(
+                                  size: 14.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.textPrimary)),
+                          SizedBox(height: 1.h),
+                          Text(items[i].$3,
+                              style: AppText.custom(
+                                  size: 12,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted)),
+                        ]),
                   ),
-                  if (items[i].$4 != null) Icon(PhosphorIconsBold.caretRight, size: 15.sp, color: AppColors.textPlaceholder),
+                  if (items[i].$4 != null)
+                    Icon(PhosphorIconsBold.caretRight,
+                        size: 15.sp, color: AppColors.textPlaceholder),
                 ]),
               ),
             ),
@@ -1053,11 +1596,15 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     );
   }
 
-  Widget _infoCard(QuoteFacts facts, QuoteLifecycleActions a, Map<String, dynamic> row,
-      {required bool canUpdate, required bool readOnly, required void Function(String) onLocked}) {
+  Widget _infoCard(
+      QuoteFacts facts, QuoteLifecycleActions a, Map<String, dynamic> row,
+      {required bool canUpdate,
+      required bool readOnly,
+      required void Function(String) onLocked}) {
     final editable = canUpdate && !readOnly;
     final moneyLocked = facts.isLocked || readOnly;
-    const lockedCopy = 'Sent quotes are locked — prices, lines and terms change through Revise';
+    const lockedCopy =
+        'Sent quotes are locked — prices, lines and terms change through Revise';
     final stateName = ref.watch(gstStateNameProvider);
     final states = ref.watch(gstStatesProvider).valueOrNull ?? const [];
     final pos = _str(row['place_of_supply_state_code']);
@@ -1067,9 +1614,12 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
             ? _str((row['owner'] as Map)['full_name'])
             : _str((row['owner'] as Map)['email']))
         : '';
-    final ownerId = row['owner'] is Map ? _str((row['owner'] as Map)['user_id']) : _str(row['owner']);
+    final ownerId = row['owner'] is Map
+        ? _str((row['owner'] as Map)['user_id'])
+        : _str(row['owner']);
     final discount = _str(row['discount_pct']);
-    final showDiscount = (double.tryParse(discount) ?? 0) > 0 || facts.approvalStatus != 'NOT_REQUIRED';
+    final showDiscount = (double.tryParse(discount) ?? 0) > 0 ||
+        facts.approvalStatus != 'NOT_REQUIRED';
     final chip = approvalChipLabel(row);
     final declineName = _str(row['decline_reason_name']);
     final declineNote = _str(row['decline_note']);
@@ -1079,36 +1629,81 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
         label: 'Quote title',
         value: facts.title.isEmpty ? '—' : facts.title,
         onTap: editable
-            ? () => _editText(facts, 'Quote title', 'quotation_title', facts.title, 'e.g. CRM Annual Plan – ABC Corp', 'Quote title updated')
+            ? () => _editText(
+                facts,
+                'Quote title',
+                'quotation_title',
+                facts.title,
+                'e.g. CRM Annual Plan – ABC Corp',
+                'Quote title updated')
             : null,
       ),
-      QuoteInfoRow(label: 'Template', value: _str(row['template_name']).isEmpty ? 'Standard' : _str(row['template_name'])),
-      QuoteInfoRow(label: 'Payment type', value: facts.paymentType.isEmpty ? 'Lump sum' : planTypeLabel(facts.paymentType)),
-      QuoteInfoRow(label: 'Currency', value: _str(row['currency']).isEmpty ? 'INR' : _str(row['currency'])),
-      QuoteInfoRow(label: 'Lead', value: _str(row['lead_name']).isEmpty ? '—' : _str(row['lead_name'])),
-      QuoteInfoRow(label: 'Customer', value: _str(row['customer_name']).isEmpty ? '—' : _str(row['customer_name'])),
-      QuoteInfoRow(label: 'Issued', value: fmtQuoteDate(_str(row['created_at'])).isEmpty ? '—' : fmtQuoteDate(_str(row['created_at']))),
+      QuoteInfoRow(
+          label: 'Template',
+          value: _str(row['template_name']).isEmpty
+              ? 'Standard'
+              : _str(row['template_name'])),
+      QuoteInfoRow(
+          label: 'Payment type',
+          value: facts.paymentType.isEmpty
+              ? 'Lump sum'
+              : planTypeLabel(facts.paymentType)),
+      QuoteInfoRow(
+          label: 'Currency',
+          value: _str(row['currency']).isEmpty ? 'INR' : _str(row['currency'])),
+      QuoteInfoRow(
+          label: 'Lead',
+          value: _str(row['lead_name']).isEmpty ? '—' : _str(row['lead_name'])),
+      QuoteInfoRow(
+          label: 'Customer',
+          value: _str(row['customer_name']).isEmpty
+              ? '—'
+              : _str(row['customer_name'])),
+      QuoteInfoRow(
+          label: 'Issued',
+          value: fmtQuoteDate(_str(row['created_at'])).isEmpty
+              ? '—'
+              : fmtQuoteDate(_str(row['created_at']))),
       QuoteInfoRow(
         label: 'Quote valid until',
-        value: fmtQuoteDate(facts.validUntil).isEmpty ? '—' : fmtQuoteDate(facts.validUntil),
-        onTap: editable ? () => _editDate(facts, 'valid_until', facts.validUntil, 'Valid until updated') : null,
+        value: fmtQuoteDate(facts.validUntil).isEmpty
+            ? '—'
+            : fmtQuoteDate(facts.validUntil),
+        onTap: editable
+            ? () => _editDate(
+                facts, 'valid_until', facts.validUntil, 'Valid until updated')
+            : null,
       ),
       QuoteInfoRow(
         label: 'Due date',
-        value: fmtQuoteDate(facts.dueDate).isEmpty ? '—' : fmtQuoteDate(facts.dueDate),
-        onTap: editable ? () => _editDate(facts, 'due_date', facts.dueDate, 'Due date updated') : null,
+        value: fmtQuoteDate(facts.dueDate).isEmpty
+            ? '—'
+            : fmtQuoteDate(facts.dueDate),
+        onTap: editable
+            ? () =>
+                _editDate(facts, 'due_date', facts.dueDate, 'Due date updated')
+            : null,
       ),
       if (facts.revisionNo > 0)
         QuoteInfoRow(
           label: 'Revision',
           value: 'R${facts.revisionNo}',
           trailing: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            Text('R${facts.revisionNo}', style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text('R${facts.revisionNo}',
+                style: AppText.custom(
+                    size: 13.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             if (facts.revisionOf.isNotEmpty) ...[
               SizedBox(width: 8.w),
               GestureDetector(
-                onTap: () => context.push('${Routes.quoteDetail}?id=${facts.revisionOf}'),
-                child: Text('Previous revision', style: AppText.custom(size: 12.5, weight: FontWeight.w700, color: AppColors.blueBright)),
+                onTap: () => context
+                    .push('${Routes.quoteDetail}?id=${facts.revisionOf}'),
+                child: Text('Previous revision',
+                    style: AppText.custom(
+                        size: 12.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.blueBright)),
               ),
             ],
           ]),
@@ -1117,17 +1712,40 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
         QuoteInfoRow(
           label: 'Discount',
           value: pctLabel(discount),
-          trailing: Wrap(alignment: WrapAlignment.end, spacing: 6.w, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text(pctLabel(discount), style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-            if (chip != null)
-              QuoteHeadChip(chip,
-                  color: chip == 'APPROVED' ? AppColors.success : (chip == 'PENDING APPROVAL' ? AppColors.warningDeep : AppColors.error),
-                  bg: chip == 'APPROVED' ? AppColors.tintGreen : (chip == 'PENDING APPROVAL' ? AppColors.tintAmber : AppColors.tintRed)),
-          ]),
+          trailing: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 6.w,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(pctLabel(discount),
+                    style: AppText.custom(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                if (chip != null)
+                  QuoteHeadChip(chip,
+                      color: chip == 'APPROVED'
+                          ? AppColors.success
+                          : (chip == 'PENDING APPROVAL'
+                              ? AppColors.warningDeep
+                              : AppColors.error),
+                      bg: chip == 'APPROVED'
+                          ? AppColors.tintGreen
+                          : (chip == 'PENDING APPROVAL'
+                              ? AppColors.tintAmber
+                              : AppColors.tintRed)),
+              ]),
         ),
-      if (_str(row['accepted_on']).isNotEmpty) QuoteInfoRow(label: 'Accepted on', value: fmtQuoteDate(_str(row['accepted_on']))),
+      if (_str(row['accepted_on']).isNotEmpty)
+        QuoteInfoRow(
+            label: 'Accepted on',
+            value: fmtQuoteDate(_str(row['accepted_on']))),
       if (declineName.isNotEmpty)
-        QuoteInfoRow(label: 'Decline reason', value: declineNote.isEmpty ? declineName : '$declineName — $declineNote'),
+        QuoteInfoRow(
+            label: 'Decline reason',
+            value: declineNote.isEmpty
+                ? declineName
+                : '$declineName — $declineNote'),
       QuoteInfoRow(
         label: 'Amounts are',
         value: amountsAre.isEmpty ? '—' : amountsAreLabel(amountsAre),
@@ -1138,7 +1756,10 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                 facts,
                 'Amounts are',
                 'amounts_are',
-                const [CatalogOption(id: 'EXCLUSIVE', name: 'Tax exclusive'), CatalogOption(id: 'INCLUSIVE', name: 'Tax inclusive')],
+                const [
+                  CatalogOption(id: 'EXCLUSIVE', name: 'Tax exclusive'),
+                  CatalogOption(id: 'INCLUSIVE', name: 'Tax inclusive')
+                ],
                 amountsAre,
                 'Tax treatment updated')
             : null,
@@ -1149,16 +1770,30 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
         lockedReason: moneyLocked && !readOnly ? lockedCopy : null,
         onLocked: onLocked,
         onTap: editable && !moneyLocked
-            ? () => _editChoice(facts, 'Place of supply', 'place_of_supply_state_code',
-                [for (final s in states) CatalogOption(id: s.code, name: '${s.name} (${s.code})')], pos, 'Place of supply updated')
+            ? () => _editChoice(
+                facts,
+                'Place of supply',
+                'place_of_supply_state_code',
+                [
+                  for (final s in states)
+                    CatalogOption(id: s.code, name: '${s.name} (${s.code})')
+                ],
+                pos,
+                'Place of supply updated')
             : null,
       ),
       QuoteInfoRow(
         label: 'Contract reference',
-        value: _str(row['contract_ref']).isEmpty ? '—' : _str(row['contract_ref']),
+        value:
+            _str(row['contract_ref']).isEmpty ? '—' : _str(row['contract_ref']),
         last: true,
         onTap: editable
-            ? () => _editText(facts, 'Contract reference', 'contract_ref', _str(row['contract_ref']), 'e.g. MSA-2026-014',
+            ? () => _editText(
+                facts,
+                'Contract reference',
+                'contract_ref',
+                _str(row['contract_ref']),
+                'e.g. MSA-2026-014',
                 'Contract reference updated')
             : null,
       ),
@@ -1166,7 +1801,12 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
 
     final initials = ownerName.trim().isEmpty
         ? '?'
-        : ownerName.trim().split(RegExp(r'\s+')).take(2).map((p) => p[0].toUpperCase()).join();
+        : ownerName
+            .trim()
+            .split(RegExp(r'\s+'))
+            .take(2)
+            .map((p) => p[0].toUpperCase())
+            .join();
     return FinanceCard(
       title: 'Quote information',
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1177,15 +1817,26 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
             width: 38.w,
             height: 38.w,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.navy, shape: BoxShape.circle),
-            child: Text(initials, style: AppText.custom(size: 12, weight: FontWeight.w700, color: AppColors.white)),
+            decoration: const BoxDecoration(
+                color: AppColors.navy, shape: BoxShape.circle),
+            child: Text(initials,
+                style: AppText.custom(
+                    size: 12, weight: FontWeight.w700, color: AppColors.white)),
           ),
           SizedBox(width: 11.w),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(ownerName.isEmpty ? 'Unassigned' : ownerName,
-                  style: AppText.custom(size: 13.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
-              Text('Quote owner', style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                  style: AppText.custom(
+                      size: 13.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              Text('Quote owner',
+                  style: AppText.custom(
+                      size: 11.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textPlaceholder)),
             ]),
           ),
           if (!readOnly)
@@ -1200,7 +1851,8 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
                   borderRadius: BorderRadius.circular(9.r),
                   border: Border.all(color: AppColors.borderInput),
                 ),
-                child: Icon(PhosphorIconsRegular.repeat, size: 15.sp, color: AppColors.navy),
+                child: Icon(PhosphorIconsRegular.repeat,
+                    size: 15.sp, color: AppColors.navy),
               ),
             ),
         ]),
@@ -1208,29 +1860,42 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     );
   }
 
-  Widget _totalRow(String label, String value, {bool strong = false}) => Padding(
+  Widget _totalRow(String label, String value, {bool strong = false}) =>
+      Padding(
         padding: EdgeInsets.symmetric(vertical: 3.h),
         child: Row(children: [
           Text(label,
               style: AppText.custom(
-                  size: strong ? 13 : 12.5, weight: strong ? FontWeight.w700 : FontWeight.w500, color: AppColors.textMuted)),
+                  size: strong ? 13 : 12.5,
+                  weight: strong ? FontWeight.w700 : FontWeight.w500,
+                  color: AppColors.textMuted)),
           const Spacer(),
           Text(value,
               style: AppText.custom(
-                  size: strong ? 18 : 13.5, weight: FontWeight.w800, color: strong ? AppColors.navy : AppColors.textPrimary)),
+                  size: strong ? 18 : 13.5,
+                  weight: FontWeight.w800,
+                  color: strong ? AppColors.navy : AppColors.textPrimary)),
         ]),
       );
 
   Widget _lineItemsCard(Map<String, dynamic> row) {
     final items = quoteFromApi(row)?.items ?? const <QuoteItem>[];
-    final ts = row['tax_summary'] is Map ? Map<String, dynamic>.from(row['tax_summary'] as Map) : null;
+    final ts = row['tax_summary'] is Map
+        ? Map<String, dynamic>.from(row['tax_summary'] as Map)
+        : null;
     bool nz(Object? v) => parseMoneyNonZero(v);
-    final grand = _str(ts?['grand_total']).isNotEmpty ? ts!['grand_total'] : row['grand_total'];
-    final taxable = _str(ts?['taxable_total']).isNotEmpty ? ts!['taxable_total'] : row['taxable_total'];
-    final taxTotal = _str(ts?['tax_total']).isNotEmpty ? ts!['tax_total'] : row['tax_total'];
+    final grand = _str(ts?['grand_total']).isNotEmpty
+        ? ts!['grand_total']
+        : row['grand_total'];
+    final taxable = _str(ts?['taxable_total']).isNotEmpty
+        ? ts!['taxable_total']
+        : row['taxable_total'];
+    final taxTotal =
+        _str(ts?['tax_total']).isNotEmpty ? ts!['tax_total'] : row['tax_total'];
     final estimate = ts?['is_estimate'] == true && nz(taxTotal);
     final warnings = [
-      for (final w in (ts?['warnings'] is List ? ts!['warnings'] as List : const []))
+      for (final w
+          in (ts?['warnings'] is List ? ts!['warnings'] as List : const []))
         if (w is Map && _str(w['message']).isNotEmpty) _str(w['message']),
     ];
     String pct(String? raw) {
@@ -1242,26 +1907,43 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
     return FinanceCard(
       title: 'Line items',
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (items.isEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 8.h), child: Text('No line items yet.', style: AppText.caption())),
+        if (items.isEmpty)
+          Padding(
+              padding: EdgeInsets.symmetric(vertical: 8.h),
+              child: Text('No line items yet.', style: AppText.caption())),
         for (final it in items)
           Container(
             padding: EdgeInsets.symmetric(vertical: 11.h),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
             child: Row(children: [
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(it.name, style: AppText.custom(size: 14, weight: FontWeight.w600, color: AppColors.textPrimary)),
-                  SizedBox(height: 2.h),
-                  Text(
-                      'Qty ${formatQty(it.qty)} · ${it.rate}'
-                      '${it.discount > 0 ? " · -${quoteMoney(it.discount)} off" : ""}'
-                      '${it.hsn == null || it.hsn!.isEmpty ? "" : " · HSN ${it.hsn}"}'
-                      '${it.ratePct == null ? "" : " · GST ${pct(it.ratePct)}%"}',
-                      style: AppText.custom(size: 12, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
-                ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(it.name,
+                          style: AppText.custom(
+                              size: 14,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPrimary)),
+                      SizedBox(height: 2.h),
+                      Text(
+                          'Qty ${formatQty(it.qty)} · ${it.rate}'
+                          '${it.discount > 0 ? " · -${quoteMoney(it.discount)} off" : ""}'
+                          '${it.hsn == null || it.hsn!.isEmpty ? "" : " · HSN ${it.hsn}"}'
+                          '${it.ratePct == null ? "" : " · GST ${pct(it.ratePct)}%"}',
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w500,
+                              color: AppColors.textPlaceholder)),
+                    ]),
               ),
               SizedBox(width: 14.w),
-              Text(it.amt, style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(it.amt,
+                  style: AppText.custom(
+                      size: 14,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ]),
           ),
         SizedBox(height: 10.h),
@@ -1272,7 +1954,8 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
             if (nz(ts['sgst'])) _totalRow('SGST', quoteMoney(ts['sgst'])),
             if (nz(ts['igst'])) _totalRow('IGST', quoteMoney(ts['igst'])),
             if (nz(ts['cess'])) _totalRow('Cess', quoteMoney(ts['cess'])),
-            if (nz(ts['round_off'])) _totalRow('Round off', quoteMoney(ts['round_off'])),
+            if (nz(ts['round_off']))
+              _totalRow('Round off', quoteMoney(ts['round_off'])),
           ] else
             _totalRow('Tax', quoteMoney(taxTotal)),
           const ClozrDivider(margin: EdgeInsets.symmetric(vertical: 8)),
@@ -1292,24 +1975,35 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
 
   /// The shared notes thread (reply / pin / edit / delete), model `quotation`.
   Widget _notesThread(String uuid, bool readOnly) {
-    final seed = CrmNotesSeed(uuid.isEmpty ? 'QUOTE-local' : uuid, () => const [], apiModel: uuid.isEmpty ? null : 'quotation');
+    final seed = CrmNotesSeed(
+        uuid.isEmpty ? 'QUOTE-local' : uuid, () => const [],
+        apiModel: uuid.isEmpty ? null : 'quotation');
     final notes = ref.watch(crmNotesProvider(seed));
     final notifier = ref.read(crmNotesProvider(seed).notifier);
     return NotesThread(
       author: ref.watch(noteAuthorProvider),
       notes: notes,
-      onAddNote: (body, atts) => notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
-      onAddReply: (noteId, body) => notifier.addReply(noteId, body, ref.read(noteAuthorProvider)),
+      onAddNote: (body, atts) =>
+          notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) =>
+          notifier.addReply(noteId, body, ref.read(noteAuthorProvider)),
       webappToolbar: true,
       noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
       mentionables: [
-        for (final u in ref.watch(assignableUsersForModuleProvider('task')).valueOrNull ?? const <CatalogOption>[])
+        for (final u in ref
+                .watch(assignableUsersForModuleProvider('task'))
+                .valueOrNull ??
+            const <CatalogOption>[])
           (id: UserDirectory.realUserId(u.id) ?? u.id, name: u.name),
       ],
       currentUserId: UserDirectory.currentUserId,
       readOnly: readOnly,
-      onAddTypedNote: (body, atts, typeId, typeName, mentions) => notifier.addNote(body, atts, ref.read(noteAuthorProvider),
-          noteTypeId: typeId, noteTypeName: typeName, mentionedUserIds: mentions, authorId: UserDirectory.currentUserId),
+      onAddTypedNote: (body, atts, typeId, typeName, mentions) =>
+          notifier.addNote(body, atts, ref.read(noteAuthorProvider),
+              noteTypeId: typeId,
+              noteTypeName: typeName,
+              mentionedUserIds: mentions,
+              authorId: UserDirectory.currentUserId),
       onTogglePin: notifier.togglePin,
       onEditNote: (id, body) => notifier.editNote(id, body),
       onDeleteNote: notifier.deleteNote,
@@ -1319,8 +2013,11 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
   /// "Activity" — the record's audit trail (`model_name=Quotation`), with a
   /// derived fallback when it is unavailable.
   Widget _activityCard(String uuid, Map<String, dynamic> row) {
-    final entries = uuid.isEmpty ? const <AuditEntry>[] : ref.watch(quoteActivityLogProvider(uuid)).valueOrNull ?? const [];
-    final owner = row['owner'] is Map ? _str((row['owner'] as Map)['full_name']) : '';
+    final entries = uuid.isEmpty
+        ? const <AuditEntry>[]
+        : ref.watch(quoteActivityLogProvider(uuid)).valueOrNull ?? const [];
+    final owner =
+        row['owner'] is Map ? _str((row['owner'] as Map)['full_name']) : '';
     final rows = entries.isEmpty
         ? [
             ActivityEntry(
@@ -1328,28 +2025,58 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
               tone: AppColors.blueBright,
               bg: AppColors.tintBlue,
               title: 'Quote created',
-              sub: [fmtQuoteDate(_str(row['created_at'])), owner].where((s) => s.isNotEmpty).join(' · '),
+              sub: [fmtQuoteDate(_str(row['created_at'])), owner]
+                  .where((s) => s.isNotEmpty)
+                  .join(' · '),
             ),
           ]
         : [for (final e in entries) _auditRow(e)];
     return FinanceCard(
       title: 'Activity',
-      child: Padding(padding: EdgeInsets.only(top: 6.h), child: ActivityTimeline(entries: rows)),
+      child: Padding(
+          padding: EdgeInsets.only(top: 6.h),
+          child: ActivityTimeline(entries: rows)),
     );
   }
 
   ActivityEntry _auditRow(AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created => (PhosphorIconsRegular.fileText, AppColors.blueBright, AppColors.tintBlue),
-      AuditEventKind.statusChanged => (PhosphorIconsRegular.arrowsClockwise, AppColors.warning, AppColors.tintAmber),
-      AuditEventKind.noteAdded => (PhosphorIconsRegular.note, AppColors.pending, AppColors.tintPurple),
-      AuditEventKind.childAdded => (PhosphorIconsRegular.plusCircle, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.deleted => (PhosphorIconsRegular.trash, AppColors.error, AppColors.tintRed),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.blueBright, AppColors.tintBlue),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.fileText,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.arrowsClockwise,
+          AppColors.warning,
+          AppColors.tintAmber
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.pending,
+          AppColors.tintPurple
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.plusCircle,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.tintRed
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
     };
     final when = e.at == null ? '' : relativeTime(e.at);
-    final sub = [e.subtitle, e.actor, when].where((s) => s.isNotEmpty).join(' · ');
-    return ActivityEntry(icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
+    final sub =
+        [e.subtitle, e.actor, when].where((s) => s.isNotEmpty).join(' · ');
+    return ActivityEntry(
+        icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
   }
 }
 
@@ -1358,7 +2085,8 @@ class _QuoteDetailScreenState extends ConsumerState<QuoteDetailScreen> {
 /// while the closing animation still rebuilt the field, which crashed the
 /// screen ("Something went wrong on this screen").
 class _TextPromptDialog extends StatefulWidget {
-  const _TextPromptDialog({required this.title, required this.initial, required this.hint});
+  const _TextPromptDialog(
+      {required this.title, required this.initial, required this.hint});
 
   final String title;
   final String initial;
@@ -1383,12 +2111,17 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
         content: TextField(
           controller: _ctrl,
           autofocus: true,
-          decoration: InputDecoration(hintText: widget.hint, border: const OutlineInputBorder()),
+          decoration: InputDecoration(
+              hintText: widget.hint, border: const OutlineInputBorder()),
           onSubmitted: (v) => Navigator.of(context).pop(v),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(context).pop(_ctrl.text), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(_ctrl.text),
+              child: const Text('Save')),
         ],
       );
 }

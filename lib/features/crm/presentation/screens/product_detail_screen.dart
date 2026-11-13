@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../auth/presentation/components/permission_guard.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +17,7 @@ import '../../../../core/widgets/detail_app_bar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/app_error.dart';
+import '../../../../core/network/network_providers.dart';
 import '../../../../core/widgets/action_menu.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/list_skeleton.dart';
@@ -25,6 +27,7 @@ import '../../../../core/utils/relative_time.dart';
 import '../../application/providers/audit_log_providers.dart';
 import '../../application/providers/crm_notes_providers.dart';
 import '../../application/product_columns.dart';
+import '../../application/product_display.dart';
 import '../../application/providers/crm_module_schema_providers.dart';
 import '../../application/providers/products_providers.dart';
 import '../../application/record_rows.dart';
@@ -33,6 +36,7 @@ import '../../domain/entities/audit_entry.dart';
 import '../../domain/entities/package_composition.dart';
 import '../../domain/entities/product.dart';
 import '../components/crm_async.dart';
+import '../components/product_sales_content_card.dart';
 import '../components/finance_widgets.dart' hide NoteEntry;
 
 /// Product detail — header (name + active toggle + edit), description,
@@ -77,7 +81,8 @@ class ProductDetailScreen extends ConsumerWidget {
     return async.when(
       loading: () => scaffold(const DetailSkeleton()),
       error: (e, _) => scaffold(
-        ErrorState.forError(crmAppError(e), onRetry: () => ref.invalidate(productsProvider)),
+        ErrorState.forError(crmAppError(e),
+            onRetry: () => ref.invalidate(productsProvider)),
       ),
       data: (_) => _buildProduct(context, ref, id, scaffold),
     );
@@ -98,7 +103,8 @@ class ProductDetailScreen extends ConsumerWidget {
       return scaffold(const EmptyState(
         icon: PhosphorIconsRegular.package,
         title: 'Product not found',
-        body: 'This catalog item may have been removed or you no longer have access to it.',
+        body:
+            'This catalog item may have been removed or you no longer have access to it.',
       ));
     }
 
@@ -120,48 +126,60 @@ class ProductDetailScreen extends ConsumerWidget {
               onRefresh: () => _refresh(ref, id),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
-              children: [
-                _headerCard(ref, product),
-                SizedBox(height: 14.h),
-                FinanceCard(
-                  title: 'Description',
-                  child: Text(_desc(product),
-                      style: AppText.custom(size: 14, weight: FontWeight.w500, color: AppColors.textLabelAlt, height: 1.6)),
-                ),
-                SizedBox(height: 14.h),
-                if (_usageCard(ref, product) case final usage?) ...[
-                  usage,
+                padding: EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 24.h),
+                children: [
+                  _headerCard(ref, product),
                   SizedBox(height: 14.h),
-                ],
-                if (_performanceCard(product) case final card?) ...[
-                  card,
+                  FinanceCard(
+                    title: 'Description',
+                    child: Text(_desc(product),
+                        style: AppText.custom(
+                            size: 14,
+                            weight: FontWeight.w500,
+                            color: AppColors.textLabelAlt,
+                            height: 1.6)),
+                  ),
                   SizedBox(height: 14.h),
-                ],
-                // A package's price is derived from what it contains, so the
-                // composition belongs above the pricing that follows from it.
-                if (product.composition case final comp?)
-                  // The composition *is* the pricing for a package: its price
-                  // is the derived total, and the per-unit GST rows below apply
-                  // to a single product, not to a bundle whose components each
-                  // carry their own rate.
-                  _compositionCard(comp)
-                else
-                  _pricingCard(product),
-                if (_detailsCard(ref, product) case final card?) ...[
+                  if (_usageCard(ref, product) case final usage?) ...[
+                    usage,
+                    SizedBox(height: 14.h),
+                  ],
+                  if (_performanceCard(product) case final card?) ...[
+                    card,
+                    SizedBox(height: 14.h),
+                  ],
+                  // A package's price is derived from what it contains, so the
+                  // composition belongs above the pricing that follows from it.
+                  if (product.composition case final comp?)
+                    // The composition *is* the pricing for a package: its price
+                    // is the derived total, and the per-unit GST rows below apply
+                    // to a single product, not to a bundle whose components each
+                    // carry their own rate.
+                    _compositionCard(comp)
+                  else
+                    _pricingCard(product),
+                  if (!product.isPackage && ApiConfig.apiEnabled) ...[
+                    SizedBox(height: 14.h),
+                    ProductSalesContentCard(
+                        product: product,
+                        canEdit:
+                            hasPermission(ref, 'product', PermVerb.update)),
+                  ],
+                  if (_detailsCard(ref, product) case final card?) ...[
+                    SizedBox(height: 14.h),
+                    card,
+                  ],
+                  // Accounting's tax defaults for this product — renders nothing
+                  // unless accounting is active and setup is readable.
+                  if (!product.isPackage && ApiConfig.apiEnabled)
+                    ProductTaxProfileCard(productId: product.id),
                   SizedBox(height: 14.h),
-                  card,
+                  _notesThread(ref, id, product),
+                  if (ApiConfig.apiEnabled) ...[
+                    SizedBox(height: 14.h),
+                    _activityCard(ref, id),
+                  ],
                 ],
-                // Accounting's tax defaults for this product — renders nothing
-                // unless accounting is active and setup is readable.
-                if (!product.isPackage && ApiConfig.apiEnabled) ProductTaxProfileCard(productId: product.id),
-                SizedBox(height: 14.h),
-                _notesThread(ref, id, product),
-                if (ApiConfig.apiEnabled) ...[
-                  SizedBox(height: 14.h),
-                  _activityCard(ref, id),
-                ],
-              ],
               ),
             ),
           ),
@@ -188,8 +206,8 @@ class ProductDetailScreen extends ConsumerWidget {
     final rows = (schema.isEmpty || raw.isEmpty)
         ? _fallbackDetailRows(product)
         : [
-            for (final r in recordRows(raw, schema,
-                skip: kProductDetailChromeColumns))
+            for (final r
+                in recordRows(raw, schema, skip: kProductDetailChromeColumns))
               (label: r.label, value: r.value),
           ];
     // An org whose whole detail layout is chrome the page already draws leaves
@@ -229,7 +247,11 @@ class ProductDetailScreen extends ConsumerWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconChip(icon: productCategoryIcon(product.cat), size: 46, radius: 13, iconSize: 22),
+              IconChip(
+                  icon: productCategoryIcon(product.cat),
+                  size: 46,
+                  radius: 13,
+                  iconSize: 22),
               SizedBox(width: 12.w),
               Expanded(
                 child: Column(
@@ -241,25 +263,38 @@ class ProductDetailScreen extends ConsumerWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(product.name,
-                            style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                            style: AppText.custom(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.3)),
                         product.active
-                            ? const StatusPill(label: 'Active', color: AppColors.success)
-                            : const StatusPill(label: 'Inactive', color: AppColors.error),
+                            ? const StatusPill(
+                                label: 'Active', color: AppColors.success)
+                            : const StatusPill(
+                                label: 'Inactive', color: AppColors.error),
                       ],
                     ),
                     SizedBox(height: 3.h),
                     // `product_code` is optional, and `product.id` is the
                     // `product_id` uuid — printing that as a fallback put a raw
                     // uuid on screen for every product created without a SKU.
-                    Text([
-                      if (product.code.isNotEmpty) product.code,
-                      if (product.cat.isNotEmpty) product.cat,
-                    ].join(' · '),
-                        style: AppText.custom(size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                    Text(
+                        [
+                          if (product.code.isNotEmpty) product.code,
+                          if (product.cat.isNotEmpty) product.cat,
+                        ].join(' · '),
+                        style: AppText.custom(
+                            size: 12.5,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted)),
                     if (product.hsn.isNotEmpty) ...[
                       SizedBox(height: 3.h),
                       Text('# HSN/SAC ${product.hsn}',
-                          style: AppText.custom(size: 12, weight: FontWeight.w600, color: AppColors.textPlaceholder)),
+                          style: AppText.custom(
+                              size: 12,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPlaceholder)),
                     ],
                   ],
                 ),
@@ -271,7 +306,10 @@ class ProductDetailScreen extends ConsumerWidget {
             children: [
               Expanded(
                 child: Text('Catalog item · used across quotes & deals',
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder)),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder)),
               ),
               SizedBox(width: 10.w),
               _pillButton(
@@ -283,7 +321,9 @@ class ProductDetailScreen extends ConsumerWidget {
               _pillButton(
                 icon: PhosphorIconsRegular.pencilSimple,
                 label: 'Edit',
-                onTap: () => ref.read(toastProvider.notifier).show('Edit product — coming soon'),
+                onTap: () => ref
+                    .read(toastProvider.notifier)
+                    .show('Edit product — coming soon'),
               ),
             ],
           ),
@@ -292,7 +332,10 @@ class ProductDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _pillButton({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _pillButton(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -307,7 +350,11 @@ class ProductDetailScreen extends ConsumerWidget {
           children: [
             Icon(icon, size: 15.sp, color: AppColors.textSecondary),
             SizedBox(width: 6.w),
-            Text(label, style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+            Text(label,
+                style: AppText.custom(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: AppColors.textBody)),
           ],
         ),
       ),
@@ -328,8 +375,14 @@ class ProductDetailScreen extends ConsumerWidget {
     final usage = ref.watch(productUsageProvider(product.id)).valueOrNull;
     if (usage == null || !usage.hasActivity) return null;
     final stats = <(String, String)>[
-      ('${usage.quotes}', usage.quotes == 1 ? 'Quote using this' : 'Quotes using this'),
-      ('${usage.leads}', usage.leads == 1 ? 'Lead interested' : 'Leads interested'),
+      (
+        '${usage.quotes}',
+        usage.quotes == 1 ? 'Quote using this' : 'Quotes using this'
+      ),
+      (
+        '${usage.leads}',
+        usage.leads == 1 ? 'Lead interested' : 'Leads interested'
+      ),
     ];
     return FinanceCard(
       title: 'Usage',
@@ -343,9 +396,19 @@ class ProductDetailScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(st.$1, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.blueBright, letterSpacing: -0.3)),
+                    Text(st.$1,
+                        style: AppText.custom(
+                            size: 17,
+                            weight: FontWeight.w800,
+                            color: AppColors.blueBright,
+                            letterSpacing: -0.3)),
                     SizedBox(height: 3.h),
-                    Text(st.$2, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.35)),
+                    Text(st.$2,
+                        style: AppText.custom(
+                            size: 11,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted,
+                            height: 1.35)),
                   ],
                 ),
               ),
@@ -381,9 +444,19 @@ class ProductDetailScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(p.$1, style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.blueBright, letterSpacing: -0.3)),
+                    Text(p.$1,
+                        style: AppText.custom(
+                            size: 17,
+                            weight: FontWeight.w800,
+                            color: AppColors.blueBright,
+                            letterSpacing: -0.3)),
                     SizedBox(height: 3.h),
-                    Text(p.$2, style: AppText.custom(size: 11, weight: FontWeight.w500, color: AppColors.textMuted, height: 1.35)),
+                    Text(p.$2,
+                        style: AppText.custom(
+                            size: 11,
+                            weight: FontWeight.w500,
+                            color: AppColors.textMuted,
+                            height: 1.35)),
                   ],
                 ),
               ),
@@ -396,13 +469,19 @@ class ProductDetailScreen extends ConsumerWidget {
   Widget _pricingCard(Product product) {
     // "Unit price ()" is what an empty billing unit produced.
     final unitBare = product.unit.replaceFirst('per ', '');
-    final priceLabel = unitBare.isEmpty ? 'Unit price' : 'Unit price ($unitBare)';
+    final priceLabel =
+        unitBare.isEmpty ? 'Unit price' : 'Unit price ($unitBare)';
     return FinanceCard(
       title: 'Pricing',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           MetaRow(label: priceLabel, value: product.price),
+          // Webapp locked row: Currency is protected on the product layout, so
+          // it is always part of the readout.
+          if ('${product.raw['currency'] ?? ''}'.trim() case final cur
+              when cur.isNotEmpty)
+            MetaRow(label: 'Currency', value: cur),
           // '—' when the org's Product layout does not expose `tax_rate`: the
           // rate is unknown, and so is everything computed from it.
           MetaRow(
@@ -410,14 +489,19 @@ class ProductDetailScreen extends ConsumerWidget {
               // `tax_rate` rather than sent by the server: that column is a UI
               // default now, and accounting's rate master resolves the rate
               // that actually gets invoiced.
-              label: product.gstServerComputed ? 'GST rate' : 'GST rate (indicative)',
+              label: product.gstServerComputed
+                  ? 'GST rate'
+                  : 'GST rate (indicative)',
               value: product.gstKnown ? '${product.gst}%' : '—'),
           MetaRow(
               label: 'GST amount',
               value: product.gstKnown ? product.gstAmt : '—',
               last: product.raw['supply_nature'] is! String),
           if (product.raw['supply_nature'] case final String nature)
-            MetaRow(label: 'Goods or service', value: nature == 'GOODS' ? 'Goods' : 'Service', last: true),
+            MetaRow(
+                label: 'Goods or service',
+                value: nature == 'GOODS' ? 'Goods' : 'Service',
+                last: true),
           // The server's own GST 2.0 nudge, shown verbatim - it owns the list
           // of retired slabs, the app does not encode a copy.
           if (product.deprecatedRate case final note?) ...[
@@ -432,12 +516,15 @@ class ProductDetailScreen extends ConsumerWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(PhosphorIconsFill.warningCircle, size: 16.sp, color: AppColors.warning),
+                  Icon(PhosphorIconsFill.warningCircle,
+                      size: 16.sp, color: AppColors.warning),
                   SizedBox(width: 8.w),
                   Expanded(
                     child: Text(note,
                         style: AppText.custom(
-                            size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: AppColors.textBody)),
                   ),
                 ],
               ),
@@ -447,26 +534,41 @@ class ProductDetailScreen extends ConsumerWidget {
             padding: EdgeInsets.only(top: 12.h, bottom: 2.h),
             child: Row(
               children: [
-                Text('Gross unit price', style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                Text('Gross unit price',
+                    style: AppText.custom(
+                        size: 14,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 const Spacer(),
                 Text(product.gstKnown ? product.gross : product.price,
-                    style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                    style: AppText.custom(
+                        size: 17,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
               ],
             ),
           ),
           SizedBox(height: 10.h),
           Container(
             padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-            decoration: BoxDecoration(color: AppColors.bgScreen, borderRadius: BorderRadius.circular(10.r)),
+            decoration: BoxDecoration(
+                color: AppColors.bgScreen,
+                borderRadius: BorderRadius.circular(10.r)),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(PhosphorIconsRegular.info, size: 14.sp, color: AppColors.textPlaceholder),
+                Icon(PhosphorIconsRegular.info,
+                    size: 14.sp, color: AppColors.textPlaceholder),
                 SizedBox(width: 8.w),
                 Expanded(
                   child: Text(
                     'Price changes apply to new quotes only. Existing quotes keep the name and price captured when they were generated.',
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textMuted2, height: 1.5),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textMuted2,
+                        height: 1.5),
                   ),
                 ),
               ],
@@ -507,38 +609,51 @@ class ProductDetailScreen extends ConsumerWidget {
         children: [
           for (final comp in c.components)
             MetaRow(
-              label: '${comp.name}${comp.quantity > 1 ? ' × ${comp.quantity}' : ''}',
-              value: formatInr(comp.lineExcl),
+              label:
+                  '${comp.name}${comp.quantity > 1 ? ' × ${comp.quantity}' : ''}',
+              value: formatInrExact(comp.lineExcl),
             ),
           for (final adj in c.adjustments)
             MetaRow(
               label: adj.display,
-              value: '${adj.isDiscount ? '−' : ''}${formatInr(adj.amount)}',
+              value:
+                  '${adj.isDiscount ? '−' : ''}${formatInrExact(adj.amount)}',
             ),
           if (!hasLines)
             Padding(
               padding: EdgeInsets.symmetric(vertical: 4.h),
-              child: Text('Component breakdown is not available for this package.',
+              child: Text(
+                  'Component breakdown is not available for this package.',
                   style: AppText.custom(
-                      size: 12.5, weight: FontWeight.w500, color: AppColors.textMuted)),
+                      size: 12.5,
+                      weight: FontWeight.w500,
+                      color: AppColors.textMuted)),
             ),
-          MetaRow(label: 'Components subtotal', value: formatInr(c.componentsExcl)),
+          MetaRow(
+              label: 'Components subtotal',
+              value: formatInrExact(c.componentsExcl)),
           if (c.hasAdjustments)
             MetaRow(
                 label: 'Adjustments',
                 value: '${c.adjustmentsExcl < 0 ? '−' : ''}'
-                    '${formatInr(c.adjustmentsExcl.abs())}'),
-          MetaRow(label: 'Tax', value: formatInr(c.taxAmount), last: true),
+                    '${formatInrExact(c.adjustmentsExcl.abs())}'),
+          MetaRow(label: 'Tax', value: formatInrExact(c.taxAmount), last: true),
           Padding(
             padding: EdgeInsets.only(top: 12.h, bottom: 2.h),
             child: Row(
               children: [
                 Text('Package total',
-                    style: AppText.custom(size: 14, weight: FontWeight.w800, color: AppColors.textPrimary)),
-                const Spacer(),
-                Text(formatInr(c.totalIncl),
                     style: AppText.custom(
-                        size: 17, weight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3)),
+                        size: 14,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
+                const Spacer(),
+                Text(formatInrExact(c.totalIncl),
+                    style: AppText.custom(
+                        size: 17,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.3)),
               ],
             ),
           ),
@@ -559,6 +674,15 @@ class ProductDetailScreen extends ConsumerWidget {
           label: product.active ? 'Deactivate' : 'Activate',
           onTap: () => _setActive(ref, product, !product.active),
         ),
+        // The list-row name (`short_name`); lists show it in place of the
+        // full name when set. The full product editor is not on mobile yet,
+        // so this is its own action.
+        if (ApiConfig.apiEnabled)
+          MenuAction(
+            icon: PhosphorIconsRegular.textAa,
+            label: 'Edit short name',
+            onTap: () => _editShortName(context, ref, product),
+          ),
         MenuAction(
           icon: PhosphorIconsRegular.trash,
           label: 'Delete product',
@@ -582,9 +706,13 @@ class ProductDetailScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
         title: Text('Delete this product?',
-            style: AppText.custom(size: 17, weight: FontWeight.w800, color: AppColors.textPrimary)),
+            style: AppText.custom(
+                size: 17,
+                weight: FontWeight.w800,
+                color: AppColors.textPrimary)),
         content: Text(
             '"${product.name}" will be removed from the catalog. Quotes already '
             'issued keep the name and price they captured.',
@@ -592,10 +720,12 @@ class ProductDetailScreen extends ConsumerWidget {
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
+              child: Text('Cancel',
+                  style: AppText.bodyStrong(color: AppColors.textLabelAlt))),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Delete', style: AppText.bodyStrong(color: AppColors.error))),
+              child: Text('Delete',
+                  style: AppText.bodyStrong(color: AppColors.error))),
         ],
       ),
     );
@@ -628,7 +758,8 @@ class ProductDetailScreen extends ConsumerWidget {
   /// `view_audit_log` gets a 403 that resolves to the same empty list. The
   /// wording claims neither — it says only that there is nothing to show.
   Widget _activityCard(WidgetRef ref, String id) {
-    final entries = ref.watch(productActivityLogProvider(id)).valueOrNull ?? const [];
+    final entries =
+        ref.watch(productActivityLogProvider(id)).valueOrNull ?? const [];
     return FinanceCard(
       title: 'Activity',
       child: Padding(
@@ -636,8 +767,11 @@ class ProductDetailScreen extends ConsumerWidget {
         child: entries.isEmpty
             ? Text('No activity to show for this item.',
                 style: AppText.custom(
-                    size: 13, weight: FontWeight.w500, color: AppColors.textMuted))
-            : ActivityTimeline(entries: [for (final e in entries) _auditRow(e)]),
+                    size: 13,
+                    weight: FontWeight.w500,
+                    color: AppColors.textMuted))
+            : ActivityTimeline(
+                entries: [for (final e in entries) _auditRow(e)]),
       ),
     );
   }
@@ -645,17 +779,70 @@ class ProductDetailScreen extends ConsumerWidget {
   /// One audit row as a timeline entry, iconed by what kind of event it was.
   ActivityEntry _auditRow(AuditEntry e) {
     final (icon, tone, bg) = switch (e.kind) {
-      AuditEventKind.created => (PhosphorIconsRegular.package, AppColors.blueBright, AppColors.tintBlue),
-      AuditEventKind.statusChanged => (PhosphorIconsRegular.arrowsClockwise, AppColors.warning, AppColors.tintAmber),
-      AuditEventKind.noteAdded => (PhosphorIconsRegular.note, AppColors.pending, AppColors.tintPurple),
-      AuditEventKind.childAdded => (PhosphorIconsRegular.plusCircle, AppColors.success, AppColors.tintGreen),
-      AuditEventKind.deleted => (PhosphorIconsRegular.trash, AppColors.error, AppColors.tintRed),
-      _ => (PhosphorIconsRegular.pencilSimple, AppColors.blueBright, AppColors.tintBlue),
+      AuditEventKind.created => (
+          PhosphorIconsRegular.package,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
+      AuditEventKind.statusChanged => (
+          PhosphorIconsRegular.arrowsClockwise,
+          AppColors.warning,
+          AppColors.tintAmber
+        ),
+      AuditEventKind.noteAdded => (
+          PhosphorIconsRegular.note,
+          AppColors.pending,
+          AppColors.tintPurple
+        ),
+      AuditEventKind.childAdded => (
+          PhosphorIconsRegular.plusCircle,
+          AppColors.success,
+          AppColors.tintGreen
+        ),
+      AuditEventKind.deleted => (
+          PhosphorIconsRegular.trash,
+          AppColors.error,
+          AppColors.tintRed
+        ),
+      _ => (
+          PhosphorIconsRegular.pencilSimple,
+          AppColors.blueBright,
+          AppColors.tintBlue
+        ),
     };
     // Actor and "2h ago" share the single sub-line the timeline gives a row.
     final when = e.at == null ? '' : relativeTime(e.at);
-    final sub = [e.subtitle, e.actor, when].where((s) => s.isNotEmpty).join(' · ');
-    return ActivityEntry(icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
+    final sub =
+        [e.subtitle, e.actor, when].where((s) => s.isNotEmpty).join(' · ');
+    return ActivityEntry(
+        icon: icon, tone: tone, bg: bg, title: e.title, sub: sub);
+  }
+
+  /// Sets or clears the product's `short_name` — `PATCH /crm/products/{id}/`.
+  ///
+  /// A blank box clears it (sent as `null`); more than
+  /// [kProductShortNameMax] characters is refused before the round trip, and
+  /// the server's own `400` on the field is shown as its message.
+  Future<void> _editShortName(
+      BuildContext context, WidgetRef ref, Product product) async {
+    final current = '${product.raw['short_name'] ?? ''}';
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (_) => _ShortNameDialog(initial: current),
+    );
+    if (typed == null || typed.trim() == current.trim()) return;
+    try {
+      await ref.read(productsRepositoryProvider).updateProduct(
+          product.id, {'short_name': productShortNameWriteValue(typed)});
+    } on AppError catch (e) {
+      ref.read(apiServiceProvider).handled(e);
+      ref.read(toastProvider.notifier).showError(e.bareMessage);
+      return;
+    }
+    ref.invalidate(productDetailProvider(product.id));
+    ref.invalidate(productsProvider);
+    ref.read(toastProvider.notifier).show(
+        typed.trim().isEmpty ? 'Short name cleared' : 'Short name updated');
   }
 
   /// Flips `is_active` (`PATCH /crm/products/{id}/`, `products.md` §4).
@@ -664,7 +851,8 @@ class ProductDetailScreen extends ConsumerWidget {
   /// pill it claimed to change was back to Active on the next read.
   Future<void> _setActive(WidgetRef ref, Product product, bool active) async {
     if (!ApiConfig.apiEnabled) {
-      ref.read(toastProvider.notifier)
+      ref
+          .read(toastProvider.notifier)
           .show(active ? 'Product activated' : 'Product deactivated');
       return;
     }
@@ -674,7 +862,8 @@ class ProductDetailScreen extends ConsumerWidget {
           .updateProduct(product.id, {'is_active': active});
       ref.invalidate(productDetailProvider(product.id));
       ref.invalidate(productsProvider);
-      ref.read(toastProvider.notifier)
+      ref
+          .read(toastProvider.notifier)
           .show(active ? 'Product activated' : 'Product deactivated');
     } on AppError catch (e) {
       ref.read(toastProvider.notifier).showError(e.message);
@@ -687,27 +876,42 @@ class ProductDetailScreen extends ConsumerWidget {
         id,
         () => [
           for (final (i, n) in (product?.notes ?? const []).indexed)
-            NoteEntry(id: 'product-note-$i', author: n.author, time: n.time, body: n.body),
+            NoteEntry(
+                id: 'product-note-$i',
+                author: n.author,
+                time: n.time,
+                body: n.body),
         ],
         apiModel: 'product',
       );
 
-  /// Webapp NotesPanel (`product`): the shared notes section — Tag, Insert,
-  /// replies and the author's pin / edit / delete. Products have no mention
-  /// source on the webapp, so there is no Mention picker.
+  /// Webapp NotesPanel (`product`): the shared notes section — Tag, Mention,
+  /// Insert, replies and the author's pin / edit / delete. Mention offers the
+  /// org's members (UI/UX audit #21; there is no product assignee list).
   Widget _notesThread(WidgetRef ref, String id, Product product) {
     final seed = _notesSeed(id, product);
     final notifier = ref.read(crmNotesProvider(seed).notifier);
     return NotesThread(
       author: ref.watch(noteAuthorProvider),
       notes: ref.watch(crmNotesProvider(seed)),
-      onAddNote: (body, atts) => notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
-      onAddReply: (noteId, body) => notifier.addReply(noteId, body, ref.read(noteAuthorProvider)),
+      onAddNote: (body, atts) =>
+          notifier.addNote(body, atts, ref.read(noteAuthorProvider)),
+      onAddReply: (noteId, body) =>
+          notifier.addReply(noteId, body, ref.read(noteAuthorProvider)),
       webappToolbar: true,
       noteTypes: ref.watch(noteTypesProvider).valueOrNull ?? const [],
+      mentionables: [
+        for (final u in ref.watch(rosterProvider))
+          if (UserDirectory.realUserId(u.id) case final id?)
+            (id: id, name: u.name),
+      ],
       currentUserId: UserDirectory.currentUserId,
-      onAddTypedNote: (body, atts, typeId, typeName, mentions) => notifier.addNote(body, atts, ref.read(noteAuthorProvider),
-          noteTypeId: typeId, noteTypeName: typeName, mentionedUserIds: mentions, authorId: UserDirectory.currentUserId),
+      onAddTypedNote: (body, atts, typeId, typeName, mentions) =>
+          notifier.addNote(body, atts, ref.read(noteAuthorProvider),
+              noteTypeId: typeId,
+              noteTypeName: typeName,
+              mentionedUserIds: mentions,
+              authorId: UserDirectory.currentUserId),
       onTogglePin: notifier.togglePin,
       onEditNote: (id, body) => notifier.editNote(id, body),
       onDeleteNote: notifier.deleteNote,
@@ -715,4 +919,75 @@ class ProductDetailScreen extends ConsumerWidget {
   }
 
   static String _orDash(String v) => v.isEmpty ? '—' : v;
+}
+
+/// The short-name prompt: one box, at most [kProductShortNameMax] characters;
+/// empty clears the short name. Pops the typed text, or null on Cancel.
+class _ShortNameDialog extends StatefulWidget {
+  const _ShortNameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_ShortNameDialog> createState() => _ShortNameDialogState();
+}
+
+class _ShortNameDialogState extends State<_ShortNameDialog> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final error = productShortNameError(_ctrl.text);
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    Navigator.of(context).pop(_ctrl.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Short name'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+              'Shown in lists in place of the full product name. Leave empty to clear.',
+              style: AppText.custom(
+                  size: 13,
+                  weight: FontWeight.w500,
+                  color: AppColors.textLabelAlt)),
+          SizedBox(height: 12.h),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _save(),
+            // Rebuilt per keystroke so the counter follows the text.
+            onChanged: (_) => setState(() => _error = null),
+            decoration: InputDecoration(
+              hintText: 'e.g. 3KW On-grid',
+              errorText: _error,
+              counterText: '${_ctrl.text.trim().length}/$kProductShortNameMax',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        TextButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
 }

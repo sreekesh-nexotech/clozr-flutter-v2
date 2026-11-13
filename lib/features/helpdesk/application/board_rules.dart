@@ -10,17 +10,21 @@ const boardDueSoonMinutes = 60;
 const boardDueSoonLabel = 'Due < ${boardDueSoonMinutes}m';
 
 /// The "Open tickets" definition (webapp `OPEN_TICKETS_TIP`).
-const openTicketsTip = 'Open = tickets not yet resolved or closed, in your scope';
+const openTicketsTip =
+    'Open = tickets not yet resolved or closed, in your scope';
 
 /// The panels' info text.
 String slaWatchInfo({required bool hasNoSla}) => hasNoSla
     ? "Tickets ordered by SLA urgency. A ticket's SLA comes from its customer; tickets without one are listed under No SLA."
     : "Tickets ordered by SLA urgency. A ticket's SLA comes from its customer.";
-const workloadInfo = 'Active tickets per agent. Resolved and closed tickets are not shown.';
-const pipelineInfo = 'Where active work sits, one lane per status configured for this org.';
+const workloadInfo =
+    'Active tickets per agent. Resolved and closed tickets are not shown.';
+const pipelineInfo =
+    'Where active work sits, one lane per status configured for this org.';
 
 /// The No SLA column's note when the server sent only a count.
-const noSlaCountOnlyNote = 'Open tickets with no SLA deadline — usually raised without a customer.';
+const noSlaCountOnlyNote =
+    'Open tickets with no SLA deadline — usually raised without a customer.';
 
 /// How a card's pill reads: no SLA, paused, breached (red), at risk (amber,
 /// due within 24h) or on track (neutral).
@@ -28,15 +32,27 @@ enum BoardPillTone { noSla, paused, breached, atRisk, onTrack }
 
 /// The card pill — webapp `slaState` + `formatSlaRemaining`: "No SLA",
 /// "Paused", "Overdue 4h 12m", "1d 3h left".
-({String label, BoardPillTone tone}) boardCardPill(SummaryCard c) {
+({String label, BoardPillTone tone}) boardCardPill(SummaryCard c,
+    {bool inBreachedBucket = false}) {
   final left = c.slaRemainingSeconds;
-  if (left == null) return (label: 'No SLA', tone: BoardPillTone.noSla);
+  // The server can place a ticket in the Breached bucket while sending no
+  // remaining-seconds figure (seen on dev: every breached card arrived with
+  // `sla_remaining_seconds: null`). The bucket is the server's verdict, so the
+  // pill says so instead of contradicting its own column with "No SLA" (UAT).
+  if (left == null) {
+    return inBreachedBucket
+        ? (label: 'Breached', tone: BoardPillTone.breached)
+        : (label: 'No SLA', tone: BoardPillTone.noSla);
+  }
   if (c.slaPaused) return (label: 'Paused', tone: BoardPillTone.paused);
   final abs = left.abs();
   final d = abs ~/ 86400, h = (abs % 86400) ~/ 3600, m = (abs % 3600) ~/ 60;
   final span = d > 0 ? '${d}d ${h}h' : (h > 0 ? '${h}h ${m}m' : '${m}m');
   if (left < 0) return (label: 'Overdue $span', tone: BoardPillTone.breached);
-  return (label: '$span left', tone: left <= 86400 ? BoardPillTone.atRisk : BoardPillTone.onTrack);
+  return (
+    label: '$span left',
+    tone: left <= 86400 ? BoardPillTone.atRisk : BoardPillTone.onTrack
+  );
 }
 
 /// The Pipeline card's age: "Just now", "5m", "3h", "2d" (webapp `timeAgo`
@@ -52,9 +68,11 @@ String boardCardAge(DateTime? createdAt, {DateTime? now}) {
 
 /// Initials for a card / column avatar; "–" when unassigned.
 String boardInitials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
   if (parts.isEmpty) return '–';
-  return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+  return (parts.first[0] + (parts.length > 1 ? parts.last[0] : ''))
+      .toUpperCase();
 }
 
 /// The column footer: "+3 more →", or "View in tickets →" when the server
@@ -65,7 +83,8 @@ String? boardMoreLabel(int total, int shown) {
 }
 
 /// The info toast shown on the Tickets list after a footer tap.
-String bucketMoreToast(int total, String label) => 'Tickets list — $total ${label.toLowerCase()} tickets';
+String bucketMoreToast(int total, String label) =>
+    'Tickets list — $total ${label.toLowerCase()} tickets';
 String workloadMoreToast(WorkloadColumn col) => col.isUnassigned
     ? 'Unassigned tickets — use the Assignee filter'
     : 'Tickets assigned to ${col.agentName.split(' ').first}';

@@ -52,10 +52,13 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
   DateTime _to = DateTime.now();
 
   /// 1 April of the Indian fiscal year [d] falls in.
-  static DateTime _fyStart(DateTime d) => DateTime(d.month >= 4 ? d.year : d.year - 1, 4, 1);
+  static DateTime _fyStart(DateTime d) =>
+      DateTime(d.month >= 4 ? d.year : d.year - 1, 4, 1);
 
-  String get _kind => GoRouterState.of(context).uri.queryParameters['kind'] ?? 'ar_aging';
-  String get _party => GoRouterState.of(context).uri.queryParameters['party'] ?? '';
+  String get _kind =>
+      GoRouterState.of(context).uri.queryParameters['kind'] ?? 'ar_aging';
+  String get _party =>
+      GoRouterState.of(context).uri.queryParameters['party'] ?? '';
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +74,10 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
       color: AppColors.bgDetail,
       child: Column(
         children: [
-          DetailAppBar(section: _titles[kind] ?? 'Report', name: partyName, onBack: () => context.pop()),
+          DetailAppBar(
+              section: _titles[kind] ?? 'Report',
+              name: partyName,
+              onBack: () => context.pop()),
           Expanded(
             child: AccountingGate(
               child: !canRead
@@ -96,36 +102,56 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
       case 'ap_aging':
         final vendor = kind == 'ap_aging';
         final p = vendor ? apAgingProvider : arAgingProvider;
-        return _async<AgingReport>(ref.watch(p), () => ref.invalidate(p), (r) => _aging(r, vendor));
+        return _async<AgingReport>(
+            ref.watch(p), () => ref.invalidate(p), (r) => _aging(r, vendor));
       case 'pnl':
         final p = pnlProvider(isoDay(_asOf));
-        return _async<PnlReport>(ref.watch(p), () => ref.invalidate(p), _pnl, header: _asOfBox());
+        return _async<PnlReport>(ref.watch(p), () => ref.invalidate(p), _pnl,
+            header: _asOfBox());
       case 'balance_sheet':
         final p = balanceSheetProvider(isoDay(_asOf));
-        return _async<BalanceSheetReport>(ref.watch(p), () => ref.invalidate(p), _bs, header: _asOfBox());
+        return _async<BalanceSheetReport>(
+            ref.watch(p), () => ref.invalidate(p), _bs,
+            header: _asOfBox());
       case 'trial_balance':
         final p = trialBalanceProvider(isoDay(_asOf));
-        return _async<TrialBalanceReport>(ref.watch(p), () => ref.invalidate(p), _tb, header: _asOfBox());
+        return _async<TrialBalanceReport>(
+            ref.watch(p), () => ref.invalidate(p), _tb,
+            header: _asOfBox());
       case 'customer_statement':
       case 'vendor_statement':
         if (_party.isEmpty) {
           return ListView(children: const [
-            EmptyState(icon: PhosphorIconsRegular.userCircle, title: 'No party', body: 'Open a statement from a customer or vendor.'),
+            EmptyState(
+                icon: PhosphorIconsRegular.userCircle,
+                title: 'No party',
+                body: 'Open a statement from a customer or vendor.'),
           ]);
         }
-        final p = statementProvider(
-            (vendor: kind == 'vendor_statement', partyId: _party, from: isoDay(_from), to: isoDay(_to)));
-        return _async<PartyStatement>(ref.watch(p), () => ref.invalidate(p), _statement, header: _rangeBox());
+        final p = statementProvider((
+          vendor: kind == 'vendor_statement',
+          partyId: _party,
+          from: isoDay(_from),
+          to: isoDay(_to)
+        ));
+        return _async<PartyStatement>(
+            ref.watch(p), () => ref.invalidate(p), _statement,
+            header: _rangeBox());
       default:
         return ListView(children: const [
-          EmptyState(icon: PhosphorIconsRegular.question, title: 'Unknown report', body: 'This report does not exist.'),
+          EmptyState(
+              icon: PhosphorIconsRegular.question,
+              title: 'Unknown report',
+              body: 'This report does not exist.'),
         ]);
     }
   }
 
   /// Loading / error / data, with an optional control strip above that stays
   /// put while the report reloads.
-  Widget _async<T>(AsyncValue<T> value, VoidCallback retry, List<Widget> Function(T) data, {Widget? header}) {
+  Widget _async<T>(
+      AsyncValue<T> value, VoidCallback retry, List<Widget> Function(T) data,
+      {Widget? header}) {
     Future<void> refresh() async => retry();
     final pad = EdgeInsets.fromLTRB(16.w, 6.h, 16.w, 32.h);
     return AppRefresh(
@@ -140,7 +166,11 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
             loading: () => [const DetailSkeleton()],
             error: (e, _) => [
               ErrorState.forError(
-                e is AppError ? e : const AppError(type: AppErrorType.unknown, message: 'Could not load the report.'),
+                e is AppError
+                    ? e
+                    : const AppError(
+                        type: AppErrorType.unknown,
+                        message: 'Could not load the report.'),
                 onRetry: retry,
               ),
             ],
@@ -161,9 +191,17 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
   Widget _rangeBox() => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: AccDateBox(label: 'From', value: _from, onChanged: (d) => setState(() => _from = d ?? _from))),
+          Expanded(
+              child: AccDateBox(
+                  label: 'From',
+                  value: _from,
+                  onChanged: (d) => setState(() => _from = d ?? _from))),
           SizedBox(width: 9.w),
-          Expanded(child: AccDateBox(label: 'To', value: _to, onChanged: (d) => setState(() => _to = d ?? _to))),
+          Expanded(
+              child: AccDateBox(
+                  label: 'To',
+                  value: _to,
+                  onChanged: (d) => setState(() => _to = d ?? _to))),
         ],
       );
 
@@ -181,19 +219,31 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
               padding: EdgeInsets.symmetric(vertical: 6.h),
               child: Row(
                 children: [
-                  Expanded(child: Text('Total', style: AppText.custom(size: 14, weight: FontWeight.w700, color: AppColors.textPrimary))),
+                  Expanded(
+                      child: Text('Total',
+                          style: AppText.custom(
+                              size: 14,
+                              weight: FontWeight.w700,
+                              color: AppColors.textPrimary))),
                   Text(formatMoneyStr(r.grandTotal),
-                      style: AppText.custom(size: 18, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 18,
+                          weight: FontWeight.w800,
+                          color: AppColors.textPrimary)),
                 ],
               ),
             ),
             for (int i = 0; i < agingBuckets.length; i++)
-              MoneyRow(label: '${agingBuckets[i]} days', value: r.totals[agingBuckets[i]] ?? '0', last: i == agingBuckets.length - 1),
+              MoneyRow(
+                  label: '${agingBuckets[i]} days',
+                  value: r.totals[agingBuckets[i]] ?? '0',
+                  last: i == agingBuckets.length - 1),
             if (r.asOf != null) ...[
               SizedBox(height: 6.h),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('As of ${formatApiDay(r.asOf)}', style: AppText.micro()),
+                child: Text('As of ${formatApiDay(r.asOf)}',
+                    style: AppText.micro()),
               ),
             ],
           ],
@@ -204,19 +254,30 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
         EmptyState(
           icon: PhosphorIconsRegular.checkCircle,
           title: 'Nothing outstanding',
-          body: vendor ? 'No vendor has an open bill.' : 'No customer owes anything.',
+          body: vendor
+              ? 'No vendor has an open bill.'
+              : 'No customer owes anything.',
         )
       else
         for (final row in r.rows) ...[
-          _agingRow(row, vendor,
-              row.partyName ?? (vendor ? vendorName(row.partyId) : lookup(custId: row.partyId)?.name) ?? 'Party'),
+          _agingRow(
+              row,
+              vendor,
+              row.partyName ??
+                  (vendor
+                      ? vendorName(row.partyId)
+                      : lookup(custId: row.partyId)?.name) ??
+                  'Party'),
           SizedBox(height: 10.h),
         ],
     ];
   }
 
   Widget _agingRow(AgingRow row, bool vendor, String name) {
-    final chips = [for (final b in agingBuckets) if (!moneyIsZero(row.buckets[b])) b];
+    final chips = [
+      for (final b in agingBuckets)
+        if (!moneyIsZero(row.buckets[b])) b
+    ];
     return ClozrCard(
       radius: 14,
       padding: EdgeInsets.all(13.r),
@@ -231,9 +292,16 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
                 child: Text(name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.custom(size: 14.5, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 14.5,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
               ),
-              Text(formatMoneyStr(row.total), style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(formatMoneyStr(row.total),
+                  style: AppText.custom(
+                      size: 15,
+                      weight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
             ],
           ),
           if (chips.isNotEmpty) ...[
@@ -245,7 +313,11 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
                 for (final b in chips)
                   StatusPill(
                     label: '$b · ${formatMoneyCompact(row.buckets[b])}',
-                    color: b == '90+' ? AppColors.error : (b == '61-90' ? AppColors.warningDeep : AppColors.textMuted),
+                    color: b == '90+'
+                        ? AppColors.error
+                        : (b == '61-90'
+                            ? AppColors.warningDeep
+                            : AppColors.textMuted),
                   ),
               ],
             ),
@@ -265,12 +337,19 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
         FinanceCard(
           child: Row(
             children: [
-              Expanded(child: Text('Net profit', style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary))),
+              Expanded(
+                  child: Text('Net profit',
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary))),
               Text(formatMoneyStr(r.netProfit),
                   style: AppText.custom(
                       size: 18,
                       weight: FontWeight.w800,
-                      color: moneyNum(r.netProfit) < 0 ? AppColors.error : AppColors.success)),
+                      color: moneyNum(r.netProfit) < 0
+                          ? AppColors.error
+                          : AppColors.success)),
             ],
           ),
         ),
@@ -279,11 +358,15 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
   // ── Balance sheet ──
 
   List<Widget> _bs(BalanceSheetReport r) => [
-        Align(alignment: Alignment.centerLeft, child: _balancedPill(r.balanced)),
+        Align(
+            alignment: Alignment.centerLeft, child: _balancedPill(r.balanced)),
         SizedBox(height: 12.h),
         _Section(title: 'Assets', total: r.totalAssets, accounts: r.assets),
         SizedBox(height: 12.h),
-        _Section(title: 'Liabilities', total: r.totalLiabilities, accounts: r.liabilities),
+        _Section(
+            title: 'Liabilities',
+            total: r.totalLiabilities,
+            accounts: r.liabilities),
         SizedBox(height: 12.h),
         _Section(title: 'Equity', total: r.totalEquity, accounts: r.equity),
         SizedBox(height: 12.h),
@@ -292,7 +375,10 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
             children: [
               MoneyRow(label: 'Net profit', value: r.netProfit),
               MoneyRow(label: 'Total assets', value: r.totalAssets),
-              MoneyRow(label: 'Liabilities + equity', value: r.liabilitiesAndEquity, last: true),
+              MoneyRow(
+                  label: 'Liabilities + equity',
+                  value: r.liabilitiesAndEquity,
+                  last: true),
             ],
           ),
         ),
@@ -301,7 +387,8 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
   // ── Trial balance ──
 
   List<Widget> _tb(TrialBalanceReport r) => [
-        Align(alignment: Alignment.centerLeft, child: _balancedPill(r.balanced)),
+        Align(
+            alignment: Alignment.centerLeft, child: _balancedPill(r.balanced)),
         SizedBox(height: 12.h),
         for (final g in r.groups) ...[
           _TbGroup(group: g),
@@ -317,8 +404,9 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
         ),
       ];
 
-  Widget _balancedPill(bool ok) =>
-      StatusPill(label: ok ? 'Balanced' : 'Does not balance', color: ok ? AppColors.success : AppColors.error);
+  Widget _balancedPill(bool ok) => StatusPill(
+      label: ok ? 'Balanced' : 'Does not balance',
+      color: ok ? AppColors.success : AppColors.error);
 
   // ── Statement ──
 
@@ -329,7 +417,10 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
               MoneyRow(label: 'Opening balance', value: s.openingBalance),
               MoneyRow(label: 'Debits', value: s.totalDebit),
               MoneyRow(label: 'Credits', value: s.totalCredit),
-              MoneyRow(label: 'Closing balance', value: s.closingBalance, last: true),
+              MoneyRow(
+                  label: 'Closing balance',
+                  value: s.closingBalance,
+                  last: true),
             ],
           ),
         ),
@@ -345,7 +436,8 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
             title: 'Entries',
             child: Column(
               children: [
-                for (int i = 0; i < s.lines.length; i++) _stmtLine(s.lines[i], i == s.lines.length - 1),
+                for (int i = 0; i < s.lines.length; i++)
+                  _stmtLine(s.lines[i], i == s.lines.length - 1),
               ],
             ),
           ),
@@ -356,10 +448,15 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
     final debit = !moneyIsZero(l.debit);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: opens ? () => context.push('${Routes.accDocumentDetail}?id=${l.refId}') : null,
+      onTap: opens
+          ? () => context.push('${Routes.accDocumentDetail}?id=${l.refId}')
+          : null,
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 10.h),
-        decoration: last ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
+        decoration: last
+            ? null
+            : const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF3F4F5)))),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -369,12 +466,24 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
                 children: [
                   Text(l.reference ?? label(docTypeLabels, l.docType ?? l.kind),
                       style: AppText.custom(
-                          size: 13.5, weight: FontWeight.w700, color: opens ? AppColors.blueBright : AppColors.textPrimary)),
+                          size: 13.5,
+                          weight: FontWeight.w700,
+                          color: opens
+                              ? AppColors.blueBright
+                              : AppColors.textPrimary)),
                   SizedBox(height: 2.h),
                   Text(
-                    [formatApiDay(l.date), if (l.docType != null) label(docTypeLabels, l.docType) else label(const {}, l.kind)]
-                        .join(' · '),
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w500, color: AppColors.textPlaceholder),
+                    [
+                      formatApiDay(l.date),
+                      if (l.docType != null)
+                        label(docTypeLabels, l.docType)
+                      else
+                        label(const {}, l.kind)
+                    ].join(' · '),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w500,
+                        color: AppColors.textPlaceholder),
                   ),
                 ],
               ),
@@ -383,11 +492,19 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text('${debit ? '+' : '−'} ${formatMoneyStr(debit ? l.debit : l.credit)}',
-                    style: AppText.custom(size: 13, weight: FontWeight.w800, color: debit ? AppColors.textPrimary : AppColors.success)),
+                Text(
+                    '${debit ? '+' : '−'} ${formatMoneyStr(debit ? l.debit : l.credit)}',
+                    style: AppText.custom(
+                        size: 13,
+                        weight: FontWeight.w800,
+                        color:
+                            debit ? AppColors.textPrimary : AppColors.success)),
                 SizedBox(height: 2.h),
                 Text('Bal ${formatMoneyStr(l.balance)}',
-                    style: AppText.custom(size: 11.5, weight: FontWeight.w600, color: AppColors.textMuted)),
+                    style: AppText.custom(
+                        size: 11.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.textMuted)),
               ],
             ),
           ],
@@ -399,7 +516,8 @@ class _AccReportScreenState extends ConsumerState<AccReportScreen> {
 
 /// A collapsible report section: title and total, accounts underneath.
 class _Section extends StatefulWidget {
-  const _Section({required this.title, required this.total, required this.accounts});
+  const _Section(
+      {required this.title, required this.total, required this.accounts});
 
   final String title;
   final String total;
@@ -424,13 +542,23 @@ class _SectionState extends State<_Section> {
               children: [
                 Expanded(
                   child: Text(widget.title,
-                      style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ),
                 Text(formatMoneyStr(widget.total),
-                    style: AppText.custom(size: 15, weight: FontWeight.w800, color: AppColors.textPrimary)),
+                    style: AppText.custom(
+                        size: 15,
+                        weight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
                 SizedBox(width: 6.w),
-                Icon(_open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
-                    size: 12.sp, color: AppColors.textPlaceholder),
+                Icon(
+                    _open
+                        ? PhosphorIconsBold.caretUp
+                        : PhosphorIconsBold.caretDown,
+                    size: 12.sp,
+                    color: AppColors.textPlaceholder),
               ],
             ),
           ),
@@ -439,11 +567,16 @@ class _SectionState extends State<_Section> {
             if (widget.accounts.isEmpty)
               Padding(
                 padding: EdgeInsets.symmetric(vertical: 8.h),
-                child: Align(alignment: Alignment.centerLeft, child: Text('No accounts', style: AppText.caption())),
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('No accounts', style: AppText.caption())),
               ),
             for (int i = 0; i < widget.accounts.length; i++)
               MoneyRow(
-                label: [if (widget.accounts[i].code != null) widget.accounts[i].code!, widget.accounts[i].name].join(' · '),
+                label: [
+                  if (widget.accounts[i].code != null) widget.accounts[i].code!,
+                  widget.accounts[i].name
+                ].join(' · '),
                 value: widget.accounts[i].amount,
                 last: i == widget.accounts.length - 1,
               ),
@@ -469,7 +602,8 @@ class _TbGroupState extends State<_TbGroup> {
   @override
   Widget build(BuildContext context) {
     final g = widget.group;
-    TextStyle num(Color c) => AppText.custom(size: 12.5, weight: FontWeight.w700, color: c);
+    TextStyle num(Color c) =>
+        AppText.custom(size: 12.5, weight: FontWeight.w700, color: c);
     return FinanceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -481,10 +615,17 @@ class _TbGroupState extends State<_TbGroup> {
               children: [
                 Expanded(
                   child: Text(label(const {}, g.bucket),
-                      style: AppText.custom(size: 15, weight: FontWeight.w700, color: AppColors.textPrimary)),
+                      style: AppText.custom(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                 ),
-                Icon(_open ? PhosphorIconsBold.caretUp : PhosphorIconsBold.caretDown,
-                    size: 12.sp, color: AppColors.textPlaceholder),
+                Icon(
+                    _open
+                        ? PhosphorIconsBold.caretUp
+                        : PhosphorIconsBold.caretDown,
+                    size: 12.sp,
+                    color: AppColors.textPlaceholder),
               ],
             ),
           ),
@@ -495,22 +636,35 @@ class _TbGroupState extends State<_TbGroup> {
             for (final a in g.accounts)
               Container(
                 padding: EdgeInsets.symmetric(vertical: 8.h),
-                decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
+                decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0xFFF3F4F5)))),
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text([if (a.code != null) a.code!, a.name].join(' · '),
-                          style: AppText.custom(size: 12.5, weight: FontWeight.w600, color: AppColors.textBody)),
+                      child: Text(
+                          [if (a.code != null) a.code!, a.name].join(' · '),
+                          style: AppText.custom(
+                              size: 12.5,
+                              weight: FontWeight.w600,
+                              color: AppColors.textBody)),
                     ),
                     SizedBox(
                       width: 84.w,
-                      child: Text(moneyIsZero(a.closingDebit) ? '' : formatMoneyStr(a.closingDebit),
-                          textAlign: TextAlign.right, style: num(AppColors.textPrimary)),
+                      child: Text(
+                          moneyIsZero(a.closingDebit)
+                              ? ''
+                              : formatMoneyStr(a.closingDebit),
+                          textAlign: TextAlign.right,
+                          style: num(AppColors.textPrimary)),
                     ),
                     SizedBox(
                       width: 84.w,
-                      child: Text(moneyIsZero(a.closingCredit) ? '' : formatMoneyStr(a.closingCredit),
-                          textAlign: TextAlign.right, style: num(AppColors.textMuted)),
+                      child: Text(
+                          moneyIsZero(a.closingCredit)
+                              ? ''
+                              : formatMoneyStr(a.closingCredit),
+                          textAlign: TextAlign.right,
+                          style: num(AppColors.textMuted)),
                     ),
                   ],
                 ),

@@ -99,7 +99,9 @@ class ToastOverlay extends ConsumerWidget {
                         maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.custom(
-                                size: 13, weight: FontWeight.w600, color: AppColors.white)
+                                size: 13,
+                                weight: FontWeight.w600,
+                                color: AppColors.white)
                             .copyWith(height: 1.35),
                       ),
                     ),

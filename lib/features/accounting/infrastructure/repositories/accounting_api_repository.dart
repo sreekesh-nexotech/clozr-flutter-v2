@@ -42,7 +42,8 @@ class AccountingApiRepository implements AccountingRepository {
   static const _box = AppCache.accountingCache;
 
   /// Remote first; on a network/timeout failure the cached copy, if any.
-  Future<T> _cached<T>(String key, Future<Object> Function() fetch, T Function(Object data) map) async {
+  Future<T> _cached<T>(String key, Future<Object> Function() fetch,
+      T Function(Object data) map) async {
     try {
       final data = await fetch();
       await AppCache.put(_box, key, data);
@@ -76,7 +77,8 @@ class AccountingApiRepository implements AccountingRepository {
   Future<bool> probeActive(String path) => mastersDs.probeActive(path);
 
   @override
-  Future<List<TenantAttribute>> tenantAttributes() => mastersDs.tenantAttributes();
+  Future<List<TenantAttribute>> tenantAttributes() =>
+      mastersDs.tenantAttributes();
 
   @override
   Future<GatesReport?> gates() => mastersDs.gates();
@@ -85,7 +87,8 @@ class AccountingApiRepository implements AccountingRepository {
   Future<List<GstState>> states() => _cached(
         _key('states'),
         () async => [
-          for (final s in await mastersDs.states()) {'code': s.code, 'name': s.name, 'alpha': s.alpha},
+          for (final s in await mastersDs.states())
+            {'code': s.code, 'name': s.name, 'alpha': s.alpha},
         ],
         mapStates,
       );
@@ -93,11 +96,13 @@ class AccountingApiRepository implements AccountingRepository {
   // ── Documents ──
 
   @override
-  Future<AccDocumentPage> documents(Map<String, Object?> filters, {int page = 1}) async {
-    AccDocumentPage toPage(RawPage p) =>
-        AccDocumentPage(results: mapDocuments(p.rows), count: p.count, hasMore: p.hasMore);
+  Future<AccDocumentPage> documents(Map<String, Object?> filters,
+      {int page = 1}) async {
+    AccDocumentPage toPage(RawPage p) => AccDocumentPage(
+        results: mapDocuments(p.rows), count: p.count, hasMore: p.hasMore);
     // Only the first page is cached — it is what an offline open shows.
-    if (page != 1) return toPage(await documentsDs.fetchPage(filters, page: page));
+    if (page != 1)
+      return toPage(await documentsDs.fetchPage(filters, page: page));
     return _cached(
       _key('docs', filters),
       () async => (await documentsDs.fetchPage(filters)).toJson(),
@@ -119,31 +124,40 @@ class AccountingApiRepository implements AccountingRepository {
       _write(() => documentsDs.patchDraft(id, fields));
 
   @override
-  Future<AccDocument?> createInvoice(Map<String, Object?> body) => _write(() => documentsDs.createInvoice(body));
+  Future<AccDocument?> createInvoice(Map<String, Object?> body) =>
+      _write(() => documentsDs.createInvoice(body));
 
   @override
-  Future<AccDocument?> invoiceFromPaymentRecord(String recordId, {required String documentDate, String? supplyDate}) =>
-      _write(() => documentsDs.fromPaymentRecord(recordId, documentDate: documentDate, supplyDate: supplyDate));
+  Future<AccDocument?> invoiceFromPaymentRecord(String recordId,
+          {required String documentDate, String? supplyDate}) =>
+      _write(() => documentsDs.fromPaymentRecord(recordId,
+          documentDate: documentDate, supplyDate: supplyDate));
 
   @override
-  Future<AccDocument?> invoiceFromTicket(String issueId, {String? documentDate}) =>
+  Future<AccDocument?> invoiceFromTicket(String issueId,
+          {String? documentDate}) =>
       _write(() => documentsDs.fromTicket(issueId, documentDate: documentDate));
 
   @override
   Future<TaxPreview> previewTax(String id) => documentsDs.previewTax(id);
 
   @override
-  Future<AccDocument?> issue(String id, {List<Map<String, String>> advanceAdjustments = const []}) =>
-      _write(() => documentsDs.issue(id, advanceAdjustments: advanceAdjustments));
+  Future<AccDocument?> issue(String id,
+          {List<Map<String, String>> advanceAdjustments = const []}) =>
+      _write(
+          () => documentsDs.issue(id, advanceAdjustments: advanceAdjustments));
 
   @override
-  Future<AccDocument?> voidDraft(String id) => _write(() => documentsDs.voidDraft(id));
+  Future<AccDocument?> voidDraft(String id) =>
+      _write(() => documentsDs.voidDraft(id));
 
   @override
-  Future<AccDocument?> cancel(String id, String reason) => _write(() => documentsDs.cancel(id, reason));
+  Future<AccDocument?> cancel(String id, String reason) =>
+      _write(() => documentsDs.cancel(id, reason));
 
   @override
-  Future<InvoicePrint> renderContext(String id) => documentsDs.renderContext(id);
+  Future<InvoicePrint> renderContext(String id) =>
+      documentsDs.renderContext(id);
 
   @override
   Future<AccDocument?> createCreditNote(Map<String, Object?> body) =>
@@ -151,7 +165,8 @@ class AccountingApiRepository implements AccountingRepository {
 
   @override
   Future<List<RateVariant>> hsnRates(String hsn, {String? supplyNature}) =>
-      documentsDs.hsnRates(hsn, supplyNature: supplyNature, onDate: isoDay(DateTime.now()));
+      documentsDs.hsnRates(hsn,
+          supplyNature: supplyNature, onDate: isoDay(DateTime.now()));
 
   // ── Masters ──
 
@@ -165,7 +180,8 @@ class AccountingApiRepository implements AccountingRepository {
       var page = 1;
       var more = true;
       while (more && page <= 10) {
-        final p = await mastersDs.fetchVendorPage(search: search, active: active, page: page, pageSize: 200);
+        final p = await mastersDs.fetchVendorPage(
+            search: search, active: active, page: page, pageSize: 200);
         rows.addAll(p.rows);
         more = p.hasMore;
         page++;
@@ -174,7 +190,8 @@ class AccountingApiRepository implements AccountingRepository {
     }
 
     // A search is not the list; only the unfiltered read is cached.
-    if ((search ?? '').isNotEmpty) return fetch().then((p) => mapVendors(p.rows));
+    if ((search ?? '').isNotEmpty)
+      return fetch().then((p) => mapVendors(p.rows));
     return _cached(
       _key('vendors', {'active': active}),
       () async => (await fetch()).toJson(),
@@ -186,30 +203,37 @@ class AccountingApiRepository implements AccountingRepository {
   Future<Vendor?> vendor(String id) => mastersDs.fetchVendor(id);
 
   @override
-  Future<Vendor?> createVendor(Map<String, Object?> fields) => _write(() => mastersDs.createVendor(fields));
+  Future<Vendor?> createVendor(Map<String, Object?> fields) =>
+      _write(() => mastersDs.createVendor(fields));
 
   @override
   Future<Vendor?> updateVendor(String id, Map<String, Object?> fields) =>
       _write(() => mastersDs.updateVendor(id, fields));
 
   @override
-  Future<void> deleteVendor(String id) => _write(() => mastersDs.deleteVendor(id));
+  Future<void> deleteVendor(String id) =>
+      _write(() => mastersDs.deleteVendor(id));
 
   @override
-  Future<PartyTaxProfile> partyTaxProfile(String kind, String id) => mastersDs.partyTaxProfile(kind, id);
+  Future<PartyTaxProfile> partyTaxProfile(String kind, String id) =>
+      mastersDs.partyTaxProfile(kind, id);
 
   @override
-  Future<PartyTaxProfile> savePartyTaxProfile(String kind, String id, Map<String, Object?> body) =>
+  Future<PartyTaxProfile> savePartyTaxProfile(
+          String kind, String id, Map<String, Object?> body) =>
       _write(() => mastersDs.savePartyTaxProfile(kind, id, body));
 
   @override
-  Future<Map<String, bool>> customerB2bFlags(List<String> ids) => mastersDs.customerB2bFlags(ids);
+  Future<Map<String, bool>> customerB2bFlags(List<String> ids) =>
+      mastersDs.customerB2bFlags(ids);
 
   @override
-  Future<ProductTaxProfile> productTaxProfile(String productId) => mastersDs.productTaxProfile(productId);
+  Future<ProductTaxProfile> productTaxProfile(String productId) =>
+      mastersDs.productTaxProfile(productId);
 
   @override
-  Future<ProductTaxProfile> saveProductTaxProfile(String productId, Map<String, Object?> body) =>
+  Future<ProductTaxProfile> saveProductTaxProfile(
+          String productId, Map<String, Object?> body) =>
       _write(() => mastersDs.saveProductTaxProfile(productId, body));
 
   @override
@@ -217,15 +241,21 @@ class AccountingApiRepository implements AccountingRepository {
 
   // ── Settlement & purchases ──
 
-  Future<List<T>> _list<T>(String name, Map<String, Object?> params, Future<RawPage> Function() fetch,
+  Future<List<T>> _list<T>(
+          String name,
+          Map<String, Object?> params,
+          Future<RawPage> Function() fetch,
           List<T> Function(Object? rows) map) =>
       _cached(_key(name, params), () async => (await fetch()).toJson(),
           (data) => map(RawPage.fromCache(data).rows));
 
   @override
-  Future<List<AccReceipt>> receipts({String? customer, String? status}) => _list(
-      'receipts', {'c': customer, 's': status},
-      () => settlementDs.fetchReceipts(customer: customer, status: status), mapReceipts);
+  Future<List<AccReceipt>> receipts({String? customer, String? status}) =>
+      _list(
+          'receipts',
+          {'c': customer, 's': status},
+          () => settlementDs.fetchReceipts(customer: customer, status: status),
+          mapReceipts);
 
   @override
   Future<AccReceipt?> receipt(String id) => settlementDs.fetchReceipt(id);
@@ -235,45 +265,67 @@ class AccountingApiRepository implements AccountingRepository {
       _write(() => settlementDs.recordReceipt(body));
 
   @override
-  Future<PostOutcome<String>> reverseReceipt(String id, {String? reason, required String eventId}) =>
-      _write(() => settlementDs.reverseReceipt(id, reason: reason, eventId: eventId));
+  Future<PostOutcome<String>> reverseReceipt(String id,
+          {String? reason, required String eventId}) =>
+      _write(() =>
+          settlementDs.reverseReceipt(id, reason: reason, eventId: eventId));
 
   @override
-  Future<List<AccAdvance>> advances({String? customer, String? status}) => _list(
-      'advances', {'c': customer, 's': status},
-      () => settlementDs.fetchAdvances(customer: customer, status: status), mapAdvances);
+  Future<List<AccAdvance>> advances({String? customer, String? status}) =>
+      _list(
+          'advances',
+          {'c': customer, 's': status},
+          () => settlementDs.fetchAdvances(customer: customer, status: status),
+          mapAdvances);
 
   @override
   Future<PostOutcome<AccReceipt>> recordAdvance(Map<String, Object?> body) =>
       _write(() => settlementDs.recordAdvance(body));
 
   @override
-  Future<List<AccCustomerCredit>> customerCredits({String? customer, String? status}) => _list(
-      'credits', {'c': customer, 's': status},
-      () => settlementDs.fetchCustomerCredits(customer: customer, status: status), mapCustomerCredits);
+  Future<List<AccCustomerCredit>> customerCredits(
+          {String? customer, String? status}) =>
+      _list(
+          'credits',
+          {'c': customer, 's': status},
+          () => settlementDs.fetchCustomerCredits(
+              customer: customer, status: status),
+          mapCustomerCredits);
 
   @override
-  Future<List<AccVendorPayment>> vendorPayments({String? vendor, String? status}) => _list(
-      'vpayments', {'v': vendor, 's': status},
-      () => settlementDs.fetchVendorPayments(vendor: vendor, status: status), mapVendorPayments);
+  Future<List<AccVendorPayment>> vendorPayments(
+          {String? vendor, String? status}) =>
+      _list(
+          'vpayments',
+          {'v': vendor, 's': status},
+          () =>
+              settlementDs.fetchVendorPayments(vendor: vendor, status: status),
+          mapVendorPayments);
 
   @override
-  Future<AccVendorPayment?> vendorPayment(String id) => settlementDs.fetchVendorPayment(id);
+  Future<AccVendorPayment?> vendorPayment(String id) =>
+      settlementDs.fetchVendorPayment(id);
 
   @override
-  Future<PostOutcome<AccVendorPayment>> recordVendorPayment(Map<String, Object?> body) =>
+  Future<PostOutcome<AccVendorPayment>> recordVendorPayment(
+          Map<String, Object?> body) =>
       _write(() => settlementDs.recordVendorPayment(body));
 
   @override
-  Future<PostOutcome<String>> reverseVendorPayment(String id, {required String eventId}) =>
+  Future<PostOutcome<String>> reverseVendorPayment(String id,
+          {required String eventId}) =>
       _write(() => settlementDs.reverseVendorPayment(id, eventId: eventId));
 
   @override
   Future<List<AccVendorAdvance>> vendorAdvances({String? vendor}) => _list(
-      'vadvances', {'v': vendor}, () => settlementDs.fetchVendorAdvances(vendor: vendor), mapVendorAdvances);
+      'vadvances',
+      {'v': vendor},
+      () => settlementDs.fetchVendorAdvances(vendor: vendor),
+      mapVendorAdvances);
 
   @override
-  Future<PostOutcome<AccDocument>> recordVendorBill(Map<String, Object?> body) =>
+  Future<PostOutcome<AccDocument>> recordVendorBill(
+          Map<String, Object?> body) =>
       _write(() => settlementDs.recordVendorBill(body));
 
   @override
@@ -283,55 +335,72 @@ class AccountingApiRepository implements AccountingRepository {
   // ── Journal, periods, reports ──
 
   @override
-  Future<List<JournalEntry>> journalForDocument(String documentId) => reportsDs.entriesForDocument(documentId);
+  Future<List<JournalEntry>> journalForDocument(String documentId) =>
+      reportsDs.entriesForDocument(documentId);
 
   @override
   Future<JournalEntry?> journalEntry(String id) => reportsDs.entry(id);
 
   @override
-  Future<List<LedgerEvent>> ledgerEvents({String? status}) => reportsDs.events(status: status);
+  Future<List<LedgerEvent>> ledgerEvents({String? status}) =>
+      reportsDs.events(status: status);
 
   @override
-  Future<PeriodRegister> periodRegister() => _cached(
-      _key('periods'), () => reportsDs.periodRegisterRaw(), (d) => mapPeriodRegister(_asMap(d)));
+  Future<PeriodRegister> periodRegister() => _cached(_key('periods'),
+      () => reportsDs.periodRegisterRaw(), (d) => mapPeriodRegister(_asMap(d)));
 
   @override
-  Future<PeriodChecklist> gstChecklist(String gstPeriodId) => reportsDs.gstChecklist(gstPeriodId);
+  Future<PeriodChecklist> gstChecklist(String gstPeriodId) =>
+      reportsDs.gstChecklist(gstPeriodId);
 
   @override
   Future<AgingReport> aging({required bool payable}) {
     final asOf = isoDay(DateTime.now());
     return _cached(
       _key(payable ? 'ap_aging' : 'ar_aging', {'as_of': asOf}),
-      () => payable ? reportsDs.apAgingRaw(asOf: asOf) : reportsDs.arAgingRaw(asOf: asOf),
+      () => payable
+          ? reportsDs.apAgingRaw(asOf: asOf)
+          : reportsDs.arAgingRaw(asOf: asOf),
       (d) => mapAging(_asMap(d), vendor: payable),
     );
   }
 
   @override
-  Future<PartyStatement> statement({required bool vendor, required String partyId, String? from, String? to}) =>
+  Future<PartyStatement> statement(
+          {required bool vendor,
+          required String partyId,
+          String? from,
+          String? to}) =>
       reportsDs.statement(vendor: vendor, partyId: partyId, from: from, to: to);
 
   @override
-  Future<PnlReport> pnl({String? asOf}) => _cached(
-      _key('pnl', {'as_of': asOf}), () => reportsDs.pnlRaw(asOf: asOf), (d) => mapPnl(_asMap(d)));
+  Future<PnlReport> pnl({String? asOf}) => _cached(_key('pnl', {'as_of': asOf}),
+      () => reportsDs.pnlRaw(asOf: asOf), (d) => mapPnl(_asMap(d)));
 
   @override
-  Future<BalanceSheetReport> balanceSheet({String? asOf}) => _cached(_key('bs', {'as_of': asOf}),
-      () => reportsDs.balanceSheetRaw(asOf: asOf), (d) => mapBalanceSheet(_asMap(d)));
+  Future<BalanceSheetReport> balanceSheet({String? asOf}) => _cached(
+      _key('bs', {'as_of': asOf}),
+      () => reportsDs.balanceSheetRaw(asOf: asOf),
+      (d) => mapBalanceSheet(_asMap(d)));
 
   @override
-  Future<TrialBalanceReport> trialBalance({String? asOf}) => _cached(_key('tb', {'as_of': asOf}),
-      () => reportsDs.trialBalanceRaw(asOf: asOf), (d) => mapTrialBalance(_asMap(d)));
+  Future<TrialBalanceReport> trialBalance({String? asOf}) => _cached(
+      _key('tb', {'as_of': asOf}),
+      () => reportsDs.trialBalanceRaw(asOf: asOf),
+      (d) => mapTrialBalance(_asMap(d)));
 
   @override
-  Future<GstSummary> gstSummary(String gstPeriodId) => reportsDs.gstSummary(gstPeriodId);
+  Future<GstSummary> gstSummary(String gstPeriodId) =>
+      reportsDs.gstSummary(gstPeriodId);
 
   @override
-  Future<TdsSummary> tdsSummary({String? tdsPeriodId}) => reportsDs.tdsSummary(tdsPeriodId: tdsPeriodId);
+  Future<TdsSummary> tdsSummary({String? tdsPeriodId}) =>
+      reportsDs.tdsSummary(tdsPeriodId: tdsPeriodId);
 
   @override
-  Future<ProjectFinancials?> projectFinancials(String projectId) => reportsDs.projectFinancials(projectId);
+  Future<ProjectFinancials?> projectFinancials(String projectId) =>
+      reportsDs.projectFinancials(projectId);
 
-  static Map<String, dynamic> _asMap(Object? d) => d is Map ? Map<String, dynamic>.from(d) : const {};
+  static Map<String, dynamic> _asMap(Object? d) =>
+      d is Map ? Map<String, dynamic>.from(d) : const {};
 }
